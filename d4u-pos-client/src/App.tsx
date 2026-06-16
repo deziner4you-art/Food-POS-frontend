@@ -313,13 +313,8 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
 
   const allOnlineOrders = [...onlineOrdersList, ...backendOnlineOrders];
 
-  const [activeDeliveries, setActiveDeliveries] = useState<any[]>([
-    { id: 998, customer: 'John Doe', address: 'DHA Phase 5, St 12', status: 'ON_WAY', rider: 'Rider #1 (Ahmed)', cod: 3500, riderDistance: '4.2 km away', lat: '42%', lng: '73%' },
-    { id: 999, customer: 'Usman', address: 'Clifton Block 2', status: 'DELIVERED_PENDING_SETTLEMENT', rider: 'Rider #2 (Bilal)', cod: 1200, riderDistance: '1.5 km away', lat: '55%', lng: '68%' },
-    { id: 1002, customer: 'Sara Malik', address: 'Gulshan-e-Iqbal, Block 4', status: 'PREPARING', rider: 'Assigning Rider...', cod: 2200, riderDistance: 'N/A', lat: '35%', lng: '65%' },
-    { id: 987, customer: 'Ali Khan', address: 'Bahadurabad, Main Road', status: 'DISPATCHED', rider: 'Rider #5 (Zeeshan)', cod: 1450, riderDistance: '5.8 km away', lat: '48%', lng: '62%' }
-  ]);
-  const [selectedDeliveryId, setSelectedDeliveryId] = useState<number>(998);
+  const [activeDeliveries, setActiveDeliveries] = useState<any[]>([]);
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
 
   const categories = useLiveQuery(() => db.categories.toArray()) || []
   const products = useLiveQuery(() =>
@@ -398,6 +393,10 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
         newlyReady.forEach(kot => {
           setToast({ message: `KOT Order #${kot.orderId} is READY for ${kot.type}!`, type: 'success' });
           setTimeout(() => setToast(null), 5000);
+          
+          if (kot.type === 'Delivery') {
+            setActiveDeliveries(prev => prev.map(d => d.id === kot.orderId ? { ...d, status: 'READY_FOR_RIDER', rider: 'Waiting for Rider' } : d));
+          }
         });
       }
 
@@ -414,27 +413,26 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                   estimatedReadyAt: new Date(new Date(kot.startTime).getTime() + (kot.prepTimeMinutes * 60000)).toISOString() 
                 })
               });
-              await fetch('http://localhost:3001/dispatch-order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bridgeOrderId: kot.bridgeOrderId })
-              });
+              
               setActiveDeliveries(prev => {
-                if (prev.find(d => d.id === kot.orderId)) return prev;
+                const existing = prev.find(d => d.id === kot.orderId);
+                if (existing) {
+                  return prev.map(d => d.id === kot.orderId ? { ...d, status: 'PREPARING', rider: `Chef Prep: ${kot.prepTimeMinutes}m` } : d);
+                }
                 return [...prev, {
                   id: kot.orderId,
                   bridgeOrderId: kot.bridgeOrderId,
                   customer: kot.customer || 'Guest',
                   address: kot.customerAddress || 'Pending Address...',
-                  status: 'DISPATCHED',
-                  rider: 'Assigned to Rider',
+                  status: 'PREPARING',
+                  rider: `Chef Prep: ${kot.prepTimeMinutes}m`,
                   cod: kot.totalAmount || 0,
                   riderDistance: 'N/A',
                   lat: '50%',
                   lng: '50%'
                 }];
               });
-              setToast({ message: `Order #${kot.orderId} Auto-Dispatched to Rider!`, type: 'success' });
+              setToast({ message: `Order #${kot.orderId} is Preparing in KDS!`, type: 'info' });
             } catch {}
           }
         });
@@ -645,7 +643,6 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
     // Trigger KOT print
     triggerKotPrint({ ...newKot, id: kotId });
 
-    // Populate POS cart with online order items for billing
     const products = await db.products.toArray();
     const parsedCart = (order.items || '').split(',').map((part: string) => {
       const m = part.trim().match(/^(\d+)x\s+(.+)$/);
@@ -656,11 +653,26 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
       const price = product ? product.price : 0;
       return { id: Date.now() + Math.random(), name, price, qty, img: '', desc: 'Online Order Item' };
     }).filter((i: any) => i.name);
-    setCart(parsedCart);
-    setOrderType('Online');
-    setActiveMenu('Home');
 
-    setToast({ message: `Order #${newKot.orderId} sent to KDS! Print triggered.`, type: 'success' });
+    // Add to Active Deliveries
+    setActiveDeliveries(prev => {
+      if (prev.find(d => d.id === newKot.orderId)) return prev;
+      return [...prev, {
+        id: newKot.orderId,
+        bridgeOrderId: newKot.bridgeOrderId,
+        customer: newKot.customer,
+        address: newKot.customerAddress,
+        status: 'PENDING_CHEF',
+        rider: 'Pending Chef Acceptance',
+        cod: newKot.totalAmount,
+        riderDistance: 'N/A',
+        lat: '50%',
+        lng: '50%',
+        items: parsedCart
+      }];
+    });
+
+    setToast({ message: `Order #${newKot.orderId} sent to KDS and Delivery!`, type: 'success' });
   };
 
   const handleHoldOrder = () => {
@@ -778,23 +790,30 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
 
       {/* MAIN CONTENT AREA */}
       <main className="main-content">
-        <header className="header">
-          <div className="header-info">
+        <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-panel)', padding: '12px 24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', marginBottom: '20px', gap: '20px' }}>
+          <div className="header-info" style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             {activeMenu === 'Dashboard' ? (
-              <>
-                <h1 style={{ fontSize: '1.5rem', color: 'white', fontWeight: 'bold' }}>POS Dashboard Overview</h1>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Real-time statistics for Terminal 01 sales dispatch.</p>
-              </>
+              <h1 style={{ fontSize: '1.4rem', color: 'white', fontWeight: 'bold', margin: 0, whiteSpace: 'nowrap' }}>POS Dashboard</h1>
             ) : (
-              <>
-                <h1 style={{ fontSize: '1.5rem' }}>D4U Enterprise POS</h1>
-                <p>{dayStartTime.toLocaleDateString()} | {dayStartTime.toLocaleTimeString()}</p>
-              </>
+              <h1 style={{ fontSize: '1.2rem', fontWeight: '900', margin: 0, whiteSpace: 'nowrap', color: 'white', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '0.5px' }}>
+                <Store size={20} color="var(--accent-yellow)" /> 
+                <span style={{ color: 'var(--accent-yellow)' }}>D4U</span> Enterprise POS
+              </h1>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'nowrap', overflowX: 'auto', flex: 1, justifyItems: 'flex-end', justifyContent: 'flex-end' }}>
+            
+            {/* Date Time Block */}
+            {activeMenu !== 'Dashboard' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '10px 16px', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                <Clock size={16} color="var(--accent-yellow)" />
+                {dayStartTime.toLocaleDateString()} | {dayStartTime.toLocaleTimeString()}
+              </div>
+            )}
+
             {/* Cashier Login */}
-            <div style={{ marginRight: '10px' }}>
+            <div>
               {cashier ? (
                 <button
                   onClick={() => { 
@@ -806,18 +825,18 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                       setToast({ message: 'Cashier Logged Out', type: 'info' }); 
                     }
                   }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.82rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'white'; }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.5)', color: '#ef4444', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
                 >
                   <User size={16} /> {cashier.name} (Logout)
                 </button>
               ) : (
                 <button
                   onClick={() => { setCashierLoginName(''); setModalType('CASHIER_LOGIN'); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-panel)', border: '1px solid var(--accent-yellow)', color: 'var(--accent-yellow)', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.82rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(251, 191, 36, 0.1)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-panel)'; }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--accent-yellow)', border: 'none', color: 'black', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s', boxShadow: '0 4px 6px -1px rgba(251, 191, 36, 0.2)' }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
                 >
                   <User size={16} /> Cashier Login
                 </button>
@@ -827,21 +846,21 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
             {/* Cash Out */}
             <button
               onClick={() => setModalType('CASH_OUT')}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.82rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-md)', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-yellow)'; e.currentTarget.style.color = 'var(--accent-yellow)'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'white'; }}
             >
-              <Banknote size={16} /> Cash Out
+              <Banknote size={14} /> Cash Out
             </button>
 
             {/* Business Day Close */}
             <button
               onClick={() => isCashedOut ? setModalType('DAY_CLOSE') : setToast({ message: 'Please Cash Out first before closing the day!', type: 'error' })}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: isCashedOut ? 'white' : 'var(--text-muted)', opacity: isCashedOut ? 1 : 0.5, borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.82rem', cursor: isCashedOut ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: isCashedOut ? 'white' : 'var(--text-muted)', opacity: isCashedOut ? 1 : 0.6, borderRadius: 'var(--radius-md)', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.75rem', cursor: isCashedOut ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
               onMouseEnter={e => { if(isCashedOut) { e.currentTarget.style.borderColor = '#818cf8'; e.currentTarget.style.color = '#818cf8'; } }}
               onMouseLeave={e => { if(isCashedOut) { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'white'; } }}
             >
-              <Moon size={16} /> Day Close
+              <Moon size={14} /> Day Close
             </button>
 
             {/* Full Screen */}
@@ -853,17 +872,17 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                   document.exitFullscreen().catch(() => {});
                 }
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.82rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-md)', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-yellow)'; e.currentTarget.style.color = 'var(--accent-yellow)'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'white'; }}
             >
-              <Maximize size={16} /> Full Screen
+              <Maximize size={14} />
             </button>
 
             {/* Global Search */}
-            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '12px 20px', width: '220px' }}>
-              <Search size={20} color="var(--text-muted)" style={{ marginRight: '10px' }} />
-              <input type="text" placeholder="Global Search..." style={{ flex: 1, background: 'transparent', border: 'none', color: 'white', outline: 'none' }} />
+            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '6px 12px', width: '200px', transition: 'border-color 0.2s' }}>
+              <Search size={14} color="var(--text-muted)" style={{ marginRight: '8px' }} />
+              <input type="text" placeholder="Global Search..." style={{ flex: 1, background: 'transparent', border: 'none', color: 'white', outline: 'none', fontSize: '0.8rem' }} />
             </div>
           </div>
         </header>
@@ -1028,9 +1047,22 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                         <div className="delivery-card-title">Order #{del.id}</div>
                         <div className="delivery-card-subtitle">{del.rider}</div>
                       </div>
-                      <span className={`delivery-status ${del.status === 'ON_WAY' ? 'on-way status-pulse' : del.status === 'PREPARING' ? 'preparing' : del.status === 'DISPATCHED' ? 'dispatched' : 'delivered'}`}>
-                        {del.status === 'DELIVERED_PENDING_SETTLEMENT' ? (<>Delivered<br/>Pending Settlement</>) : del.status.replace(/_/g, ' ')}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                        <span className={`delivery-status ${del.status === 'ON_WAY' ? 'on-way status-pulse' : del.status === 'PREPARING' ? 'preparing' : del.status === 'DISPATCHED' ? 'dispatched' : del.status === 'PENDING_CHEF' ? 'bg-slate-700 text-slate-300' : 'delivered'}`}>
+                          {del.status === 'DELIVERED_PENDING_SETTLEMENT' ? (<>Delivered<br/>Pending Settlement</>) : del.status.replace(/_/g, ' ')}
+                        </span>
+                        {(del.items && del.items.length > 0) && (
+                          <button className="btn-action" onClick={(e) => {
+                            e.stopPropagation();
+                            const subTotal = del.items.reduce((sum: number, item: any) => sum + (item.price * item.qty), 0);
+                            const tax = subTotal * 0.10;
+                            const grandTotal = subTotal + tax;
+                            setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
+                          }} style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--accent-yellow)', color: 'black' }}>
+                            <Printer size={12} /> Print Bill
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="delivery-address"><MapPin size={14} /><span>{del.address}</span></div>
                     {(del.status === 'READY_FOR_RIDER' || del.status === 'DELIVERED_PENDING_SETTLEMENT') && (
@@ -1423,10 +1455,10 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
             <div className="totals-row" style={{ padding: '4px 0', fontSize: '0.85rem' }}><span>Tax (10%)</span><span>Rs. {tax.toFixed(2)}</span></div>
             <div className="totals-row grand" style={{ padding: '6px 0', marginTop: '4px', marginBottom: '8px' }}><span>Grand Total</span><span className="value">Rs. {grandTotal.toFixed(2)}</span></div>
             <div className="action-buttons" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-              <button className="btn-action" style={{ background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '0.85rem', padding: '8px 0', minHeight: '36px' }} onClick={handleHoldOrder}>Hold</button>
-              <button className="btn-action btn-save" style={{ fontSize: '0.9rem', padding: '8px 0', minHeight: '36px' }} onClick={handleCreateKOT}>KOT</button>
-              <button className="btn-action" style={{ background: 'var(--bg-panel)', color: 'var(--primary)', border: '1px solid var(--border-color)', fontSize: '0.85rem', padding: '8px 0', minHeight: '36px' }} onClick={() => setCart([])}>Cancel</button>
-              <button className="btn-action btn-order" style={{ fontSize: '0.9rem', padding: '8px 0', minHeight: '36px' }} onClick={() => { if(cart.length>0) setModalType('PAYMENT') }}>Pay</button>
+              <button className="btn-action" style={{ background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '0.75rem', padding: '4px 0', minHeight: '30px' }} onClick={handleHoldOrder}>Hold</button>
+              <button className="btn-action btn-save" style={{ fontSize: '0.8rem', padding: '4px 0', minHeight: '30px' }} onClick={handleCreateKOT}>KOT</button>
+              <button className="btn-action" style={{ background: 'var(--bg-panel)', color: 'var(--primary)', border: '1px solid var(--border-color)', fontSize: '0.75rem', padding: '4px 0', minHeight: '30px' }} onClick={() => setCart([])}>Cancel</button>
+              <button className="btn-action btn-order" style={{ fontSize: '0.8rem', padding: '4px 0', minHeight: '30px' }} onClick={() => { if(cart.length>0) setModalType('PAYMENT') }}>Pay</button>
             </div>
             {heldOrders.length > 0 && (
               <button className="btn-action" style={{ width: '100%', marginTop: '8px', padding: '6px 0', fontSize: '0.85rem', minHeight: '32px', background: 'var(--bg-panel-hover)', color: 'var(--accent-yellow)', border: '1px solid var(--accent-yellow)' }} onClick={() => setModalType('HOLD_ORDERS')}>

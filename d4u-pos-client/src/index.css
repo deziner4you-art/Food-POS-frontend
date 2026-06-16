@@ -69,8 +69,8 @@ body { font-family: 'Outfit', sans-serif; background-color: var(--bg-base); colo
 .search-bar { background-color: var(--bg-panel); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 15px; display: flex; align-items: center; gap: 10px; width: 300px; }
 .search-bar input { background: transparent; border: none; color: white; width: 100%; font-family: inherit; font-size: 1rem; outline: none; }
 
-.categories-row { display: flex; gap: 12px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 5px; }
-.category-pill { background-color: var(--bg-panel); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 18px; border-radius: 30px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; white-space: nowrap; font-size: 0.9rem; }
+.categories-row { display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 5px; }
+.category-pill { background-color: var(--bg-panel); border: 1px solid var(--border-color); color: var(--text-main); padding: 6px 14px; border-radius: 30px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; white-space: nowrap; font-size: 0.8rem; }
 .category-pill:hover { background-color: var(--bg-panel-hover); }
 .category-pill.active { background-color: var(--accent-yellow); color: #000; border-color: var(--accent-yellow); }
 
@@ -86,31 +86,31 @@ body { font-family: 'Outfit', sans-serif; background-color: var(--bg-base); colo
 .product-card:hover .product-price-badge { background-color: #ffca3a; }
 .product-stock { color: var(--text-muted); font-size: 0.85rem; }
 
-.cart-sidebar { width: 330px; background-color: var(--bg-panel); border-radius: var(--radius-lg); display: flex; flex-direction: column; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-.cart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-.cart-header h2 { font-size: 1.25rem; font-weight: 800; }
-.cart-header-actions { display: flex; gap: 15px; color: var(--text-muted); cursor: pointer; }
+.cart-sidebar { width: 320px; background-color: var(--bg-panel); border-radius: var(--radius-lg); display: flex; flex-direction: column; padding: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+.cart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.cart-header h2 { font-size: 1.1rem; font-weight: 800; }
+.cart-header-actions { display: flex; gap: 12px; color: var(--text-muted); cursor: pointer; }
 .cart-header-actions svg:hover { color: var(--primary); }
 
-.order-types { display: flex; gap: 8px; margin-bottom: 15px; }
-.type-pill { flex: 1; text-align: center; padding: 6px 0; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--text-muted); font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.order-types { display: flex; gap: 6px; margin-bottom: 12px; }
+.type-pill { flex: 1; text-align: center; padding: 4px 0; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--text-muted); font-size: 0.75rem; font-weight: 600; cursor: pointer; }
 .type-pill.active { background-color: var(--primary); color: white; border-color: var(--primary); }
 
 .cart-items-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 5px; margin-bottom: 10px; }
 .cart-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.cart-item-img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+.cart-item-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
 .cart-item-details { flex: 1; min-width: 0; }
-.cart-item-name { font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
-.cart-qty-controls { display: flex; gap: 6px; background: var(--bg-base); padding: 2px 6px; border-radius: var(--radius-sm); margin-top: 4px; width: fit-content; font-size: 0.8rem; align-items: center; }
-.cart-qty-btn { background: transparent; border: none; color: white; cursor: pointer; font-size: 0.85rem; padding: 0 2px; }
-.cart-item-price { font-weight: 700; font-size: 0.9rem; flex-shrink: 0; }
+.cart-item-name { font-weight: 600; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
+.cart-qty-controls { display: flex; gap: 6px; background: var(--bg-base); padding: 2px 6px; border-radius: var(--radius-sm); margin-top: 4px; width: fit-content; font-size: 0.75rem; align-items: center; }
+.cart-qty-btn { background: transparent; border: none; color: white; cursor: pointer; font-size: 0.8rem; padding: 0 2px; }
+.cart-item-price { font-weight: 700; font-size: 0.8rem; flex-shrink: 0; }
 
-.totals-panel { background-color: var(--bg-base); border-radius: var(--radius-md); padding: 12px; border: 1px solid var(--border-color); }
-.totals-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-muted); }
-.totals-row.grand { font-size: 1.15rem; font-weight: 800; color: var(--text-main); margin-bottom: 15px; margin-top: 10px; }
+.totals-panel { background-color: var(--bg-base); border-radius: var(--radius-md); padding: 10px; border: 1px solid var(--border-color); }
+.totals-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.8rem; color: var(--text-muted); }
+.totals-row.grand { font-size: 1rem; font-weight: 800; color: var(--text-main); margin-bottom: 12px; margin-top: 8px; }
 .totals-row.grand .value { color: var(--accent-green); }
-.action-buttons { display: flex; gap: 10px; }
-.btn-action { flex: 1; padding: 12px; border-radius: var(--radius-sm); border: none; font-weight: 700; cursor: pointer; color: #000; transition: transform 0.2s; font-size: 0.9rem; }
+.action-buttons { display: flex; gap: 8px; }
+.btn-action { flex: 1; padding: 8px; border-radius: var(--radius-sm); border: none; font-weight: 700; cursor: pointer; color: #000; transition: transform 0.2s; font-size: 0.8rem; }
 .btn-action:hover { transform: translateY(-2px); }
 .btn-save { background-color: var(--accent-yellow); }
 .btn-order { background-color: var(--accent-green); color: white; }
