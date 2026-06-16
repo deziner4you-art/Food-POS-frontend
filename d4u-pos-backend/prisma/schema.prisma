@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -------------------------------------------------------------
+// CORE & MULTI-TENANT
+// -------------------------------------------------------------
+model Brand {
+  id        Int        @id @default(autoincrement())
+  name      String
+  createdAt DateTime   @default(now())
+  stores    Store[]
+  users     User[]
+  customers Customer[]
+}
+
+model Store {
+  id        Int      @id @default(autoincrement())
+  brand_id  Int
+  name      String
+  location  String?
+  is_online Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  brand     Brand           @relation(fields: [brand_id], references: [id])
+  users     User[]
+  products  Product[]
+  orders    Order[]
+  inventory InventoryItem[]
+}
+
+// -------------------------------------------------------------
+// RBAC & USERS
+// -------------------------------------------------------------
+model Role {
+  id          Int    @id @default(autoincrement())
+  name        String // SuperAdmin, HeadOffice, BranchManager, Cashier, Rider
+  permissions Json // Modular feature toggling JSON
+  users       User[]
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  brand_id  Int?
+  store_id  Int?
+  role_id   Int
+  name      String
+  phone     String   @unique
+  hashedPin String // For local credential caching
+  createdAt DateTime @default(now())
+
+  brand Brand? @relation(fields: [brand_id], references: [id])
+  store Store? @relation(fields: [store_id], references: [id])
+  role  Role   @relation(fields: [role_id], references: [id])
+
+  // Audits & Tracking
+  approved_voids Order[] @relation("VoidApprover")
+  rider_orders   Order[] @relation("RiderOrders")
+}
+
+// -------------------------------------------------------------
+// CRM & CUSTOMERS
+// -------------------------------------------------------------
+model Customer {
+  id           Int      @id @default(autoincrement())
+  brand_id     Int
+  phone        String   @unique
+  name         String
+  address      String?
+  total_orders Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  brand  Brand   @relation(fields: [brand_id], references: [id])
+  orders Order[]
+}
+
+// -------------------------------------------------------------
+// INVENTORY & PRODUCTS
+// -------------------------------------------------------------
+model Category {
+  id       Int       @id @default(autoincrement())
+  store_id Int
+  name     String
+  products Product[]
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  store_id    Int
+  category_id Int
+  name        String
+  price       Float
+  cost        Float
+  margin_pct  Float // Dynamic margin calculation
+  createdAt   DateTime @default(now())
+
+  store      Store       @relation(fields: [store_id], references: [id])
+  category   Category    @relation(fields: [category_id], references: [id])
+  orderItems OrderItem[]
+}
+
+model InventoryItem {
+  id       Int    @id @default(autoincrement())
+  store_id Int
+  name     String
+  quantity Float // Negative inventory soft block allowed
+  unit     String // kg, liter, piece
+
+  store        Store                     @relation(fields: [store_id], references: [id])
+  transactions InventoryTransactionLog[]
+}
+
+model InventoryTransactionLog {
+  id           Int      @id @default(autoincrement())
+  inventory_id Int
+  operation    String // ADD, SUBTRACT (Append-only Event Sourcing)
+  amount       Float
+  reason       String?
+  changed_by   Int // User ID
+  createdAt    DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventory_id], references: [id])
+}
+
+// -------------------------------------------------------------
+// ORDERS & TRANSACTIONS
+// -------------------------------------------------------------
+model Order {
+  id               Int      @id @default(autoincrement())
+  store_id         Int
+  customer_id      Int?
+  business_date    DateTime
+  total_amount     Float
+  discount         Float    @default(0)
+  status           String // PENDING, READY, OUT_FOR_DELIVERY, DELIVERED, VOIDED
+  order_source     String   @default("WALKIN") // WALKIN, ONLINE, CALL
+  payment_method   String   @default("CASH") // CASH, CARD, COD
+  payment_status   String   @default("PAID") // PAID, PENDING_COD
+  rider_id         Int? // User ID with Rider role
+  delivery_address String?
+  is_offline       Boolean  @default(false)
+
+  // Audit Trail
+  created_by       Int // Cashier
+  void_reason      String?
+  void_approved_by Int? // Manager
+
+  store     Store       @relation(fields: [store_id], references: [id])
+  customer  Customer?   @relation(fields: [customer_id], references: [id])
+  approver  User?       @relation("VoidApprover", fields: [void_approved_by], references: [id])
+  rider     User?       @relation("RiderOrders", fields: [rider_id], references: [id])
+  items     OrderItem[]
+  createdAt DateTime    @default(now())
+}
+
+model OrderItem {
+  id           Int     @id @default(autoincrement())
+  order_id     Int
+  product_id   Int
+  quantity     Int
+  price        Float
+  special_inst String? // "Extra Mayo" printed in bold/Urdu KOT
+
+  order   Order   @relation(fields: [order_id], references: [id])
+  product Product @relation(fields: [product_id], references: [id])
+}
