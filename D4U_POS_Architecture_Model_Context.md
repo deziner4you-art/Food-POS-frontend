@@ -39,6 +39,9 @@
 - **Real-time Comms:** Socket.io / WebSockets (KDS & Order Tracking).
 - **Background Jobs:** BullMQ / Redis Queues (Inventory deductions & Async tasks).
 
+> [!NOTE]
+> **Backend Master Plan Execution:** Currently executing Phase 2. The temporary `order-bridge.cjs` has been upgraded with Persistent file storage (`live_orders.json`) and the Rider App GPS Synchronization APIs (`/rider/gps`).
+
 ## 4. Database Schema Principles (Strict Enforcement)
 - **Multi-tenant Isolation:** Scoped by `store_id` at the database query level.
 - **Synchronization Logic:** - **CRITICAL:** DO NOT use "Last Write Wins" for inventory/finance. Use **Event Sourcing (Append-only Transaction Logs)** to ensure accurate ledger balancing upon sync (`+10`, `-5` operations).

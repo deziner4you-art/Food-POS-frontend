@@ -69,8 +69,16 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
   const [activeTab, setActiveTab] = useState<Tab>('kitchen');
   const [isEmergencyStop, setIsEmergencyStop] = useState<boolean>(false);
   const [settings, setSettings] = useState<StationSettings>(INITIAL_SETTINGS);
-  const [ingredients, setIngredients] = useState<Ingredient[]>(INITIAL_INGREDIENTS);
   const [logs, setLogs] = useState<LogEvent[]>([]);
+
+  const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
+  const ingredients = inventoryItems.length > 0 ? inventoryItems : INITIAL_INGREDIENTS;
+
+  useEffect(() => {
+    if (inventoryItems.length === 0) {
+      db.inventory.bulkAdd(INITIAL_INGREDIENTS).catch(() => {});
+    }
+  }, [inventoryItems.length]);
 
   // We map Dexie OfflineKOTs to KDS Orders
   const kots = useLiveQuery(() => db.kots.toArray()) || [];
@@ -92,9 +100,6 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
     try {
       const savedSettings = localStorage.getItem('kds_settings');
       if (savedSettings) setSettings(JSON.parse(savedSettings));
-
-      const savedIngredients = localStorage.getItem('kds_ingredients');
-      if (savedIngredients) setIngredients(JSON.parse(savedIngredients));
 
       const savedLogs = localStorage.getItem('kds_logs');
       if (savedLogs) setLogs(JSON.parse(savedLogs));
@@ -317,59 +322,51 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
     }
   };
 
-  const decrementInventoryIngredients = (order: Order) => {
-    setIngredients(prevIngredients => {
-      const nextIngredients = prevIngredients.map(ing => {
-        let deductAmount = 0;
-        order.items.forEach(item => {
-          if (ing.deductPerItem[item.name]) {
-            deductAmount += ing.deductPerItem[item.name] * item.quantity;
-          }
-        });
-
-        if (deductAmount > 0) {
-          const updatedStock = Math.max(0, ing.currentStock - deductAmount);
-          if (updatedStock <= ing.warningThreshold && ing.currentStock > ing.warningThreshold) {
-            addLog('inventory_low', `WARNING: Ingredient '${ing.name}' stock level is critical (${updatedStock} ${ing.unit} left)!`);
-            if (settings.alarmSoundEnabled) playUrgentAlert(settings.volume);
-          }
-          return { ...ing, currentStock: updatedStock };
+  const decrementInventoryIngredients = async (order: Order) => {
+    const nextIngredients = ingredients.map(ing => {
+      let deductAmount = 0;
+      order.items.forEach(item => {
+        if (ing.deductPerItem[item.name]) {
+          deductAmount += ing.deductPerItem[item.name] * item.quantity;
         }
-        return ing;
       });
-      saveToLocalStorage('kds_ingredients', nextIngredients);
-      return nextIngredients;
+
+      if (deductAmount > 0) {
+        const updatedStock = Math.max(0, ing.currentStock - deductAmount);
+        if (updatedStock <= ing.warningThreshold && ing.currentStock > ing.warningThreshold) {
+          addLog('inventory_low', `WARNING: Ingredient '${ing.name}' stock level is critical (${updatedStock} ${ing.unit} left)!`);
+          if (settings.alarmSoundEnabled) playUrgentAlert(settings.volume);
+        }
+        return { ...ing, currentStock: updatedStock };
+      }
+      return ing;
     });
+    await db.inventory.bulkPut(nextIngredients);
   };
 
-  const handleRestockAll = () => {
-    setIngredients(prev => {
-      const restocked = prev.map(ing => ({ ...ing, currentStock: ing.maxStock }));
-      saveToLocalStorage('kds_ingredients', restocked);
-      return restocked;
-    });
+  const handleRestockAll = async () => {
+    const restocked = ingredients.map(ing => ({ ...ing, currentStock: ing.maxStock }));
+    await db.inventory.bulkPut(restocked);
     addLog('inventory_restock', 'System Restock Activated. All raw ingredient matrices filled to maximum.');
     if (settings.alarmSoundEnabled) playReadyAlert(settings.volume);
   };
 
-  const handleUpdateInventoryUnit = (ingredientId: string, amount: number) => {
-    setIngredients(prev => {
-      const updated = prev.map(ing => {
-        if (ing.id === ingredientId) {
-          return { ...ing, currentStock: Math.min(ing.maxStock, Math.max(0, ing.currentStock + amount)) };
-        }
-        return ing;
-      });
-      saveToLocalStorage('kds_ingredients', updated);
-      return updated;
+  const handleUpdateInventoryUnit = async (ingredientId: string, amount: number) => {
+    const updated = ingredients.map(ing => {
+      if (ing.id === ingredientId) {
+        return { ...ing, currentStock: Math.min(ing.maxStock, Math.max(0, ing.currentStock + amount)) };
+      }
+      return ing;
     });
+    await db.inventory.bulkPut(updated);
   };
 
   const handleResetData = async () => {
     const confirmation = window.confirm("Reset KDS to factory defaults? This clears history logs and all orders in Database.");
     if (confirmation) {
       await db.kots.clear();
-      setIngredients(INITIAL_INGREDIENTS);
+      await db.inventory.clear();
+      await db.inventory.bulkAdd(INITIAL_INGREDIENTS);
       setLogs([]);
       setSettings(INITIAL_SETTINGS);
       localStorage.clear();

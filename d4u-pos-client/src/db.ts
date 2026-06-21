@@ -44,6 +44,35 @@ export interface OfflineKOT {
   customer?: string;
   source?: string;
   bridgeOrderId?: number;
+  paymentMethod?: string;
+}
+
+export interface OfflineIngredient {
+  id: string;
+  name: string;
+  category: string;
+  currentStock: number;
+  maxStock: number;
+  unit: string;
+  warningThreshold: number;
+  deductPerItem: Record<string, number>;
+}
+
+export interface OfflineStaffLog {
+  id?: number;
+  name: string;
+  pin: string;
+  role: 'CASHIER' | 'CHEF' | 'RIDER' | 'MANAGER';
+  clockIn: string; // ISO String
+  clockOut?: string; // ISO String
+}
+
+export interface OfflineCustomer {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  points: number;
 }
 
 export class D4UDatabase extends Dexie {
@@ -52,15 +81,21 @@ export class D4UDatabase extends Dexie {
   products!: Table<OfflineProduct, number>;
   transactions!: Table<QueuedTransaction, number>;
   kots!: Table<OfflineKOT, number>;
+  inventory!: Table<OfflineIngredient, string>;
+  staffLogs!: Table<OfflineStaffLog, number>;
+  crmCustomers!: Table<OfflineCustomer, string>;
 
   constructor() {
     super('D4U_POS_OfflineDB');
-    this.version(4).stores({
+    this.version(7).stores({
       users: 'id, phone',
       categories: 'id, store_id',
       products: 'id, category_id, name',
       transactions: '++id, synced',
-      kots: '++id, status'
+      kots: '++id, status',
+      inventory: 'id, category',
+      staffLogs: '++id, name, clockIn',
+      crmCustomers: 'id, phone'
     });
   }
 }

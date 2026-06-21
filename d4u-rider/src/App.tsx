@@ -71,10 +71,10 @@ export default function App() {
   // Sync Live GPS coordinates to the Bridge
   useEffect(() => {
     if (activeOrder && driverCoords) {
-      fetch(`http://localhost:3001/rider-location/${activeOrder.id}`, {
+      fetch(`http://localhost:3001/rider/gps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: driverCoords.y, lng: driverCoords.x })
+        body: JSON.stringify({ orderId: activeOrder.id, lat: driverCoords.y, lng: driverCoords.x })
       }).catch(() => {});
     }
   }, [driverCoords, activeOrder]);
@@ -127,8 +127,10 @@ export default function App() {
         const res = await fetch('http://localhost:3001/rider-orders');
         if (res.ok) {
           const orders = await res.json();
+          console.log('[RIDER POLL] Fetched orders:', orders);
           const dispatched = orders.find((o: any) => o.status === 'DISPATCHED');
           if (dispatched) {
+             console.log('[RIDER] Found dispatched order!', dispatched);
              const deliveryOrder: DeliveryOrder = {
                id: dispatched.id,
                source: 'ONLINE_ORDER',
@@ -145,7 +147,6 @@ export default function App() {
                estTimeMins: 15,
                paymentMethod: 'COD',
                paymentStatus: 'UNPAID',
-               status: 'OFFERED',
                estimatedReadyAt: dispatched.estimatedReadyAt,
                bridgeStatus: dispatched.kdsStatus
              };
@@ -156,7 +157,9 @@ export default function App() {
              setCurrentView('map');
           }
         }
-      } catch {}
+      } catch (err) {
+        console.error('[RIDER POLL ERROR]', err);
+      }
     };
     poll();
     const interval = setInterval(poll, 3000);
@@ -250,11 +253,11 @@ export default function App() {
   };
 
   const handleMarkDelivered = () => {
-    setStatus('DELIVERED');
+    setStatus('DELIVERED'); // Keep internal status as DELIVERED to show the settlement UI
     setDriverCoords({ x: activeOrder!.customerX, y: activeOrder!.customerY });
     setActivePath([]);
     setCurrentPathIndex(0);
-    updateBridgeStatus('DELIVERED');
+    updateBridgeStatus('PAID'); // Send PAID to bridge so Customer sees Feedback UI and POS sees Settle Button
   };
 
   const handleCompleteRestReset = (feedback: { tip: number }) => {
@@ -381,17 +384,6 @@ export default function App() {
           </div>
         )}
       </div>
-
-      {/* Developer Dispatch Controls (Simulating POS) */}
-      <div className="hidden lg:block ml-8 w-[400px]">
-        <div className="bg-slate-800 text-white p-4 rounded-t-xl font-bold">POS Simulator (For Dev Testing)</div>
-        <POSPanel 
-          onDispatchOrderToRider={handleDispatchOrder}
-          isRiderOnline={isOnline}
-          activeOrder={activeOrder}
-        />
-      </div>
-
     </div>
   );
 }

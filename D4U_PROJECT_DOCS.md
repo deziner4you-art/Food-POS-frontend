@@ -203,9 +203,17 @@ No `verbatimModuleSyntax` but still use `import type` for safety.
 **DO NOT TOUCH** — has `UnknownDependenciesException` for AuthService/PrismaService.  
 Cannot start without a connected database. Bridge (order-bridge.cjs) replaces it for online orders.
 
-### bridge orders are in-memory only
-`order-bridge.cjs` stores orders in a JS array — restarting the bridge clears all orders.  
-This is fine for now (restaurant session = one bridge run).
+### bridge orders are now persistent (Phase 1 Complete)
+`order-bridge.cjs` stores orders in a local `live_orders.json` file.
+Restarting the bridge will automatically load existing orders from disk, preventing data loss.
+
+### Rider App & GPS Synchronization API (Phase 2 Complete)
+`order-bridge.cjs` now includes:
+- `POST /rider/gps` — Accepts live GPS data from the Rider App.
+- `GET /rider/gps/:orderId` — Polls live Rider GPS data for the POS Client.
+- Fixed a major bug where manual POS delivery orders wouldn't dispatch. Now, `POST /dispatch-order` dynamically generates a bridge order for manual deliveries, guaranteeing they reach the Rider App.
+
+This fulfills Phase 2 of the Backend Master Plan.
 
 ---
 

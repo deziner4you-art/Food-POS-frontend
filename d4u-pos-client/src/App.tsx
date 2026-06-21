@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
-import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, MoreHorizontal, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize } from 'lucide-react'
+import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, MoreHorizontal, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, BarChart2 } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db';
 import KitchenDisplay from './StitchKDS'
+import TVDisplay from './TVDisplay'
+import AdminDashboard from './AdminDashboard'
+import StaffManagement from './StaffManagement'
 import { PrintBill, PrintKOT } from './PrintTemplates'
 import KitchenView from './kds/components/KitchenView'
 import type { Order, OrderStatus } from './kds/types'
+import { AlertCircle } from 'lucide-react'
 
 const KOTTimer = ({ kot }: { kot: any }) => {
   const [timeLeft, setTimeLeft] = useState<string>('');
@@ -86,7 +90,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: typeof USERS[0]) => void }) 
         <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'linear-gradient(145deg, #f5a623, #e8820c)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: '18px', boxShadow: '0 8px 20px rgba(232,130,12,0.4)', border: '4px solid #fff3e0', position: 'relative' }}>
           <div style={{ position: 'absolute', inset: '6px', border: '1.5px dashed rgba(255,255,255,0.6)', borderRadius: '50%' }} />
           <span style={{ fontSize: '2rem', fontWeight: '900', color: 'white', letterSpacing: '-1px', lineHeight: 1 }}>D4U</span>
-          <span style={{ fontSize: '0.42rem', fontWeight: 'bold', color: 'rgba(255,255,255,0.85)', letterSpacing: '2px', marginTop: '2px', textTransform: 'uppercase' }}>Enterprise POS</span>
+          <span style={{ fontSize: '0.42rem', fontWeight: 'bold', color: 'rgba(255,255,255,0.85)', letterSpacing: '2px', marginTop: '2px', textTransform: 'uppercase' }}>POS</span>
         </div>
 
         {/* Title */}
@@ -160,14 +164,19 @@ function LoginScreen({ onLogin }: { onLogin: (user: typeof USERS[0]) => void }) 
 }
 
 function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; dayStartTime: Date }) {
-  const [activeMenu, setActiveMenu] = useState('Home')
+  const [activeMenu, setActiveMenu] = useState('Home');
+  const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
+  const lowStockItems = inventoryItems.filter(ing => ing.currentStock <= ing.warningThreshold);
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
   const [orderType, setOrderType] = useState('Dine In')
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
   const [cart, setCart] = useState<any[]>([])
   const [time, setTime] = useState(new Date())
 
   const [showMoreMenu, setShowMoreMenu] = useState(false)
-  const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN'>('NONE');
+  const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH'>('NONE');
   const [cashier, setCashier] = useState<{ name: string } | null>(() => {
     try { return JSON.parse(localStorage.getItem('d4u_cashier') || 'null'); } catch { return null; }
   });
@@ -184,7 +193,8 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
       kotMode: 'SCREEN',
       tillLockEnabled: false,
       duplicateKOTEnabled: true,
-      allowCustomItems: false
+      allowCustomItems: false,
+      discountPassword: ''
     };
   });
 
@@ -202,11 +212,15 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
   }, [toast]);
 
   const [cashGiven, setCashGiven] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Card' | 'Digital Link'>('Cash');
+  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Card' | 'Digital Link' | 'Split'>('Cash');
+  const [splitCash, setSplitCash] = useState('');
+  const [splitCard, setSplitCard] = useState('');
   const [isTillLocked, setIsTillLocked] = useState(true);
   const [printData, setPrintData] = useState<{ type: 'NONE' | 'BILL' | 'KOT', data: any, printCount: number }>({ type: 'NONE', data: null, printCount: 1 });
   const [managerPassword, setManagerPassword] = useState('');
   const [pendingDuplicateKot, setPendingDuplicateKot] = useState<any>(null);
+  
+  // (Duplicates removed)
   const [isCashedOut, setIsCashedOut] = useState<boolean>(false);
 
   const [phoneSearch, setPhoneSearch] = useState('')
@@ -448,7 +462,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
       for (const del of activeDeliveries) {
         if (del.status === 'DISPATCHED' || del.status === 'ON_WAY' || del.status === 'PICKED_UP' || del.status === 'DELIVERED_PENDING_SETTLEMENT') {
            try {
-             const res = await fetch(`http://localhost:3001/rider-location/${del.bridgeOrderId}`);
+             const res = await fetch(`http://localhost:3001/rider/gps/${del.bridgeOrderId}`);
              if (res.ok) {
                const loc = await res.json();
                setActiveDeliveries(prev => prev.map(d => d.id === del.id ? { ...d, lat: loc.lat + '%', lng: loc.lng + '%' } : d));
@@ -566,19 +580,29 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
   };
 
   const handleCreateKOT = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0) return setToast({ message: 'Cart is empty', type: 'error' });
+    if (orderType === 'Delivery' && (!customerName.trim() || !customerAddress.trim() || !customerPhone.trim())) {
+      setPendingDeliveryAction('KOT');
+      return setModalType('DELIVERY_DETAILS');
+    }
+    
     const itemsSummary = cart.map(item => `${item.qty}x ${item.name}`).join(', ');
     const nextOrderId = Math.floor(Math.random() * 100000);
 
     const newKot = {
       orderId: nextOrderId,
-      type: orderType,
+      type: orderType === 'Dine In' ? `Dine In (${tableNumber})` : orderType,
+      customer: customerName,
+      customerPhone: customerPhone,
+      customerAddress: customerAddress,
       items: itemsSummary,
       notes: orderNotes,
       timePlaced: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       prepTimeMinutes: 0,
       status: 'NEW' as const,
       startTime: '',
+      totalAmount: grandTotal,
+      paymentMethod: paymentMethod === 'Split' ? `Split (Cash: ${splitCash}, Card: ${splitCard})` : paymentMethod,
       printCount: posSettings.kotMode === 'PRINT' ? 1 : 0
     };
 
@@ -695,21 +719,51 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
     }
   }
 
-  const subTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0)
-  const tax = subTotal * 0.10;
-  const grandTotal = subTotal + tax;
+  const handleDiscountChange = (val: string) => {
+    const newVal = Number(val);
+    if (newVal > discountPercent && posSettings.discountPassword) {
+      setPendingDiscount(val);
+      setModalType('DISCOUNT_AUTH');
+    } else {
+      setDiscountPercent(newVal);
+    }
+  }
 
-  const [crmCustomers, setCrmCustomers] = useState([
-    { id: 'c1', name: 'John Doe',     phone: '+92 300 1234567', email: 'john@example.com',    points: 450  },
-    { id: 'c2', name: 'Ayesha Khan',  phone: '+92 312 9876543', email: 'ayesha@example.com',  points: 1200 },
-    { id: 'c3', name: 'Zainab Ahmed', phone: '+92 333 4567890', email: 'zainab@example.com',  points: 80   },
-  ]);
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [discountPasswordInput, setDiscountPasswordInput] = useState('');
+  const [pendingDiscount, setPendingDiscount] = useState('');
+  const [pendingDeliveryAction, setPendingDeliveryAction] = useState<'KOT' | 'PAY' | null>(null);
+  const [tableNumber, setTableNumber] = useState<string>('T1');
+
+  const subTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0)
+  const discountAmount = subTotal * (discountPercent / 100);
+  const afterDiscount = subTotal - discountAmount;
+  const tax = afterDiscount * 0.10;
+  const grandTotal = afterDiscount + tax;
+
+  const crmCustomersRaw = useLiveQuery(() => db.crmCustomers.toArray()) || [];
+  const crmCustomers = crmCustomersRaw.length > 0 ? crmCustomersRaw : [];
+
+  useEffect(() => {
+    if (crmCustomersRaw.length === 0) {
+      db.crmCustomers.bulkAdd([
+        { id: 'c1', name: 'John Doe',     phone: '03001234567', email: 'john@example.com',    points: 450  },
+        { id: 'c2', name: 'Ayesha Khan',  phone: '03129876543', email: 'ayesha@example.com',  points: 1200 },
+        { id: 'c3', name: 'Zainab Ahmed', phone: '03334567890', email: 'zainab@example.com',  points: 80   },
+      ]).catch(() => {});
+    }
+  }, [crmCustomersRaw.length]);
+
   const [crmSearch, setCrmSearch] = useState('');
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '' });
 
   if (window.location.pathname === '/kitchen') {
     return <KitchenDisplay />;
+  }
+  
+  if (window.location.pathname === '/tv') {
+    return <TVDisplay />;
   }
 
   // Poll for live rider GPS location from Bridge
@@ -719,8 +773,10 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
     if (!selectedId) return;
 
     let timerId = setInterval(async () => {
+      const selectedDel = activeDeliveries.find(d => d.id === selectedId);
+      if (!selectedDel || !selectedDel.bridgeOrderId) return;
       try {
-        const res = await fetch(`http://localhost:3001/rider-location/${selectedId}`);
+        const res = await fetch(`http://localhost:3001/rider/gps/${selectedDel.bridgeOrderId}`);
         if (res.ok) {
           const loc = await res.json();
           setActiveDeliveries(prev => prev.map(d => 
@@ -742,6 +798,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
           className={`sidebar-logo-btn ${activeMenu === 'Dashboard' ? 'active' : ''}`}
           onClick={() => setActiveMenu('Dashboard')}
           style={{ cursor: 'pointer', display: 'flex', justifyContent: 'center', padding: '15px 0', borderBottom: '1px solid var(--border-color)', width: '100%', marginBottom: '10px' }}
+          title="Admin Dashboard"
         >
           <Store size={28} color={activeMenu === 'Dashboard' ? 'var(--accent-yellow)' : 'white'} />
         </div>
@@ -770,6 +827,9 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
         <div className={`sidebar-item ${activeMenu === 'Delivery' ? 'active' : ''}`} onClick={() => setActiveMenu('Delivery')}>
           <div className="icon-box"><Truck size={22} /></div><span>Delivery</span>
         </div>
+        <div className={`sidebar-item ${activeMenu === 'Staff' ? 'active' : ''}`} onClick={() => setActiveMenu('Staff')}>
+          <div className="icon-box"><Users size={22} /></div><span>Staff</span>
+        </div>
         <div className={`sidebar-item ${activeMenu === 'Customers' ? 'active' : ''}`} onClick={() => setActiveMenu('Customers')}>
           <div className="icon-box"><Users size={22} /></div><span>CRM</span>
         </div>
@@ -790,6 +850,12 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
 
       {/* MAIN CONTENT AREA */}
       <main className="main-content">
+        {lowStockItems.length > 0 && (
+          <div style={{ background: '#ef4444', color: 'white', padding: '8px 24px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.9rem', animation: 'pulse 2s infinite' }}>
+            <AlertCircle size={18} />
+            LOW STOCK ALERT: {lowStockItems.map(i => `${i.name} (${i.currentStock} left)`).join(', ')}
+          </div>
+        )}
         <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-panel)', padding: '12px 24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', marginBottom: '20px', gap: '20px' }}>
           <div className="header-info" style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             {activeMenu === 'Dashboard' ? (
@@ -797,7 +863,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
             ) : (
               <h1 style={{ fontSize: '1.2rem', fontWeight: '900', margin: 0, whiteSpace: 'nowrap', color: 'white', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '0.5px' }}>
                 <Store size={20} color="var(--accent-yellow)" /> 
-                <span style={{ color: 'var(--accent-yellow)' }}>D4U</span> Enterprise POS
+                <span style={{ color: 'var(--accent-yellow)' }}>D4U</span> POS
               </h1>
             )}
           </div>
@@ -886,6 +952,16 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
             </div>
           </div>
         </header>
+
+        {/* DASHBOARD VIEW */}
+        {activeMenu === 'Dashboard' && (
+          <AdminDashboard posSales={shift1Sales + shift2Sales} />
+        )}
+
+        {/* STAFF MANAGEMENT VIEW */}
+        {activeMenu === 'Staff' && (
+          <StaffManagement />
+        )}
 
         {/* HOME (POS) VIEW */}
         {activeMenu === 'Home' && (
@@ -1073,12 +1149,15 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  await fetch('http://localhost:3001/dispatch-order', {
+                                  const res = await fetch('http://localhost:3001/dispatch-order', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ bridgeOrderId: del.bridgeOrderId })
+                                    body: JSON.stringify({ bridgeOrderId: del.bridgeOrderId, order: del })
                                   });
-                                  setActiveDeliveries(prev => prev.map(o => o.id === del.id ? { ...o, status: 'DISPATCHED', rider: 'Assigned to Rider' } : o));
+                                  if (res.ok) {
+                                    const data = await res.json();
+                                    setActiveDeliveries(prev => prev.map(o => o.id === del.id ? { ...o, bridgeOrderId: data.order.id, status: 'DISPATCHED', rider: 'Assigned to Rider' } : o));
+                                  }
                                 } catch {}
                               }}
                             >
@@ -1093,7 +1172,11 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                               <button className="btn-action btn-order" style={{ padding: '8px 16px', fontSize: '0.75rem', width: 'auto', flex: 'none' }}
                                 onClick={async () => {
                                   try {
-                                    await fetch(`http://localhost:3001/settle-order/${del.bridgeOrderId}`, { method: 'POST' });
+                                    await fetch(`http://localhost:3001/online-orders/${del.bridgeOrderId}`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ status: 'SETTLED' })
+                                    });
                                     setActiveDeliveries(prev => prev.filter(o => o.id !== del.id));
                                     setToast({ message: 'Cash Settled & Ledger Updated!', type: 'success' });
                                   } catch {}
@@ -1250,8 +1333,8 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                       style={{ marginTop: '6px', padding: '13px' }}
                       onClick={() => {
                         if (!newCustomer.name || !newCustomer.phone) { setToast({ message: 'Name and Phone are required', type: 'error' }); return; }
-                        const nextId = `c${crmCustomers.length + 1}`;
-                        setCrmCustomers(prev => [...prev, { id: nextId, ...newCustomer, points: 0 }]);
+                        const nextId = `c${Date.now()}`;
+                        db.crmCustomers.add({ id: nextId, ...newCustomer, points: 0 });
                         setToast({ message: `${newCustomer.name} added to CRM!`, type: 'success' });
                         setShowNewCustomerForm(false);
                         setNewCustomer({ name: '', phone: '', email: '' });
@@ -1425,6 +1508,47 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
               <div key={type} className={`type-pill ${orderType === type ? 'active' : ''}`} onClick={() => setOrderType(type)}>{type}</div>
             ))}
           </div>
+          
+          <div style={{ padding: '0 16px 10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '6px 10px' }}>
+              <Phone size={14} color="var(--text-muted)" style={{ marginRight: '8px' }} />
+              <input type="tel" placeholder="Customer Mobile (for Points)" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} style={{ width: '100%', background: 'transparent', border: 'none', color: 'white', outline: 'none', fontSize: '0.8rem' }} />
+            </div>
+            {customerPhone && crmCustomers.find(c => c.phone === customerPhone) && (
+              <div style={{ marginTop: '6px', fontSize: '0.75rem', color: '#fbbf24', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Loyalty Points: <b>{crmCustomers.find(c => c.phone === customerPhone)?.points}</b></span>
+                <button 
+                  onClick={() => {
+                    const c = crmCustomers.find(c => c.phone === customerPhone);
+                    if (c && c.points > 0) {
+                      setDiscountPercent(0); 
+                      const maxDiscount = (c.points / subTotal) * 100;
+                      setDiscountPercent(Math.min(100, Math.floor(maxDiscount)));
+                      db.crmCustomers.update(c.id, { points: 0 }); 
+                      setToast({ message: `${c.points} Points redeemed for discount!`, type: 'success' });
+                    }
+                  }}
+                  style={{ background: 'transparent', border: 'none', color: '#4edea3', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  Redeem All
+                </button>
+              </div>
+            )}
+          </div>
+
+          {orderType === 'Dine In' && (
+            <div style={{ padding: '0 16px 10px' }}>
+              <select 
+                value={tableNumber} 
+                onChange={(e) => setTableNumber(e.target.value)}
+                style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', padding: '8px 10px', outline: 'none', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                {['T1','T2','T3','T4','T5','T6','T7','T8', 'T9', 'T10', 'VIP-1', 'VIP-2'].map(t => (
+                  <option key={t} value={t}>Table: {t}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="cart-items-list">
             {cart.map(item => (
               <div key={item.id} className="cart-item">
@@ -1441,24 +1565,45 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
               </div>
             ))}
           </div>
-          <div className="totals-panel" style={{ padding: '12px 16px', borderTop: '1px solid var(--border-color)' }}>
-            <div style={{ marginBottom: '8px' }}>
+          <div className="totals-panel" style={{ padding: '8px 16px', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ marginBottom: '6px' }}>
               <input
                 type="text"
                 placeholder="Add special instructions (e.g. Extra Cheese)"
                 value={orderNotes}
                 onChange={(e) => setOrderNotes(e.target.value)}
-                style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', padding: '6px 10px', outline: 'none', fontSize: '0.8rem' }}
+                style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', padding: '4px 8px', outline: 'none', fontSize: '0.75rem' }}
               />
             </div>
-            <div className="totals-row" style={{ padding: '4px 0', fontSize: '0.85rem' }}><span>Sub Total</span><span>Rs. {subTotal.toFixed(2)}</span></div>
-            <div className="totals-row" style={{ padding: '4px 0', fontSize: '0.85rem' }}><span>Tax (10%)</span><span>Rs. {tax.toFixed(2)}</span></div>
-            <div className="totals-row grand" style={{ padding: '6px 0', marginTop: '4px', marginBottom: '8px' }}><span>Grand Total</span><span className="value">Rs. {grandTotal.toFixed(2)}</span></div>
+            <div className="totals-row" style={{ padding: '2px 0', fontSize: '0.8rem' }}><span>Sub Total</span><span>Rs. {subTotal.toFixed(2)}</span></div>
+            <div className="totals-row" style={{ padding: '2px 0', fontSize: '0.8rem', alignItems: 'center' }}>
+              <span>Discount</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <input 
+                  type="number" 
+                  min="0" max="100" 
+                  value={discountPercent} 
+                  onChange={e => handleDiscountChange(e.target.value)}
+                  style={{ width: '35px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: '#fbbf24', borderRadius: '3px', padding: '1px 3px', fontSize: '0.75rem', textAlign: 'center', outline: 'none' }}
+                />
+                <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>%</span>
+                <span style={{ marginLeft: '6px', color: '#fbbf24' }}>-Rs. {discountAmount.toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="totals-row" style={{ padding: '2px 0', fontSize: '0.8rem' }}><span>Tax (10%)</span><span>Rs. {tax.toFixed(2)}</span></div>
+            <div className="totals-row grand" style={{ padding: '4px 0', marginTop: '2px', marginBottom: '6px' }}><span style={{ fontSize: '0.9rem' }}>Grand Total</span><span className="value" style={{ fontSize: '1.2rem' }}>Rs. {grandTotal.toFixed(2)}</span></div>
             <div className="action-buttons" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
               <button className="btn-action" style={{ background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '0.75rem', padding: '4px 0', minHeight: '30px' }} onClick={handleHoldOrder}>Hold</button>
               <button className="btn-action btn-save" style={{ fontSize: '0.8rem', padding: '4px 0', minHeight: '30px' }} onClick={handleCreateKOT}>KOT</button>
-              <button className="btn-action" style={{ background: 'var(--bg-panel)', color: 'var(--primary)', border: '1px solid var(--border-color)', fontSize: '0.75rem', padding: '4px 0', minHeight: '30px' }} onClick={() => setCart([])}>Cancel</button>
-              <button className="btn-action btn-order" style={{ fontSize: '0.8rem', padding: '4px 0', minHeight: '30px' }} onClick={() => { if(cart.length>0) setModalType('PAYMENT') }}>Pay</button>
+              <button className="btn-action btn-danger" style={{ fontSize: '0.8rem', padding: '4px 0', minHeight: '30px' }} onClick={() => setCart([])}>Cancel</button>
+              <button className="btn-action" style={{ background: 'var(--accent-green)', color: 'black', fontWeight: 'bold', fontSize: '0.9rem', padding: '4px 0', minHeight: '30px' }} onClick={() => {
+                if (cart.length === 0) return setToast({ message: 'Cart is empty', type: 'error' });
+                if (orderType === 'Delivery' && (!customerName.trim() || !customerAddress.trim() || !customerPhone.trim())) {
+                  setPendingDeliveryAction('PAY');
+                  return setModalType('DELIVERY_DETAILS');
+                }
+                setModalType('PAYMENT');
+              }}>Pay</button>
             </div>
             {heldOrders.length > 0 && (
               <button className="btn-action" style={{ width: '100%', marginTop: '8px', padding: '6px 0', fontSize: '0.85rem', minHeight: '32px', background: 'var(--bg-panel-hover)', color: 'var(--accent-yellow)', border: '1px solid var(--accent-yellow)' }} onClick={() => setModalType('HOLD_ORDERS')}>
@@ -1636,11 +1781,78 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                 <span style={{ fontWeight: 'bold' }}>Enable Duplicate KOT Printing</span>
                 <input type="checkbox" checked={posSettings.duplicateKOTEnabled} onChange={e => setPosSettings({...posSettings, duplicateKOTEnabled: e.target.checked})} style={{ width: '20px', height: '20px' }}/>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', padding: '15px', borderRadius: '5px', border: '1px solid var(--border-color)' }}>
+              <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', padding: '15px', borderRadius: '5px', border: '1px solid var(--border-color)' }}>
                 <span style={{ fontWeight: 'bold' }}>Allow Custom Items from POS</span>
                 <input type="checkbox" checked={posSettings.allowCustomItems} onChange={e => setPosSettings({...posSettings, allowCustomItems: e.target.checked})} style={{ width: '20px', height: '20px' }}/>
               </div>
-              <button className="btn-action btn-order" onClick={() => { setModalType('NONE'); setToast({message: 'Settings Saved', type: 'success'}); }} style={{ padding: '15px', marginTop: '10px', fontSize: '1.1rem' }}>Save & Close</button>
+              <div style={{ marginBottom: '25px', padding: '15px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '5px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Discount Password Protection</label>
+                <input type="password" placeholder="Leave blank to disable" value={posSettings.discountPassword || ''} onChange={e => setPosSettings({...posSettings, discountPassword: e.target.value})} style={{ width: '100%', padding: '10px', background: '#0f172a', color: 'white', border: '1px solid var(--border-color)', borderRadius: '5px' }} />
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '5px' }}>Cashiers will need this PIN to apply any discount.</p>
+              </div>
+              <button className="btn-action btn-order" onClick={() => { localStorage.setItem('d4u_pos_settings', JSON.stringify(posSettings)); setModalType('NONE'); setToast({message: 'Settings Saved', type: 'success'}); }} style={{ padding: '15px', marginTop: '10px', fontSize: '1.1rem', width: '100%' }}>Save & Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DISCOUNT AUTH MODAL */}
+      {modalType === 'DISCOUNT_AUTH' && (
+        <div className="modal-overlay" style={{ zIndex: 10002 }}>
+          <div className="modal-content animate-slide-up" style={{ width: '400px' }}>
+            <div className="modal-header">
+              <h2><Lock size={24} color="#fbbf24" /> Manager Override</h2>
+              <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setDiscountPasswordInput(''); setPendingDiscount(''); }} />
+            </div>
+            <div style={{ padding: '20px', textAlign: 'center' }}>
+              <p style={{ marginBottom: '20px', color: 'var(--text-muted)' }}>Enter Discount Password to authorize this change.</p>
+              <input type="password" value={discountPasswordInput} onChange={e => setDiscountPasswordInput(e.target.value)} placeholder="Enter Password" style={{ width: '100%', padding: '15px', fontSize: '1.5rem', textAlign: 'center', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', marginBottom: '20px', letterSpacing: '5px' }} autoFocus />
+              <button className="btn-action btn-order" onClick={() => {
+                if (discountPasswordInput === posSettings.discountPassword) {
+                  setDiscountPercent(Number(pendingDiscount) || 0);
+                  setToast({ message: 'Discount Applied!', type: 'success' });
+                  setModalType('NONE'); setDiscountPasswordInput(''); setPendingDiscount('');
+                } else {
+                  setToast({ message: 'Invalid Password', type: 'error' });
+                }
+              }} style={{ width: '100%', padding: '15px', fontSize: '1.1rem' }}>Authorize Discount</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELIVERY DETAILS MODAL */}
+      {modalType === 'DELIVERY_DETAILS' && (
+        <div className="modal-overlay" style={{ zIndex: 10002 }}>
+          <div className="modal-content animate-slide-up" style={{ width: '450px' }}>
+            <div className="modal-header">
+              <h2><MapPin size={24} color="#4edea3" /> Delivery Details</h2>
+              <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setPendingDeliveryAction(null); }} />
+            </div>
+            <div style={{ padding: '20px' }}>
+              <p style={{ marginBottom: '20px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Please fill in the customer details to confirm this delivery order.</p>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Customer Mobile Number *</label>
+                <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="0300-1234567" style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none' }} autoFocus />
+              </div>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Customer Name *</label>
+                <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="e.g. John Doe" style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none' }} />
+              </div>
+              <div style={{ marginBottom: '25px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Complete Delivery Address *</label>
+                <textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} placeholder="House #, Street, Block, Area..." rows={3} style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none', resize: 'none' }} />
+              </div>
+              <button className="btn-action btn-save" onClick={() => {
+                if (!customerName.trim() || !customerAddress.trim() || !customerPhone.trim()) {
+                  setToast({ message: 'All fields are required!', type: 'error' });
+                  return;
+                }
+                setModalType('NONE');
+                if (pendingDeliveryAction === 'KOT') handleCreateKOT();
+                else if (pendingDeliveryAction === 'PAY') setModalType('PAYMENT');
+                setPendingDeliveryAction(null);
+              }} style={{ width: '100%', padding: '15px', fontSize: '1.1rem' }}>Confirm & Continue</button>
             </div>
           </div>
         </div>
@@ -1721,12 +1933,13 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
               </div>
               <div style={{ marginBottom: '25px' }}>
                 <div style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', letterSpacing: '1px' }}>SELECT PAYMENT METHOD</div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                   {['Cash', 'Card', 'Digital Link'].map(method => (
-                     <div key={method} onClick={() => setPaymentMethod(method as any)} style={{ flex: 1, border: paymentMethod === method ? '1px solid var(--accent-yellow)' : '1px solid #1e293b', borderRadius: '8px', padding: '15px 10px', textAlign: 'center', cursor: 'pointer', background: '#0f172a', color: paymentMethod === method ? 'var(--accent-yellow)' : '#cbd5e1' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                   {['Cash', 'Card', 'Digital Link', 'Split'].map(method => (
+                     <div key={method} onClick={() => setPaymentMethod(method as any)} style={{ flex: 1, minWidth: '100px', border: paymentMethod === method ? '1px solid var(--accent-yellow)' : '1px solid #1e293b', borderRadius: '8px', padding: '15px 10px', textAlign: 'center', cursor: 'pointer', background: '#0f172a', color: paymentMethod === method ? 'var(--accent-yellow)' : '#cbd5e1' }}>
                         {method === 'Cash' && <Banknote size={24} style={{ margin: '0 auto 5px' }} />}
                         {method === 'Card' && <CreditCard size={24} style={{ margin: '0 auto 5px' }} />}
                         {method === 'Digital Link' && <Landmark size={24} style={{ margin: '0 auto 5px' }} />}
+                        {method === 'Split' && <Banknote size={24} style={{ margin: '0 auto 5px' }} />}
                         <div style={{ fontSize: '0.9rem', fontWeight: paymentMethod === method ? 'bold' : 'normal' }}>{method}</div>
                      </div>
                    ))}
@@ -1734,22 +1947,60 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
               </div>
               <div style={{ marginBottom: '25px' }}>
                 <div style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', letterSpacing: '1px' }}>AMOUNT RECEIVED</div>
-                <div style={{ position: 'relative', marginBottom: '15px' }}>
-                  <span style={{ position: 'absolute', left: '15px', top: '15px', color: 'white', fontWeight: 'bold', fontSize: '1.2rem' }}>Rs.</span>
-                  <input type="number" value={cashGiven} onChange={e => setCashGiven(e.target.value)} style={{ width: '100%', padding: '15px 15px 15px 50px', fontSize: '1.5rem', background: '#1e293b', border: '1px solid #334155', color: 'white', borderRadius: '8px', outline: 'none' }} autoFocus />
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                   {[grandTotal, Math.ceil(grandTotal/100)*100 === grandTotal ? grandTotal+100 : Math.ceil(grandTotal/100)*100, Math.ceil(grandTotal/500)*500 === grandTotal ? grandTotal+500 : Math.ceil(grandTotal/500)*500, Math.ceil(grandTotal/1000)*1000 === grandTotal ? grandTotal+1000 : Math.ceil(grandTotal/1000)*1000].map((amt, i) => (
-                     <button key={i} onClick={() => setCashGiven(amt.toString())} style={{ flex: 1, padding: '10px 0', background: '#0f172a', border: '1px solid #1e293b', color: 'white', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 'bold' }}>Rs. {amt}</button>
-                   ))}
-                </div>
+                
+                {paymentMethod === 'Split' ? (
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <span style={{ position: 'absolute', left: '15px', top: '15px', color: '#94a3b8', fontSize: '0.8rem' }}>Cash</span>
+                      <input type="number" value={splitCash} onChange={e => setSplitCash(e.target.value)} placeholder="0.00" style={{ width: '100%', padding: '30px 15px 15px 15px', fontSize: '1.2rem', background: '#1e293b', border: '1px solid #334155', color: 'white', borderRadius: '8px', outline: 'none' }} />
+                    </div>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <span style={{ position: 'absolute', left: '15px', top: '15px', color: '#94a3b8', fontSize: '0.8rem' }}>Card</span>
+                      <input type="number" value={splitCard} onChange={e => setSplitCard(e.target.value)} placeholder="0.00" style={{ width: '100%', padding: '30px 15px 15px 15px', fontSize: '1.2rem', background: '#1e293b', border: '1px solid #334155', color: 'white', borderRadius: '8px', outline: 'none' }} />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ position: 'relative', marginBottom: '15px' }}>
+                      <span style={{ position: 'absolute', left: '15px', top: '15px', color: 'white', fontWeight: 'bold', fontSize: '1.2rem' }}>Rs.</span>
+                      <input type="number" value={cashGiven} onChange={e => setCashGiven(e.target.value)} style={{ width: '100%', padding: '15px 15px 15px 50px', fontSize: '1.5rem', background: '#1e293b', border: '1px solid #334155', color: 'white', borderRadius: '8px', outline: 'none' }} autoFocus={paymentMethod === 'Cash'} />
+                    </div>
+                    {paymentMethod === 'Cash' && (
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                         {[grandTotal, Math.ceil(grandTotal/100)*100 === grandTotal ? grandTotal+100 : Math.ceil(grandTotal/100)*100, Math.ceil(grandTotal/500)*500 === grandTotal ? grandTotal+500 : Math.ceil(grandTotal/500)*500, Math.ceil(grandTotal/1000)*1000 === grandTotal ? grandTotal+1000 : Math.ceil(grandTotal/1000)*1000].map((amt, i) => (
+                           <button key={i} onClick={() => setCashGiven(amt.toString())} style={{ flex: 1, padding: '10px 0', background: '#0f172a', border: '1px solid #1e293b', color: 'white', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 'bold' }}>Rs. {amt}</button>
+                         ))}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
               <button className="btn-action" onClick={async () => {
-                const returnAmount = Math.max(0, Number(cashGiven) - grandTotal);
-                const currentOrder = { orderType, cart: [...cart], subTotal, tax, grandTotal, cashGiven: Number(cashGiven) || grandTotal, returnAmount, time: new Date().toLocaleString() };
+                let tendered = paymentMethod === 'Split' ? (Number(splitCash) + Number(splitCard)) : (paymentMethod === 'Cash' ? Number(cashGiven) : grandTotal);
+                if (tendered < grandTotal) return setToast({ message: 'Tendered amount is less than total', type: 'error' });
+                const returnAmount = Math.max(0, tendered - grandTotal);
+                const currentOrder = { orderType: orderType === 'Dine In' ? `Dine In (${tableNumber})` : orderType, cart: [...cart], subTotal, tax, discount: discountAmount, grandTotal, cashGiven: tendered, returnAmount, time: new Date().toLocaleString(), paymentMethod };
                 if (posSettings.billPrintQty > 0) setPrintData({ type: 'BILL', data: currentOrder, printCount: posSettings.billPrintQty });
                 if (activeShift === 'Shift 1') setShift1Sales(prev => prev + grandTotal);
                 else setShift2Sales(prev => prev + grandTotal);
+                
+                // Add Loyalty Points (1 point for every Rs. 10 spent)
+                if (customerPhone.trim()) {
+                  const customer = crmCustomers.find(c => c.phone === customerPhone.trim());
+                  if (customer) {
+                    db.crmCustomers.update(customer.id, { points: customer.points + Math.floor(grandTotal / 10) });
+                  } else {
+                    // Create new customer profile automatically if they don't exist
+                    db.crmCustomers.add({
+                      id: `c${Date.now()}`,
+                      name: customerName || 'Walk-in',
+                      phone: customerPhone.trim(),
+                      email: '',
+                      points: Math.floor(grandTotal / 10)
+                    });
+                  }
+                }
+
                 setCart([]); setCashGiven(''); setModalType('NONE');
                 setToast({ message: 'Transaction Complete!', type: 'success' });
                 if (posSettings.tillLockEnabled) setIsTillLocked(false);

@@ -57,6 +57,12 @@ export default function LandingMode({
   const [loginAddress, setLoginAddress] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
 
+  // Feedback states
+  const [feedbackRating, setFeedbackRating] = useState<number>(0);
+  const [feedbackComment, setFeedbackComment] = useState<string>('');
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState<boolean>(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false);
+
   // My Orders panel
   const [isMyOrdersOpen, setIsMyOrdersOpen] = useState<boolean>(false);
   const [myOrders, setMyOrders] = useState<any[]>([]);
@@ -130,6 +136,29 @@ export default function LandingMode({
       setTrackError('Bridge offline — baad mein try karein');
     }
     setTrackLoading(false);
+  };
+
+  const handleSubmitFeedback = async () => {
+    const targetOrder = trackResult || trackedOrder;
+    if (!targetOrder || !feedbackRating) return;
+    setIsSubmittingFeedback(true);
+    try {
+      const res = await fetch(`http://localhost:3001/online-orders/${targetOrder.id}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating: feedbackRating, comment: feedbackComment })
+      });
+      if (res.ok) {
+        setFeedbackSubmitted(true);
+        if (trackResult) {
+          setTrackResult({ ...trackResult, feedback: { rating: feedbackRating, comment: feedbackComment } });
+        }
+        if (trackedOrder) {
+          setTrackedOrder({ ...trackedOrder, feedback: { rating: feedbackRating, comment: feedbackComment } });
+        }
+      }
+    } catch {}
+    setIsSubmittingFeedback(false);
   };
 
   // Poll bridge for live order status
@@ -555,7 +584,18 @@ export default function LandingMode({
               <span className="text-lg text-[#fbbf24]">${totalUSD.toFixed(2)}</span>
             </div>
             <button
-              onClick={async () => {
+              onClick={async (e) => {
+                const btn = e.currentTarget;
+                if (btn.disabled) return;
+                btn.disabled = true;
+                btn.textContent = 'Encrypting...';
+                
+                if (!customer?.name?.trim() || !customer?.phone?.trim() || !customer?.address?.trim()) {
+                  alert('Please update your profile with Name, Phone, and Address before ordering.');
+                  btn.disabled = false;
+                  btn.textContent = 'PLACE RESERVATION ORDER';
+                  return;
+                }
                 const itemsSummary = cart.map(c => `${c.quantity}x ${c.foodItem.name}`).join(', ');
                 try {
                   const res = await fetch('http://localhost:3001/online-orders', {
@@ -655,7 +695,6 @@ export default function LandingMode({
                   <p className="text-xs text-[#d3c5ac] leading-relaxed">{trackResult.items}</p>
                 </div>
 
-                {/* Status timeline */}
                 <div className="space-y-3">
                   {[
                     { label: 'Order Placed', sub: trackResult.timePlaced || 'Received', done: true },
@@ -669,35 +708,91 @@ export default function LandingMode({
                       sub: trackResult.kdsStatus === 'PREPARING'
                         ? `~${trackResult.prepTimeMinutes} mins · Ready by ${trackResult.estimatedReadyAt}`
                         : trackResult.kdsStatus === 'READY' ? 'Done ✓' : 'Waiting...',
-                      done: trackResult.kdsStatus === 'PREPARING' || trackResult.kdsStatus === 'READY',
+                      done: trackResult.kdsStatus === 'PREPARING' || trackResult.kdsStatus === 'READY' || trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
                     },
                     {
-                      label: 'Ready for Pickup',
-                      sub: trackResult.kdsStatus === 'READY' ? 'Your order is ready!' : 'Pending...',
-                      done: trackResult.kdsStatus === 'READY',
+                      label: 'Ready for Delivery',
+                      sub: trackResult.kdsStatus === 'READY' ? 'Food is packed!' : 'Pending...',
+                      done: trackResult.kdsStatus === 'READY' || trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
+                    },
+                    {
+                      label: 'Dispatched',
+                      sub: (trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED') ? 'Rider on the way' : 'Waiting for rider...',
+                      done: trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
+                    },
+                    {
+                      label: 'Delivered',
+                      sub: (trackResult.status === 'PAID' || trackResult.status === 'SETTLED') ? 'Cash Collected & Delivered ✓' : 'Pending...',
+                      done: trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
                     },
                   ].map((step, i) => (
-                    <div key={i} className="flex items-start gap-3">
-                      <div className={`w-5 h-5 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border-2 transition-all ${
-                        step.done ? 'bg-[#4edea3] border-[#4edea3]' : 'bg-transparent border-slate-700'
+                    <div key={i} className="flex items-start gap-3 relative">
+                      {i < 5 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
+                      <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
+                        step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
                       }`}>
-                        {step.done && <CheckCircle2 className="w-3 h-3 text-slate-900" />}
+                        {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
                       </div>
                       <div>
-                        <p className={`text-xs font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
-                        <p className="text-[10px] text-[#d3c5ac]">{step.sub}</p>
+                        <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
+                        <p className="text-[9px] text-[#d3c5ac]">{step.sub}</p>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                {trackResult.kdsStatus === 'READY' && (
-                  <div className="bg-[#4edea3]/10 border border-[#4edea3]/30 rounded-xl px-4 py-3 text-center">
-                    <span className="text-sm font-black text-[#4edea3]">Order Ready! Please collect.</span>
+                {trackResult.status === 'DISPATCHED' && trackResult.delivery && (
+                  <div className="bg-[#141b2b] border border-[#4edea3]/30 rounded-xl overflow-hidden mt-4">
+                    <div className="bg-[#4edea3]/10 px-4 py-2 flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-[#4edea3] animate-ping" />
+                      <span className="text-[10px] font-black uppercase text-[#4edea3]">Rider is approaching!</span>
+                    </div>
+                    <div className="relative h-32 bg-slate-900 w-full overflow-hidden flex items-center justify-center">
+                      <div className="absolute inset-0 border-[0.5px] border-slate-800" style={{ backgroundSize: '20px 20px', backgroundImage: 'linear-gradient(to right, #1e293b 1px, transparent 1px), linear-gradient(to bottom, #1e293b 1px, transparent 1px)' }} />
+                      <div className="w-32 h-32 border border-[#4edea3]/20 rounded-full animate-ping absolute" />
+                      <div className="w-16 h-16 border border-[#4edea3]/40 rounded-full animate-ping absolute" />
+                      <div className="w-4 h-4 bg-[#4edea3] rounded-full z-10 shadow-[0_0_15px_#4edea3] relative flex items-center justify-center">
+                        <div className="absolute -top-6 bg-white text-slate-900 text-[8px] font-bold px-2 py-0.5 rounded whitespace-nowrap">Rider</div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                <div className="flex gap-2 pt-1">
+                {(trackResult.status === 'PAID' || trackResult.status === 'SETTLED') && (
+                  <div className="bg-[#141b2b] border border-amber-500/30 rounded-xl p-4 mt-4 text-center">
+                    {trackResult.feedback || feedbackSubmitted ? (
+                      <div>
+                        <h4 className="text-sm font-black text-[#4edea3] mb-1">Thanks for your feedback!</h4>
+                        <div className="flex justify-center gap-1 my-2">
+                          {[1, 2, 3, 4, 5].map(star => (
+                            <svg key={star} className={`w-5 h-5 ${(trackResult.feedback?.rating || feedbackRating) >= star ? 'text-amber-400' : 'text-slate-600'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-slate-400">"{trackResult.feedback?.comment || feedbackComment}"</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <h4 className="text-sm font-black text-white mb-1">How was your delivery?</h4>
+                        <div className="flex justify-center gap-2 mb-3">
+                          {[1, 2, 3, 4, 5].map(star => (
+                            <button key={star} onClick={() => setFeedbackRating(star)} className="focus:outline-none">
+                              <svg className={`w-8 h-8 ${feedbackRating >= star ? 'text-amber-400' : 'text-slate-700 hover:text-amber-200'} transition-colors`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                            </button>
+                          ))}
+                        </div>
+                        <textarea
+                          placeholder="Leave a comment (optional)..."
+                          value={feedbackComment}
+                          onChange={e => setFeedbackComment(e.target.value)}
+                          className="w-full bg-[#191f2f] border border-slate-700 rounded-xl px-3 py-2 text-[10px] text-white resize-none outline-none focus:border-amber-400 mb-3"
+                          rows={2}
+                        />
+                        <button onClick={handleSubmitFeedback} disabled={!feedbackRating || isSubmittingFeedback} className="w-full py-2 bg-[#fbbf24] hover:bg-amber-400 text-slate-950 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all">Submit Feedback</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex gap-2 mt-4">
                   <button
                     onClick={() => { setTrackResult(null); setTrackId(''); setTrackPhone(''); }}
                     className="flex-1 py-2.5 border border-slate-700 hover:border-slate-500 text-[#d3c5ac] font-bold text-xs uppercase tracking-widest rounded-xl transition-all cursor-pointer"
@@ -890,30 +985,94 @@ export default function LandingMode({
                   sub: trackedOrder?.kdsStatus === 'PREPARING'
                     ? `~${trackedOrder.prepTimeMinutes} mins · Ready by ${trackedOrder.estimatedReadyAt}`
                     : trackedOrder?.kdsStatus === 'READY' ? 'Done ✓' : 'Waiting...',
-                  done: trackedOrder?.kdsStatus === 'PREPARING' || trackedOrder?.kdsStatus === 'READY',
+                  done: trackedOrder?.kdsStatus === 'PREPARING' || trackedOrder?.kdsStatus === 'READY' || trackedOrder?.status === 'DISPATCHED' || trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED',
                 },
                 {
-                  label: 'Ready for Pickup / Delivery',
-                  sub: trackedOrder?.kdsStatus === 'READY' ? 'Your order is ready!' : 'Pending...',
-                  done: trackedOrder?.kdsStatus === 'READY',
+                  label: 'Ready for Delivery',
+                  sub: trackedOrder?.kdsStatus === 'READY' ? 'Food is packed!' : 'Pending...',
+                  done: trackedOrder?.kdsStatus === 'READY' || trackedOrder?.status === 'DISPATCHED' || trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED',
+                },
+                {
+                  label: 'Dispatched',
+                  sub: (trackedOrder?.status === 'DISPATCHED' || trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED') ? 'Rider on the way' : 'Waiting for rider...',
+                  done: trackedOrder?.status === 'DISPATCHED' || trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED',
+                },
+                {
+                  label: 'Delivered',
+                  sub: (trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED') ? 'Cash Collected & Delivered ✓' : 'Pending...',
+                  done: trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED',
                 },
               ].map((step, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <div className={`w-5 h-5 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border-2 transition-all ${
-                    step.done ? 'bg-[#4edea3] border-[#4edea3]' : 'bg-transparent border-slate-600'
+                <div key={i} className="flex items-start gap-3 relative">
+                  {i < 5 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
+                  <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
+                    step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
                   }`}>
-                    {step.done && <CheckCircle2 className="w-3 h-3 text-slate-900" />}
+                    {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
                   </div>
                   <div>
-                    <p className={`text-xs font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
-                    <p className="text-[10px] text-[#d3c5ac]">{step.sub}</p>
+                    <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
+                    <p className="text-[9px] text-[#d3c5ac]">{step.sub}</p>
                   </div>
                 </div>
               ))}
             </div>
 
+            {trackedOrder?.status === 'DISPATCHED' && trackedOrder?.delivery && (
+              <div className="bg-[#141b2b] border border-[#4edea3]/30 rounded-xl overflow-hidden mt-4 mb-4">
+                <div className="bg-[#4edea3]/10 px-4 py-2 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[#4edea3] animate-ping" />
+                  <span className="text-[10px] font-black uppercase text-[#4edea3]">Rider is approaching!</span>
+                </div>
+                <div className="relative h-32 bg-slate-900 w-full overflow-hidden flex items-center justify-center">
+                  <div className="absolute inset-0 border-[0.5px] border-slate-800" style={{ backgroundSize: '20px 20px', backgroundImage: 'linear-gradient(to right, #1e293b 1px, transparent 1px), linear-gradient(to bottom, #1e293b 1px, transparent 1px)' }} />
+                  <div className="w-32 h-32 border border-[#4edea3]/20 rounded-full animate-ping absolute" />
+                  <div className="w-16 h-16 border border-[#4edea3]/40 rounded-full animate-ping absolute" />
+                  <div className="w-4 h-4 bg-[#4edea3] rounded-full z-10 shadow-[0_0_15px_#4edea3] relative flex items-center justify-center">
+                    <div className="absolute -top-6 bg-white text-slate-900 text-[8px] font-bold px-2 py-0.5 rounded whitespace-nowrap">Rider</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED') && (
+              <div className="bg-[#141b2b] border border-amber-500/30 rounded-xl p-4 mt-4 mb-4 text-center">
+                {trackedOrder?.feedback || feedbackSubmitted ? (
+                  <div>
+                    <h4 className="text-sm font-black text-[#4edea3] mb-1">Thanks for your feedback!</h4>
+                    <div className="flex justify-center gap-1 my-2">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <svg key={star} className={`w-5 h-5 ${(trackedOrder?.feedback?.rating || feedbackRating) >= star ? 'text-amber-400' : 'text-slate-600'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-400">"{trackedOrder?.feedback?.comment || feedbackComment}"</p>
+                  </div>
+                ) : (
+                  <div>
+                    <h4 className="text-sm font-black text-white mb-1">How was your delivery?</h4>
+                    <p className="text-[10px] text-slate-400 mb-3">Rate your experience to help us improve</p>
+                    <div className="flex justify-center gap-2 mb-3">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <button key={star} onClick={() => setFeedbackRating(star)} className="focus:outline-none">
+                          <svg className={`w-8 h-8 ${feedbackRating >= star ? 'text-amber-400' : 'text-slate-700 hover:text-amber-200'} transition-colors`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      placeholder="Leave a comment (optional)..."
+                      value={feedbackComment}
+                      onChange={e => setFeedbackComment(e.target.value)}
+                      className="w-full bg-[#191f2f] border border-slate-700 rounded-xl px-3 py-2 text-[10px] text-white resize-none outline-none focus:border-amber-400 mb-3"
+                      rows={2}
+                    />
+                    <button onClick={handleSubmitFeedback} disabled={!feedbackRating || isSubmittingFeedback} className="w-full py-2 bg-[#fbbf24] hover:bg-amber-400 text-slate-950 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all">Submit Feedback</button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Polling indicator */}
-            {trackedOrderId && trackedOrder?.kdsStatus !== 'READY' && (
+            {trackedOrderId && trackedOrder?.status !== 'PAID' && trackedOrder?.status !== 'SETTLED' && (
               <div className="flex items-center gap-2 mb-4 bg-[#141b2b] rounded-xl px-4 py-2 border border-slate-800">
                 <span className="w-2 h-2 rounded-full bg-[#fbbf24] animate-pulse flex-shrink-0"></span>
                 <span className="text-[10px] text-[#d3c5ac]">Live tracking active — updates every 4 seconds</span>
@@ -928,12 +1087,26 @@ export default function LandingMode({
                 </span>
               </div>
             )}
-            <button
-              onClick={() => { setOrderConfirmed(false); }}
-              className="w-full py-3 bg-[#fbbf24] hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-widest rounded-xl transition-all cursor-pointer"
-            >
-              Continue Browsing
-            </button>
+            <div className="flex gap-4 mt-6">
+              <button
+                onClick={() => {
+                  setOrderConfirmed(false);
+                  setTrackId(String(trackedOrderId));
+                  setTrackResult(trackedOrder);
+                  setTrackError('');
+                  setIsTrackOpen(true);
+                }}
+                className="flex-1 py-3.5 bg-[#4edea3] text-slate-950 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all"
+              >
+                Track Your Order
+              </button>
+              <button
+                onClick={() => setOrderConfirmed(false)}
+                className="flex-1 py-3 border border-[#ffe1a7] text-[#ffe1a7] rounded-xl font-bold text-xs uppercase tracking-widest active:scale-95 transition-all hover:bg-[#ffe1a7]/10"
+              >
+                Go back to feeds
+              </button>
+            </div>
           </div>
         </div>
       )}

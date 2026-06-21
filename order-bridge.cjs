@@ -5,9 +5,35 @@
  * No npm install needed — uses Node.js built-in http only
  */
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const DB_FILE = path.join(__dirname, 'live_orders.json');
 
 let orders = [];
 let nextId = 1001;
+
+// Load orders on startup
+if (fs.existsSync(DB_FILE)) {
+  try {
+    const data = fs.readFileSync(DB_FILE, 'utf8');
+    orders = JSON.parse(data);
+    if (orders.length > 0) {
+      nextId = Math.max(...orders.map(o => o.id)) + 1;
+    }
+    console.log(`[BRIDGE] Loaded ${orders.length} orders from live_orders.json`);
+  } catch (err) {
+    console.error('[BRIDGE] Error loading live_orders.json:', err);
+  }
+}
+
+function saveOrders() {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(orders, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[BRIDGE] Error saving live_orders.json:', err);
+  }
+}
 
 // Store rider locations by delivery ID
 let riderLocations = {};
@@ -51,9 +77,10 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const data = JSON.parse(body || '{}');
+        const currentId = nextId++;
         const order = {
-          id: nextId++,
-          orderId: nextId,
+          id: currentId,
+          orderId: currentId,
           status: 'PENDING',
           kdsStatus: 'PENDING',
           type: 'Online',
@@ -66,9 +93,11 @@ const server = http.createServer((req, res) => {
           notes: data.notes || '',
           prepTimeMinutes: 0,
           estimatedReadyAt: '',
+          feedback: null,
           timePlaced: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
         };
         orders.push(order);
+        saveOrders();
         console.log(`[NEW ORDER] #${order.id} — ${order.items}`);
         res.writeHead(201);
         res.end(JSON.stringify({ success: true, order }));
@@ -100,10 +129,42 @@ const server = http.createServer((req, res) => {
         const idx = orders.findIndex(o => o.id === id);
         if (idx > -1) {
           orders[idx] = { ...orders[idx], ...data };
+          saveOrders();
           console.log(`[STATUS UPDATE] Order #${id} → kdsStatus: ${orders[idx].kdsStatus}`);
         }
         res.writeHead(200);
         res.end(JSON.stringify({ success: true }));
+      } catch {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+    return;
+  }
+
+  // POST /online-orders/:id/feedback — Customer sends rating & comments
+  if (req.method === 'POST' && req.url.match(/^\/online-orders\/\d+\/feedback$/)) {
+    const id = parseInt(req.url.split('/')[2]);
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const idx = orders.findIndex(o => o.id === id);
+        if (idx > -1) {
+          orders[idx].feedback = {
+            rating: data.rating || 5,
+            comment: data.comment || '',
+            timestamp: new Date().toISOString()
+          };
+          saveOrders();
+          console.log(`[FEEDBACK] Order #${id} — Rating: ${data.rating}`);
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true }));
+        } else {
+          res.writeHead(404);
+          res.end(JSON.stringify({ error: 'Order not found' }));
+        }
       } catch {
         res.writeHead(400);
         res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -118,6 +179,7 @@ const server = http.createServer((req, res) => {
     const idx = orders.findIndex(o => o.id === id);
     if (idx > -1) {
       orders[idx] = { ...orders[idx], status: 'ACCEPTED', kdsStatus: 'ACCEPTED' };
+      saveOrders();
       console.log(`[ACCEPTED] Order #${id}`);
     }
     res.writeHead(200);
@@ -125,22 +187,34 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // POST /rider-location/:id — Rider app sends live GPS
-  if (req.method === 'POST' && req.url.match(/^\/rider-location\/\d+$/)) {
-    const id = parseInt(req.url.split('/')[2]);
+  // POST /rider/gps — Rider app sends live GPS (Phase 2)
+  if (req.method === 'POST' && req.url === '/rider/gps') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
         const data = JSON.parse(body || '{}');
-        riderLocations[id] = {
-          lat: data.lat,
-          lng: data.lng,
-          updatedAt: new Date().toISOString()
-        };
-        console.log(`[GPS UPDATE] Delivery #${id} -> lat: ${data.lat}, lng: ${data.lng}`);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
+        const id = parseInt(data.orderId);
+        const idx = orders.findIndex(o => o.id === id);
+        
+        if (idx > -1) {
+          orders[idx].delivery = {
+            riderId: data.riderId || 'R1',
+            lat: data.lat,
+            lng: data.lng,
+            lastUpdated: new Date().toISOString()
+          };
+          saveOrders();
+          console.log(`[GPS UPDATE] Order #${id} -> lat: ${data.lat}, lng: ${data.lng}`);
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true }));
+        } else {
+          // Fallback if order not found but we want to store it anyway
+          riderLocations[id] = { lat: data.lat, lng: data.lng, lastUpdated: new Date().toISOString() };
+          console.log(`[GPS UPDATE - FALLBACK] Delivery #${id} -> lat: ${data.lat}, lng: ${data.lng}`);
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true }));
+        }
       } catch {
         res.writeHead(400);
         res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -157,12 +231,34 @@ const server = http.createServer((req, res) => {
       try {
         const data = JSON.parse(body || '{}');
         const bridgeId = parseInt(data.bridgeOrderId);
-        const idx = orders.findIndex(o => o.id === bridgeId);
+        let idx = orders.findIndex(o => o.id === bridgeId);
+
+        // If it's a manual POS delivery, it won't exist in the bridge yet. Create it!
+        if (idx === -1 && data.order) {
+           const newOrder = {
+             id: nextId++,
+             orderId: data.order.id, // POS internal ID
+             status: 'DISPATCHED',
+             kdsStatus: 'DISPATCHED',
+             type: 'Delivery',
+             source: 'POS',
+             customer: data.order.customer || 'Guest',
+             customerAddress: data.order.address || 'Address',
+             items: data.order.items ? data.order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : '',
+             totalAmount: data.order.cod || 0,
+             riderAssigned: true,
+             timePlaced: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+           };
+           orders.push(newOrder);
+           idx = orders.length - 1;
+        }
+
         if (idx > -1) {
           orders[idx].status = 'DISPATCHED';
           orders[idx].kdsStatus = 'DISPATCHED';
           orders[idx].riderAssigned = true;
-          console.log(`[DISPATCHED] Order #${bridgeId} sent to Rider`);
+          saveOrders();
+          console.log(`[DISPATCHED] Order #${orders[idx].id} sent to Rider`);
           res.writeHead(200);
           res.end(JSON.stringify({ success: true, order: orders[idx] }));
         } else {
@@ -179,22 +275,25 @@ const server = http.createServer((req, res) => {
 
   // GET /rider-orders — Rider app fetches assigned orders
   if (req.method === 'GET' && req.url === '/rider-orders') {
-    // For simplicity, returning all DISPATCHED, ACCEPTED, PICKED_UP orders
+    // For simplicity, returning all DISPATCHED, ACCEPTED, PICKED_UP, PAID orders
     const activeRiderOrders = orders.filter(o => 
-      ['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP'].includes(o.status)
+      ['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID'].includes(o.status)
     );
     res.writeHead(200);
     res.end(JSON.stringify(activeRiderOrders));
     return;
   }
 
-  // GET /rider-location/:id — POS polls live GPS
-  if (req.method === 'GET' && req.url.match(/^\/rider-location\/\d+$/)) {
-    const id = parseInt(req.url.split('/')[2]);
-    const loc = riderLocations[id];
-    if (loc) {
+  // GET /rider/gps/:orderId — POS polls live GPS (Phase 2)
+  if (req.method === 'GET' && req.url.match(/^\/rider\/gps\/\d+$/)) {
+    const id = parseInt(req.url.split('/')[3]);
+    const order = orders.find(o => o.id === id);
+    if (order && order.delivery) {
       res.writeHead(200);
-      res.end(JSON.stringify(loc));
+      res.end(JSON.stringify(order.delivery));
+    } else if (riderLocations[id]) {
+      res.writeHead(200);
+      res.end(JSON.stringify(riderLocations[id]));
     } else {
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Location not found' }));
@@ -209,6 +308,7 @@ const server = http.createServer((req, res) => {
     if (idx > -1) {
       orders[idx].status = 'SETTLED';
       orders[idx].kdsStatus = 'SETTLED';
+      saveOrders();
       console.log(`[SETTLED] Order #${id} cash collected by POS`);
       res.writeHead(200);
       res.end(JSON.stringify({ success: true, order: orders[idx] }));

@@ -3,17 +3,12 @@ import {
   Plus, 
   Search, 
   Receipt, 
-  ChefHat, 
   CircleDot, 
-  Clock, 
-  User, 
   UtensilsCrossed, 
-  DollarSign, 
   X,
-  PlusCircle,
   Sparkles
 } from 'lucide-react';
-import type { Order, OrderStatus, OrderItem, Tab } from '../types';
+import type { Order, OrderStatus, OrderItem } from '../types';
 
 interface OrdersViewProps {
   orders: Order[];

@@ -229,10 +229,11 @@ export default function ActiveRideView({
                 )}
                 
                 <button 
-                  onClick={() => onSettle(0)}
-                  className="w-full bg-primary text-slate-900 font-bold py-4 rounded-xl shadow-lg active:scale-[0.98] transition-all mt-4"
+                  onClick={() => activeOrder?.bridgeStatus === 'SETTLED' && onSettle(0)}
+                  disabled={activeOrder?.bridgeStatus !== 'SETTLED'}
+                  className={`w-full font-bold py-4 rounded-xl shadow-lg transition-all mt-4 ${activeOrder?.bridgeStatus === 'SETTLED' ? 'bg-primary text-slate-900 active:scale-[0.98]' : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'}`}
                 >
-                  Close Order
+                  {activeOrder?.bridgeStatus === 'SETTLED' ? 'Close Order' : 'Waiting for Cashier to Settle'}
                 </button>
               </div>
             )}

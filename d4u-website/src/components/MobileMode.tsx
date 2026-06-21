@@ -50,6 +50,16 @@ export default function MobileMode({
   const [trackResult, setTrackResult] = useState<any>(null);
   const [trackError, setTrackError] = useState<string>('');
   const [trackLoading, setTrackLoading] = useState<boolean>(false);
+  const [customerName, setCustomerName] = useState<string>('');
+  const [customerPhone, setCustomerPhone] = useState<string>('');
+  const [customerAddress, setCustomerAddress] = useState<string>('');
+  const [checkoutError, setCheckoutError] = useState<string>('');
+
+  // Feedback states
+  const [feedbackRating, setFeedbackRating] = useState<number>(0);
+  const [feedbackComment, setFeedbackComment] = useState<string>('');
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState<boolean>(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false);
 
   // Poll bridge for live order status
   React.useEffect(() => {
@@ -96,6 +106,12 @@ export default function MobileMode({
   };
 
   const executeCheckout = async () => {
+    if (isCheckingOut) return;
+    if (!customerName.trim() || !customerPhone.trim() || !customerAddress.trim()) {
+      setCheckoutError('Please provide your Name, Phone, and Delivery Address to place the order.');
+      return;
+    }
+    setCheckoutError('');
     setIsCheckingOut(true);
 
     const itemsSummary = cart.map(c => `${c.quantity}x ${c.foodItem.name}`).join(', ');
@@ -105,9 +121,9 @@ export default function MobileMode({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer: 'Mobile Guest',
-          customerPhone: '',
-          customerAddress: '123 Mobile Delivery Lane, Suite 4',
+          customer: customerName,
+          customerPhone: customerPhone,
+          customerAddress: customerAddress,
           items: itemsSummary,
           totalAmount: totalUSD.toFixed(2),
           source: 'Mobile App',
@@ -387,6 +403,15 @@ export default function MobileMode({
               )}
             </div>
 
+            {/* Delivery Details Form */}
+            <div className="pt-4 border-t border-slate-800 space-y-3">
+              <h4 className="text-sm font-bold text-[#ffe1a7]">Delivery Details</h4>
+              <input type="text" placeholder="Full Name *" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-2 text-sm text-white outline-none" />
+              <input type="tel" placeholder="Mobile Number *" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-2 text-sm text-white outline-none" />
+              <textarea placeholder="Complete Delivery Address *" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-2 text-sm text-white outline-none resize-none" rows={2} />
+              {checkoutError && <p className="text-xs text-red-400 font-bold leading-tight">{checkoutError}</p>}
+            </div>
+
             {/* Payment footer */}
             <div className="pt-4 border-t border-slate-800 space-y-4">
               <div className="space-y-1">
@@ -497,12 +522,26 @@ export default function MobileMode({
             </p>
           </div>
 
-          <button
-            onClick={closeCheckoutFlow}
-            className="px-8 py-3 bg-[#ffe1a7] text-slate-950 rounded-xl font-bold text-xs uppercase tracking-wider active:scale-95 transition-all"
-          >
-            Go back to feeds
-          </button>
+          <div className="flex flex-col gap-3 w-full max-w-[250px]">
+            <button
+              onClick={() => {
+                closeCheckoutFlow();
+                setTrackId(String(trackedOrderId));
+                setTrackResult(trackedOrder);
+                setTrackError('');
+                setIsTrackOpen(true);
+              }}
+              className="w-full py-3.5 bg-[#4edea3] hover:bg-emerald-400 text-slate-950 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all"
+            >
+              Track Your Order
+            </button>
+            <button
+              onClick={closeCheckoutFlow}
+              className="w-full py-3 border border-[#ffe1a7] text-[#ffe1a7] rounded-xl font-bold text-xs uppercase tracking-widest active:scale-95 transition-all hover:bg-[#ffe1a7]/10"
+            >
+              Go back to feeds
+            </button>
+          </div>
         </div>
       )}
 
@@ -566,9 +605,7 @@ export default function MobileMode({
                     <span className="text-xs font-black text-[#fbbf24]">${trackResult.totalAmount}</span>
                   </div>
                   <p className="text-[10px] text-[#d3c5ac] leading-relaxed line-clamp-3">{trackResult.items}</p>
-                </div>
-
-                <div className="space-y-3">
+                  <div className="space-y-3">
                   {[
                     { label: 'Order Placed', sub: trackResult.timePlaced || 'Received', done: true },
                     {
@@ -581,19 +618,30 @@ export default function MobileMode({
                       sub: trackResult.kdsStatus === 'PREPARING'
                         ? `~${trackResult.prepTimeMinutes} mins · Ready by ${trackResult.estimatedReadyAt}`
                         : trackResult.kdsStatus === 'READY' ? 'Done ✓' : 'Waiting...',
-                      done: trackResult.kdsStatus === 'PREPARING' || trackResult.kdsStatus === 'READY',
+                      done: trackResult.kdsStatus === 'PREPARING' || trackResult.kdsStatus === 'READY' || trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
                     },
                     {
-                      label: 'Ready for Pickup',
-                      sub: trackResult.kdsStatus === 'READY' ? 'Your order is ready!' : 'Pending...',
-                      done: trackResult.kdsStatus === 'READY',
+                      label: 'Ready for Delivery',
+                      sub: trackResult.kdsStatus === 'READY' ? 'Food is packed!' : 'Pending...',
+                      done: trackResult.kdsStatus === 'READY' || trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
+                    },
+                    {
+                      label: 'Dispatched',
+                      sub: (trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED') ? 'Rider on the way' : 'Waiting for rider...',
+                      done: trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
+                    },
+                    {
+                      label: 'Delivered',
+                      sub: (trackResult.status === 'PAID' || trackResult.status === 'SETTLED') ? 'Cash Collected & Delivered ✓' : 'Pending...',
+                      done: trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
                     },
                   ].map((step, i) => (
-                    <div key={i} className="flex items-start gap-3">
-                      <div className={`w-5 h-5 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border-2 transition-all ${
-                        step.done ? 'bg-[#4edea3] border-[#4edea3]' : 'bg-transparent border-slate-700'
+                    <div key={i} className="flex items-start gap-3 relative">
+                      {i < 5 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
+                      <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
+                        step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
                       }`}>
-                        {step.done && <CheckCircle2 className="w-3 h-3 text-slate-900" />}
+                        {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
                       </div>
                       <div>
                         <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
@@ -603,11 +651,66 @@ export default function MobileMode({
                   ))}
                 </div>
 
-                {trackResult.kdsStatus === 'READY' && (
-                  <div className="bg-[#4edea3]/10 border border-[#4edea3]/30 rounded-xl px-4 py-2 text-center">
-                    <span className="text-xs font-black text-[#4edea3]">Order Ready! Please collect.</span>
+                {trackResult.status === 'DISPATCHED' && trackResult.delivery && (
+                  <div className="bg-[#141b2b] border border-[#4edea3]/30 rounded-xl overflow-hidden mt-4">
+                    <div className="bg-[#4edea3]/10 px-4 py-2 flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-[#4edea3] animate-ping" />
+                      <span className="text-[10px] font-black uppercase text-[#4edea3]">Rider is approaching!</span>
+                    </div>
+                    <div className="relative h-32 bg-slate-900 w-full overflow-hidden flex items-center justify-center">
+                      {/* Fake Radar Map Animation */}
+                      <div className="absolute inset-0 border-[0.5px] border-slate-800" style={{ backgroundSize: '20px 20px', backgroundImage: 'linear-gradient(to right, #1e293b 1px, transparent 1px), linear-gradient(to bottom, #1e293b 1px, transparent 1px)' }} />
+                      <div className="w-32 h-32 border border-[#4edea3]/20 rounded-full animate-ping absolute" />
+                      <div className="w-16 h-16 border border-[#4edea3]/40 rounded-full animate-ping absolute" />
+                      <div className="w-4 h-4 bg-[#4edea3] rounded-full z-10 shadow-[0_0_15px_#4edea3] relative flex items-center justify-center">
+                        <div className="absolute -top-6 bg-white text-slate-900 text-[8px] font-bold px-2 py-0.5 rounded whitespace-nowrap">Rider</div>
+                      </div>
+                    </div>
                   </div>
                 )}
+
+                {(trackResult.status === 'PAID' || trackResult.status === 'SETTLED') && (
+                  <div className="bg-[#141b2b] border border-amber-500/30 rounded-xl p-4 mt-4 text-center">
+                    {trackResult.feedback || feedbackSubmitted ? (
+                      <div>
+                        <h4 className="text-sm font-black text-[#4edea3] mb-1">Thanks for your feedback!</h4>
+                        <div className="flex justify-center gap-1 my-2">
+                          {[1, 2, 3, 4, 5].map(star => (
+                            <svg key={star} className={`w-5 h-5 ${(trackResult.feedback?.rating || feedbackRating) >= star ? 'text-amber-400' : 'text-slate-600'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-slate-400">"{trackResult.feedback?.comment || feedbackComment}"</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <h4 className="text-sm font-black text-white mb-1">How was your delivery?</h4>
+                        <p className="text-[10px] text-slate-400 mb-3">Rate your experience to help us improve</p>
+                        <div className="flex justify-center gap-2 mb-3">
+                          {[1, 2, 3, 4, 5].map(star => (
+                            <button key={star} onClick={() => setFeedbackRating(star)} className="focus:outline-none">
+                              <svg className={`w-8 h-8 ${feedbackRating >= star ? 'text-amber-400' : 'text-slate-700 hover:text-amber-200'} transition-colors`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                            </button>
+                          ))}
+                        </div>
+                        <textarea
+                          placeholder="Leave a comment (optional)..."
+                          value={feedbackComment}
+                          onChange={e => setFeedbackComment(e.target.value)}
+                          className="w-full bg-[#191f2f] border border-slate-700 rounded-xl px-3 py-2 text-[10px] text-white resize-none outline-none focus:border-amber-400 mb-3"
+                          rows={2}
+                        />
+                        <button
+                          onClick={handleSubmitFeedback}
+                          disabled={!feedbackRating || isSubmittingFeedback}
+                          className="w-full py-2 bg-[#fbbf24] hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+                        >
+                          {isSubmittingFeedback ? 'Submitting...' : 'Submit Feedback'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                </div>
 
                 <div className="flex gap-2 pt-1">
                   <button
