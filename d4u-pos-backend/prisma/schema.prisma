@@ -169,3 +169,29 @@ model OrderItem {
   order   Order   @relation(fields: [order_id], references: [id])
   product Product @relation(fields: [product_id], references: [id])
 }
+
+// -------------------------------------------------------------
+// ONLINE ORDERS & TRACKING QUEUE
+// -------------------------------------------------------------
+model OnlineOrder {
+  id               Int      @id @default(autoincrement())
+  orderId          Int?
+  status           String   @default("PENDING") // PENDING, ACCEPTED, DISPATCHED, SETTLED
+  kdsStatus        String   @default("PENDING") // PENDING, ACCEPTED, PREPARING, READY
+  type             String   @default("Online")
+  source           String
+  customer         String
+  customerPhone    String   @default("")
+  customerAddress  String   @default("")
+  items            String   // JSON string of items ordered or raw text description
+  totalAmount      String
+  notes            String   @default("")
+  prepTimeMinutes  Int      @default(0)
+  estimatedReadyAt String   @default("")
+  timePlaced       String
+  riderAssigned    Boolean  @default(false)
+  feedback         Json?
+  delivery         Json?
+  createdAt        DateTime @default(now())
+}
+

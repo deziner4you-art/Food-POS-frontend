@@ -7,10 +7,11 @@ import { InventoryModule } from './inventory/inventory.module';
 import { DealModule } from './deal/deal.module';
 import { MarketingModule } from './marketing/marketing.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { AppGateway } from './app.gateway';
 
 @Module({
   imports: [AuthModule, PrismaModule, InventoryModule, DealModule, MarketingModule, CatalogModule],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, AppGateway],
 })
 export class AppModule {}

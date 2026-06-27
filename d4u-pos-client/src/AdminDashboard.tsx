@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TrendingUp, Users, DollarSign, Star, ShoppingBag, ArrowUpRight, Database, Download, Upload } from 'lucide-react';
 import { db } from './db';
+const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
 export default function AdminDashboard({ posSales }: { posSales: number }) {
   const [onlineOrders, setOnlineOrders] = useState<any[]>([]);
@@ -9,7 +10,7 @@ export default function AdminDashboard({ posSales }: { posSales: number }) {
   useEffect(() => {
     const fetchOrders = async () => {
       try {
-        const res = await fetch('http://localhost:3001/online-orders');
+        const res = await fetch(`${BACKEND_URL}/online-orders`);
         if (res.ok) setOnlineOrders(await res.json());
       } catch (e) {}
     };

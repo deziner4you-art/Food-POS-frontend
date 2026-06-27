@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DeliveryStatus, DeliveryOrder, SavedCompletedMission, RiderStats } from './types';
 import { INITIAL_PAST_MISSIONS } from './data';
+const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 import { generateGridPath } from './utils';
 
 // New Components
@@ -71,7 +72,7 @@ export default function App() {
   // Sync Live GPS coordinates to the Bridge
   useEffect(() => {
     if (activeOrder && driverCoords) {
-      fetch(`http://localhost:3001/rider/gps`, {
+      fetch(`${BACKEND_URL}/rider/gps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId: activeOrder.id, lat: driverCoords.y, lng: driverCoords.x })
@@ -111,7 +112,7 @@ export default function App() {
   const updateBridgeStatus = async (bridgeStatus: string) => {
     if (!activeOrder) return;
     try {
-      await fetch(`http://localhost:3001/online-orders/${activeOrder.id}`, {
+      await fetch(`${BACKEND_URL}/online-orders/${activeOrder.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: bridgeStatus })
@@ -124,7 +125,7 @@ export default function App() {
     if (!isOnline || activeOrder) return;
     const poll = async () => {
       try {
-        const res = await fetch('http://localhost:3001/rider-orders');
+        const res = await fetch(`${BACKEND_URL}/rider-orders`);
         if (res.ok) {
           const orders = await res.json();
           console.log('[RIDER POLL] Fetched orders:', orders);
@@ -171,7 +172,7 @@ export default function App() {
     const poll = async () => {
       try {
         if (activeOrder) {
-          const res = await fetch(`http://localhost:3001/online-orders/${activeOrder.id}`);
+          const res = await fetch(`${BACKEND_URL}/online-orders/${activeOrder.id}`);
           if (res.ok) {
             const order = await res.json();
             setActiveOrder(prev => prev ? { ...prev, estimatedReadyAt: order.estimatedReadyAt, bridgeStatus: order.kdsStatus } : null);
@@ -180,7 +181,7 @@ export default function App() {
         
         // Poll for settlements in completed ledger
         if (completedLedger.some(m => !m.settled)) {
-          const res = await fetch('http://localhost:3001/online-orders');
+          const res = await fetch(`${BACKEND_URL}/online-orders`);
           if (res.ok) {
             const allOrders = await res.json();
             setCompletedLedger(prev => prev.map(m => {

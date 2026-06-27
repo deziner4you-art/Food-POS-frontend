@@ -2,18 +2,33 @@
  * D4U Online Order Bridge
  * Run: node order-bridge.cjs
  * Port: 3001
- * No npm install needed — uses Node.js built-in http only
+ * Uses Express and Socket.io for Real-time sync
  */
+const express = require('express');
 const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PATCH", "DELETE"]
+  }
+});
 
 const DB_FILE = path.join(__dirname, 'live_orders.json');
 
 let orders = [];
 let nextId = 1001;
+let riderLocations = {};
 
-// Load orders on startup
 if (fs.existsSync(DB_FILE)) {
   try {
     const data = fs.readFileSync(DB_FILE, 'utf8');
@@ -35,297 +50,235 @@ function saveOrders() {
   }
 }
 
-// Store rider locations by delivery ID
-let riderLocations = {};
+// Socket connection
+io.on('connection', (socket) => {
+  console.log(`[SOCKET] Client connected: ${socket.id}`);
+  socket.on('disconnect', () => {
+    console.log(`[SOCKET] Client disconnected: ${socket.id}`);
+  });
+});
 
-const server = http.createServer((req, res) => {
-  // CORS headers — allow all origins (website :5200, POS :5174)
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Content-Type', 'application/json');
+// GET /online-orders
+app.get('/online-orders', (req, res) => {
+  const phone = req.query.phone;
+  if (phone) {
+    const customerOrders = orders.filter(o => o.customerPhone === phone);
+    return res.json(customerOrders);
+  } else {
+    const pending = orders.filter(o => o.status === 'PENDING');
+    return res.json(pending);
+  }
+});
 
-  // Preflight
-  if (req.method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
-    return;
+// POST /online-orders
+app.post('/online-orders', (req, res) => {
+  try {
+    const data = req.body;
+    const currentId = nextId++;
+    const order = {
+      id: currentId,
+      orderId: currentId,
+      status: 'PENDING',
+      kdsStatus: 'PENDING',
+      type: 'Online',
+      source: data.source || 'Website',
+      customer: data.customer || 'Online Guest',
+      customerPhone: data.customerPhone || '',
+      customerAddress: data.customerAddress || 'No Address Provided',
+      items: data.items || '',
+      totalAmount: data.totalAmount || '0.00',
+      notes: data.notes || '',
+      prepTimeMinutes: 0,
+      estimatedReadyAt: '',
+      feedback: null,
+      timePlaced: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+    };
+    orders.push(order);
+    saveOrders();
+    console.log(`[NEW ORDER] #${order.id} — ${order.items}`);
+    
+    // Emit event
+    io.emit('new_order', order);
+    
+    res.status(201).json({ success: true, order });
+  } catch (err) {
+    res.status(400).json({ error: 'Failed to process order' });
+  }
+});
+
+// GET /online-orders/:id
+app.get('/online-orders/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const order = orders.find(o => o.id === id);
+  if (order) return res.json(order);
+  res.status(404).json({ error: 'Not found' });
+});
+
+// PATCH /online-orders/:id
+app.patch('/online-orders/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const data = req.body;
+  const idx = orders.findIndex(o => o.id === id);
+  if (idx > -1) {
+    orders[idx] = { ...orders[idx], ...data };
+    saveOrders();
+    console.log(`[STATUS UPDATE] Order #${id} → kdsStatus: ${orders[idx].kdsStatus}`);
+    
+    // Emit event
+    io.emit('order_updated', orders[idx]);
+    
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
+// POST /online-orders/:id/feedback
+app.post('/online-orders/:id/feedback', (req, res) => {
+  const id = parseInt(req.params.id);
+  const data = req.body;
+  const idx = orders.findIndex(o => o.id === id);
+  if (idx > -1) {
+    orders[idx].feedback = {
+      rating: data.rating || 5,
+      comment: data.comment || '',
+      timestamp: new Date().toISOString()
+    };
+    saveOrders();
+    console.log(`[FEEDBACK] Order #${id} — Rating: ${data.rating}`);
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'Order not found' });
+  }
+});
+
+// DELETE /online-orders/:id
+app.delete('/online-orders/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const idx = orders.findIndex(o => o.id === id);
+  if (idx > -1) {
+    orders[idx] = { ...orders[idx], status: 'ACCEPTED', kdsStatus: 'ACCEPTED' };
+    saveOrders();
+    console.log(`[ACCEPTED] Order #${id}`);
+    
+    // Emit event
+    io.emit('order_updated', orders[idx]);
+  }
+  res.json({ success: true });
+});
+
+// POST /rider/gps
+app.post('/rider/gps', (req, res) => {
+  const data = req.body;
+  const id = parseInt(data.orderId);
+  const idx = orders.findIndex(o => o.id === id);
+  
+  if (idx > -1) {
+    orders[idx].delivery = {
+      riderId: data.riderId || 'R1',
+      lat: data.lat,
+      lng: data.lng,
+      lastUpdated: new Date().toISOString()
+    };
+    saveOrders();
+    console.log(`[GPS UPDATE] Order #${id} -> lat: ${data.lat}, lng: ${data.lng}`);
+    
+    // Emit GPS event to POS/Website
+    io.emit('gps_update', { orderId: id, lat: data.lat, lng: data.lng });
+    
+    res.json({ success: true });
+  } else {
+    riderLocations[id] = { lat: data.lat, lng: data.lng, lastUpdated: new Date().toISOString() };
+    console.log(`[GPS UPDATE - FALLBACK] Delivery #${id} -> lat: ${data.lat}, lng: ${data.lng}`);
+    
+    io.emit('gps_update', { orderId: id, lat: data.lat, lng: data.lng });
+    
+    res.json({ success: true });
+  }
+});
+
+// POST /dispatch-order
+app.post('/dispatch-order', (req, res) => {
+  const data = req.body;
+  const bridgeId = parseInt(data.bridgeOrderId);
+  let idx = orders.findIndex(o => o.id === bridgeId);
+
+  if (idx === -1 && data.order) {
+     const newOrder = {
+       id: nextId++,
+       orderId: data.order.id, 
+       status: 'DISPATCHED',
+       kdsStatus: 'DISPATCHED',
+       type: 'Delivery',
+       source: 'POS',
+       customer: data.order.customer || 'Guest',
+       customerAddress: data.order.address || 'Address',
+       items: data.order.items ? data.order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : '',
+       totalAmount: data.order.cod || 0,
+       riderAssigned: true,
+       timePlaced: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+     };
+     orders.push(newOrder);
+     idx = orders.length - 1;
   }
 
-  // GET /online-orders — POS polls (no phone) OR website polls by phone
-  if (req.method === 'GET' && req.url && req.url.startsWith('/online-orders') && !req.url.match(/^\/online-orders\/\d+$/)) {
-    const urlObj = new URL(req.url, 'http://localhost:3001');
-    const phone = urlObj.searchParams.get('phone');
-    if (phone) {
-      // Customer's own orders — all statuses
-      const customerOrders = orders.filter(o => o.customerPhone === phone);
-      res.writeHead(200);
-      res.end(JSON.stringify(customerOrders));
-    } else {
-      // POS polling — only PENDING orders
-      const pending = orders.filter(o => o.status === 'PENDING');
-      res.writeHead(200);
-      res.end(JSON.stringify(pending));
-    }
-    return;
+  if (idx > -1) {
+    orders[idx].status = 'DISPATCHED';
+    orders[idx].kdsStatus = 'DISPATCHED';
+    orders[idx].riderAssigned = true;
+    saveOrders();
+    console.log(`[DISPATCHED] Order #${orders[idx].id} sent to Rider`);
+    
+    io.emit('order_updated', orders[idx]);
+    
+    res.json({ success: true, order: orders[idx] });
+  } else {
+    res.status(404).json({ error: 'Order not found in bridge' });
   }
+});
 
-  // POST /online-orders — website sends order here
-  if (req.method === 'POST' && req.url === '/online-orders') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const data = JSON.parse(body || '{}');
-        const currentId = nextId++;
-        const order = {
-          id: currentId,
-          orderId: currentId,
-          status: 'PENDING',
-          kdsStatus: 'PENDING',
-          type: 'Online',
-          source: data.source || 'Website',
-          customer: data.customer || 'Online Guest',
-          customerPhone: data.customerPhone || '',
-          customerAddress: data.customerAddress || 'No Address Provided',
-          items: data.items || '',
-          totalAmount: data.totalAmount || '0.00',
-          notes: data.notes || '',
-          prepTimeMinutes: 0,
-          estimatedReadyAt: '',
-          feedback: null,
-          timePlaced: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        };
-        orders.push(order);
-        saveOrders();
-        console.log(`[NEW ORDER] #${order.id} — ${order.items}`);
-        res.writeHead(201);
-        res.end(JSON.stringify({ success: true, order }));
-      } catch {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: 'Invalid JSON' }));
-      }
-    });
-    return;
+// GET /rider-orders
+app.get('/rider-orders', (req, res) => {
+  const activeRiderOrders = orders.filter(o => 
+    ['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID'].includes(o.status)
+  );
+  res.json(activeRiderOrders);
+});
+
+// GET /rider/gps/:orderId
+app.get('/rider/gps/:orderId', (req, res) => {
+  const id = parseInt(req.params.orderId);
+  const order = orders.find(o => o.id === id);
+  if (order && order.delivery) {
+    res.json(order.delivery);
+  } else if (riderLocations[id]) {
+    res.json(riderLocations[id]);
+  } else {
+    res.status(404).json({ error: 'Location not found' });
   }
+});
 
-  // GET /online-orders/:id — Website polls for tracking status
-  if (req.method === 'GET' && req.url.match(/^\/online-orders\/\d+$/)) {
-    const id = parseInt(req.url.split('/')[2]);
-    const order = orders.find(o => o.id === id);
-    if (order) { res.writeHead(200); res.end(JSON.stringify(order)); }
-    else { res.writeHead(404); res.end(JSON.stringify({ error: 'Not found' })); }
-    return;
+// POST /settle-order/:id
+app.post('/settle-order/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const idx = orders.findIndex(o => o.id === id);
+  if (idx > -1) {
+    orders[idx].status = 'SETTLED';
+    orders[idx].kdsStatus = 'SETTLED';
+    saveOrders();
+    console.log(`[SETTLED] Order #${id} cash collected by POS`);
+    
+    io.emit('order_updated', orders[idx]);
+    
+    res.json({ success: true, order: orders[idx] });
+  } else {
+    res.status(404).json({ error: 'Order not found' });
   }
-
-  // PATCH /online-orders/:id — KDS syncs status updates (ACCEPTED, PREPARING, READY)
-  if (req.method === 'PATCH' && req.url.match(/^\/online-orders\/\d+$/)) {
-    const id = parseInt(req.url.split('/')[2]);
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const data = JSON.parse(body || '{}');
-        const idx = orders.findIndex(o => o.id === id);
-        if (idx > -1) {
-          orders[idx] = { ...orders[idx], ...data };
-          saveOrders();
-          console.log(`[STATUS UPDATE] Order #${id} → kdsStatus: ${orders[idx].kdsStatus}`);
-        }
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true }));
-      } catch {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: 'Invalid JSON' }));
-      }
-    });
-    return;
-  }
-
-  // POST /online-orders/:id/feedback — Customer sends rating & comments
-  if (req.method === 'POST' && req.url.match(/^\/online-orders\/\d+\/feedback$/)) {
-    const id = parseInt(req.url.split('/')[2]);
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const data = JSON.parse(body || '{}');
-        const idx = orders.findIndex(o => o.id === id);
-        if (idx > -1) {
-          orders[idx].feedback = {
-            rating: data.rating || 5,
-            comment: data.comment || '',
-            timestamp: new Date().toISOString()
-          };
-          saveOrders();
-          console.log(`[FEEDBACK] Order #${id} — Rating: ${data.rating}`);
-          res.writeHead(200);
-          res.end(JSON.stringify({ success: true }));
-        } else {
-          res.writeHead(404);
-          res.end(JSON.stringify({ error: 'Order not found' }));
-        }
-      } catch {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: 'Invalid JSON' }));
-      }
-    });
-    return;
-  }
-
-  // DELETE /online-orders/:id — POS accepts order
-  if (req.method === 'DELETE' && req.url.startsWith('/online-orders/')) {
-    const id = parseInt(req.url.split('/')[2]);
-    const idx = orders.findIndex(o => o.id === id);
-    if (idx > -1) {
-      orders[idx] = { ...orders[idx], status: 'ACCEPTED', kdsStatus: 'ACCEPTED' };
-      saveOrders();
-      console.log(`[ACCEPTED] Order #${id}`);
-    }
-    res.writeHead(200);
-    res.end(JSON.stringify({ success: true }));
-    return;
-  }
-
-  // POST /rider/gps — Rider app sends live GPS (Phase 2)
-  if (req.method === 'POST' && req.url === '/rider/gps') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const data = JSON.parse(body || '{}');
-        const id = parseInt(data.orderId);
-        const idx = orders.findIndex(o => o.id === id);
-        
-        if (idx > -1) {
-          orders[idx].delivery = {
-            riderId: data.riderId || 'R1',
-            lat: data.lat,
-            lng: data.lng,
-            lastUpdated: new Date().toISOString()
-          };
-          saveOrders();
-          console.log(`[GPS UPDATE] Order #${id} -> lat: ${data.lat}, lng: ${data.lng}`);
-          res.writeHead(200);
-          res.end(JSON.stringify({ success: true }));
-        } else {
-          // Fallback if order not found but we want to store it anyway
-          riderLocations[id] = { lat: data.lat, lng: data.lng, lastUpdated: new Date().toISOString() };
-          console.log(`[GPS UPDATE - FALLBACK] Delivery #${id} -> lat: ${data.lat}, lng: ${data.lng}`);
-          res.writeHead(200);
-          res.end(JSON.stringify({ success: true }));
-        }
-      } catch {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: 'Invalid JSON' }));
-      }
-    });
-    return;
-  }
-
-  // POST /dispatch-order — POS sends order to Rider
-  if (req.method === 'POST' && req.url === '/dispatch-order') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const data = JSON.parse(body || '{}');
-        const bridgeId = parseInt(data.bridgeOrderId);
-        let idx = orders.findIndex(o => o.id === bridgeId);
-
-        // If it's a manual POS delivery, it won't exist in the bridge yet. Create it!
-        if (idx === -1 && data.order) {
-           const newOrder = {
-             id: nextId++,
-             orderId: data.order.id, // POS internal ID
-             status: 'DISPATCHED',
-             kdsStatus: 'DISPATCHED',
-             type: 'Delivery',
-             source: 'POS',
-             customer: data.order.customer || 'Guest',
-             customerAddress: data.order.address || 'Address',
-             items: data.order.items ? data.order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : '',
-             totalAmount: data.order.cod || 0,
-             riderAssigned: true,
-             timePlaced: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-           };
-           orders.push(newOrder);
-           idx = orders.length - 1;
-        }
-
-        if (idx > -1) {
-          orders[idx].status = 'DISPATCHED';
-          orders[idx].kdsStatus = 'DISPATCHED';
-          orders[idx].riderAssigned = true;
-          saveOrders();
-          console.log(`[DISPATCHED] Order #${orders[idx].id} sent to Rider`);
-          res.writeHead(200);
-          res.end(JSON.stringify({ success: true, order: orders[idx] }));
-        } else {
-          res.writeHead(404);
-          res.end(JSON.stringify({ error: 'Order not found in bridge' }));
-        }
-      } catch (e) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: 'Invalid JSON' }));
-      }
-    });
-    return;
-  }
-
-  // GET /rider-orders — Rider app fetches assigned orders
-  if (req.method === 'GET' && req.url === '/rider-orders') {
-    // For simplicity, returning all DISPATCHED, ACCEPTED, PICKED_UP, PAID orders
-    const activeRiderOrders = orders.filter(o => 
-      ['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID'].includes(o.status)
-    );
-    res.writeHead(200);
-    res.end(JSON.stringify(activeRiderOrders));
-    return;
-  }
-
-  // GET /rider/gps/:orderId — POS polls live GPS (Phase 2)
-  if (req.method === 'GET' && req.url.match(/^\/rider\/gps\/\d+$/)) {
-    const id = parseInt(req.url.split('/')[3]);
-    const order = orders.find(o => o.id === id);
-    if (order && order.delivery) {
-      res.writeHead(200);
-      res.end(JSON.stringify(order.delivery));
-    } else if (riderLocations[id]) {
-      res.writeHead(200);
-      res.end(JSON.stringify(riderLocations[id]));
-    } else {
-      res.writeHead(404);
-      res.end(JSON.stringify({ error: 'Location not found' }));
-    }
-    return;
-  }
-
-  // POST /settle-order/:id — POS settles cash for a COD order
-  if (req.method === 'POST' && req.url.match(/^\/settle-order\/\d+$/)) {
-    const id = parseInt(req.url.split('/')[2]);
-    const idx = orders.findIndex(o => o.id === id);
-    if (idx > -1) {
-      orders[idx].status = 'SETTLED';
-      orders[idx].kdsStatus = 'SETTLED';
-      saveOrders();
-      console.log(`[SETTLED] Order #${id} cash collected by POS`);
-      res.writeHead(200);
-      res.end(JSON.stringify({ success: true, order: orders[idx] }));
-    } else {
-      res.writeHead(404);
-      res.end(JSON.stringify({ error: 'Order not found' }));
-    }
-    return;
-  }
-
-  res.writeHead(404);
-  res.end(JSON.stringify({ error: 'Not found' }));
 });
 
 server.listen(3001, () => {
   console.log('');
-  console.log('  D4U Order Bridge running on http://localhost:3001');
+  console.log('  D4U Order Bridge (Express + Socket.io) running on http://localhost:3001');
   console.log('  Website  → POST  http://localhost:3001/online-orders');
   console.log('  POS      → GET   http://localhost:3001/online-orders');
   console.log('  POS      → POST  http://localhost:3001/dispatch-order');

@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, MoreHorizontal, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, BarChart2 } from 'lucide-react'
+import { io } from 'socket.io-client';
+
+const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const socket = io(BACKEND_URL);
+import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, Receipt } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db';
 import KitchenDisplay from './StitchKDS'
@@ -163,7 +167,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: typeof USERS[0]) => void }) 
   );
 }
 
-function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; dayStartTime: Date }) {
+function POSApp({ currentUser: _currentUser, dayStartTime }: { currentUser: typeof USERS[0]; dayStartTime: Date }) {
   const [activeMenu, setActiveMenu] = useState('Home');
   const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
   const lowStockItems = inventoryItems.filter(ing => ing.currentStock <= ing.warningThreshold);
@@ -183,6 +187,8 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
   const [cashierLoginName, setCashierLoginName] = useState('');
   const [heldOrders, setHeldOrders] = useState<any[]>([])
   const [toast, setToast] = useState<{message: string, type: 'success' | 'info' | 'error'} | null>(null);
+  const [kotSearchQuery, setKotSearchQuery] = useState('');
+  const [kotStatusFilter, setKotStatusFilter] = useState('ALL');
 
   const [posSettings, setPosSettings] = useState(() => {
     const saved = localStorage.getItem('d4u_pos_settings');
@@ -223,10 +229,9 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
   // (Duplicates removed)
   const [isCashedOut, setIsCashedOut] = useState<boolean>(false);
 
-  const [phoneSearch, setPhoneSearch] = useState('')
   const [selectedChatId, setSelectedChatId] = useState(1)
 
-  const [activeShift, setActiveShift] = useState<'Shift 1' | 'Shift 2'>('Shift 1');
+  const [activeShift] = useState<'Shift 1' | 'Shift 2'>('Shift 1');
   const [shift1Sales, setShift1Sales] = useState(14500);
   const [shift2Sales, setShift2Sales] = useState(10000);
 
@@ -234,17 +239,29 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
   const [customItemPrice, setCustomItemPrice] = useState('');
   const [customItemCode, setCustomItemCode] = useState('');
   const [customItemCategory, setCustomItemCategory] = useState<number>(0);
-  const [customItemImage, setCustomItemImage] = useState('');
+  // customItemImage removed because it was unused
 
   const resetCustomItemForm = () => {
     setCustomItemName('');
     setCustomItemPrice('');
     setCustomItemCode('');
     setCustomItemCategory(0);
-    setCustomItemImage('');
   };
 
   const kots = useLiveQuery(() => db.kots.toArray()) || [];
+  const filteredKots = kots
+    .filter(k => {
+      const query = kotSearchQuery.toLowerCase().trim();
+      const matchesSearch = !query || 
+        k.orderId.toString().includes(query) || 
+        (k.customer && k.customer.toLowerCase().includes(query)) ||
+        (k.items && k.items.toLowerCase().includes(query));
+      
+      const matchesStatus = kotStatusFilter === 'ALL' || k.status === kotStatusFilter;
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => (b.id || 0) - (a.id || 0));
+
   const mappedOrders: Order[] = kots.map(kot => {
     let parsedItems: any[] = [];
     try {
@@ -283,8 +300,6 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
     };
   });
 
-  const [editingKotId, setEditingKotId] = useState<number | null>(null);
-  const [editingPrepTime, setEditingPrepTime] = useState<string>('');
   const [orderNotes, setOrderNotes] = useState('');
 
   const onlineOrdersList = useLiveQuery(
@@ -294,12 +309,13 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
   // Fetch online orders from backend (website orders)
   const [backendOnlineOrders, setBackendOnlineOrders] = useState<any[]>([]);
   useEffect(() => {
-    const fetchOrders = async () => {
+    // Initial fetch
+    const fetchInitialData = async () => {
       try {
-        const res = await fetch('http://localhost:3001/online-orders');
+        const res = await fetch(`${BACKEND_URL}/online-orders`);
         if (res.ok) setBackendOnlineOrders(await res.json());
 
-        const riderRes = await fetch('http://localhost:3001/rider-orders');
+        const riderRes = await fetch(`${BACKEND_URL}/rider-orders`);
         if (riderRes.ok) {
           const riderOrders: any[] = await riderRes.json();
           setActiveDeliveries(prev => {
@@ -318,11 +334,53 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
             return changed ? updated : prev;
           });
         }
-      } catch { /* backend offline — skip */ }
+      } catch { /* backend offline */ }
     };
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 5000);
-    return () => clearInterval(interval);
+    fetchInitialData();
+
+    const handleNewOrder = (order: any) => {
+      setBackendOnlineOrders(prev => {
+        if (!prev.find(o => o.id === order.id)) return [...prev, order];
+        return prev;
+      });
+    };
+
+    const handleOrderUpdated = (order: any) => {
+      setBackendOnlineOrders(prev => {
+        const idx = prev.findIndex(o => o.id === order.id);
+        if (idx > -1) {
+          const arr = [...prev];
+          arr[idx] = order;
+          return arr;
+        }
+        return prev;
+      });
+
+      if (['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'DELIVERED', 'PAID', 'SETTLED'].includes(order.status)) {
+        setActiveDeliveries(prev => {
+          const updated = [...prev];
+          const existIdx = updated.findIndex(d => d.bridgeOrderId === order.id);
+          if (existIdx > -1) {
+            let newStatus = order.status;
+            if (order.status === 'RIDER_ACCEPTED') newStatus = 'ON_WAY';
+            if (order.status === 'PICKED_UP') newStatus = 'ON_WAY';
+            if (order.status === 'DELIVERED' || order.status === 'PAID') newStatus = 'DELIVERED_PENDING_SETTLEMENT';
+            if (newStatus !== updated[existIdx].status) {
+              updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: 'Active Rider' };
+            }
+          }
+          return updated;
+        });
+      }
+    };
+
+    socket.on('new_order', handleNewOrder);
+    socket.on('order_updated', handleOrderUpdated);
+    
+    return () => {
+      socket.off('new_order', handleNewOrder);
+      socket.off('order_updated', handleOrderUpdated);
+    };
   }, []);
 
   const allOnlineOrders = [...onlineOrdersList, ...backendOnlineOrders];
@@ -419,7 +477,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
         newlyPreparing.forEach(async kot => {
           if (kot.type === 'Delivery' && kot.bridgeOrderId) {
             try {
-              await fetch(`http://localhost:3001/online-orders/${kot.bridgeOrderId}`, {
+              await fetch(`${BACKEND_URL}/online-orders/${kot.bridgeOrderId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -455,25 +513,17 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
     prevKotsRef.current = [...kots];
   }, [kots]);
 
-  // Poll Rider Locations for Map Tracking
   useEffect(() => {
-    if (activeMenu !== 'Delivery' || activeDeliveries.length === 0) return;
-    const pollLocations = async () => {
-      for (const del of activeDeliveries) {
-        if (del.status === 'DISPATCHED' || del.status === 'ON_WAY' || del.status === 'PICKED_UP' || del.status === 'DELIVERED_PENDING_SETTLEMENT') {
-           try {
-             const res = await fetch(`http://localhost:3001/rider/gps/${del.bridgeOrderId}`);
-             if (res.ok) {
-               const loc = await res.json();
-               setActiveDeliveries(prev => prev.map(d => d.id === del.id ? { ...d, lat: loc.lat + '%', lng: loc.lng + '%' } : d));
-             }
-           } catch {}
-        }
-      }
+    const handleGpsUpdate = (data: any) => {
+      setActiveDeliveries(prev => prev.map(d => 
+        d.bridgeOrderId === data.orderId 
+          ? { ...d, lat: data.lat + '%', lng: data.lng + '%' } 
+          : d
+      ));
     };
-    const interval = setInterval(pollLocations, 2000);
-    return () => clearInterval(interval);
-  }, [activeMenu, activeDeliveries.length]);
+    socket.on('gps_update', handleGpsUpdate);
+    return () => { socket.off('gps_update', handleGpsUpdate); };
+  }, []);
 
   const addToCart = (product: any) => {
     setCart(prev => {
@@ -575,7 +625,6 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
   ];
 
   const handleConvertWhatsAppOrder = (chat: typeof simulatedChats[0]) => {
-    setPhoneSearch(chat.phone);
     handleRepeatOrder(chat.repeatItems);
   };
 
@@ -616,18 +665,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
     setOrderNotes('');
   };
 
-  const handleReprintKOT = (kot: any) => {
-    if (kot.printCount > 0) {
-      if (!posSettings.duplicateKOTEnabled) {
-        setToast({ message: "Duplicate KOTs are disabled in settings.", type: 'error' });
-        return;
-      }
-      setPendingDuplicateKot(kot);
-      setModalType('MANAGER_AUTH');
-    } else {
-      triggerKotPrint(kot);
-    }
-  };
+  // handleReprintKOT removed because it was unused
 
   const triggerKotPrint = async (kot: any) => {
     if (posSettings.kotMode !== 'PRINT') return;
@@ -657,7 +695,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
 
     // Patch bridge: kdsStatus → NEW_KOT
     try {
-        await fetch(`http://localhost:3001/online-orders/${order.id}`, {
+        await fetch(`${BACKEND_URL}/online-orders/${order.id}`, {
         method: 'DELETE'
       });
       // Immediately remove from local UI so it disappears from Online tab
@@ -766,28 +804,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
     return <TVDisplay />;
   }
 
-  // Poll for live rider GPS location from Bridge
-  useEffect(() => {
-    if (activeMenu !== 'Delivery') return;
-    const selectedId = selectedDeliveryId || (activeDeliveries.length > 0 ? activeDeliveries[0].id : null);
-    if (!selectedId) return;
-
-    let timerId = setInterval(async () => {
-      const selectedDel = activeDeliveries.find(d => d.id === selectedId);
-      if (!selectedDel || !selectedDel.bridgeOrderId) return;
-      try {
-        const res = await fetch(`http://localhost:3001/rider/gps/${selectedDel.bridgeOrderId}`);
-        if (res.ok) {
-          const loc = await res.json();
-          setActiveDeliveries(prev => prev.map(d => 
-            d.id === selectedId ? { ...d, lat: loc.lat + '%', lng: loc.lng + '%' } : d
-          ));
-        }
-      } catch (err) {}
-    }, 2000);
-
-    return () => clearInterval(timerId);
-  }, [activeMenu, selectedDeliveryId, activeDeliveries.length]);
+  // Real-time GPS sync handled globally by WebSockets above
 
   return (
     <div className="pos-layout" onClick={() => showMoreMenu && setShowMoreMenu(false)}>
@@ -868,7 +885,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'nowrap', overflowX: 'auto', flex: 1, justifyItems: 'flex-end', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'nowrap', flex: 1, justifyItems: 'flex-end', justifyContent: 'flex-end' }}>
             
             {/* Date Time Block */}
             {activeMenu !== 'Dashboard' && (
@@ -1012,30 +1029,102 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
           </>
         )}
 
-        {/* KOT MONITOR VIEW */}
+        {/* KOT MONITOR & HISTORY VIEW */}
         {activeMenu === 'KOT' && (
-          <div style={{ padding: '20px', background: 'var(--bg-panel)', borderRadius: 'var(--radius-lg)', flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ color: 'var(--accent-yellow)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <ChefHat size={28} /> Kitchen Orders (Watch Only)
-              </h2>
-              {posSettings.kotMode === 'SCREEN' && (
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                   <span style={{ color: 'var(--accent-green)', fontWeight: 'bold' }}>Screen Mode Active</span>
-                   <button className="btn-action btn-order" onClick={() => window.open('/kitchen', '_blank')} style={{ padding: '10px 20px' }}>
-                     Open Kitchen Screen
-                   </button>
-                 </div>
-              )}
+          <div style={{ display: 'flex', gap: '20px', flex: 1, height: '100%', minHeight: 0 }}>
+            {/* Left Side: KOT History / Log (40% width) */}
+            <div style={{ width: '40%', background: 'var(--bg-panel)', borderRadius: 'var(--radius-lg)', padding: '20px', display: 'flex', flexDirection: 'column', border: '1px solid var(--border-color)', minHeight: 0 }}>
+              <h3 style={{ color: 'var(--accent-yellow)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px', marginTop: 0, fontSize: '1.2rem' }}>
+                <Receipt size={20} /> KOT History & Log
+              </h3>
+              
+              {/* Search & Filters */}
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                <input
+                  type="text"
+                  placeholder="Search ID/Customer..."
+                  value={kotSearchQuery}
+                  onChange={e => setKotSearchQuery(e.target.value)}
+                  style={{ flex: 1, padding: '8px 12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '6px', fontSize: '0.85rem', outline: 'none' }}
+                />
+                <select
+                  value={kotStatusFilter}
+                  onChange={e => setKotStatusFilter(e.target.value)}
+                  style={{ padding: '8px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '6px', fontSize: '0.85rem', outline: 'none' }}
+                >
+                  <option value="ALL">All Status</option>
+                  <option value="NEW">New</option>
+                  <option value="PREPARING">Preparing</option>
+                  <option value="READY">Ready</option>
+                </select>
+              </div>
+
+              {/* KOT List */}
+              <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {filteredKots.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.9rem' }}>
+                    No KOT records found.
+                  </div>
+                ) : (
+                  filteredKots.map(k => (
+                    <div key={k.id} style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: 'white' }}>#{k.orderId} <span style={{ color: 'var(--text-muted)', fontWeight: 'normal', fontSize: '0.75rem' }}>({k.type})</span></span>
+                        <span style={{
+                          fontSize: '0.7rem',
+                          fontWeight: 'bold',
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          textTransform: 'uppercase',
+                          background: k.status === 'READY' ? 'rgba(78, 222, 163, 0.1)' : k.status === 'PREPARING' ? 'rgba(251, 191, 36, 0.1)' : 'rgba(148, 163, 184, 0.1)',
+                          color: k.status === 'READY' ? '#4edea3' : k.status === 'PREPARING' ? '#fbbf24' : '#94a3b8',
+                          border: k.status === 'READY' ? '1px solid rgba(78, 222, 163, 0.3)' : k.status === 'PREPARING' ? '1px solid rgba(251, 191, 36, 0.3)' : '1px solid rgba(148, 163, 184, 0.3)'
+                        }}>
+                          {k.status}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>
+                        {k.items}
+                      </div>
+                      {k.notes && (
+                        <div style={{ fontSize: '0.75rem', color: '#fbbf24', background: 'rgba(251,191,36,0.05)', padding: '6px', borderRadius: '4px', borderLeft: '3px solid #fbbf24' }}>
+                          Note: {k.notes}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px', marginTop: '4px' }}>
+                        <span>Placed: {k.timePlaced}</span>
+                        <span>Prints: {k.printCount}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-              <KitchenView 
-                orders={mappedOrders}
-                onMarkReady={() => {}}
-                onSimulateOrder={() => {}}
-                isEmergencyStop={false}
-                readOnly={true}
-              />
+
+            {/* Right Side: Active KOT monitor view (60% width) */}
+            <div style={{ width: '60%', background: 'var(--bg-panel)', borderRadius: 'var(--radius-lg)', padding: '20px', display: 'flex', flexDirection: 'column', border: '1px solid var(--border-color)', minHeight: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <h3 style={{ color: 'var(--accent-yellow)', display: 'flex', alignItems: 'center', gap: '8px', margin: 0, fontSize: '1.2rem' }}>
+                  <ChefHat size={20} /> Active Kitchen Tickets
+                </h3>
+                {posSettings.kotMode === 'SCREEN' && (
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                     <span style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '0.8rem' }}>Screen Active</span>
+                     <button className="btn-action btn-order" onClick={() => window.open('/kitchen', '_blank')} style={{ padding: '6px 12px', fontSize: '0.75rem', minHeight: '30px' }}>
+                       Open Screen
+                     </button>
+                   </div>
+                )}
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <KitchenView 
+                  orders={mappedOrders}
+                  onMarkReady={() => {}}
+                  onSimulateOrder={() => {}}
+                  isEmergencyStop={false}
+                  readOnly={true}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -1149,7 +1238,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const res = await fetch('http://localhost:3001/dispatch-order', {
+                                  const res = await fetch(`${BACKEND_URL}/dispatch-order`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ bridgeOrderId: del.bridgeOrderId, order: del })
@@ -1172,7 +1261,7 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                               <button className="btn-action btn-order" style={{ padding: '8px 16px', fontSize: '0.75rem', width: 'auto', flex: 'none' }}
                                 onClick={async () => {
                                   try {
-                                    await fetch(`http://localhost:3001/online-orders/${del.bridgeOrderId}`, {
+                                    await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
                                       method: 'PATCH',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ status: 'SETTLED' })
@@ -1503,10 +1592,16 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
             <h2>Order #45555</h2>
             <div className="cart-header-actions"><Printer size={20} /><Trash2 size={20} color="var(--primary)" onClick={() => setCart([])} /></div>
           </div>
-          <div className="order-types">
-            {['Dine In', 'Delivery', 'Take Away'].map(type => (
-              <div key={type} className={`type-pill ${orderType === type ? 'active' : ''}`} onClick={() => setOrderType(type)}>{type}</div>
-            ))}
+          <div style={{ padding: '0 16px 10px', marginTop: '10px' }}>
+            <select 
+              value={orderType} 
+              onChange={(e) => setOrderType(e.target.value)}
+              style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', padding: '6px 10px', outline: 'none', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              {['Dine In', 'Delivery', 'Take Away'].map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
           </div>
           
           <div style={{ padding: '0 16px 10px' }}>
@@ -1565,18 +1660,18 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
               </div>
             ))}
           </div>
-          <div className="totals-panel" style={{ padding: '8px 16px', borderTop: '1px solid var(--border-color)' }}>
-            <div style={{ marginBottom: '6px' }}>
+          <div className="totals-panel" style={{ padding: '6px 12px', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ marginBottom: '4px' }}>
               <input
                 type="text"
                 placeholder="Add special instructions (e.g. Extra Cheese)"
                 value={orderNotes}
                 onChange={(e) => setOrderNotes(e.target.value)}
-                style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', padding: '4px 8px', outline: 'none', fontSize: '0.75rem' }}
+                style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', padding: '4px 8px', outline: 'none', fontSize: '0.7rem' }}
               />
             </div>
-            <div className="totals-row" style={{ padding: '2px 0', fontSize: '0.8rem' }}><span>Sub Total</span><span>Rs. {subTotal.toFixed(2)}</span></div>
-            <div className="totals-row" style={{ padding: '2px 0', fontSize: '0.8rem', alignItems: 'center' }}>
+            <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem' }}><span>Sub Total</span><span>Rs. {subTotal.toFixed(2)}</span></div>
+            <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', alignItems: 'center' }}>
               <span>Discount</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <input 
@@ -1584,19 +1679,19 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                   min="0" max="100" 
                   value={discountPercent} 
                   onChange={e => handleDiscountChange(e.target.value)}
-                  style={{ width: '35px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: '#fbbf24', borderRadius: '3px', padding: '1px 3px', fontSize: '0.75rem', textAlign: 'center', outline: 'none' }}
+                  style={{ width: '32px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: '#fbbf24', borderRadius: '3px', padding: '1px 3px', fontSize: '0.7rem', textAlign: 'center', outline: 'none' }}
                 />
                 <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>%</span>
-                <span style={{ marginLeft: '6px', color: '#fbbf24' }}>-Rs. {discountAmount.toFixed(2)}</span>
+                <span style={{ marginLeft: '4px', color: '#fbbf24' }}>-Rs. {discountAmount.toFixed(2)}</span>
               </div>
             </div>
-            <div className="totals-row" style={{ padding: '2px 0', fontSize: '0.8rem' }}><span>Tax (10%)</span><span>Rs. {tax.toFixed(2)}</span></div>
-            <div className="totals-row grand" style={{ padding: '4px 0', marginTop: '2px', marginBottom: '6px' }}><span style={{ fontSize: '0.9rem' }}>Grand Total</span><span className="value" style={{ fontSize: '1.2rem' }}>Rs. {grandTotal.toFixed(2)}</span></div>
-            <div className="action-buttons" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-              <button className="btn-action" style={{ background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '0.75rem', padding: '4px 0', minHeight: '30px' }} onClick={handleHoldOrder}>Hold</button>
-              <button className="btn-action btn-save" style={{ fontSize: '0.8rem', padding: '4px 0', minHeight: '30px' }} onClick={handleCreateKOT}>KOT</button>
-              <button className="btn-action btn-danger" style={{ fontSize: '0.8rem', padding: '4px 0', minHeight: '30px' }} onClick={() => setCart([])}>Cancel</button>
-              <button className="btn-action" style={{ background: 'var(--accent-green)', color: 'black', fontWeight: 'bold', fontSize: '0.9rem', padding: '4px 0', minHeight: '30px' }} onClick={() => {
+            <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem' }}><span>Tax (10%)</span><span>Rs. {tax.toFixed(2)}</span></div>
+            <div className="totals-row grand" style={{ padding: '2px 0', marginTop: '2px', marginBottom: '4px' }}><span style={{ fontSize: '0.85rem' }}>Grand Total</span><span className="value" style={{ fontSize: '1.1rem' }}>Rs. {grandTotal.toFixed(2)}</span></div>
+            <div className="action-buttons" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+              <button className="btn-action" style={{ background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '0.75rem', padding: '2px 0', minHeight: '26px' }} onClick={handleHoldOrder}>Hold</button>
+              <button className="btn-action btn-save" style={{ fontSize: '0.75rem', padding: '2px 0', minHeight: '26px' }} onClick={handleCreateKOT}>KOT</button>
+              <button className="btn-action btn-danger" style={{ fontSize: '0.75rem', padding: '2px 0', minHeight: '26px' }} onClick={() => setCart([])}>Cancel</button>
+              <button className="btn-action" style={{ background: 'var(--accent-green)', color: 'black', fontWeight: 'bold', fontSize: '0.85rem', padding: '2px 0', minHeight: '26px' }} onClick={() => {
                 if (cart.length === 0) return setToast({ message: 'Cart is empty', type: 'error' });
                 if (orderType === 'Delivery' && (!customerName.trim() || !customerAddress.trim() || !customerPhone.trim())) {
                   setPendingDeliveryAction('PAY');
@@ -1606,8 +1701,8 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
               }}>Pay</button>
             </div>
             {heldOrders.length > 0 && (
-              <button className="btn-action" style={{ width: '100%', marginTop: '8px', padding: '6px 0', fontSize: '0.85rem', minHeight: '32px', background: 'var(--bg-panel-hover)', color: 'var(--accent-yellow)', border: '1px solid var(--accent-yellow)' }} onClick={() => setModalType('HOLD_ORDERS')}>
-                <PauseCircle size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} /> Orders on Hold ({heldOrders.length})
+              <button className="btn-action" style={{ width: '100%', marginTop: '6px', padding: '4px 0', fontSize: '0.8rem', minHeight: '26px', background: 'var(--bg-panel-hover)', color: 'var(--accent-yellow)', border: '1px solid var(--accent-yellow)' }} onClick={() => setModalType('HOLD_ORDERS')}>
+                <PauseCircle size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} /> Orders on Hold ({heldOrders.length})
               </button>
             )}
           </div>
@@ -1752,45 +1847,55 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
       {/* SETTINGS MODAL */}
       {modalType === 'SETTINGS' && (
         <div className="modal-overlay">
-          <div className="modal-content animate-slide-up" style={{ width: '500px' }}>
+          <div className="modal-content animate-slide-up" style={{ width: '720px', maxWidth: '90%', borderRadius: '12px' }}>
             <div className="modal-header">
               <h2><Settings size={24} /> POS Settings</h2>
               <X size={24} style={{cursor:'pointer'}} onClick={() => setModalType('NONE')} />
             </div>
-            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-muted)' }}>Select Printer</label>
-                <select value={posSettings.printerName} onChange={e => setPosSettings({...posSettings, printerName: e.target.value})} style={{ width: '100%', padding: '10px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px' }}>
-                  <option>Default Printer</option>
-                  <option>Epson TM-T88V</option>
-                  <option>XP-80C Thermal</option>
-                </select>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                {/* Left Column - Core Configurations */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontWeight: '500' }}>Select Printer</label>
+                    <select value={posSettings.printerName} onChange={e => setPosSettings({...posSettings, printerName: e.target.value})} style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '8px', fontSize: '0.95rem' }}>
+                      <option>Default Printer</option>
+                      <option>Epson TM-T88V</option>
+                      <option>XP-80C Thermal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontWeight: '500' }}>KOT Operation Mode</label>
+                    <select value={posSettings.kotMode} onChange={e => setPosSettings({...posSettings, kotMode: e.target.value, kotPrintQty: e.target.value === 'SCREEN' ? 0 : 1})} style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '8px', fontSize: '0.95rem' }}>
+                      <option value="SCREEN">Kitchen Display (Screen)</option>
+                      <option value="PRINT">Thermal Print (Paper)</option>
+                    </select>
+                  </div>
+                  <div style={{ padding: '16px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Discount Password Protection</label>
+                    <input type="password" placeholder="Leave blank to disable" value={posSettings.discountPassword || ''} onChange={e => setPosSettings({...posSettings, discountPassword: e.target.value})} style={{ width: '100%', padding: '10px', background: '#0f172a', color: 'white', border: '1px solid var(--border-color)', borderRadius: '6px' }} />
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px', lineHeight: '1.4' }}>Cashiers will need this PIN to apply any discount.</p>
+                  </div>
+                </div>
+
+                {/* Right Column - Policy & Rules */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', justifyContent: 'flex-start' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Till Lock Enforcement</span>
+                    <input type="checkbox" checked={posSettings.tillLockEnabled} onChange={e => setPosSettings({...posSettings, tillLockEnabled: e.target.checked})} style={{ width: '20px', height: '20px', accentColor: 'var(--accent-yellow)', cursor: 'pointer' }}/>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Enable Duplicate KOT Printing</span>
+                    <input type="checkbox" checked={posSettings.duplicateKOTEnabled} onChange={e => setPosSettings({...posSettings, duplicateKOTEnabled: e.target.checked})} style={{ width: '20px', height: '20px', accentColor: 'var(--accent-yellow)', cursor: 'pointer' }}/>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Allow Custom Items from POS</span>
+                    <input type="checkbox" checked={posSettings.allowCustomItems} onChange={e => setPosSettings({...posSettings, allowCustomItems: e.target.checked})} style={{ width: '20px', height: '20px', accentColor: 'var(--accent-yellow)', cursor: 'pointer' }}/>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-muted)' }}>KOT Operation Mode</label>
-                <select value={posSettings.kotMode} onChange={e => setPosSettings({...posSettings, kotMode: e.target.value, kotPrintQty: e.target.value === 'SCREEN' ? 0 : 1})} style={{ width: '100%', padding: '10px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px' }}>
-                  <option value="SCREEN">Kitchen Display (Screen)</option>
-                  <option value="PRINT">Thermal Print (Paper)</option>
-                </select>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', padding: '15px', borderRadius: '5px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontWeight: 'bold' }}>Till Lock Enforcement</span>
-                <input type="checkbox" checked={posSettings.tillLockEnabled} onChange={e => setPosSettings({...posSettings, tillLockEnabled: e.target.checked})} style={{ width: '20px', height: '20px' }}/>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', padding: '15px', borderRadius: '5px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontWeight: 'bold' }}>Enable Duplicate KOT Printing</span>
-                <input type="checkbox" checked={posSettings.duplicateKOTEnabled} onChange={e => setPosSettings({...posSettings, duplicateKOTEnabled: e.target.checked})} style={{ width: '20px', height: '20px' }}/>
-              </div>
-              <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', padding: '15px', borderRadius: '5px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontWeight: 'bold' }}>Allow Custom Items from POS</span>
-                <input type="checkbox" checked={posSettings.allowCustomItems} onChange={e => setPosSettings({...posSettings, allowCustomItems: e.target.checked})} style={{ width: '20px', height: '20px' }}/>
-              </div>
-              <div style={{ marginBottom: '25px', padding: '15px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '5px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Discount Password Protection</label>
-                <input type="password" placeholder="Leave blank to disable" value={posSettings.discountPassword || ''} onChange={e => setPosSettings({...posSettings, discountPassword: e.target.value})} style={{ width: '100%', padding: '10px', background: '#0f172a', color: 'white', border: '1px solid var(--border-color)', borderRadius: '5px' }} />
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '5px' }}>Cashiers will need this PIN to apply any discount.</p>
-              </div>
-              <button className="btn-action btn-order" onClick={() => { localStorage.setItem('d4u_pos_settings', JSON.stringify(posSettings)); setModalType('NONE'); setToast({message: 'Settings Saved', type: 'success'}); }} style={{ padding: '15px', marginTop: '10px', fontSize: '1.1rem', width: '100%' }}>Save & Close</button>
+
+              <button className="btn-action btn-order" onClick={() => { localStorage.setItem('d4u_pos_settings', JSON.stringify(posSettings)); setModalType('NONE'); setToast({message: 'Settings Saved', type: 'success'}); }} style={{ padding: '16px', fontSize: '1.1rem', width: '100%', borderRadius: '8px', fontWeight: 'bold', background: 'var(--accent-green)', color: 'white', border: 'none', cursor: 'pointer', transition: 'background-color 0.2s' }}>Save & Close</button>
             </div>
           </div>
         </div>
@@ -1999,6 +2104,33 @@ function POSApp({ currentUser, dayStartTime }: { currentUser: typeof USERS[0]; d
                       points: Math.floor(grandTotal / 10)
                     });
                   }
+                }
+
+                // Auto KOT if order hasn't been sent to KOT yet (cart has items)
+                if (cart.length > 0) {
+                  const itemsSummary = cart.map(item => `${item.qty}x ${item.name}`).join(', ');
+                  const nextOrderId = Math.floor(Math.random() * 100000);
+                  const newKot = {
+                    orderId: nextOrderId,
+                    type: orderType === 'Dine In' ? `Dine In (${tableNumber})` : orderType,
+                    customer: customerName,
+                    customerPhone: customerPhone,
+                    customerAddress: customerAddress,
+                    items: itemsSummary,
+                    notes: orderNotes,
+                    timePlaced: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    prepTimeMinutes: 0,
+                    status: 'NEW' as const,
+                    startTime: '',
+                    totalAmount: grandTotal,
+                    paymentMethod: paymentMethod === 'Split' ? `Split (Cash: ${splitCash}, Card: ${splitCard})` : paymentMethod,
+                    printCount: posSettings.kotMode === 'PRINT' ? 1 : 0
+                  };
+                  await db.kots.add(newKot);
+                  if (posSettings.kotMode === 'PRINT' && posSettings.kotPrintQty > 0) {
+                    setPrintData({ type: 'KOT', data: { ...newKot, isDuplicate: false, time: new Date().toLocaleString() }, printCount: posSettings.kotPrintQty });
+                  }
+                  setOrderNotes('');
                 }
 
                 setCart([]); setCashGiven(''); setModalType('NONE');

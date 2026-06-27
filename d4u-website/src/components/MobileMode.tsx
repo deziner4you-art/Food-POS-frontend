@@ -1,4 +1,8 @@
 import React, { useState } from 'react';
+import { io } from 'socket.io-client';
+
+const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const socket = io(BACKEND_URL);
 import type { FoodItem, CartItem } from '../types';
 import { foodItems } from '../data/foodItems';
 import { 
@@ -61,26 +65,34 @@ export default function MobileMode({
   const [feedbackSubmitted, setFeedbackSubmitted] = useState<boolean>(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false);
 
-  // Poll bridge for live order status
+  // Real-time Socket.io Sync for Guest Tracker & Sidebar
   React.useEffect(() => {
-    if (!trackedOrderId) return;
-    let timerId: ReturnType<typeof setInterval> | null = null;
-    const poll = async () => {
-      try {
-        const res = await fetch(`http://localhost:3001/online-orders/${trackedOrderId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setTrackedOrder(data);
-          if (data.kdsStatus === 'READY' && timerId) {
-            clearInterval(timerId);
-            timerId = null;
-          }
-        }
-      } catch { /* bridge offline */ }
+    // Initial fetch for the header badge
+    if (trackedOrderId) {
+      fetch(`${BACKEND_URL}/online-orders/${trackedOrderId}`)
+        .then(res => res.json())
+        .then(data => setTrackedOrder(data))
+        .catch(() => {});
+    }
+
+    const handleOrderUpdate = (updatedOrder: any) => {
+      // Auto-update Guest Tracker Badge
+      setTrackedOrder((prev: any) => {
+        if (prev && prev.id === updatedOrder.id) return updatedOrder;
+        return prev;
+      });
+      
+      // Auto-update Track Order Sidebar
+      setTrackResult((prev: any) => {
+        if (prev && prev.id === updatedOrder.id) return updatedOrder;
+        return prev;
+      });
     };
-    poll();
-    timerId = setInterval(poll, 4000);
-    return () => { if (timerId) clearInterval(timerId); };
+
+    socket.on('order_updated', handleOrderUpdate);
+    return () => {
+      socket.off('order_updated', handleOrderUpdate);
+    };
   }, [trackedOrderId]);
 
   // Filter items
@@ -117,7 +129,7 @@ export default function MobileMode({
     const itemsSummary = cart.map(c => `${c.quantity}x ${c.foodItem.name}`).join(', ');
 
     try {
-      const res = await fetch('http://localhost:3001/online-orders', {
+      const res = await fetch(`${BACKEND_URL}/online-orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -155,24 +167,59 @@ export default function MobileMode({
     e.preventDefault();
     const id = trackId.trim();
     const phone = trackPhone.trim();
-    if (!id) { setTrackError('Order ID is required'); return; }
+    if (!id && !phone) { setTrackError('Order ID or Phone is required'); return; }
     setTrackLoading(true);
     setTrackError('');
     setTrackResult(null);
     try {
-      const res = await fetch(`http://localhost:3001/online-orders/${id}`);
-      if (!res.ok) { setTrackError('Order not found — check ID'); setTrackLoading(false); return; }
-      const data = await res.json();
-      if (phone && data.customerPhone && data.customerPhone !== phone) {
-        setTrackError('Phone number does not match');
-        setTrackLoading(false);
-        return;
+      if (id) {
+        const res = await fetch(`${BACKEND_URL}/online-orders/${id}`);
+        if (!res.ok) { setTrackError('Order not found — check ID'); setTrackLoading(false); return; }
+        const data = await res.json();
+        if (phone && data.customerPhone && data.customerPhone !== phone) {
+          setTrackError('Phone number does not match');
+          setTrackLoading(false);
+          return;
+        }
+        setTrackResult(data);
+      } else if (phone) {
+        const res = await fetch(`${BACKEND_URL}/online-orders?phone=${encodeURIComponent(phone)}`);
+        if (!res.ok) { setTrackError('Failed to fetch orders'); setTrackLoading(false); return; }
+        const data = await res.json();
+        if (!data || data.length === 0) {
+          setTrackError('No orders found for this phone'); 
+          setTrackLoading(false); 
+          return;
+        }
+        setTrackResult(data[data.length - 1]); // the most recent one
       }
-      setTrackResult(data);
     } catch {
       setTrackError('Bridge offline — try again later');
     }
     setTrackLoading(false);
+  };
+
+  const handleSubmitFeedback = async () => {
+    const targetOrder = trackResult || trackedOrder;
+    if (!targetOrder || !feedbackRating) return;
+    setIsSubmittingFeedback(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/online-orders/${targetOrder.id}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating: feedbackRating, comment: feedbackComment })
+      });
+      if (res.ok) {
+        setFeedbackSubmitted(true);
+        if (trackResult) {
+          setTrackResult({ ...trackResult, feedback: { rating: feedbackRating, comment: feedbackComment } });
+        }
+        if (trackedOrder) {
+          setTrackedOrder({ ...trackedOrder, feedback: { rating: feedbackRating, comment: feedbackComment } });
+        }
+      }
+    } catch {}
+    setIsSubmittingFeedback(false);
   };
 
   return (
@@ -555,7 +602,7 @@ export default function MobileMode({
                   <MapPin className="w-5 h-5 text-[#4edea3]" />
                   Track Your Order
                 </h3>
-                <p className="text-[10px] text-[#d3c5ac] mt-0.5">Enter Order ID to view status</p>
+                <p className="text-[10px] text-[#d3c5ac] mt-0.5">Enter Order ID or Phone</p>
               </div>
               <button onClick={() => setIsTrackOpen(false)} className="text-slate-500 hover:text-white p-1">
                 <X className="w-5 h-5" />
@@ -565,7 +612,7 @@ export default function MobileMode({
             {!trackResult ? (
               <form onSubmit={handleTrackOrder} className="space-y-4">
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Order ID *</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Order ID</label>
                   <input
                     type="number"
                     value={trackId}
@@ -576,7 +623,7 @@ export default function MobileMode({
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Phone (optional)</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Phone</label>
                   <input
                     type="tel"
                     value={trackPhone}

@@ -42,6 +42,8 @@ export interface OfflineKOT {
   printCount: number;
   totalAmount?: number;
   customer?: string;
+  customerPhone?: string;
+  customerAddress?: string;
   source?: string;
   bridgeOrderId?: number;
   paymentMethod?: string;

@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
+
+const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const socket = io(BACKEND_URL);
 import type { FoodItem, CartItem } from '../types';
 import { foodItems } from '../data/foodItems';
 import {
@@ -75,19 +79,58 @@ export default function LandingMode({
   const [trackError, setTrackError] = useState<string>('');
   const [trackLoading, setTrackLoading] = useState<boolean>(false);
 
-  // Poll bridge for My Orders (when panel open + logged in)
+  // Checkout Profile Modal
+  const [isCheckoutProfileOpen, setIsCheckoutProfileOpen] = useState<boolean>(false);
+  const [checkoutName, setCheckoutName] = useState<string>('');
+  const [checkoutPhone, setCheckoutPhone] = useState<string>('');
+  const [checkoutAddress, setCheckoutAddress] = useState<string>('');
+  const [checkoutError, setCheckoutError] = useState<string>('');
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+
+  // Initial fetch for My Orders
   useEffect(() => {
     if (!customer || !isMyOrdersOpen) return;
     const fetchMyOrders = async () => {
       try {
-        const res = await fetch(`http://localhost:3001/online-orders?phone=${encodeURIComponent(customer.phone)}`);
+        const res = await fetch(`${BACKEND_URL}/online-orders?phone=${encodeURIComponent(customer.phone)}`);
         if (res.ok) setMyOrders(await res.json());
       } catch { /* bridge offline */ }
     };
     fetchMyOrders();
-    const tid = setInterval(fetchMyOrders, 5000);
-    return () => clearInterval(tid);
   }, [customer, isMyOrdersOpen]);
+
+  // Real-time Socket.io Sync for all Trackers
+  useEffect(() => {
+    const handleOrderUpdate = (updatedOrder: any) => {
+      // 1. Auto-update My Orders list
+      setMyOrders(prev => {
+        const idx = prev.findIndex(o => o.id === updatedOrder.id);
+        if (idx > -1) {
+          const newOrders = [...prev];
+          newOrders[idx] = updatedOrder;
+          return newOrders;
+        }
+        return prev;
+      });
+      
+      // 2. Auto-update Guest Tracker Badge
+      setTrackedOrder((prev: any) => {
+        if (prev && prev.id === updatedOrder.id) return updatedOrder;
+        return prev;
+      });
+      
+      // 3. Auto-update Track Order Sidebar (Fixes the bug)
+      setTrackResult((prev: any) => {
+        if (prev && prev.id === updatedOrder.id) return updatedOrder;
+        return prev;
+      });
+    };
+
+    socket.on('order_updated', handleOrderUpdate);
+    return () => {
+      socket.off('order_updated', handleOrderUpdate);
+    };
+  }, []);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,21 +160,32 @@ export default function LandingMode({
     e.preventDefault();
     const id = trackId.trim();
     const phone = trackPhone.trim();
-    if (!id) { setTrackError('Order ID zaroori hai'); return; }
+    if (!id && !phone) { setTrackError('Order ID ya Phone zaroori hai'); return; }
     setTrackLoading(true);
     setTrackError('');
     setTrackResult(null);
     try {
-      const res = await fetch(`http://localhost:3001/online-orders/${id}`);
-      if (!res.ok) { setTrackError('Order nahi mila — ID check karein'); setTrackLoading(false); return; }
-      const data = await res.json();
-      // If phone was given, verify it matches (guests with phone) — skip if order has no phone
-      if (phone && data.customerPhone && data.customerPhone !== phone) {
-        setTrackError('Phone number match nahi kiya');
-        setTrackLoading(false);
-        return;
+      if (id) {
+        const res = await fetch(`${BACKEND_URL}/online-orders/${id}`);
+        if (!res.ok) { setTrackError('Order nahi mila — ID check karein'); setTrackLoading(false); return; }
+        const data = await res.json();
+        if (phone && data.customerPhone && data.customerPhone !== phone) {
+          setTrackError('Phone number match nahi kiya');
+          setTrackLoading(false);
+          return;
+        }
+        setTrackResult(data);
+      } else if (phone) {
+        const res = await fetch(`${BACKEND_URL}/online-orders?phone=${encodeURIComponent(phone)}`);
+        if (!res.ok) { setTrackError('Failed to fetch orders'); setTrackLoading(false); return; }
+        const data = await res.json();
+        if (!data || data.length === 0) {
+          setTrackError('Is phone number par koi order nahi mila'); 
+          setTrackLoading(false); 
+          return;
+        }
+        setTrackResult(data[data.length - 1]); // the most recent one
       }
-      setTrackResult(data);
     } catch {
       setTrackError('Bridge offline — baad mein try karein');
     }
@@ -143,7 +197,7 @@ export default function LandingMode({
     if (!targetOrder || !feedbackRating) return;
     setIsSubmittingFeedback(true);
     try {
-      const res = await fetch(`http://localhost:3001/online-orders/${targetOrder.id}/feedback`, {
+      const res = await fetch(`${BACKEND_URL}/online-orders/${targetOrder.id}/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rating: feedbackRating, comment: feedbackComment })
@@ -161,26 +215,18 @@ export default function LandingMode({
     setIsSubmittingFeedback(false);
   };
 
-  // Poll bridge for live order status
+  // Initial fetch for Guest Tracker Badge
   useEffect(() => {
     if (!trackedOrderId) return;
-    let timerId: ReturnType<typeof setInterval> | null = null;
-    const poll = async () => {
+    const fetchInitial = async () => {
       try {
-        const res = await fetch(`http://localhost:3001/online-orders/${trackedOrderId}`);
+        const res = await fetch(`${BACKEND_URL}/online-orders/${trackedOrderId}`);
         if (res.ok) {
-          const data = await res.json();
-          setTrackedOrder(data);
-          if (data.kdsStatus === 'READY' && timerId) {
-            clearInterval(timerId);
-            timerId = null;
-          }
+          setTrackedOrder(await res.json());
         }
       } catch { /* bridge offline */ }
     };
-    poll();
-    timerId = setInterval(poll, 4000);
-    return () => { if (timerId) clearInterval(timerId); };
+    fetchInitial();
   }, [trackedOrderId]);
 
   const handleNewsletterJoin = (e: React.FormEvent) => {
@@ -212,6 +258,60 @@ export default function LandingMode({
   const taxUSD = subtotalUSD * 0.08;
   const totalUSD = subtotalUSD + taxUSD;
   const totalItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  const submitOrder = async (custInfo: { name: string; phone: string; address: string }) => {
+    setIsSubmittingOrder(true);
+    const itemsSummary = cart.map(c => `${c.quantity}x ${c.foodItem.name}`).join(', ');
+    try {
+      const res = await fetch(`${BACKEND_URL}/online-orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: custInfo.name || 'Online Guest',
+          customerPhone: custInfo.phone || '',
+          customerAddress: custInfo.address || '123 Test Address, City',
+          items: itemsSummary,
+          totalAmount: totalUSD.toFixed(2),
+          source: 'Website',
+          notes: '',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTrackedOrderId(data.order?.id || null);
+        setTrackedOrder(data.order || null);
+      }
+    } catch {
+      // Bridge offline
+    }
+    onClearCart();
+    setIsCartOpen(false);
+    setOrderConfirmed(true);
+    setIsSubmittingOrder(false);
+  };
+
+  const handleCheckoutProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = checkoutName.trim();
+    const phone = checkoutPhone.trim();
+    const address = checkoutAddress.trim();
+
+    if (!name || !phone || !address) {
+      setCheckoutError('Name, Phone, and Delivery Address are all required.');
+      return;
+    }
+    if (phone.length < 7) {
+      setCheckoutError('Please enter a valid phone number.');
+      return;
+    }
+
+    const c = { name, phone, address };
+    localStorage.setItem('d4u_customer', JSON.stringify(c));
+    setCustomer(c);
+    setIsCheckoutProfileOpen(false);
+    
+    await submitOrder(c);
+  };
 
   return (
     <div id="landing-layout-root" className="min-h-screen bg-[#0c1322] text-[#dce2f7] select-none font-sans overflow-x-hidden">
@@ -253,7 +353,7 @@ export default function LandingMode({
           ) : (
             <div className="flex items-center gap-2">
               {/* If guest has an active order — show live order badge */}
-              {trackedOrderId ? (
+              {trackedOrderId && (
                 <button
                   onClick={() => {
                     setTrackId(String(trackedOrderId));
@@ -266,23 +366,25 @@ export default function LandingMode({
                   <span className="w-2 h-2 rounded-full bg-[#4edea3] animate-pulse flex-shrink-0" />
                   <span className="text-xs font-black text-[#4edea3]">Order #{trackedOrderId}</span>
                 </button>
-              ) : (
-                <button
-                  onClick={() => { setIsTrackOpen(true); setTrackResult(null); setTrackError(''); setTrackId(''); setTrackPhone(''); }}
-                  className="flex items-center gap-2 bg-[#141b2b] border border-slate-700 hover:border-[#4edea3] px-3 py-1.5 rounded-full transition-all group"
-                >
-                  <MapPin className="w-3.5 h-3.5 text-slate-500 group-hover:text-[#4edea3] transition-colors" />
-                  <span className="text-xs font-bold text-slate-400 group-hover:text-[#4edea3] transition-colors">Track Order</span>
-                </button>
               )}
               <button onClick={() => setIsLoginOpen(true)} className="p-2 text-[#d3c5ac] hover:text-[#ffe1a7] transition-colors">
                 <User className="w-5 h-5" />
               </button>
             </div>
           )}
+          
+          <button
+            onClick={() => { setIsTrackOpen(true); setTrackResult(null); setTrackError(''); setTrackId(''); setTrackPhone(''); }}
+            className="p-2 text-[#4edea3] hover:scale-110 transition-transform cursor-pointer flex items-center gap-1.5"
+            title="Track Order"
+          >
+            <MapPin className="w-5 h-5 stroke-[2]" />
+            <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:block">Track</span>
+          </button>
+
           <button
             onClick={() => setIsCartOpen(!isCartOpen)}
-            className="relative p-2 text-[#ffe1a7] hover:scale-110 transition-transform cursor-pointer"
+            className="relative p-2 text-[#ffe1a7] hover:scale-110 transition-transform cursor-pointer ml-1"
           >
             <ShoppingCart className="w-6 h-6 stroke-[2]" />
             {totalItemCount > 0 && (
@@ -587,89 +689,78 @@ export default function LandingMode({
               onClick={async (e) => {
                 const btn = e.currentTarget;
                 if (btn.disabled) return;
-                btn.disabled = true;
-                btn.textContent = 'Encrypting...';
                 
                 if (!customer?.name?.trim() || !customer?.phone?.trim() || !customer?.address?.trim()) {
-                  alert('Please update your profile with Name, Phone, and Address before ordering.');
-                  btn.disabled = false;
-                  btn.textContent = 'PLACE RESERVATION ORDER';
+                  setCheckoutName(customer?.name || '');
+                  setCheckoutPhone(customer?.phone || '');
+                  setCheckoutAddress(customer?.address || '');
+                  setCheckoutError('');
+                  setIsCheckoutProfileOpen(true);
                   return;
                 }
-                const itemsSummary = cart.map(c => `${c.quantity}x ${c.foodItem.name}`).join(', ');
-                try {
-                  const res = await fetch('http://localhost:3001/online-orders', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      customer: customer?.name || 'Online Guest',
-                      customerPhone: customer?.phone || '',
-                      customerAddress: customer?.address || '123 Test Address, City',
-                      items: itemsSummary,
-                      totalAmount: totalUSD.toFixed(2),
-                      source: 'Website',
-                      notes: '',
-                    }),
-                  });
-                  if (res.ok) {
-                    const data = await res.json();
-                    setTrackedOrderId(data.order?.id || null);
-                    setTrackedOrder(data.order || null);
-                  }
-                } catch {
-                  // Bridge offline — show confirmation only
+
+                btn.disabled = true;
+                const originalText = btn.textContent;
+                btn.textContent = 'Encrypting...';
+                
+                await submitOrder(customer);
+                
+                if (btn) {
+                  btn.disabled = false;
+                  btn.textContent = originalText;
                 }
-                onClearCart();
-                setIsCartOpen(false);
-                setOrderConfirmed(true);
               }}
-              disabled={cart.length === 0}
+              disabled={cart.length === 0 || isSubmittingOrder}
               className="w-full py-3.5 bg-[#fbbf24] hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow cursor-pointer"
             >
-              PLACE RESERVATION ORDER
+              {isSubmittingOrder ? 'PLACING ORDER...' : 'PLACE RESERVATION ORDER'}
             </button>
           </div>
         </aside>
       )}
 
-      {/* Guest Track Order Modal */}
+      {/* Track Order Sidebar */}
       {isTrackOpen && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="bg-[#191f2f] border border-slate-700 rounded-[28px] p-8 max-w-sm w-full mx-4 shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
+        <div className="fixed inset-0 z-[250] flex justify-end">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsTrackOpen(false)} />
+          <aside className="relative w-full max-w-sm bg-[#191f2f] border-l border-slate-800 flex flex-col h-full shadow-2xl animate-slide-in-right">
+            {/* Header */}
+            <div className="flex justify-between items-center p-6 border-b border-slate-800 shrink-0">
               <div>
-                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                <h3 className="text-xl font-black text-white flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-[#4edea3]" />
-                  Track Your Order
+                  Track Order
                 </h3>
-                <p className="text-xs text-[#d3c5ac] mt-0.5">Order ID enter karein status dekhne ke liye</p>
+                <p className="text-xs text-[#d3c5ac] mt-1">Enter Order ID or Phone</p>
               </div>
-              <button onClick={() => setIsTrackOpen(false)} className="text-slate-500 hover:text-white p-1">
+              <button onClick={() => setIsTrackOpen(false)} className="text-slate-500 hover:text-white p-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {!trackResult ? (
-              <form onSubmit={handleTrackOrder} className="space-y-4">
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+              {!trackResult ? (
+              <form onSubmit={handleTrackOrder} className="space-y-6">
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Order ID *</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-[#d3c5ac] block mb-2">Order ID</label>
                   <input
                     type="number"
                     value={trackId}
                     onChange={e => setTrackId(e.target.value)}
                     placeholder="e.g. 1001"
-                    className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors"
+                    className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-2xl px-5 py-4 text-white placeholder-slate-600 outline-none transition-colors"
                     autoFocus
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Phone Number (optional)</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-[#d3c5ac] block mb-2">Phone</label>
                   <input
                     type="tel"
                     value={trackPhone}
                     onChange={e => setTrackPhone(e.target.value)}
                     placeholder="e.g. 03001234567"
-                    className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors"
+                    className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-2xl px-5 py-4 text-white placeholder-slate-600 outline-none transition-colors"
                   />
                 </div>
                 {trackError && <p className="text-xs text-red-400 font-bold">{trackError}</p>}
@@ -808,7 +899,8 @@ export default function LandingMode({
                 </div>
               </div>
             )}
-          </div>
+            </div>
+          </aside>
         </div>
       )}
 
@@ -847,6 +939,16 @@ export default function LandingMode({
                   className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#fbbf24] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors"
                 />
               </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Delivery Address</label>
+                <textarea
+                  value={loginAddress}
+                  onChange={e => setLoginAddress(e.target.value)}
+                  placeholder="e.g. House 123, Street 4, Phase 5..."
+                  className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#fbbf24] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors resize-none"
+                  rows={2}
+                />
+              </div>
               {loginError && (
                 <p className="text-xs text-red-400 font-bold">{loginError}</p>
               )}
@@ -854,6 +956,84 @@ export default function LandingMode({
                 Sign In
               </button>
               <p className="text-[10px] text-center text-slate-600">No password needed — phone number se pehchana jaata hai</p>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Checkout Profile Modal */}
+      {isCheckoutProfileOpen && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#191f2f] border border-[#4edea3]/40 rounded-[28px] p-8 max-w-md w-full mx-4 shadow-[0_0_50px_rgba(78,222,163,0.15)] animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-black text-white flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-[#4edea3]" />
+                  Delivery Details
+                </h3>
+                <p className="text-xs text-[#d3c5ac] mt-1">Please provide your details to complete the order</p>
+              </div>
+              <button onClick={() => { setIsCheckoutProfileOpen(false); setCheckoutError(''); }} className="text-slate-500 hover:text-white p-1 transition-colors bg-[#141b2b] rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCheckoutProfileSubmit} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Full Name</label>
+                <input
+                  type="text"
+                  value={checkoutName}
+                  onChange={e => setCheckoutName(e.target.value)}
+                  placeholder="e.g. Ali Khan"
+                  className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Phone Number</label>
+                <input
+                  type="tel"
+                  value={checkoutPhone}
+                  onChange={e => setCheckoutPhone(e.target.value)}
+                  placeholder="e.g. 03001234567"
+                  className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Complete Delivery Address</label>
+                <textarea
+                  value={checkoutAddress}
+                  onChange={e => setCheckoutAddress(e.target.value)}
+                  placeholder="e.g. House 12, Street 3, Block A..."
+                  className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors resize-none"
+                  rows={3}
+                />
+              </div>
+              
+              {checkoutError && (
+                <div className="bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-lg">
+                  <p className="text-xs text-red-400 font-bold text-center">{checkoutError}</p>
+                </div>
+              )}
+              
+              <button 
+                type="submit" 
+                disabled={isSubmittingOrder}
+                className="w-full py-4 bg-[#4edea3] hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-[0_4px_15px_rgba(78,222,163,0.3)] mt-4 flex justify-center items-center gap-2 cursor-pointer"
+              >
+                {isSubmittingOrder ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                    Placing Order...
+                  </>
+                ) : (
+                  <>
+                    Save & Confirm Order
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
             </form>
           </div>
         </div>
@@ -910,16 +1090,50 @@ export default function LandingMode({
                         <span className="text-xs text-slate-500">Total</span>
                         <span className="text-sm font-black text-[#fbbf24]">${ord.totalAmount}</span>
                       </div>
-                      {/* Mini tracking bar */}
-                      <div className="flex gap-1.5 pt-1">
-                        {['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].map((s, i) => (
-                          <div
-                            key={s}
-                            className={`h-1.5 flex-1 rounded-full transition-all ${
-                              (['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].indexOf(ord.kdsStatus) >= i)
-                                ? 'bg-[#fbbf24]' : 'bg-slate-800'
-                            }`}
-                          />
+                      {/* Detailed tracking timeline */}
+                      <div className="space-y-3 pt-3 mt-3 border-t border-slate-800/50">
+                        {[
+                          { label: 'Order Placed', sub: ord.timePlaced || 'Received', done: true },
+                          {
+                            label: 'Confirmed by Restaurant',
+                            sub: ord.kdsStatus === 'PENDING' ? 'Waiting for cashier...' : 'Accepted ✓',
+                            done: ord.kdsStatus !== 'PENDING',
+                          },
+                          {
+                            label: 'In Kitchen',
+                            sub: ord.kdsStatus === 'PREPARING'
+                              ? `~${ord.prepTimeMinutes} mins · Ready by ${ord.estimatedReadyAt}`
+                              : ord.kdsStatus === 'READY' ? 'Done ✓' : 'Waiting...',
+                            done: ord.kdsStatus === 'PREPARING' || ord.kdsStatus === 'READY' || ord.status === 'DISPATCHED' || ord.status === 'PAID' || ord.status === 'SETTLED',
+                          },
+                          {
+                            label: 'Ready for Delivery',
+                            sub: ord.kdsStatus === 'READY' ? 'Food is packed!' : 'Pending...',
+                            done: ord.kdsStatus === 'READY' || ord.status === 'DISPATCHED' || ord.status === 'PAID' || ord.status === 'SETTLED',
+                          },
+                          {
+                            label: 'Dispatched',
+                            sub: (ord.status === 'DISPATCHED' || ord.status === 'PAID' || ord.status === 'SETTLED') ? 'Rider on the way' : 'Waiting for rider...',
+                            done: ord.status === 'DISPATCHED' || ord.status === 'PAID' || ord.status === 'SETTLED',
+                          },
+                          {
+                            label: 'Delivered',
+                            sub: (ord.status === 'PAID' || ord.status === 'SETTLED') ? 'Cash Collected & Delivered ✓' : 'Pending...',
+                            done: ord.status === 'PAID' || ord.status === 'SETTLED',
+                          },
+                        ].map((step, i) => (
+                          <div key={i} className="flex items-start gap-3 relative">
+                            {i < 5 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
+                            <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
+                              step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
+                            }`}>
+                              {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
+                            </div>
+                            <div>
+                              <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
+                              <p className="text-[9px] text-[#d3c5ac]">{step.sub}</p>
+                            </div>
+                          </div>
                         ))}
                       </div>
                       {ord.kdsStatus === 'READY' && (

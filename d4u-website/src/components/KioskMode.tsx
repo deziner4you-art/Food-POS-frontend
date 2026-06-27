@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { io } from 'socket.io-client';
+
+const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const socket = io(BACKEND_URL);
 import type { FoodItem, CartItem } from '../types';
 import { foodItems } from '../data/foodItems';
 import { 
@@ -65,26 +69,28 @@ export default function KioskMode({
     return () => clearInterval(interval);
   }, []);
 
-  // Poll bridge for live order status
+  // Real-time Socket.io Sync for Guest Tracker
   useEffect(() => {
-    if (!trackedOrderId) return;
-    let timerId: ReturnType<typeof setInterval> | null = null;
-    const poll = async () => {
-      try {
-        const res = await fetch(`http://localhost:3001/online-orders/${trackedOrderId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setTrackedOrder(data);
-          if (data.kdsStatus === 'READY' && timerId) {
-            clearInterval(timerId);
-            timerId = null;
-          }
-        }
-      } catch { /* bridge offline */ }
+    // Initial fetch for the header badge
+    if (trackedOrderId) {
+      fetch(`${BACKEND_URL}/online-orders/${trackedOrderId}`)
+        .then(res => res.json())
+        .then(data => setTrackedOrder(data))
+        .catch(() => {});
+    }
+
+    const handleOrderUpdate = (updatedOrder: any) => {
+      // Auto-update Guest Tracker Badge
+      setTrackedOrder((prev: any) => {
+        if (prev && prev.id === updatedOrder.id) return updatedOrder;
+        return prev;
+      });
     };
-    poll();
-    timerId = setInterval(poll, 4000);
-    return () => { if (timerId) clearInterval(timerId); };
+
+    socket.on('order_updated', handleOrderUpdate);
+    return () => {
+      socket.off('order_updated', handleOrderUpdate);
+    };
   }, [trackedOrderId]);
 
   // Scroll favorites horizontally
@@ -110,7 +116,7 @@ export default function KioskMode({
     const itemsSummary = cart.map(c => `${c.quantity}x ${c.foodItem.name}`).join(', ');
 
     try {
-      const res = await fetch('http://localhost:3001/online-orders', {
+      const res = await fetch(`${BACKEND_URL}/online-orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

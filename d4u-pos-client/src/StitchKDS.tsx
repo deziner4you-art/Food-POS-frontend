@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import type { OfflineKOT } from './db';
+const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 import { AnimatePresence, motion } from 'framer-motion'; // using framer-motion since motion/react might not be installed
 import { ShieldAlert, Check } from 'lucide-react';
 
@@ -271,7 +272,7 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
       // Sync to website tracking if this is a bridge order
       if (kotToUpdate.bridgeOrderId) {
         const readyAt = new Date(Date.now() + prepMinutes * 60000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        fetch(`http://localhost:3001/online-orders/${kotToUpdate.bridgeOrderId}`, {
+        fetch(`${BACKEND_URL}/online-orders/${kotToUpdate.bridgeOrderId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ kdsStatus: 'PREPARING', prepTimeMinutes: prepMinutes, estimatedReadyAt: readyAt }),
@@ -309,7 +310,7 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
 
       // Sync to website tracking if this is a bridge order
       if (kotToUpdate.bridgeOrderId) {
-        fetch(`http://localhost:3001/online-orders/${kotToUpdate.bridgeOrderId}`, {
+        fetch(`${BACKEND_URL}/online-orders/${kotToUpdate.bridgeOrderId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ kdsStatus: 'READY' }),
