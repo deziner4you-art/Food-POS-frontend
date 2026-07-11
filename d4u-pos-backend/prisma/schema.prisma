@@ -1,0 +1,526 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -------------------------------------------------------------
+// CORE & MULTI-TENANT
+// -------------------------------------------------------------
+model Brand {
+  id          Int           @id @default(autoincrement())
+  name        String
+  createdAt   DateTime      @default(now())
+  is_chain_store Boolean @default(false)
+  menu_strategy  String  @default("UNIFIED") // UNIFIED or INDEPENDENT
+  
+  // Global Setup
+  currency       String  @default("PKR")
+  vat_percentage Float   @default(0)
+
+  subscription  Subscription?
+  stores      Store[]
+  users       User[]
+  customers   Customer[]
+  menus       Menu[]
+  CmsBanner   CmsBanner[]
+  CmsSettings CmsSettings[]
+  MarketingCampaigns MarketingCampaign[]
+  ScheduledDiscounts ScheduledDiscount[]
+}
+
+model Store {
+  id        Int      @id @default(autoincrement())
+  brand_id  Int
+  name      String
+  location  String?
+  is_online Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  brand         Brand           @relation(fields: [brand_id], references: [id])
+  users         User[]
+  products      Product[]
+  orders        Order[]
+  inventory     InventoryItem[]
+  businessDays  BusinessDay[]
+  cashFlows     CashFlow[]
+  kots          KOT[]
+  Vendor        Vendor[]
+  PurchaseOrder PurchaseOrder[]
+  
+  menus             Menu[]     @relation("MenuStores")
+  assignedCategories Category[] @relation("CategoryStores")
+  assignedProducts  Product[]  @relation("ProductStores")
+}
+
+// -------------------------------------------------------------
+// RBAC & USERS
+// -------------------------------------------------------------
+model Role {
+  id          Int    @id @default(autoincrement())
+  name        String // SuperAdmin, HeadOffice, BranchManager, Cashier, Rider
+  permissions Json // Modular feature toggling JSON
+  users       User[]
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  brand_id  Int?
+  store_id  Int?
+  role_id   Int
+  name      String
+  phone     String   @unique
+  hashedPin String // For local credential caching
+  createdAt DateTime @default(now())
+
+  brand Brand? @relation(fields: [brand_id], references: [id])
+  store Store? @relation(fields: [store_id], references: [id])
+  role  Role   @relation(fields: [role_id], references: [id])
+
+  // Audits & Tracking
+  approved_voids Order[]       @relation("VoidApprover")
+  rider_orders   Order[]       @relation("RiderOrders")
+  started_days   BusinessDay[] @relation("DayStarter")
+  closed_days    BusinessDay[] @relation("DayCloser")
+  cash_flows     CashFlow[]
+}
+
+// -------------------------------------------------------------
+// CRM & CUSTOMERS
+// -------------------------------------------------------------
+model Customer {
+  id             Int      @id @default(autoincrement())
+  brand_id       Int
+  phone          String   @unique
+  name           String
+  address        String?
+  total_orders   Int      @default(0)
+  loyalty_points Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  brand               Brand                @relation(fields: [brand_id], references: [id])
+  orders              Order[]
+  loyaltyTransactions LoyaltyTransaction[]
+}
+
+// -------------------------------------------------------------
+// INVENTORY & PRODUCTS
+// -------------------------------------------------------------
+// -------------------------------------------------------------
+// SAAS BILLING & PRICING
+// -------------------------------------------------------------
+model Subscription {
+  id                    Int      @id @default(autoincrement())
+  brand_id              Int      @unique
+  plan_name             String   @default("FREE")
+  status                String   @default("ACTIVE")
+  module_auth_enabled   Boolean  @default(true)
+  module_kds_enabled    Boolean  @default(false)
+  module_riders_enabled Boolean  @default(false)
+  module_loyalty_enabled Boolean @default(false)
+  module_tv_board_enabled Boolean @default(false)
+  module_online_website_enabled Boolean @default(false)
+  module_analytics_enabled Boolean @default(true)
+  billing_amount        Float    @default(0) // Dynamic total based on pricing
+  updatedAt             DateTime @updatedAt
+  createdAt             DateTime @default(now())
+
+  brand Brand @relation(fields: [brand_id], references: [id])
+}
+
+model SaaSPricing {
+  id             Int      @id @default(autoincrement())
+  module_key     String   @unique // e.g., "BASE_POS", "KDS", "RIDER", "TV_BOARD"
+  module_name    String
+  price_monthly  Float
+  currency       String   @default("USD") // Base currency for pricing
+}
+
+// -------------------------------------------------------------
+// SCHEDULED DISCOUNTS & MARKETING
+// -------------------------------------------------------------
+// -------------------------------------------------------------
+// MENU & CATALOG
+// -------------------------------------------------------------
+model Menu {
+  id        Int      @id @default(autoincrement())
+  brand_id  Int      @default(1)
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  brand      Brand      @relation(fields: [brand_id], references: [id])
+  stores     Store[]    @relation("MenuStores")
+  categories Category[]
+}
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  store_id Int       // Creator Store (Admin)
+  menu_id  Int?
+  name     String
+  
+  menu            Menu?     @relation(fields: [menu_id], references: [id])
+  assigned_stores Store[]   @relation("CategoryStores")
+  products        Product[]
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  store_id    Int
+  category_id Int
+  name        String
+  price       Float
+  cost        Float
+  margin_pct  Float // Dynamic margin calculation
+  is_active   Boolean  @default(true)
+  sku         String?
+  image_url   String?
+  status      String   @default("APPROVED") // PENDING, APPROVED
+  createdAt   DateTime @default(now())
+
+  store           Store              @relation(fields: [store_id], references: [id])
+  category        Category           @relation(fields: [category_id], references: [id])
+  assigned_stores Store[]            @relation("ProductStores")
+  orderItems      OrderItem[]
+  recipeItems RecipeIngredient[]
+  marketingCampaigns MarketingCampaign[]
+}
+
+model InventoryItem {
+  id            Int    @id @default(autoincrement())
+  store_id      Int
+  name          String
+  quantity      Float // Negative inventory soft block allowed
+  unit          String // kg, liter, piece
+  reorder_level Float  @default(0)
+  unit_price    Float  @default(0) // Added for Recipe Costing
+
+  store             Store                     @relation(fields: [store_id], references: [id])
+  transactions      InventoryTransactionLog[]
+  recipes           RecipeIngredient[]
+  PurchaseOrderItem PurchaseOrderItem[]
+  TransitLoss       TransitLoss[]
+}
+
+model InventoryTransactionLog {
+  id           Int      @id @default(autoincrement())
+  inventory_id Int
+  operation    String // ADD, SUBTRACT (Append-only Event Sourcing)
+  amount       Float
+  reason       String?
+  changed_by   Int // User ID
+  createdAt    DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventory_id], references: [id])
+}
+
+// Recipe: ہر product میں کون کون سا raw material لگتا ہے
+model RecipeIngredient {
+  id           Int    @id @default(autoincrement())
+  product_id   Int
+  inventory_id Int
+  quantity     Float // How much of this ingredient per 1 unit of product
+  unit         String
+
+  product   Product       @relation(fields: [product_id], references: [id])
+  inventory InventoryItem @relation(fields: [inventory_id], references: [id])
+}
+
+// -------------------------------------------------------------
+// BUSINESS DAY MANAGEMENT
+// -------------------------------------------------------------
+model BusinessDay {
+  id           Int       @id @default(autoincrement())
+  store_id     Int
+  started_by   Int
+  closed_by    Int?
+  dayStart     DateTime
+  dayClose     DateTime?
+  openingFloat Float     @default(0)
+  closingCash  Float?
+  totalSales   Float?
+  totalOrders  Int?
+  status       String    @default("OPEN") // OPEN, CLOSED
+  notes        String?
+  createdAt    DateTime  @default(now())
+
+  store   Store @relation(fields: [store_id], references: [id])
+  starter User  @relation("DayStarter", fields: [started_by], references: [id])
+  closer  User? @relation("DayCloser", fields: [closed_by], references: [id])
+
+  orders    Order[]
+  cashFlows CashFlow[]
+  kots      KOT[]
+}
+
+// -------------------------------------------------------------
+// CASH FLOW (Cash In / Cash Out)
+// -------------------------------------------------------------
+model CashFlow {
+  id              Int      @id @default(autoincrement())
+  store_id        Int
+  business_day_id Int
+  user_id         Int
+  type            String // CASH_IN, CASH_OUT
+  amount          Float
+  comment         String?
+  createdAt       DateTime @default(now())
+
+  store       Store       @relation(fields: [store_id], references: [id])
+  businessDay BusinessDay @relation(fields: [business_day_id], references: [id])
+  user        User        @relation(fields: [user_id], references: [id])
+}
+
+// -------------------------------------------------------------
+// ORDERS & TRANSACTIONS (Walk-in POS)
+// -------------------------------------------------------------
+model Order {
+  id               Int      @id @default(autoincrement())
+  store_id         Int
+  business_day_id  Int?
+  customer_id      Int?
+  business_date    DateTime
+  total_amount     Float
+  discount         Float    @default(0)
+  status           String // PENDING, PREPARING, READY, SETTLED, VOIDED
+  order_source     String   @default("WALKIN") // WALKIN, ONLINE, CALL, WHATSAPP
+  payment_method   String   @default("CASH") // CASH, CARD, COD, WALLET
+  payment_status   String   @default("PAID") // PAID, PENDING_COD
+  rider_id         Int? // User ID with Rider role
+  delivery_address String?
+  is_offline       Boolean  @default(false)
+  table_no         String? // For dine-in
+
+  // Audit Trail
+  created_by       Int // Cashier
+  void_reason      String?
+  void_approved_by Int? // Manager
+
+  // Feedback
+  customer_feedback String?
+  rating            Int?
+
+  store       Store        @relation(fields: [store_id], references: [id])
+  customer    Customer?    @relation(fields: [customer_id], references: [id])
+  businessDay BusinessDay? @relation(fields: [business_day_id], references: [id])
+  approver    User?        @relation("VoidApprover", fields: [void_approved_by], references: [id])
+  rider       User?        @relation("RiderOrders", fields: [rider_id], references: [id])
+  items       OrderItem[]
+  kot         KOT?
+  createdAt   DateTime     @default(now())
+}
+
+model OrderItem {
+  id           Int     @id @default(autoincrement())
+  order_id     Int
+  product_id   Int
+  quantity     Int
+  price        Float
+  special_inst String? // "Extra Mayo" printed in bold/Urdu KOT
+
+  order   Order   @relation(fields: [order_id], references: [id])
+  product Product @relation(fields: [product_id], references: [id])
+}
+
+// -------------------------------------------------------------
+// KOT — Kitchen Order Ticket (KDS)
+// -------------------------------------------------------------
+model KOT {
+  id              Int       @id @default(autoincrement())
+  store_id        Int
+  order_id        Int       @unique
+  business_day_id Int?
+  items           Json // [{name, qty, specialInst, category}]
+  status          String    @default("NEW") // NEW, PREPARING, READY, CANCELLED
+  printCount      Int       @default(0)
+  acceptedAt      DateTime?
+  readyAt         DateTime?
+  createdAt       DateTime  @default(now())
+
+  store       Store        @relation(fields: [store_id], references: [id])
+  order       Order        @relation(fields: [order_id], references: [id])
+  businessDay BusinessDay? @relation(fields: [business_day_id], references: [id])
+}
+
+// -------------------------------------------------------------
+// ONLINE ORDERS & TRACKING QUEUE
+// -------------------------------------------------------------
+model OnlineOrder {
+  id               Int      @id @default(autoincrement())
+  store_id         Int      @default(1)
+  orderId          Int?
+  status           String   @default("PENDING") // PENDING, ACCEPTED, DISPATCHED, SETTLED
+  kdsStatus        String   @default("PENDING") // PENDING, ACCEPTED, PREPARING, READY
+  type             String   @default("Online")
+  source           String
+  customer         String
+  customerPhone    String   @default("")
+  customerAddress  String   @default("")
+  items            String // JSON string of items ordered or raw text description
+  totalAmount      String
+  notes            String   @default("")
+  prepTimeMinutes  Int      @default(0)
+  estimatedReadyAt String   @default("")
+  timePlaced       String
+  riderAssigned    Boolean  @default(false)
+  feedback         Json?
+  delivery         Json?
+  createdAt        DateTime @default(now())
+}
+
+// -------------------------------------------------------------
+// LOYALTY WALLET
+// -------------------------------------------------------------
+model LoyaltyTransaction {
+  id          Int      @id @default(autoincrement())
+  customer_id Int
+  order_id    Int?
+  type        String // EARN, REDEEM
+  points      Int
+  description String?
+  createdAt   DateTime @default(now())
+
+  customer Customer @relation(fields: [customer_id], references: [id])
+}
+
+// -------------------------------------------------------------
+// VENDOR & SUPPLY CHAIN
+// -------------------------------------------------------------
+
+model Vendor {
+  id             Int      @id @default(autoincrement())
+  store_id       Int
+  name           String
+  phone          String?
+  email          String?
+  ledger_balance Float    @default(0) // Negative means we owe them
+  createdAt      DateTime @default(now())
+
+  store          Store           @relation(fields: [store_id], references: [id])
+  purchaseOrders PurchaseOrder[]
+}
+
+model PurchaseOrder {
+  id             Int       @id @default(autoincrement())
+  store_id       Int
+  vendor_id      Int
+  status         String    @default("PENDING") // PENDING, DISPATCHED, DELIVERED, CANCELLED
+  payment_status String    @default("UNPAID") // UNPAID, PAID, PARTIAL
+  total_amount   Float     @default(0)
+  createdAt      DateTime  @default(now())
+  deliveredAt    DateTime?
+
+  store  Store               @relation(fields: [store_id], references: [id])
+  vendor Vendor              @relation(fields: [vendor_id], references: [id])
+  items  PurchaseOrderItem[]
+}
+
+model PurchaseOrderItem {
+  id           Int   @id @default(autoincrement())
+  po_id        Int
+  inventory_id Int
+  ordered_qty  Float
+  received_qty Float @default(0)
+  price_unit   Float
+
+  purchaseOrder PurchaseOrder @relation(fields: [po_id], references: [id])
+  inventoryItem InventoryItem @relation(fields: [inventory_id], references: [id])
+  transitLosses TransitLoss[]
+}
+
+model TransitLoss {
+  id           Int      @id @default(autoincrement())
+  po_item_id   Int
+  inventory_id Int
+  lost_qty     Float
+  reason       String? // Auto-generated or manual override
+  createdAt    DateTime @default(now())
+
+  poItem        PurchaseOrderItem @relation(fields: [po_item_id], references: [id])
+  inventoryItem InventoryItem     @relation(fields: [inventory_id], references: [id])
+}
+
+// -------------------------------------------------------------
+// WEBSITE CMS
+// -------------------------------------------------------------
+model CmsBanner {
+  id           Int      @id @default(autoincrement())
+  brand_id     Int      @default(1)
+  title        String
+  subtitle     String?
+  imageUrl     String
+  linkUrl      String?
+  buttonText   String?
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  brand Brand @relation(fields: [brand_id], references: [id])
+}
+
+model CmsSettings {
+  id             Int      @id @default(autoincrement())
+  brand_id       Int      @default(1)
+  siteTitle      String   @default("D4U Restaurant")
+  contactPhone   String?
+  contactEmail   String?
+  address        String?
+  facebookUrl    String?
+  instagramUrl   String?
+  whatsappNumber String?
+
+  // Feature Flags / Module Toggles
+  module_auth_enabled     Boolean @default(false)
+  module_kds_enabled      Boolean @default(true)
+  module_loyalty_enabled  Boolean @default(false)
+  module_payments_enabled Boolean @default(false)
+
+  updatedAt      DateTime @updatedAt
+
+  brand Brand @relation(fields: [brand_id], references: [id])
+}
+
+model MarketingCampaign {
+  id               Int      @id @default(autoincrement())
+  brand_id         Int      @default(1)
+  title            String
+  description      String?
+  discount_pct     Float
+  image_url        String?
+  target_product_id Int?
+  is_active        Boolean  @default(true)
+  published_pos    Boolean  @default(false)
+  published_web    Boolean  @default(false)
+  published_social Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  brand   Brand    @relation(fields: [brand_id], references: [id])
+  product Product? @relation(fields: [target_product_id], references: [id])
+}
+
+
+model ScheduledDiscount {
+  id               Int      @id @default(autoincrement())
+  brand_id         Int
+  title            String
+  discount_pct     Float
+  image_url        String?
+  
+  target_category_id Int?
+  target_product_id  Int?
+  
+  start_date       DateTime
+  end_date         DateTime
+  is_active        Boolean  @default(true)
+  
+  // Target branches: "ALL", or comma-separated store IDs e.g. "1,4"
+  target_stores    String   @default("ALL")
+  
+  createdAt        DateTime @default(now())
+
+  brand Brand @relation(fields: [brand_id], references: [id])
+}

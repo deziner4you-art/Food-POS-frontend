@@ -1,0 +1,6 @@
+{
+  "name": "Ride Booking & Driver Tracker",
+  "description": "A high-fidelity ride booking application that allows users to request rides and track drivers on a real-time dark-themed vector map simulation.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
