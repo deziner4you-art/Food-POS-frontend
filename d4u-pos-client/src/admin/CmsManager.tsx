@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutTemplate, ImagePlus, Trash2, Save, Globe } from 'lucide-react';
+import { LayoutTemplate, ImagePlus, Trash2, Save, Globe, CheckCircle } from 'lucide-react';
+import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
@@ -42,7 +43,7 @@ export default function CmsManager() {
 
   const handleBannerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFile) return alert('Please select an image file first.');
+    if (!selectedFile) return customAlert('Please select an image file first.');
 
     const formData = new FormData();
     formData.append('image', selectedFile);
@@ -71,7 +72,7 @@ export default function CmsManager() {
   };
 
   const handleDeleteBanner = async (id: number) => {
-    if (!window.confirm('Delete this banner?')) return;
+    if (!(await customConfirm('Delete this banner?'))) return;
     try {
       await fetch(`${BACKEND_URL}/cms/banners/${id}`, { method: 'DELETE' });
       fetchBanners();
@@ -84,13 +85,16 @@ export default function CmsManager() {
     e.preventDefault();
     setIsSavingSettings(true);
     try {
+      // Remove Prisma relations and read-only fields before sending
+      const { id, brand_id, updatedAt, brand, ...cleanSettings } = settings;
+      
       const res = await fetch(`${BACKEND_URL}/cms/settings/1`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
+        body: JSON.stringify(cleanSettings)
       });
       if (res.ok) {
-        alert('Settings Saved Successfully!');
+        customSuccess('Settings Saved Successfully!');
       }
     } catch (e) {
       console.error('Failed to save settings', e);

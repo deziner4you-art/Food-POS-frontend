@@ -35,11 +35,11 @@ export class CatalogService {
         OR: [
           { store_id },
           { assigned_stores: { some: { id: store_id } } },
-          { category: { assigned_stores: { some: { id: store_id } } } },
-          { category: { menu: { stores: { some: { id: store_id } } } } }
+          { categories: { some: { assigned_stores: { some: { id: store_id } } } } },
+          { categories: { some: { menu: { stores: { some: { id: store_id } } } } } }
         ]
       },
-      include: { category: true },
+      include: { categories: true },
       orderBy: { id: 'asc' },
     });
 
@@ -126,7 +126,7 @@ export class CatalogService {
             image_url: product.image_url,
             status: product.status,
             store_id: product.store_id,
-            category_id: newCategory.id
+            categories: { connect: [{ id: newCategory.id }] }
           }
         });
       }
@@ -188,14 +188,14 @@ export class CatalogService {
     // Admin needs to see all products
     return this.prisma.product.findMany({
       where: { is_active: true },
-      include: { category: true, assigned_stores: true },
+      include: { categories: true, assigned_stores: true },
       orderBy: { createdAt: 'desc' }
     });
   }
 
   async createProduct(data: {
     store_id: number;
-    category_id: number;
+    category_ids: number[];
     name: string;
     price: number;
     cost: number;
@@ -205,37 +205,44 @@ export class CatalogService {
     status?: string;
     assigned_store_ids?: number[];
   }) {
-    const { assigned_store_ids, ...productData } = data;
+    const { assigned_store_ids, category_ids, ...productData } = data;
     return this.prisma.product.create({
       data: {
         ...productData,
         status: data.status || 'APPROVED',
+        categories: {
+          connect: (category_ids || []).map(id => ({ id }))
+        },
         assigned_stores: {
           connect: (assigned_store_ids || []).map(id => ({ id }))
         }
       },
-      include: { assigned_stores: true }
+      include: { assigned_stores: true, categories: true }
     });
   }
 
   async updateProduct(
     id: number,
-    data: { name?: string; price?: number; cost?: number; margin_pct?: number; is_active?: boolean; sku?: string; image_url?: string; status?: string; assigned_store_ids?: number[] },
+    data: { name?: string; price?: number; cost?: number; margin_pct?: number; is_active?: boolean; sku?: string; image_url?: string; status?: string; assigned_store_ids?: number[]; category_ids?: number[] },
   ) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException(`Product #${id} not found`);
 
-    const { assigned_store_ids, ...updateData } = data;
+    const { assigned_store_ids, category_ids, ...updateData } = data;
     const updatePayload: any = { ...updateData };
 
     if (assigned_store_ids !== undefined) {
       updatePayload.assigned_stores = { set: assigned_store_ids.map(sid => ({ id: sid })) };
     }
 
+    if (category_ids !== undefined) {
+      updatePayload.categories = { set: category_ids.map(cid => ({ id: cid })) };
+    }
+
     return this.prisma.product.update({
       where: { id },
       data: updatePayload,
-      include: { assigned_stores: true }
+      include: { assigned_stores: true, categories: true }
     });
   }
 

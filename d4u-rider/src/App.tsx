@@ -11,15 +11,30 @@ import ActiveRideView from './components/ActiveRideView';
 import HistoryView from './components/HistoryView';
 import SettleCashView from './components/SettleCashView';
 import POSPanel from './components/POSPanel';
-import { Clock, Navigation, CheckSquare } from 'lucide-react';
+import LoginView from './components/LoginView';
+import { Clock, Navigation, CheckSquare, LogOut } from 'lucide-react';
 
-type ViewMode = 'welcome' | 'map' | 'history' | 'settle' | 'register';
+type ViewMode = 'login' | 'welcome' | 'map' | 'history' | 'settle' | 'register';
 
 export default function App() {
+  const logout = () => {
+    localStorage.removeItem('d4u_rider_token');
+    localStorage.removeItem('d4u_rider_store');
+    localStorage.removeItem('d4u_rider_name');
+    setRiderStoreId(null);
+    setRiderName('');
+    setCurrentView('login');
+  };
+
   // --- APPLICATION STATES ---
-  const [currentView, setCurrentView] = useState<ViewMode>('welcome');
+  const [currentView, setCurrentView] = useState<ViewMode>('login');
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [status, setStatus] = useState<DeliveryStatus>('SEARCHING');
+  
+  // Rider Auth States
+  const [riderStoreId, setRiderStoreId] = useState<number | null>(null);
+  const [riderName, setRiderName] = useState<string>('');
+  const [riderId, setRiderId] = useState<string>('');
   
   // Active rider order
   const [activeOrder, setActiveOrder] = useState<DeliveryOrder | null>(null);
@@ -61,6 +76,21 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('dinedash_rider_stats', JSON.stringify(riderStats));
   }, [riderStats]);
+
+  // Auth Mount Check
+  useEffect(() => {
+    const token = localStorage.getItem('d4u_rider_token');
+    const store = localStorage.getItem('d4u_rider_store');
+    const name = localStorage.getItem('d4u_rider_name');
+    
+    if (token && store) {
+      setRiderStoreId(Number(store));
+      setRiderName(name || 'Rider');
+      setCurrentView('welcome');
+    } else {
+      setCurrentView('login');
+    }
+  }, []);
 
   // Sync general Rider status online vs offline
   useEffect(() => {
@@ -122,10 +152,10 @@ export default function App() {
 
   // Polling for dispatched orders from Bridge
   useEffect(() => {
-    if (!isOnline || activeOrder) return;
+    if (!isOnline || activeOrder || !riderStoreId) return;
     const poll = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/rider-orders`);
+        const res = await fetch(`${BACKEND_URL}/rider-orders?store_id=${riderStoreId}`);
         if (res.ok) {
           const orders = await res.json();
           console.log('[RIDER POLL] Fetched orders:', orders);
@@ -165,7 +195,7 @@ export default function App() {
     poll();
     const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
-  }, [isOnline, activeOrder]);
+  }, [isOnline, activeOrder, riderStoreId]);
 
   // Polling for active order status updates and settlement
   useEffect(() => {
@@ -180,8 +210,8 @@ export default function App() {
         }
         
         // Poll for settlements in completed ledger
-        if (completedLedger.some(m => !m.settled)) {
-          const res = await fetch(`${BACKEND_URL}/online-orders`);
+        if (completedLedger.some(m => !m.settled) && riderStoreId) {
+          const res = await fetch(`${BACKEND_URL}/rider-orders?store_id=${riderStoreId}`);
           if (res.ok) {
             const allOrders = await res.json();
             setCompletedLedger(prev => prev.map(m => {
@@ -198,7 +228,7 @@ export default function App() {
     };
     const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
-  }, [activeOrder, completedLedger]);
+  }, [activeOrder, completedLedger, riderStoreId]);
 
   // --- USER TRIGGERS & SIMULATOR HANDLERS ---
   const handleDispatchOrder = (order: DeliveryOrder) => {
@@ -310,6 +340,17 @@ export default function App() {
 
         {/* View Routing */}
         <div className="flex-1 overflow-hidden">
+          {currentView === 'login' && (
+            <LoginView 
+              onLoginSuccess={(rId, sId, name) => {
+                setRiderId(rId);
+                setRiderStoreId(sId);
+                setRiderName(name);
+                setCurrentView('welcome');
+              }}
+            />
+          )}
+
           {currentView === 'welcome' && (
             <WelcomeView 
               onContinue={() => setCurrentView('map')} 
@@ -325,18 +366,33 @@ export default function App() {
           )}
           
           {currentView === 'map' && (
-            <ActiveRideView 
-              status={status}
-              activeOrder={activeOrder}
-              onAccept={handleAcceptOrder}
-              onDecline={handleDeclineOrder}
-              onArriveRest={handleArriveAtRestaurant}
-              onPickedUp={handleConfirmPickedUp}
-              onDelivered={handleMarkDelivered}
-              onSettle={() => handleCompleteRestReset({ tip: 0 })}
-              driverCoords={driverCoords}
-              activePath={activePath}
-            />
+            <>
+              <div className="absolute top-12 left-4 right-4 flex justify-between items-center z-50">
+                <div className="bg-slate-900/80 backdrop-blur-md rounded-full px-4 py-2 flex items-center gap-2 border border-slate-800 shadow-xl">
+                  <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]"></span>
+                  <span className="text-white text-xs font-bold uppercase tracking-widest">{riderName}</span>
+                </div>
+                
+                <button
+                  onClick={logout}
+                  className="bg-slate-900/80 backdrop-blur-md rounded-full p-2.5 text-slate-400 hover:text-red-400 border border-slate-800 shadow-xl transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+              <ActiveRideView 
+                status={status}
+                activeOrder={activeOrder}
+                onAccept={handleAcceptOrder}
+                onDecline={handleDeclineOrder}
+                onArriveRest={handleArriveAtRestaurant}
+                onPickedUp={handleConfirmPickedUp}
+                onDelivered={handleMarkDelivered}
+                onSettle={() => handleCompleteRestReset({ tip: 0 })}
+                driverCoords={driverCoords}
+                activePath={activePath}
+              />
+            </>
           )}
 
           {currentView === 'history' && (
@@ -359,7 +415,7 @@ export default function App() {
         </div>
 
         {/* Bottom Navigation Bar (Hidden on Welcome) */}
-        {currentView !== 'welcome' && (
+        {currentView !== 'welcome' && currentView !== 'login' && (
           <div className="bg-slate-900 border-t border-slate-800 flex justify-around items-center p-3 pb-6 md:pb-4 shadow-[0_-5px_20px_rgba(0,0,0,0.05)] z-40 relative">
             <button 
               onClick={() => setCurrentView('map')}

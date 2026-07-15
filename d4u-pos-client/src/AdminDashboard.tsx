@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TrendingUp, Users, DollarSign, ShoppingBag, ArrowUpRight, Database, Download, Upload, Filter, Calendar } from 'lucide-react';
 import { db } from './db';
+import { customAlert, customSuccess, customConfirm } from './utils/alerts';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
@@ -94,8 +95,8 @@ export default function AdminDashboard({ currentUser }: { currentUser?: any }) {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (e) {
-      alert('Failed to export backup: ' + e);
+    } catch (e: any) {
+      customAlert('Failed to export backup: ' + e.message);
     }
   };
 
@@ -109,18 +110,18 @@ export default function AdminDashboard({ currentUser }: { currentUser?: any }) {
         const json = JSON.parse(event.target?.result as string);
         if (!json.data) throw new Error('Invalid backup format');
         
-        if (window.confirm('WARNING: This will overwrite all current local data with the backup. Proceed?')) {
+        if (await customConfirm('WARNING: This will overwrite all current local data with the backup. Proceed?')) {
           await db.transaction('rw', db.kots, db.inventory, db.crmCustomers, db.staffLogs, async () => {
             if (json.data.kots) { await db.kots.clear(); await db.kots.bulkAdd(json.data.kots); }
             if (json.data.inventory) { await db.inventory.clear(); await db.inventory.bulkAdd(json.data.inventory); }
             if (json.data.crmCustomers) { await db.crmCustomers.clear(); await db.crmCustomers.bulkAdd(json.data.crmCustomers); }
             if (json.data.staffLogs) { await db.staffLogs.clear(); await db.staffLogs.bulkAdd(json.data.staffLogs); }
           });
-          alert('Backup restored successfully! Please refresh the page.');
-          window.location.reload();
+          customSuccess('Backup restored successfully! Please refresh the page.');
+          setTimeout(() => window.location.reload(), 2000);
         }
-      } catch (err) {
-        alert('Failed to import backup: ' + err);
+      } catch (err: any) {
+        customAlert('Failed to import backup: ' + err.message);
       }
     };
     reader.readAsText(file);

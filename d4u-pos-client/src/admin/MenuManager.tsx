@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ListTree, Plus, Edit, Trash2, Tag, Utensils } from 'lucide-react';
+import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
@@ -86,7 +87,7 @@ export default function MenuManager() {
   };
 
   const handleDeleteProduct = async (id: number) => {
-    if (!window.confirm('Delete this product? It will be hidden from POS.')) return;
+    if (!(await customConfirm('Delete this product? It will be hidden from POS.'))) return;
     try {
       await fetch(`${BACKEND_URL}/catalog/products/${id}`, { method: 'DELETE' });
       fetchProducts();

@@ -9,13 +9,18 @@ export class RiderService {
     private gateway: AppGateway,
   ) {}
 
-  async getRiderOrders() {
-    return this.prisma.onlineOrder.findMany({
-      where: {
-        status: {
-          in: ['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID'],
-        },
+  async getRiderOrders(storeId?: string) {
+    const whereClause: any = {
+      status: {
+        in: ['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID'],
       },
+    };
+    if (storeId) {
+      whereClause.store_id = Number(storeId);
+    }
+    
+    return this.prisma.onlineOrder.findMany({
+      where: whereClause,
       orderBy: { id: 'desc' },
     });
   }

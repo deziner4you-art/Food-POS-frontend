@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Store, PackageOpen, ChefHat, Globe, LayoutDashboard, LogOut, Lock, Users } from 'lucide-react';
+import { AdminProvider, useAdminContext } from './context/AdminContext';
 
-import StoreManager from './pages/StoreManager';
 import StaffPermissions from './pages/StaffPermissions';
 import InventoryManager from './pages/InventoryManager';
 import RecipeManager from './pages/RecipeManager';
@@ -10,6 +10,7 @@ import MenuManager from './pages/MenuManager';
 import CmsManager from './pages/CmsManager';
 import Dashboard from './pages/Dashboard';
 import MarketingHub from './pages/MarketingHub';
+import CustomersManager from './pages/CustomersManager';
 import SuperAdmin from './pages/SuperAdmin';
 import OwnerApp from './pages/OwnerApp';
 import SetupWizard from './pages/SetupWizard';
@@ -18,30 +19,71 @@ import { Megaphone, ShieldCheck } from 'lucide-react';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+
 function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, onLogout: () => void, user: any }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  const navItems = [
-    { path: '/', label: 'Overview', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' },
-    { path: '/stores', label: 'Branches', icon: Store, color: 'text-blue-400', bg: 'bg-blue-500/20' },
-    { path: '/staff', label: 'Staff & Permissions', icon: Users, color: 'text-indigo-400', bg: 'bg-indigo-500/20' },
-    { path: '/menu', label: 'Menu Builder', icon: ChefHat, color: 'text-[#3b82f6]', bg: 'bg-[#3b82f6]/20' },
-    { path: '/inventory', label: 'Inventory', icon: PackageOpen, color: 'text-[#8b5cf6]', bg: 'bg-[#8b5cf6]/20' },
-    { path: '/recipes', label: 'Recipe Costing', icon: ChefHat, color: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]/20' },
-    { path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' },
-    { path: '/cms', label: 'Website CMS', icon: Globe, color: 'text-[#ec4899]', bg: 'bg-[#ec4899]/20' },
-    { path: '/saas', label: 'SaaS Setup', icon: ShieldCheck, color: 'text-purple-400', bg: 'bg-purple-500/20' }
+  const { isBranchEntered, setIsBranchEntered, branches, selectedBranchId } = useAdminContext();
+  const selectedBranch = branches.find(b => b.id === selectedBranchId);
+
+  let navItems = [
+    { path: '/', label: 'Overview', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' }
   ];
+
+  if (isBranchEntered) {
+    navItems = [
+      ...navItems,
+      { path: '/staff', label: 'Staff & Permissions', icon: Users, color: 'text-indigo-400', bg: 'bg-indigo-500/20' },
+      { path: '/menu', label: 'Menu Builder', icon: ChefHat, color: 'text-[#3b82f6]', bg: 'bg-[#3b82f6]/20' },
+      { path: '/inventory', label: 'Inventory', icon: PackageOpen, color: 'text-[#8b5cf6]', bg: 'bg-[#8b5cf6]/20' },
+      { path: '/recipes', label: 'Recipe Costing', icon: ChefHat, color: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]/20' },
+      { path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' },
+      { path: '/customers', label: 'CRM & Loyalty', icon: Users, color: 'text-amber-400', bg: 'bg-amber-500/20' },
+      { path: '/cms', label: 'Website CMS', icon: Globe, color: 'text-[#ec4899]', bg: 'bg-[#ec4899]/20' }
+    ];
+  }
+
+  if (user?.role === 'Super Admin') {
+    navItems.push({ path: '/saas', label: 'SaaS Setup', icon: ShieldCheck, color: 'text-purple-400', bg: 'bg-purple-500/20' });
+  }
 
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden">
       {/* Sidebar */}
-      <div className="w-64 bg-slate-900 border-r border-slate-800 p-4 flex flex-col gap-2">
-        <div className="mb-8 px-4 pt-4">
-          <h2 className="text-2xl font-black text-white">D4U Admin</h2>
-          <p className="text-xs text-slate-500 mt-1">Head Office HQ</p>
+      <div className={`${isSidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 bg-slate-900 border-r border-slate-800 p-4 flex flex-col gap-2 relative`}>
+        <button 
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="absolute -right-3 top-8 bg-slate-800 text-slate-300 border border-slate-700 rounded-full p-1 hover:text-white hover:bg-slate-700 z-10"
+        >
+          {isSidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+        </button>
+
+        <div className={`mb-6 pt-4 transition-all overflow-hidden ${isSidebarOpen ? 'px-4' : 'px-0 text-center'}`}>
+          <h2 className={`font-black text-white whitespace-nowrap ${isSidebarOpen ? 'text-2xl' : 'text-sm'}`}>
+            {isSidebarOpen ? 'D4U Admin' : 'D4U'}
+          </h2>
+          {isSidebarOpen && <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">Head Office HQ</p>}
         </div>
+
+        {/* Branch context indicator */}
+        {isBranchEntered && selectedBranch && (
+          <div className="mb-2">
+            <div className={`${isSidebarOpen ? 'px-4 py-3' : 'px-2 py-3 justify-center'} flex items-center gap-2 bg-pink-500/10 border border-pink-500/30 rounded-xl`}>
+              <Store size={16} className="text-pink-400 min-w-[16px]" />
+              {isSidebarOpen && <span className="text-pink-300 font-bold text-xs whitespace-nowrap overflow-hidden text-ellipsis">{selectedBranch.name}</span>}
+            </div>
+            <button
+              onClick={() => { setIsBranchEntered(false); navigate('/'); }}
+              className={`mt-1 w-full text-xs text-slate-400 hover:text-white flex items-center ${isSidebarOpen ? 'gap-1 px-2 justify-start' : 'justify-center'} py-1 rounded-lg hover:bg-slate-800 transition-colors`}
+              title="Back to Overview"
+            >
+              <ChevronLeft size={14} /> {isSidebarOpen && 'Back to Overview'}
+            </button>
+          </div>
+        )}
 
         {navItems.map(item => {
           const isActive = location.pathname === item.path;
@@ -50,19 +92,23 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
             <button 
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`flex items-center gap-3 w-full p-4 rounded-xl font-bold transition-all ${isActive ? `${item.bg} ${item.color}` : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+              className={`flex items-center ${isSidebarOpen ? 'gap-3 px-4 py-4' : 'justify-center py-4 px-0'} w-full rounded-xl font-bold transition-all ${isActive ? `${item.bg} ${item.color}` : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+              title={!isSidebarOpen ? item.label : ''}
             >
-              <Icon size={20} /> {item.label}
+              <Icon size={20} className="min-w-[20px]" /> 
+              {isSidebarOpen && <span className="whitespace-nowrap overflow-hidden text-ellipsis">{item.label}</span>}
             </button>
           )
         })}
 
         <div className="mt-auto pt-4 border-t border-slate-800">
-          <div className="flex items-center justify-between px-4 py-2">
-            <div className="flex flex-col">
-              <span className="text-white font-bold text-sm">{user?.name || 'Admin'}</span>
-              <span className="text-slate-500 text-xs">{user?.role || 'System'}</span>
-            </div>
+          <div className={`flex items-center ${isSidebarOpen ? 'justify-between px-4' : 'justify-center'} py-2`}>
+            {isSidebarOpen && (
+              <div className="flex flex-col overflow-hidden">
+                <span className="text-white font-bold text-sm whitespace-nowrap text-ellipsis">{user?.name || 'Admin'}</span>
+                <span className="text-slate-500 text-xs whitespace-nowrap text-ellipsis">{user?.role || 'System'}</span>
+              </div>
+            )}
             <button onClick={onLogout} className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors" title="Logout">
               <LogOut size={18} />
             </button>
@@ -71,7 +117,7 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 bg-slate-900 overflow-y-auto p-8">
+      <div className="flex-1 bg-slate-900 overflow-y-auto p-8 relative">
         {children}
       </div>
     </div>
@@ -79,6 +125,10 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
 }
 
 // Overview placeholder removed, we use Dashboard now
+
+import { Toaster } from 'react-hot-toast';
+
+
 
 export default function App() {
   const [settings, setSettings] = useState<any>(null);
@@ -126,7 +176,7 @@ export default function App() {
       if (!res.ok) throw new Error('Invalid Credentials');
       const data = await res.json();
       
-      if (data.user.role !== 'Admin' && data.user.role !== 'HeadOffice') {
+      if (data.user.role !== 'Super Admin' && data.user.role !== 'Business Admin' && data.user.role !== 'Admin' && data.user.role !== 'HeadOffice') {
         throw new Error('Access Denied. Admins only.');
       }
 
@@ -213,25 +263,28 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/owner" element={<OwnerApp />} />
-        <Route path="/setup" element={<SetupWizard />} />
-        <Route path="/*" element={
-          <AdminLayout onLogout={handleLogout} user={user}>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/stores" element={<StoreManager />} />
-              <Route path="/staff" element={<StaffPermissions />} />
-              <Route path="/menu" element={<MenuManager />} />
-              <Route path="/inventory" element={<InventoryManager />} />
-              <Route path="/recipes" element={<RecipeManager />} />
-              <Route path="/marketing" element={<MarketingHub />} />
-              <Route path="/cms" element={<CmsManager />} />
-              <Route path="/saas" element={<SuperAdmin />} />
-            </Routes>
-          </AdminLayout>
-        } />
-      </Routes>
+      <AdminProvider>
+        <Toaster position="bottom-right" />
+        <Routes>
+          <Route path="/owner" element={<OwnerApp />} />
+          <Route path="/setup" element={<SetupWizard />} />
+          <Route path="/*" element={
+            <AdminLayout onLogout={handleLogout} user={user}>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/staff" element={<StaffPermissions />} />
+                <Route path="/menu" element={<MenuManager />} />
+                <Route path="/inventory" element={<InventoryManager />} />
+                <Route path="/recipes" element={<RecipeManager />} />
+                <Route path="/marketing" element={<MarketingHub />} />
+                <Route path="/customers" element={<CustomersManager />} />
+                <Route path="/cms" element={<CmsManager />} />
+                <Route path="/saas" element={<SuperAdmin />} />
+              </Routes>
+            </AdminLayout>
+          } />
+        </Routes>
+      </AdminProvider>
     </BrowserRouter>
   );
 }

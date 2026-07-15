@@ -1,17 +1,19 @@
 import React from 'react';
-import { Package, HelpCircle, Flame, Plus, Minus, Check, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Package, HelpCircle, Flame, Plus, Minus, Check, RefreshCw, AlertTriangle, Lock } from 'lucide-react';
 import type { Ingredient } from '../types';
 
 interface InventoryProps {
   ingredients: Ingredient[];
   onUpdateInventory: (ingredientId: string, amount: number) => void;
   onRestockAll: () => void;
+  readOnly?: boolean;
 }
 
 export default function InventoryView({
   ingredients,
   onUpdateInventory,
-  onRestockAll
+  onRestockAll,
+  readOnly = false
 }: InventoryProps) {
 
   return (
@@ -23,19 +25,21 @@ export default function InventoryView({
           <h2 className="text-2xl font-display font-bold text-[#dce2f7] flex items-center gap-2">
             <Package className="w-7 h-7 text-brand-yellow" />
             <span>Recipe Ingredients Inventory</span>
+            {readOnly && <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-xs uppercase tracking-wider font-bold border border-slate-700 flex items-center gap-1"><Lock className="w-3 h-3" /> Locked</span>}
           </h2>
           <p className="text-[#d3c5ac] text-xs font-mono mt-1">
             Re-calculation monitor. Stock levels sync automatically as kitchen tickets complete.
           </p>
         </div>
-
-        <button
-          onClick={onRestockAll}
-          className="flex items-center gap-2 px-5 py-3 bg-[#ffe1a7] hover:bg-brand-yellow text-[#402d00] font-display font-bold rounded-xl text-sm transition-all shadow-lg hover:scale-102 cursor-pointer"
-        >
-          <RefreshCw className="w-4 h-4 text-[#402d00] animate-spin" style={{ animationDuration: '4s' }} />
-          <span>FULL RESTOCK OVERDRIVE</span>
-        </button>
+        {!readOnly && (
+          <button 
+            onClick={onRestockAll}
+            className="flex items-center gap-2 bg-brand-yellow hover:bg-brand-yellowHover text-brand-dark px-4 py-2 rounded-xl font-bold transition transform hover:scale-105 active:scale-95 text-sm shadow-[0_0_15px_rgba(255,185,0,0.2)]"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Restock All Max</span>
+          </button>
+        )}
       </div>
 
       {/* Grid of Materials Cards */}
@@ -96,31 +100,17 @@ export default function InventoryView({
                   />
                 </div>
                 
-                <div className="flex justify-between text-[10px] font-mono text-[#d3c5ac]/50 select-none">
+                <div className="flex justify-between text-[10px] font-mono text-[#d3c5ac]/50 select-none items-center">
                   <span>Empty</span>
                   <span>Alert Threshold: {ing.warningThreshold} {ing.unit}</span>
                   <span>Max</span>
                 </div>
-              </div>
-
-              {/* Increments modification controls */}
-              <div className="flex items-center justify-end gap-2.5 border-t border-[#4f4633]/15 pt-4">
-                <button
-                  onClick={() => onUpdateInventory(ing.id, -10)}
-                  disabled={ing.currentStock <= 0}
-                  className="w-10 h-10 rounded-xl bg-[#2e3545] text-[#dce2f7] flex items-center justify-center hover:bg-[#3d3722] disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-all border border-[#4f4633]/20"
-                  title="Deduct 10 units"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => onUpdateInventory(ing.id, 10)}
-                  disabled={ing.currentStock >= ing.maxStock}
-                  className="w-10 h-10 rounded-xl bg-[#2e3545] text-[#dce2f7] flex items-center justify-center hover:bg-[#3d3722] disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-all border border-[#4f4633]/20"
-                  title="Add 10 units"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                {!readOnly && (
+                  <div className="flex justify-between mt-2 pt-2 border-t border-[#4f4633]/20">
+                    <button onClick={() => onUpdateInventory(ing.id, -5)} className="px-3 py-1 bg-brand-red/10 text-brand-red hover:bg-brand-red/20 rounded font-bold text-xs">-5</button>
+                    <button onClick={() => onUpdateInventory(ing.id, 5)} className="px-3 py-1 bg-brand-green/10 text-brand-green hover:bg-brand-green/20 rounded font-bold text-xs">+5</button>
+                  </div>
+                )}
               </div>
 
             </div>

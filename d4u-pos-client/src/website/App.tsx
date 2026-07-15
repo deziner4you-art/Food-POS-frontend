@@ -6,6 +6,7 @@ import MobileMode from './components/MobileMode';
 import LandingMode from './components/LandingMode';
 import './index.css';
 import { db } from '../db';
+import { customAlert, customSuccess } from '../utils/alerts';
 
 export default function App() {
   const [currentMode, setCurrentMode] = useState<ViewMode>('kiosk');
@@ -109,7 +110,7 @@ export default function App() {
   // Process Checkout to POS
   const handleCheckout = async () => {
     if (cart.length === 0) {
-      alert("Your cart is empty!");
+      customAlert("Your cart is empty!");
       return;
     }
 
@@ -141,11 +142,11 @@ export default function App() {
 
     try {
       await db.kots.add(newKot);
-      alert('Order placed successfully! Pending restaurant approval.');
+      customSuccess('Order placed successfully! Pending restaurant approval.');
       setCart([]);
     } catch (e) {
       console.error('Checkout failed', e);
-      alert('Error placing order.');
+      customAlert('Error placing order.');
     }
   };
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ChefHat, Save, Plus, Trash2, CheckCircle2 } from 'lucide-react';
+import { ChefHat, Save, Plus, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
+import { customAlert, customSuccess } from '../utils/alerts';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
@@ -67,7 +68,7 @@ export default function RecipeManager() {
   }, [selectedProductId]);
 
   const addRow = () => {
-    setRecipeRows([...recipeRows, { id: Math.random().toString(), inventory_id: 0, quantity: 0, unit: '', price: 0, total: 0 }]);
+    setRecipeRows([{ id: Math.random().toString(), inventory_id: 0, quantity: 0, unit: '', price: 0, total: 0 }, ...recipeRows]);
   };
 
   const removeRow = (id: string) => {
@@ -103,10 +104,20 @@ export default function RecipeManager() {
   };
 
   const handleSaveRecipe = async () => {
-    if (!selectedProductId) return alert('Please select a product first.');
+    if (!selectedProductId) return customAlert('Please select a product first.');
     
-    // Filter out incomplete rows
-    const validRows = recipeRows.filter(r => r.inventory_id > 0 && r.quantity > 0);
+    // Filter out incomplete rows and ensure integers
+    const validRows = recipeRows
+      .filter(r => parseInt(r.inventory_id) > 0 && parseFloat(r.quantity) > 0)
+      .map(r => ({
+        inventory_id: parseInt(r.inventory_id),
+        quantity: parseFloat(r.quantity),
+        unit: r.unit
+      }));
+      
+    if (validRows.length === 0 && recipeRows.length > 0) {
+      return customAlert("No valid rows to save. Make sure all items have a selected material and a quantity greater than 0.");
+    }
     
     setIsSaving(true);
     try {
@@ -115,18 +126,146 @@ export default function RecipeManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ingredients: validRows })
       });
-      if (res.ok) {
-        const result = await res.json();
-        alert(`Recipe Saved Successfully!\nNew Total Cost: Rs. ${result.totalCost?.toFixed(2) || grandTotal.toFixed(2)}`);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Failed to save recipe');
       }
-    } catch (e) {
+      const result = await res.json();
+      customSuccess(`Recipe Saved Successfully!\nNew Total Cost: Rs. ${result.totalCost?.toFixed(2) || grandTotal.toFixed(2)}`);
+    } catch (e: any) {
       console.error('Failed to save recipe', e);
+      customAlert(`Error saving recipe: ${e.message}`);
     }
     setIsSaving(false);
   };
 
   const grandTotal = recipeRows.reduce((sum, row) => sum + (row.total || 0), 0);
   const selectedProduct = products.find(p => p.id === selectedProductId);
+
+  const exportCSV = () => {
+    if (!selectedProductId || recipeRows.length === 0) return;
+    const header = "Inventory ID,Item Name,Quantity,Unit,Unit Price,Total Cost\n";
+    const rows = recipeRows.filter(r => parseInt(r.inventory_id) > 0).map(row => {
+      const invName = inventory.find(i => i.id === parseInt(row.inventory_id))?.name || '';
+      return `${row.inventory_id},"${invName}",${row.quantity},${row.unit},${row.price},${row.total}`;
+    }).join("\n");
+    const csvData = header + rows;
+    const blob = new Blob([csvData], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `recipe_${selectedProduct?.name?.replace(/\s+/g, '_') || 'product'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const target = e.target;
+    const reader = new FileReader();
+    
+    reader.onload = async (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+        if (lines.length <= 1) {
+          target.value = '';
+          return customAlert("Empty or invalid CSV file.");
+        }
+        
+        const newRows: any[] = [];
+        const localInventory = [...inventory];
+        
+        for (let i = 1; i < lines.length; i++) {
+          let line = lines[i];
+          let cols = [];
+          let inQuotes = false;
+          let currentPart = '';
+          for (let j = 0; j < line.length; j++) {
+              if (line[j] === '"') {
+                  inQuotes = !inQuotes;
+              } else if (line[j] === ',' && !inQuotes) {
+                  cols.push(currentPart);
+                  currentPart = '';
+              } else {
+                  currentPart += line[j];
+              }
+          }
+          cols.push(currentPart);
+          cols = cols.map(c => c.trim().replace(/^"|"$/g, '')); // Strip any remaining quotes just in case
+
+          if (cols.length >= 3) {
+            let inv_id = parseInt(cols[0]);
+            const itemName = cols[1];
+            const qty = parseFloat(cols[2]);
+            const unit = cols[3] || 'Count';
+            let price = parseFloat(cols[4] || '0');
+            
+            let existingItem = !isNaN(inv_id) ? localInventory.find(inv => inv.id === inv_id) : undefined;
+
+            if (!existingItem && itemName) {
+              existingItem = localInventory.find(inv => inv.name.toLowerCase() === itemName.toLowerCase());
+              if (!existingItem) {
+                 try {
+                   const res = await fetch(`${BACKEND_URL}/inventory/items`, {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify({
+                       store_id: 1, 
+                       name: itemName,
+                       quantity: 0,
+                       unit: unit,
+                       unit_price: isNaN(price) ? 0 : price,
+                       min_threshold: 10
+                     })
+                   });
+                   if (res.ok) {
+                     existingItem = await res.json();
+                     localInventory.push(existingItem);
+                   }
+                 } catch (err) {
+                   console.error("Failed to create inventory item", err);
+                 }
+              }
+            }
+
+            if (existingItem) {
+              inv_id = existingItem.id;
+              if (isNaN(price) || price === 0) price = existingItem.unit_price || 0;
+            }
+
+            if (existingItem && !isNaN(qty) && qty > 0) {
+              const finalPrice = !isNaN(price) ? price : 0;
+              newRows.push({
+                id: Math.random().toString(),
+                inventory_id: inv_id,
+                quantity: qty,
+                unit: unit || existingItem.unit || 'Count',
+                price: finalPrice,
+                total: parseFloat((qty * finalPrice).toFixed(2))
+              });
+            }
+          }
+        }
+        
+        setInventory(localInventory);
+        if (newRows.length > 0) {
+          setRecipeRows(newRows);
+          customSuccess("CSV imported successfully! Don't forget to click Save Recipe.");
+        } else {
+          customAlert("No valid rows found in CSV.");
+        }
+      } catch (err) {
+        console.error("CSV Parsing error:", err);
+        customAlert("Failed to parse CSV file.");
+      } finally {
+        target.value = ''; 
+      }
+    };
+    reader.readAsText(file);
+  };
 
   return (
     <div className="animate-fade-in flex flex-col h-[calc(100vh-160px)] gap-6">
@@ -215,7 +354,18 @@ export default function RecipeManager() {
                           onChange={(e) => updateRow(row.id, 'quantity', parseFloat(e.target.value) || 0)}
                         />
                       </td>
-                      <td className="p-3 text-slate-400 font-mono">{row.unit || '-'}</td>
+                      <td className="p-3 text-slate-400 font-mono">
+                        <select 
+                          className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-[#fbbf24]"
+                          value={row.unit || ''}
+                          onChange={(e) => updateRow(row.id, 'unit', e.target.value)}
+                        >
+                          <option value="">Select Unit...</option>
+                          {['Count', 'kg', 'gram', 'ml', 'Liter', 'piece', 'box', 'bottle', 'packet', 'slice'].map(u => (
+                            <option key={u} value={u}>{u}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td className="p-3 text-slate-400 font-mono">Rs. {row.price.toFixed(2)}</td>
                       <td className="p-3 font-mono font-bold text-[#fbbf24]">Rs. {row.total.toFixed(2)}</td>
                       <td className="p-3 text-center">
@@ -231,12 +381,25 @@ export default function RecipeManager() {
             
             {/* Action Footer */}
             <div className="bg-slate-900/50 border-t border-slate-700 p-4 flex justify-between items-center">
-              <button 
-                onClick={addRow}
-                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
-              >
-                <Plus size={18} /> Add Row
-              </button>
+              <div className="flex gap-3">
+                <button 
+                  onClick={addRow}
+                  className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
+                >
+                  <Plus size={18} /> Add Row
+                </button>
+                <button 
+                  onClick={exportCSV}
+                  className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-indigo-400 hover:text-indigo-300 px-4 py-2 rounded-lg font-bold transition-colors"
+                  title="Export to CSV"
+                >
+                  <Download size={18} /> Export CSV
+                </button>
+                <label className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-emerald-400 hover:text-emerald-300 px-4 py-2 rounded-lg font-bold transition-colors cursor-pointer">
+                  <Upload size={18} /> Import CSV
+                  <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+                </label>
+              </div>
               
               <div className="flex items-center gap-6">
                 <div className="text-right">

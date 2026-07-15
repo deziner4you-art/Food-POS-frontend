@@ -61,9 +61,9 @@ export class CmsController {
   }
 
   // --- Settings ---
-  @Get('settings/:brand_id')
-  getSettingsByBrand(@Param('brand_id') brandId: string) {
-    return this.cmsService.getSettings(parseInt(brandId));
+  @Get('settings/:store_id')
+  getSettingsByStore(@Param('store_id') storeId: string) {
+    return this.cmsService.getSettings(parseInt(storeId));
   }
 
   @Get('settings')
@@ -71,11 +71,18 @@ export class CmsController {
     return this.cmsService.getSettings(1);
   }
 
-  @Patch('settings/:brand_id')
+  @Patch('settings/:storeId')
   updateSettings(
-    @Param('brand_id', ParseIntPipe) brandId: number,
+    @Param('storeId', ParseIntPipe) storeId: number,
     @Body() body: any,
   ) {
-    return this.cmsService.updateSettings(brandId, body);
+    return this.cmsService.updateSettings(storeId, body);
+  }
+
+  @Post('subscribe')
+  subscribe(
+    @Body() body: { store_id: number; email: string },
+  ) {
+    return this.cmsService.subscribeNewsletter(body.store_id, body.email);
   }
 }

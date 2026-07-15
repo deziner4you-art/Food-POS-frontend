@@ -25,11 +25,15 @@ import {
   Clock,
   Banknote,
   CreditCard,
-  Tag
+  Tag,
+  Megaphone
 } from 'lucide-react';
 
 interface LandingModeProps {
   storeId: number;
+  storeName?: string;
+  stores?: any[];
+  onStoreChange?: (id: number) => void;
   foodItems: FoodItem[];
   cart: CartItem[];
   onAddToCart: (item: FoodItem) => void;
@@ -38,10 +42,14 @@ interface LandingModeProps {
   onIncreaseQuantity: (itemId: string) => void;
   onClearCart: () => void;
   banners?: any[];
+  campaigns?: any[];
 }
 
 export default function LandingMode({
   storeId,
+  storeName = 'D4U',
+  stores = [],
+  onStoreChange,
   foodItems,
   cart,
   onAddToCart,
@@ -49,10 +57,11 @@ export default function LandingMode({
   onDecreaseQuantity,
   onIncreaseQuantity,
   onClearCart,
-  banners: propBanners
+  banners: propBanners = [],
+  campaigns = []
 }: LandingModeProps) {
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
-  const [selectedStore, setSelectedStore] = useState<number>(1);
+  const [activeCategory, setActiveCategory] = useState<string>('');
   const [emailValue, setEmailValue] = useState<string>('');
   const [notificationMsg, setNotificationMsg] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
@@ -95,40 +104,68 @@ export default function LandingMode({
   // Loyalty State
   const [useLoyaltyPoints, setUseLoyaltyPoints] = useState<boolean>(false);
 
+  // Campaign Modal
+  const [activeCampaignModal, setActiveCampaignModal] = useState<any>(null);
+
   // Checkout Profile Modal
   const [isCheckoutProfileOpen, setIsCheckoutProfileOpen] = useState<boolean>(false);
   const [checkoutName, setCheckoutName] = useState<string>('');
   const [checkoutPhone, setCheckoutPhone] = useState<string>('');
   const [checkoutAddress, setCheckoutAddress] = useState<string>('');
-  const [checkoutError, setCheckoutError] = useState<string>('');
-  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+
+  // Staff Section
+  const [staffMembers, setStaffMembers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (storeId) {
+      fetch(`${BACKEND_URL}/users?store_id=${storeId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setStaffMembers(data.filter((u: any) => {
+              const roleName = u.role?.name?.toLowerCase() || '';
+              return roleName !== 'rider' && roleName !== 'superadmin';
+            }));
+          }
+        })
+        .catch(console.error);
+    }
+  }, [storeId]);
 
   // CMS State
   const [banners, setBanners] = useState<any[]>(propBanners || []);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const [siteSettings, setSiteSettings] = useState<any>(null);
-  
-  // Marketing Campaigns
-  const [campaigns, setCampaigns] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (customer?.id && siteSettings?.module_loyalty_enabled) {
+      fetch(`${BACKEND_URL}/customers/${customer.id}/wallet`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.loyalty_points !== undefined && data.loyalty_points !== customer.loyalty_points) {
+            const updatedCustomer = { ...customer, loyalty_points: data.loyalty_points };
+            setCustomer(updatedCustomer);
+            localStorage.setItem('d4u_customer', JSON.stringify(updatedCustomer));
+          }
+        })
+        .catch(console.error);
+    }
+  }, [customer?.id, siteSettings?.module_loyalty_enabled]);
+  const [checkoutError, setCheckoutError] = useState<string>('');
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+
 
   useEffect(() => {
     if (propBanners && propBanners.length > 0) {
       setBanners(propBanners.filter((ban: any) => ban.isActive).sort((x: any, y: any) => x.displayOrder - y.displayOrder));
     }
   }, [propBanners]);
-
+  
   useEffect(() => {
     const fetchCmsData = async () => {
       try {
-        const [settingsRes, campaignsRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/cms/settings`),
-          fetch(`${BACKEND_URL}/marketing/campaign`)
-        ]);
+        const settingsRes = await fetch(`${BACKEND_URL}/cms/settings`);
         if (settingsRes.ok) setSiteSettings(await settingsRes.json());
-        if (campaignsRes.ok) {
-          const c = await campaignsRes.json();
-          setCampaigns(c.filter((camp: any) => camp.published_web));
-        }
       } catch (e) {
         console.error('CMS fetch error', e);
       }
@@ -343,7 +380,7 @@ export default function LandingMode({
     id: '0', name: 'Loading...', priceRs: 0, priceUSD: 0, 
     description: 'Please wait...', 
     image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80', 
-    category: '', tag: '' 
+    category: '' as any, tag: '' as any 
   };
 
   const megaZinger = foodItems.find(i => i.id === '3') || foodItems[0] || fallbackItem;
@@ -457,53 +494,45 @@ export default function LandingMode({
         </div>
       )}
 
-      <header id="landing-master-header" className="sticky top-0 left-0 w-full z-50 transition-all duration-300 px-8 h-20 flex justify-between items-center bg-[#0c1322]/90 backdrop-blur-md border-b border-slate-800/40">
-        <div className="flex items-center gap-10">
-          <h1 className="font-headline-md text-2xl font-black text-[#ffe1a7] tracking-tight cursor-pointer">DineDash</h1>
-          <nav className="hidden md:flex items-center gap-6">
-            <span className="font-bold text-xs text-[#ffe1a7] border-b-2 border-[#ffe1a7] pb-1 transition-all uppercase tracking-widest cursor-pointer">Menu</span>
-            <span className="font-bold text-xs text-[#d3c5ac] hover:text-[#ffe1a7] transition-all uppercase tracking-widest cursor-pointer">Deals</span>
-            {siteSettings?.module_loyalty_enabled && (
-              <span className="font-bold text-xs text-[#d3c5ac] hover:text-[#ffe1a7] transition-all uppercase tracking-widest cursor-pointer">Rewards</span>
-            )}
-            <span className="font-bold text-xs text-[#d3c5ac] hover:text-[#ffe1a7] transition-all uppercase tracking-widest cursor-pointer">Support</span>
-          </nav>
-        </div>
+    <header id="landing-master-header" className="fixed top-0 left-0 w-full z-[100] transition-all duration-300 px-8 h-20 flex justify-between items-center bg-[#ffe1a7] shadow-xl">
+      <div className="flex items-center gap-10">
+        <h1 className="font-headline-md text-2xl font-black text-[#0c1322] tracking-tight cursor-pointer">{storeName}</h1>
+        <nav className="hidden md:flex items-center gap-6">
+          <span className="font-bold text-xs text-[#0c1322] border-b-2 border-[#0c1322] pb-1 transition-all uppercase tracking-widest cursor-pointer">Menu</span>
+          <span className="font-bold text-xs text-[#0c1322]/70 hover:text-[#0c1322] transition-all uppercase tracking-widest cursor-pointer">Deals</span>
+          {siteSettings?.module_loyalty_enabled && (
+            <span className="font-bold text-xs text-[#0c1322]/70 hover:text-[#0c1322] transition-all uppercase tracking-widest cursor-pointer">Rewards</span>
+          )}
+          <span className="font-bold text-xs text-[#0c1322]/70 hover:text-[#0c1322] transition-all uppercase tracking-widest cursor-pointer">Support</span>
+        </nav>
+      </div>
 
-        <div className="flex items-center gap-4">
-          <button className="p-2 text-[#d3c5ac] hover:text-[#ffe1a7] transition-colors">
-            <Search className="w-5 h-5" />
-          </button>
+      <div className="flex items-center gap-4">
+        <button className="p-2 text-[#0c1322]/70 hover:text-[#0c1322] transition-colors">
+          <Search className="w-5 h-5" />
+        </button>
           
-          <select 
-            value={selectedStore} 
-            onChange={(e) => setSelectedStore(Number(e.target.value))}
-            className="bg-[#191f2f] border border-[#fbbf24]/40 text-[#ffe1a7] text-xs font-bold rounded-full px-3 py-1.5 outline-none cursor-pointer hidden sm:block"
-          >
-            <option value={1}>Branch 1 (DHA)</option>
-            <option value={2}>Branch 2 (Gulberg)</option>
-            <option value={3}>Branch 3 (Johar Town)</option>
-          </select>
+          {/* Removed branch dropdown as per requirement */}
 
-          {customer ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsMyOrdersOpen(true)}
-                className="flex items-center gap-2 bg-[#191f2f] border border-[#fbbf24]/40 hover:border-[#fbbf24] px-3 py-1.5 rounded-full transition-all"
-              >
-                <div className="w-6 h-6 rounded-full bg-[#fbbf24] flex items-center justify-center text-slate-900 text-[10px] font-black">
-                  {(customer.name || 'U').charAt(0).toUpperCase()}
-                </div>
-                <span className="text-xs font-bold text-[#ffe1a7] max-w-[80px] truncate hidden sm:block">{customer.name}</span>
-              </button>
-              {siteSettings?.module_loyalty_enabled && (
-                <div className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/20 to-amber-600/20 border border-amber-500/40 px-3 py-1.5 rounded-full" title="Your Loyalty Points">
-                  <Award className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="text-xs font-black text-amber-400">{customer.loyalty_points || 0} pts</span>
-                </div>
-              )}
-            </div>
-          ) : (
+        {customer ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsMyOrdersOpen(true)}
+              className="flex items-center gap-2 bg-white/50 border border-[#0c1322]/20 hover:border-[#0c1322]/50 px-3 py-1.5 rounded-full transition-all"
+            >
+              <div className="w-6 h-6 rounded-full bg-[#0c1322] flex items-center justify-center text-[#ffe1a7] text-[10px] font-black">
+                {(customer.name || 'U').charAt(0).toUpperCase()}
+              </div>
+              <span className="text-xs font-bold text-[#0c1322] max-w-[80px] truncate hidden sm:block">{customer.name}</span>
+            </button>
+            {siteSettings?.module_loyalty_enabled && (
+              <div className="flex items-center gap-1.5 bg-white/50 border border-[#0c1322]/20 px-3 py-1.5 rounded-full" title="Your Loyalty Points">
+                <Award className="w-3.5 h-3.5 text-[#0c1322]" />
+                <span className="text-xs font-black text-[#0c1322]">{customer.loyalty_points || 0} pts</span>
+              </div>
+            )}
+          </div>
+        ) : (
             <div className="flex items-center gap-2">
               {/* If guest has an active order — show live order badge */}
               {trackedOrderId && (
@@ -514,14 +543,14 @@ export default function LandingMode({
                     setTrackError('');
                     setIsTrackOpen(true);
                   }}
-                  className="flex items-center gap-2 bg-[#141b2b] border border-[#4edea3]/40 hover:border-[#4edea3] px-3 py-1.5 rounded-full transition-all"
+                  className="flex items-center gap-2 bg-white/50 border border-[#0c1322]/20 hover:border-[#0c1322]/50 px-3 py-1.5 rounded-full transition-all"
                 >
-                  <span className="w-2 h-2 rounded-full bg-[#4edea3] animate-pulse flex-shrink-0" />
-                  <span className="text-xs font-black text-[#4edea3]">Order #{trackedOrderId}</span>
+                  <span className="w-2 h-2 rounded-full bg-[#0c1322] animate-pulse flex-shrink-0" />
+                  <span className="text-xs font-black text-[#0c1322]">Order #{trackedOrderId}</span>
                 </button>
               )}
               {siteSettings?.module_loyalty_enabled && (
-                <button onClick={() => setIsLoginOpen(true)} className="p-2 text-[#d3c5ac] hover:text-[#ffe1a7] transition-colors">
+                <button onClick={() => setIsLoginOpen(true)} className="p-2 text-[#0c1322]/70 hover:text-[#0c1322] transition-colors">
                   <User className="w-5 h-5" />
                 </button>
               )}
@@ -530,7 +559,7 @@ export default function LandingMode({
           
           <button
             onClick={() => { setIsTrackOpen(true); setTrackResult(null); setTrackError(''); setTrackId(''); setTrackPhone(''); }}
-            className="p-2 text-[#4edea3] hover:scale-110 transition-transform cursor-pointer flex items-center gap-1.5"
+            className="p-2 text-[#0c1322] hover:scale-110 transition-transform cursor-pointer flex items-center gap-1.5"
             title="Track Order"
           >
             <MapPin className="w-5 h-5 stroke-[2]" />
@@ -539,11 +568,11 @@ export default function LandingMode({
 
           <button
             onClick={() => setIsCartOpen(!isCartOpen)}
-            className="relative p-2 text-[#ffe1a7] hover:scale-110 transition-transform cursor-pointer ml-1"
+            className="relative p-2 text-[#0c1322] hover:scale-110 transition-transform cursor-pointer ml-1"
           >
             <ShoppingCart className="w-6 h-6 stroke-[2]" />
             {totalItemCount > 0 && (
-              <span className="absolute top-0 right-0 bg-[#fbbf24] text-slate-950 text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full border border-slate-900">
+              <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full border border-white">
                 {totalItemCount}
               </span>
             )}
@@ -551,7 +580,7 @@ export default function LandingMode({
         </div>
       </header>
 
-      <main className="relative pb-24">
+      <main className="relative pb-24 pt-20">
 
         <section id="landing-hero" className="relative h-[90vh] w-full flex items-center justify-start overflow-hidden px-8">
           <div className="absolute inset-0 z-0 transition-opacity duration-1000">
@@ -606,7 +635,7 @@ export default function LandingMode({
                     </a>
                   ) : (
                     <button
-                      onClick={() => handleAddToCartWithNotify(megaZinger)}
+                      onClick={() => document.getElementById('menu-section')?.scrollIntoView({ behavior: 'smooth' })}
                       className="h-16 px-10 bg-[#fbbf24] hover:bg-amber-400 text-slate-950 font-extrabold rounded-full hover:scale-105 transition-transform flex items-center gap-2 text-xs tracking-wider cursor-pointer"
                     >
                       {banners[currentBannerIndex].buttonText || 'ORDER NOW'}
@@ -614,6 +643,7 @@ export default function LandingMode({
                     </button>
                   )}
                   <button
+                    onClick={() => document.getElementById('menu-section')?.scrollIntoView({ behavior: 'smooth' })}
                     className="h-16 px-10 border-2 border-[#4f4633]/70 hover:border-amber-400 text-white font-extrabold rounded-full hover:bg-slate-800/40 transition-colors text-xs tracking-wider cursor-pointer hidden md:flex items-center"
                   >
                     VIEW THE MENU
@@ -634,13 +664,14 @@ export default function LandingMode({
                 </p>
                 <div className="flex gap-4 pt-2">
                   <button
-                    onClick={() => handleAddToCartWithNotify(megaZinger)}
+                    onClick={() => document.getElementById('menu-section')?.scrollIntoView({ behavior: 'smooth' })}
                     className="h-16 px-10 bg-[#fbbf24] hover:bg-amber-400 text-slate-950 font-extrabold rounded-full hover:scale-105 transition-transform flex items-center gap-2 text-xs tracking-wider cursor-pointer"
                   >
                     ORDER NOW
                     <ArrowRight className="w-4 h-4 stroke-[2.5]" />
                   </button>
                   <button
+                    onClick={() => document.getElementById('menu-section')?.scrollIntoView({ behavior: 'smooth' })}
                     className="h-16 px-10 border-2 border-[#4f4633]/70 hover:border-amber-400 text-white font-extrabold rounded-full hover:bg-slate-800/40 transition-colors text-xs tracking-wider cursor-pointer"
                   >
                     VIEW THE MENU
@@ -650,26 +681,85 @@ export default function LandingMode({
             )}
           </div>
 
-          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex gap-8 z-30">
-            {[
-              { label: 'BURGERS', icon: '🍔' },
-              { label: 'PIZZAS', icon: '🍕' },
-              { label: 'DRINKS', icon: '🍹' }
-            ].map((v, idx) => (
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex gap-8 z-30 overflow-x-auto max-w-full px-8 pb-4 custom-scrollbar">
+            {[...new Set(foodItems.map(f => f.category))].slice(0, 5).map((category, idx) => {
+              const icons: any = { 'Burgers': '🍔', 'Pizzas': '🍕', 'Drinks': '🍹', 'Sides': '🍟', 'Desserts': '🍦' };
+              const icon = icons[category] || '🍽️';
+              return (
               <button
                 key={`banner-cat-${idx}`}
-                className="group flex flex-col items-center gap-2 cursor-pointer"
+                onClick={() => {
+                   document.getElementById('menu-section')?.scrollIntoView({ behavior: 'smooth' });
+                   setActiveCategory(category);
+                }}
+                className={`group flex flex-col items-center gap-2 cursor-pointer flex-shrink-0 ${activeCategory === category ? 'scale-110' : ''}`}
               >
-                <div className="w-16 h-16 rounded-full bg-[#191f2f]/85 backdrop-blur-md border border-[#4f4633] flex items-center justify-center text-2xl group-hover:bg-[#fbbf24] group-hover:scale-110 transition-all shadow-xl">
-                  {v.icon}
+                <div className={`w-16 h-16 rounded-full bg-[#191f2f]/85 backdrop-blur-md border flex items-center justify-center text-2xl group-hover:bg-[#fbbf24] transition-all shadow-xl ${activeCategory === category ? 'border-[#fbbf24] bg-[#fbbf24]' : 'border-[#4f4633]'}`}>
+                  {icon}
                 </div>
-                <span className="text-[9px] font-bold tracking-widest text-slate-400 group-hover:text-amber-300 transition-colors">{v.label}</span>
+                <span className={`text-[9px] font-bold tracking-widest transition-colors uppercase ${activeCategory === category ? 'text-amber-300' : 'text-slate-400 group-hover:text-amber-300'}`}>{category}</span>
               </button>
-            ))}
+              )
+            })}
           </div>
         </section>
 
-        <section className="py-24 px-8 max-w-7xl mx-auto">
+        {campaigns.length > 0 && (
+          <section className="py-12 px-8 max-w-7xl mx-auto bg-slate-900/30 mt-12 mb-12 rounded-[40px] border border-slate-800/40">
+            <div className="flex justify-between items-end mb-12">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-widest text-[#ec4899]">Limited Time</span>
+                <h2 className="text-4xl lg:text-5xl font-black uppercase text-white mt-2 leading-none flex items-center gap-4">
+                  <Megaphone className="text-[#ec4899] w-10 h-10" /> Special Offers
+                </h2>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {campaigns.map(camp => (
+                <div 
+                  key={camp.id} 
+                  onClick={() => { if (camp.target_products?.length > 0) setActiveCampaignModal(camp); }}
+                  className="relative overflow-hidden rounded-[32px] bg-[#191f2f] border border-slate-700 p-6 flex flex-col gap-6 group hover:border-[#ec4899]/50 transition-colors shadow-2xl cursor-pointer"
+                >
+                  {camp.image_url ? (
+                     <div className="w-full h-48 rounded-2xl overflow-hidden relative border border-slate-700">
+                       <img src={`${BACKEND_URL}${camp.image_url}`} alt={camp.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                     </div>
+                  ) : null}
+                  
+                  <div>
+                    <div className="bg-[#ec4899] text-white text-sm font-black px-3 py-1 rounded-full inline-block mb-3">
+                      {camp.discount_pct}% OFF
+                    </div>
+                    <h3 className="text-2xl font-black text-white">{camp.title}</h3>
+                    <p className="text-slate-400 text-sm mt-2">{camp.description}</p>
+                  </div>
+
+                  {camp.target_products && camp.target_products.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-auto">
+                      {(camp.target_products || []).slice(0, 4).map((p: any) => (
+                        <div key={p.id} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3 flex items-center gap-3">
+                           {p.image_url ? (
+                             <img src={p.image_url.startsWith('http') ? p.image_url : `${BACKEND_URL}${p.image_url}`} className="w-12 h-12 rounded-lg object-cover" />
+                           ) : (
+                             <div className="w-12 h-12 rounded-lg bg-slate-700 flex items-center justify-center text-slate-500 font-bold">?</div>
+                           )}
+                           <div className="text-left">
+                             <h4 className="font-bold text-white text-sm line-clamp-1">{p.name}</h4>
+                             <div className="text-amber-400 font-bold text-xs">Rs {p.price}</div>
+                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section id="menu-section" className="py-24 px-8 max-w-7xl mx-auto">
           <div className="flex justify-between items-end mb-16">
             <div>
               <span className="text-xs font-bold uppercase tracking-widest text-amber-400">Exclusive drops</span>
@@ -823,27 +913,31 @@ export default function LandingMode({
           </section>
         )}
 
-        <section id="landing-dash" className="relative py-24 max-w-5xl mx-auto text-center px-8 border-t border-slate-800">
-          <h2 className="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tighter text-white mb-6 uppercase">READY TO DASH?</h2>
-          <p className="text-[#d3c5ac] max-w-xl mx-auto text-sm md:text-base font-semibold mb-12 leading-relaxed">
-            Experience the next generation of fast-casual dining. Fast, premium, and always fresh at your table or straight to your doorstep.
-          </p>
+        {staffMembers.length > 0 && (
+          <section id="our-staff" className="relative py-24 max-w-6xl mx-auto text-center px-8 border-t border-slate-800">
+            <span className="text-xs font-bold uppercase tracking-widest text-[#fbbf24]">The Faces Behind The Flavor</span>
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tighter text-white mb-6 uppercase mt-2">OUR STAFF</h2>
+            <p className="text-[#d3c5ac] max-w-xl mx-auto text-sm md:text-base font-semibold mb-12 leading-relaxed">
+              Meet the incredible team that makes {storeName} special. From our master chefs to our friendly front-of-house.
+            </p>
 
-          <div className="flex flex-wrap justify-center gap-6">
-            <div className="flex items-center gap-3 bg-[#191f2f]/80 border border-slate-800 px-8 py-4 rounded-2xl shadow-xl">
-              <Zap className="w-5 h-5 text-[#fbbf24]" />
-              <span className="font-bold text-xs uppercase tracking-widest text-[#dce2f7]">Lightning Fast</span>
+            <div className="flex flex-wrap justify-center gap-8">
+              {staffMembers.map(staff => (
+                <div key={staff.id} className="flex flex-col items-center group w-40">
+                  <div className="w-32 h-32 rounded-full border-4 border-[#191f2f] overflow-hidden bg-slate-800 mb-4 shadow-2xl group-hover:border-[#fbbf24] transition-colors flex items-center justify-center">
+                    {staff.image_url ? (
+                      <img src={staff.image_url ? (staff.image_url.startsWith('http') ? staff.image_url : `${BACKEND_URL}${staff.image_url}`) : 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&q=80'} alt={staff.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-12 h-12 text-slate-500" />
+                    )}
+                  </div>
+                  <h3 className="text-white font-black text-lg tracking-tight">{staff.name}</h3>
+                  <span className="text-xs font-bold uppercase tracking-widest text-[#fbbf24] mt-1">{staff.role?.name || 'Staff'}</span>
+                </div>
+              ))}
             </div>
-            <div className="flex items-center gap-3 bg-[#191f2f]/80 border border-slate-800 px-8 py-4 rounded-2xl shadow-xl">
-              <Utensils className="w-5 h-5 text-[#fbbf24]" />
-              <span className="font-bold text-xs uppercase tracking-widest text-[#dce2f7]">Master Chefs</span>
-            </div>
-            <div className="flex items-center gap-3 bg-[#191f2f]/80 border border-slate-800 px-8 py-4 rounded-2xl shadow-xl">
-              <Award className="w-5 h-5 text-[#fbbf24]" />
-              <span className="font-bold text-xs uppercase tracking-widest text-[#dce2f7]">Elite Rewards</span>
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
       </main>
 
@@ -1579,17 +1673,84 @@ export default function LandingMode({
         </div>
       )}
 
+      {/* Campaign Details Modal */}
+      {activeCampaignModal && (
+        <div className="fixed inset-0 bg-[#0c1322]/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#141b2b] w-full max-w-4xl rounded-[32px] border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="relative h-64 flex-shrink-0 bg-slate-900">
+              {activeCampaignModal.image_url ? (
+                <img 
+                  src={`${BACKEND_URL}${activeCampaignModal.image_url}`} 
+                  alt={activeCampaignModal.title}
+                  className="w-full h-full object-cover" 
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-[#ec4899]/20 to-purple-900/20 flex items-center justify-center">
+                  <Megaphone className="w-20 h-20 text-[#ec4899]/50" />
+                </div>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#141b2b] to-transparent"></div>
+              <button 
+                onClick={() => setActiveCampaignModal(null)}
+                className="absolute top-6 right-6 w-10 h-10 bg-black/50 hover:bg-black text-white rounded-full flex items-center justify-center transition-colors backdrop-blur-md"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="absolute bottom-6 left-8 right-8">
+                <span className="inline-block bg-[#ec4899] text-white text-xs font-black px-3 py-1 rounded-full mb-3 shadow-[0_0_15px_rgba(236,72,153,0.5)]">
+                  {activeCampaignModal.discount_pct}% OFF DEAL
+                </span>
+                <h2 className="text-4xl font-black text-white leading-tight">{activeCampaignModal.title}</h2>
+                <p className="text-[#d3c5ac] mt-2 max-w-2xl">{activeCampaignModal.description}</p>
+              </div>
+            </div>
+            
+            <div className="p-8 overflow-y-auto custom-scrollbar flex-1 bg-[#191f2f]">
+              <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                <Utensils className="text-[#ec4899]" />
+                Items included in this offer
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {activeCampaignModal.target_products?.map((p: any) => (
+                  <div key={p.id} className="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-3 flex items-center gap-4 hover:bg-slate-800/80 transition-colors">
+                    <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-900 flex-shrink-0">
+                      {p.image_url ? (
+                        <img src={p.image_url.startsWith('http') ? p.image_url : `${BACKEND_URL}${p.image_url}`} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-600 font-black text-2xl">?</div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-white text-sm line-clamp-2 leading-snug">{p.name}</h4>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-sm font-black text-slate-400 line-through">${p.price.toFixed(2)}</span>
+                        <span className="text-lg font-black text-[#ec4899]">${(p.price * (1 - activeCampaignModal.discount_pct / 100)).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <footer className="bg-[#141b2b] py-16 px-8 border-t border-slate-800">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12">
 
           <div className="space-y-6">
             <h2 className="font-headline-md text-2xl font-black text-[#ffe1a7] tracking-tight">
-              {siteSettings?.siteTitle || 'DineDash'}
+              {siteSettings?.siteTitle || 'D4U'}
             </h2>
             <p className="text-xs text-[#d3c5ac] leading-relaxed">
               The future of fast-casual dining. Premium culinary quality fused with state-of-the-art POS ordering mechanisms.
             </p>
-            {siteSettings?.address && (
+            {stores.find(s => s.id === storeId)?.address ? (
+              <p className="text-xs text-[#d3c5ac] leading-relaxed flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#fbbf24] flex-shrink-0" />
+                {stores.find(s => s.id === storeId)?.address}
+              </p>
+            ) : siteSettings?.address && (
               <p className="text-xs text-[#d3c5ac] leading-relaxed flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-[#fbbf24] flex-shrink-0" />
                 {siteSettings.address}
@@ -1608,7 +1769,9 @@ export default function LandingMode({
           <div>
             <h4 className="font-bold mb-6 text-white text-xs uppercase tracking-widest">Contact Us</h4>
             <ul className="space-y-4 text-xs text-[#d3c5ac]">
-              {siteSettings?.contactPhone && (
+              {stores.find(s => s.id === storeId)?.phone ? (
+                <li><a href={`tel:${stores.find(s => s.id === storeId)?.phone}`} className="hover:text-white">Call: {stores.find(s => s.id === storeId)?.phone}</a></li>
+              ) : siteSettings?.contactPhone && (
                 <li><a href={`tel:${siteSettings.contactPhone}`} className="hover:text-white">Call: {siteSettings.contactPhone}</a></li>
               )}
               {siteSettings?.whatsappNumber && (
@@ -1662,7 +1825,7 @@ export default function LandingMode({
         </div>
 
         <div className="mt-16 pt-8 border-t border-slate-800 text-center text-xs text-[#d3c5ac]">
-          © 2026 DineDash Restaurant Group. Inspired by the bold. Built for the gourmet.
+          © 2026 D4U Restaurant Group. Inspired by the bold. Built for the gourmet.
         </div>
       </footer>
 

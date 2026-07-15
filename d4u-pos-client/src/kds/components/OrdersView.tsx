@@ -9,6 +9,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import type { Order, OrderStatus, OrderItem } from '../types';
+import { customAlert } from '../../utils/alerts';
 
 interface OrdersViewProps {
   orders: Order[];
@@ -58,7 +59,7 @@ export default function OrdersView({
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (burgerQty === 0 && friesQty === 0 && salmonQty === 0) {
-      alert("Please specify at least 1 item quantity!");
+      customAlert("Please specify at least 1 item quantity!");
       return;
     }
 
@@ -89,15 +90,7 @@ export default function OrdersView({
             <span>Operational Ticket Register</span>
           </h2>
 
-          <button
-            id="open-manual-form-btn"
-            onClick={() => setIsFormOpen(true)}
-            disabled={isEmergencyStop}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-yellow hover:bg-[#ffe1a7] disabled:opacity-40 text-[#402d00] font-display font-bold rounded-xl text-sm transition-all shadow-md shadow-brand-yellow/10 hover:translate-y-px cursor-pointer"
-          >
-            <Plus className="w-4 h-4 font-black" />
-            <span>MANUAL POS TICKET</span>
-          </button>
+
         </div>
 
         {/* Searching and Tab Filters bar */}

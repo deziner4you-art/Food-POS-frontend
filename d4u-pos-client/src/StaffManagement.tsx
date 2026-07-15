@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
+import { customAlert, customSuccess } from './utils/alerts';
 import { Clock, UserCheck, UserMinus, ShieldCheck } from 'lucide-react';
 
 export default function StaffManagement() {
@@ -13,9 +14,9 @@ export default function StaffManagement() {
   const completedShifts = logs.filter(l => l.clockOut);
 
   const handleClockIn = async () => {
-    if (!name || !pin) return alert('Name and PIN required');
+    if (!name || !pin) return customAlert('Name and PIN required');
     if (activeShifts.find(s => s.name.toLowerCase() === name.toLowerCase())) {
-      return alert(`${name} is already clocked in!`);
+      return customAlert(`${name} is already clocked in!`);
     }
     
     await db.staffLogs.add({
@@ -26,13 +27,14 @@ export default function StaffManagement() {
     });
     setName('');
     setPin('');
+    customSuccess(`${name} clocked in successfully.`);
   };
 
   const handleClockOut = async () => {
-    if (!name || !pin) return alert('Name and PIN required');
+    if (!name || !pin) return customAlert('Name and PIN required');
     const active = activeShifts.find(s => s.name.toLowerCase() === name.toLowerCase() && s.pin === pin);
     if (!active || !active.id) {
-      return alert('Invalid Name or PIN, or no active shift found.');
+      return customAlert('Invalid Name or PIN, or no active shift found.');
     }
     
     await db.staffLogs.update(active.id, {
@@ -40,6 +42,7 @@ export default function StaffManagement() {
     });
     setName('');
     setPin('');
+    customSuccess(`${name} clocked out.`);
   };
 
   return (

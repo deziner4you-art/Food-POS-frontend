@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChefHat, Search, Plus, Trash2, Calculator, AlertTriangle } from 'lucide-react';
+import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 import { db } from '../db';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
@@ -97,7 +98,8 @@ export default function RecipeManager() {
       const res = await fetch(`${BACKEND_URL}/recipes/recalculate/${selectedProduct.id}`, { method: 'POST' });
       if (res.ok) {
         const result = await res.json();
-        alert(`Cost Recalculated Successfully!\nNew Cost: Rs. ${result.totalCost.toFixed(2)}\nMargin: ${result.margin_pct.toFixed(1)}%`);
+        customSuccess(`Cost Recalculated Successfully!\nNew Cost: Rs. ${result.totalCost.toFixed(2)}\nMargin: ${result.margin_pct.toFixed(1)}%`);
+        loadRecipe(selectedProduct.id);
       }
     } catch (e) {
       console.error('Recalculation error', e);

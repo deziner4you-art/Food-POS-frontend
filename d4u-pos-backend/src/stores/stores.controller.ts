@@ -16,14 +16,14 @@ export class StoresController {
   }
 
   @Post()
-  createStore(@Body() body: { name: string; brand_id: number; location?: string; is_online?: boolean }) {
+  createStore(@Body() body: { name: string; brand_id: number; location?: string; is_online?: boolean; saas_package_id?: number }) {
     return this.storesService.createStore(body);
   }
 
   @Patch(':id')
   updateStore(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { name?: string; location?: string; is_online?: boolean },
+    @Body() body: { name?: string; location?: string; is_online?: boolean; saas_package_id?: number },
   ) {
     return this.storesService.updateStore(id, body);
   }

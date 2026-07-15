@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Store, Plus, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { customConfirm } from '../utils/alerts';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
 export default function StoreManager() {
   const [stores, setStores] = useState<any[]>([]);
+  const [packages, setPackages] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ id: 0, name: '', location: '', is_online: true });
+  const [formData, setFormData] = useState({ id: 0, name: '', location: '', is_online: true, saas_package_id: null as number | null });
   const [isEditing, setIsEditing] = useState(false);
 
   const fetchStores = async () => {
@@ -18,8 +20,18 @@ export default function StoreManager() {
     }
   };
 
+  const fetchPackages = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/saas-package`);
+      if (res.ok) setPackages(await res.json());
+    } catch (e) {
+      console.error('Failed to fetch packages', e);
+    }
+  };
+
   useEffect(() => {
     fetchStores();
+    fetchPackages();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,13 +54,13 @@ export default function StoreManager() {
   };
 
   const handleEdit = (store: any) => {
-    setFormData({ id: store.id, name: store.name, location: store.location || '', is_online: store.is_online });
+    setFormData({ id: store.id, name: store.name, location: store.location || '', is_online: store.is_online, saas_package_id: store.saas_package_id });
     setIsEditing(true);
     setShowModal(true);
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this store?')) return;
+    if (!(await customConfirm('Are you sure you want to delete this store?'))) return;
     try {
       await fetch(`${BACKEND_URL}/stores/${id}`, { method: 'DELETE' });
       fetchStores();
@@ -77,7 +89,7 @@ export default function StoreManager() {
           <Store className="text-blue-400" /> Store Branches
         </h3>
         <button 
-          onClick={() => { setFormData({ id: 0, name: '', location: '', is_online: true }); setIsEditing(false); setShowModal(true); }}
+          onClick={() => { setFormData({ id: 0, name: '', location: '', is_online: true, saas_package_id: null }); setIsEditing(false); setShowModal(true); }}
           className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
         >
           <Plus size={18} /> Add Branch
@@ -91,6 +103,7 @@ export default function StoreManager() {
               <th className="p-4">ID</th>
               <th className="p-4">Name</th>
               <th className="p-4">Location</th>
+              <th className="p-4">SaaS Package</th>
               <th className="p-4">Online Status</th>
               <th className="p-4 text-right">Actions</th>
             </tr>
@@ -101,6 +114,7 @@ export default function StoreManager() {
                 <td className="p-4 font-mono">{store.id}</td>
                 <td className="p-4 font-bold text-white">{store.name}</td>
                 <td className="p-4">{store.location || 'N/A'}</td>
+                <td className="p-4">{store.saas_package?.name || <span className="text-slate-500 italic">None</span>}</td>
                 <td className="p-4">
                   <button 
                     onClick={() => toggleStatus(store)}
@@ -122,7 +136,7 @@ export default function StoreManager() {
             ))}
             {stores.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-8 text-center text-slate-500">No stores found.</td>
+                <td colSpan={6} className="p-8 text-center text-slate-500">No stores found.</td>
               </tr>
             )}
           </tbody>
@@ -154,6 +168,19 @@ export default function StoreManager() {
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none"
                   placeholder="Street 123..."
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-1">Assigned SaaS Package</label>
+                <select
+                  value={formData.saas_package_id || ''}
+                  onChange={e => setFormData({...formData, saas_package_id: e.target.value ? Number(e.target.value) : null})}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">-- No Package --</option>
+                  {packages.map(pkg => (
+                    <option key={pkg.id} value={pkg.id}>{pkg.name} (${pkg.price})</option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-center gap-3">
                 <input 

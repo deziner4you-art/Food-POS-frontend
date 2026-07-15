@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { CartItem, FoodItem } from './types';
-import LandingMode from './components/LandingMode';
+import StitchLanding from './components/StitchLanding';
 import KioskMode from './components/KioskMode';
 import MobileMode from './components/MobileMode';
 import BranchSelectorModal from './components/BranchSelectorModal';
@@ -11,12 +11,10 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [foodItems, setFoodItems] = useState<FoodItem[]>([]);
   const [stores, setStores] = useState<any[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState<number | null>(() => {
-    const saved = localStorage.getItem('d4u_website_store_id');
-    return saved ? parseInt(saved) : null;
-  });
+  const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
   
   const [banners, setBanners] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>(null);
 
   const [viewMode, setViewMode] = useState<'landing' | 'kiosk' | 'mobile'>(() => {
@@ -58,8 +56,8 @@ export default function App() {
         if (res.ok) {
           const data = await res.json();
           if (data.products && data.categories) {
-            const mappedItems: FoodItem[] = data.products.map((p: any) => {
-              const cat = data.categories.find((c: any) => c.id === p.category_id);
+            const mappedItems: FoodItem[] = (data.products || []).map((p: any) => {
+              const catName = p.categories && p.categories.length > 0 ? p.categories[0].name : 'Uncategorized';
               return {
                 id: String(p.id),
                 name: p.name,
@@ -67,7 +65,7 @@ export default function App() {
                 priceUSD: parseFloat((p.price / 280).toFixed(2)),
                 description: p.sku || 'Delicious item from our menu',
                 image: p.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80',
-                category: cat ? cat.name : 'Uncategorized',
+                category: catName,
                 tag: 'New',
                 preparationTime: '10 mins',
                 calories: 500
@@ -83,12 +81,17 @@ export default function App() {
 
     const fetchCMS = async () => {
       try {
-        const [bannersRes, settingsRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/cms/banners`), // Ideally this should be filtered by storeId
-          fetch(`${BACKEND_URL}/cms/settings`)
+        const [bannersRes, settingsRes, campaignsRes] = await Promise.all([
+          fetch(`${BACKEND_URL}/cms/banners`), 
+          fetch(`${BACKEND_URL}/cms/settings/${selectedStoreId}`),
+          fetch(`${BACKEND_URL}/marketing/campaign`)
         ]);
         if (bannersRes.ok) setBanners(await bannersRes.json());
         if (settingsRes.ok) setSettings(await settingsRes.json());
+        if (campaignsRes.ok) {
+          const allCamps = await campaignsRes.json();
+          setCampaigns(allCamps.filter((c: any) => c.published_web));
+        }
       } catch (e) { console.error(e); }
     };
 
@@ -137,14 +140,18 @@ export default function App() {
 
   const handleClearCart = () => setCart([]);
 
+  const selectedStore = (stores || []).find(s => s.id === selectedStoreId);
+  const storeName = selectedStore ? selectedStore.name : 'D4U';
+
   if (!selectedStoreId) {
-    return <BranchSelectorModal stores={stores} onSelect={handleSelectStore} />;
+    return <BranchSelectorModal stores={stores || []} onSelect={handleSelectStore} />;
   }
 
   if (viewMode === 'mobile') {
     return (
       <MobileMode
         storeId={selectedStoreId}
+        storeName={storeName}
         foodItems={foodItems}
         cart={cart}
         onAddToCart={handleAddToCart}
@@ -152,6 +159,7 @@ export default function App() {
         onDecreaseQuantity={handleDecreaseQuantity}
         onIncreaseQuantity={handleIncreaseQuantity}
         onClearCart={handleClearCart}
+        campaigns={campaigns}
       />
     );
   }
@@ -173,8 +181,12 @@ export default function App() {
 
   return (
     <>
-      <LandingMode
+      <StitchLanding
         storeId={selectedStoreId}
+        storeName={storeName}
+        stores={stores}
+        onStoreChange={handleSelectStore}
+        onChangeBranch={() => setSelectedStoreId(null)}
         foodItems={foodItems}
         cart={cart}
         onAddToCart={handleAddToCart}
@@ -183,6 +195,8 @@ export default function App() {
         onIncreaseQuantity={handleIncreaseQuantity}
         onClearCart={handleClearCart}
         banners={banners}
+        campaigns={campaigns}
+        settings={settings}
       />
       {settings?.whatsappNumber && (
         <a 

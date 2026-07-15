@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Store, Plus, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
@@ -48,7 +49,7 @@ export default function StoreManager() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this store?')) return;
+    if (!(await customConfirm('Are you sure you want to delete this store?'))) return;
     try {
       await fetch(`${BACKEND_URL}/stores/${id}`, { method: 'DELETE' });
       fetchStores();

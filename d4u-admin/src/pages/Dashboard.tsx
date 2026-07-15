@@ -3,7 +3,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
   LineChart, Line, AreaChart, Area
 } from 'recharts';
-import { TrendingUp, DollarSign, ShoppingBag, Store, AlertCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, ShoppingBag, Store, AlertCircle, ArrowRight } from 'lucide-react';
+import { useAdminContext } from '../context/AdminContext';
+import { customAlert } from '../utils/alerts';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
@@ -11,25 +13,10 @@ export default function Dashboard() {
   const [brandOverview, setBrandOverview] = useState<any[]>([]);
   const [weeklyTrend, setWeeklyTrend] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  
+  const { branches, selectedBranchId, setSelectedBranchId, setIsBranchEntered } = useAdminContext();
 
-  useEffect(() => {
-    const loadBranches = async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}/stores`);
-        const data = await res.json();
-        // Backend returns { value: [...], Count: N }
-        const branchList = Array.isArray(data) ? data : (data.value || data.stores || data.data || []);
-        setBranches(branchList);
-      } catch (e) {
-        console.error('Branches fetch failed:', e);
-        setBranches([]);
-      }
-    };
-    loadBranches();
-  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -78,6 +65,14 @@ export default function Dashboard() {
   const totalRevenue = filteredOverview.reduce((sum, store) => sum + store.today_sales, 0);
   const totalOrders = filteredOverview.reduce((sum, store) => sum + store.today_orders, 0);
 
+  const handleEnterBranch = () => {
+    if (!selectedBranchId || selectedBranchId === 0) {
+      customAlert("Please select a valid branch first.");
+      return;
+    }
+    setIsBranchEntered(true);
+  };
+
   return (
     <div className="animate-fade-in space-y-6">
       
@@ -91,16 +86,23 @@ export default function Dashboard() {
           <div className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl flex items-center gap-2">
             <span className="text-slate-400 font-bold text-sm">Filter:</span>
             <select 
-              value={selectedBranchId} 
+              value={selectedBranchId || ''} 
               onChange={e => setSelectedBranchId(Number(e.target.value))}
-              className="bg-transparent text-white outline-none font-bold"
+              className="bg-transparent text-white outline-none font-bold min-w-[120px]"
             >
-              <option value={0}>All Branches</option>
+              <option value={0} disabled>Select Branch</option>
               {branches.map(b => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
           </div>
+          <button
+            onClick={handleEnterBranch}
+            className="bg-[#ec4899] hover:bg-pink-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold transition-all shadow-lg hover:translate-y-[-1px]"
+          >
+            <span>Enter Branch</span>
+            <ArrowRight size={16} />
+          </button>
           <div className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl flex items-center gap-3">
             <div className="w-3 h-3 rounded-full bg-[#4edea3] animate-pulse"></div>
             <span className="text-[#4edea3] font-bold text-sm">System Live</span>

@@ -1,16 +1,18 @@
 import React from 'react';
-import { Settings, Volume2, ShieldAlert, BadgeInfo, Play, Cpu, Sparkles } from 'lucide-react';
+import { Settings, Volume2, ShieldAlert, BadgeInfo, Play, Cpu, Sparkles, Lock } from 'lucide-react';
 import type { StationSettings } from '../types';
 import { playNewOrderAlert, playReadyAlert, playEmergencyAlert } from '../utils/audio';
 
 interface SettingsProps {
   settings: StationSettings;
   updateSettings: (s: Partial<StationSettings>) => void;
+  readOnly?: boolean;
 }
 
 export default function SettingsView({
   settings,
-  updateSettings
+  updateSettings,
+  readOnly = false
 }: SettingsProps) {
 
   const handleTestAudio = () => {
@@ -38,6 +40,7 @@ export default function SettingsView({
         <h2 className="text-2xl font-display font-bold text-[#dce2f7] flex items-center gap-2">
           <Settings className="w-7 h-7 text-brand-yellow" />
           <span>Kitchen Terminal Configurations</span>
+          {readOnly && <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-xs uppercase tracking-wider font-bold border border-slate-700 flex items-center gap-1"><Lock className="w-3 h-3" /> Locked</span>}
         </h2>
         <p className="text-[#d3c5ac] text-xs font-mono mt-1">
           Adjust cooking durations, simulation triggers, acoustic frequencies and chef profile states.
@@ -62,7 +65,8 @@ export default function SettingsView({
                 type="text" 
                 value={settings.stationName}
                 onChange={(e) => updateSettings({ stationName: e.target.value })}
-                className="w-full bg-[#0c1322] border border-[#4f4633]/40 rounded-xl px-4 py-2 text-sm text-[#dce2f7] outline-none"
+                disabled={readOnly}
+                className="w-full bg-[#0c1322] border border-[#4f4633]/40 rounded-xl px-4 py-2 text-sm text-[#dce2f7] outline-none disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
 
@@ -74,7 +78,8 @@ export default function SettingsView({
                 type="text" 
                 value={settings.specialtyName}
                 onChange={(e) => updateSettings({ specialtyName: e.target.value })}
-                className="w-full bg-[#0c1322] border border-[#4f4633]/40 rounded-xl px-4 py-2 text-sm text-[#dce2f7] outline-none"
+                disabled={readOnly}
+                className="w-full bg-[#0c1322] border border-[#4f4633]/40 rounded-xl px-4 py-2 text-sm text-[#dce2f7] outline-none disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
 
@@ -95,10 +100,11 @@ export default function SettingsView({
                       key={idx}
                       type="button"
                       onClick={() => updateSettings({ chefAvatar: preset.url })}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all border cursor-pointer ${
+                      disabled={readOnly}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all border disabled:opacity-50 disabled:cursor-not-allowed ${
                         settings.chefAvatar === preset.url
                           ? 'bg-brand-yellow text-[#261a00] border-brand-yellow font-bold'
-                          : 'bg-[#0c1322] border-[#4f4633]/30 text-[#dce2f7] hover:border-brand-yellow'
+                          : 'bg-[#0c1322] text-[#dce2f7] border-[#4f4633]/30 hover:border-brand-yellow/50'
                       }`}
                     >
                       {preset.name}

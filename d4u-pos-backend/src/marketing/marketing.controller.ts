@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Patch, Delete, Param, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Post, Get, Body, Patch, Delete, Param, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -37,8 +37,8 @@ export class MarketingController {
   }
 
   @Get('campaign')
-  getCampaigns() {
-    return this.marketingService.getCampaigns();
+  getCampaigns(@Query('store_id') store_id?: string) {
+    return this.marketingService.getCampaigns(store_id ? parseInt(store_id, 10) : undefined);
   }
 
   @Patch('campaign/:id')

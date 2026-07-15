@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { RiderService } from './rider.service';
 
 @Controller('rider')
@@ -21,8 +21,8 @@ export class RiderOrdersController {
   constructor(private readonly service: RiderService) {}
 
   @Get()
-  getRiderOrders() {
-    return this.service.getRiderOrders();
+  getRiderOrders(@Query('store_id') storeId: string) {
+    return this.service.getRiderOrders(storeId);
   }
 }
 

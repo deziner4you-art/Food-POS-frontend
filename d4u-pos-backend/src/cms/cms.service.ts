@@ -42,31 +42,56 @@ export class CmsService {
   }
 
   // --- Settings ---
-  async getSettings(brand_id: number = 1) {
+  async getSettings(store_id: number) {
     let settings = await this.prisma.cmsSettings.findFirst({
-      where: { brand_id },
-      include: { brand: true }
+      where: { store_id },
+      include: { brand: true, store: true }
     });
     
     // Auto-create default settings if they don't exist
     if (!settings) {
       settings = await this.prisma.cmsSettings.create({
-        data: { brand_id, siteTitle: 'D4U Restaurant' },
-        include: { brand: true }
+        data: { brand_id: 1, store_id, siteTitle: 'D4U Restaurant' },
+        include: { brand: true, store: true }
       });
     }
     
     return settings;
   }
 
-  async updateSettings(brand_id: number, data: Partial<{ 
-    siteTitle: string; contactPhone: string; contactEmail: string; address: string; facebookUrl: string; instagramUrl: string; whatsappNumber: string;
-    module_auth_enabled: boolean; module_kds_enabled: boolean; module_loyalty_enabled: boolean; module_payments_enabled: boolean;
-  }>) {
-    const settings = await this.getSettings(brand_id);
+  async updateSettings(store_id: number, data: any) {
+    const existing = await this.getSettings(store_id);
     return this.prisma.cmsSettings.update({
-      where: { id: settings.id },
-      data,
+      where: { id: existing.id },
+      data: {
+        siteTitle: data.siteTitle,
+        contactPhone: data.contactPhone,
+        contactEmail: data.contactEmail,
+        address: data.address,
+        googleMapUrl: data.googleMapUrl,
+        facebookUrl: data.facebookUrl,
+        instagramUrl: data.instagramUrl,
+        whatsappNumber: data.whatsappNumber,
+        twitterUrl: data.twitterUrl,
+        youtubeUrl: data.youtubeUrl,
+        aboutText: data.aboutText,
+        companyText: data.companyText,
+        module_auth_enabled: data.module_auth_enabled,
+        module_kds_enabled: data.module_kds_enabled,
+        module_loyalty_enabled: data.module_loyalty_enabled,
+        module_payments_enabled: data.module_payments_enabled,
+      }
     });
+  }
+
+  async subscribeNewsletter(store_id: number, email: string) {
+    try {
+      return await this.prisma.newsletterSubscriber.create({
+        data: { store_id, email }
+      });
+    } catch (error) {
+      // Ignore if already subscribed (unique constraint)
+      return { status: 'already_subscribed' };
+    }
   }
 }

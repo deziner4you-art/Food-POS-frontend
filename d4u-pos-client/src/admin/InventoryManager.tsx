@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PackageOpen, Plus, Save, Trash2, ShoppingCart, List } from 'lucide-react';
+import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
@@ -60,27 +61,29 @@ export default function InventoryManager() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this raw material?')) return;
+    if (!(await customConfirm('Are you sure you want to delete this raw material?'))) return;
     try {
-      await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE' });
-      setItems(items.filter(i => i.id !== id));
-      setSelectedItems(selectedItems.filter(itemId => itemId !== id));
-    } catch (e) {
-      console.error('Delete error', e);
-    }
+      await fetch(`${BACKEND_URL}/inventory/${id}`, { method: 'DELETE' });
+      fetchItems();
+    } catch (e) { console.error(e); }
   };
 
   const handleBulkDelete = async () => {
     if (selectedItems.length === 0) return;
-    if (!window.confirm(`Are you sure you want to delete ${selectedItems.length} items?`)) return;
+    if (!(await customConfirm(`Are you sure you want to delete ${selectedItems.length} items?`))) return;
+    
     try {
-      for (const id of selectedItems) {
-        await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE' });
-      }
-      setItems(items.filter(i => !selectedItems.includes(i.id)));
-      setSelectedItems([]);
-    } catch (e) {
-      console.error('Bulk delete error', e);
+      // Send individual delete requests for each selected item
+      await Promise.all(selectedItems.map(id => 
+        fetch(`${BACKEND_URL}/inventory/${id}`, { method: 'DELETE' })
+      ));
+      
+      customSuccess(`${selectedItems.length} items deleted successfully`);
+      setSelectedItems([]); // Clear selection
+      fetchItems(); // Refresh the list
+    } catch (e) { 
+      console.error('Bulk delete failed', e); 
+      customAlert('Failed to delete some items. Please try again.');
     }
   };
 
@@ -103,7 +106,7 @@ export default function InventoryManager() {
   // --- Purchase Logic ---
   const handlePurchaseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (purchaseForm.inventory_id === 0) return alert('Please select a material');
+    if (purchaseForm.inventory_id === 0) return customAlert('Please select a material');
     
     setLoading(true);
     try {
@@ -118,7 +121,7 @@ export default function InventoryManager() {
         })
       });
       if (res.ok) {
-        alert('Stock Purchased & Average Cost Updated!');
+        customSuccess('Stock Purchased & Average Cost Updated!');
         setPurchaseForm({ inventory_id: 0, quantity: 0, total_cost: 0 });
         fetchItems();
         setActiveTab('MATERIALS');

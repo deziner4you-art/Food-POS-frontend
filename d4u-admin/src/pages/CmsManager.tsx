@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LayoutTemplate, ImagePlus, Trash2, Save, Globe, CheckCircle } from 'lucide-react';
+import { customAlert, customConfirm } from '../utils/alerts';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
@@ -15,9 +16,9 @@ export default function CmsManager() {
 
   // Settings & Modules State
   const [branches, setBranches] = useState<any[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<number>(0);
+  const [selectedBranchId, setSelectedBranchId] = useState<number>(Number(localStorage.getItem('cmsSelectedBranchId')) || 0);
   const [settings, setSettings] = useState<any>({ 
-    siteTitle: '', contactPhone: '', contactEmail: '', address: '', 
+    siteTitle: '', contactPhone: '', contactEmail: '', address: '', googleMapUrl: '',
     facebookUrl: '', instagramUrl: '', whatsappNumber: '',
     twitterUrl: '', youtubeUrl: '', tiktokUrl: '', linkedinUrl: '', pinterestUrl: '', threadsUrl: '',
     module_auth_enabled: false, module_kds_enabled: true, module_loyalty_enabled: false, module_payments_enabled: false
@@ -36,8 +37,9 @@ export default function CmsManager() {
   };
 
   const fetchSettings = async () => {
+    if (!selectedBranchId) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/cms/settings`);
+      const res = await fetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`);
       if (res.ok) setSettings(await res.json());
     } catch (e) {
       console.error('Failed to fetch settings', e);
@@ -48,10 +50,12 @@ export default function CmsManager() {
     fetch(`${BACKEND_URL}/stores`)
       .then(res => res.json())
       .then(data => {
-        // Backend returns { value: [...], Count: N }
         const branchList = Array.isArray(data) ? data : (data.value || data.stores || data.data || []);
         setBranches(branchList);
-        if (branchList.length > 0) setSelectedBranchId(branchList[0].id);
+        if (branchList.length > 0 && !selectedBranchId) {
+          setSelectedBranchId(branchList[0].id);
+          localStorage.setItem('cmsSelectedBranchId', branchList[0].id.toString());
+        }
       })
       .catch(console.error);
   }, []);
@@ -63,9 +67,15 @@ export default function CmsManager() {
     }
   }, [selectedBranchId]);
 
+  const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const id = Number(e.target.value);
+    setSelectedBranchId(id);
+    localStorage.setItem('cmsSelectedBranchId', id.toString());
+  };
+
   const handleBannerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFile) return alert('Please select an image file first.');
+    if (!selectedFile) return customAlert('Please select an image file first.');
 
     const formData = new FormData();
     formData.append('image', selectedFile);
@@ -94,7 +104,7 @@ export default function CmsManager() {
   };
 
   const handleDeleteBanner = async (id: number) => {
-    if (!window.confirm('Delete this banner?')) return;
+    if (!(await customConfirm('Delete this banner?'))) return;
     try {
       await fetch(`${BACKEND_URL}/cms/banners/${id}`, { method: 'DELETE' });
       fetchBanners();
@@ -105,12 +115,13 @@ export default function CmsManager() {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedBranchId) return customAlert("Please select a branch first.");
     setIsSavingSettings(true);
     try {
       // Remove Prisma relations and read-only fields before sending
-      const { id, brand_id, updatedAt, brand, ...cleanSettings } = settings;
+      const { id, brand_id, store_id, updatedAt, brand, store, ...cleanSettings } = settings;
       
-      const res = await fetch(`${BACKEND_URL}/cms/settings/1`, {
+      const res = await fetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cleanSettings)
@@ -155,7 +166,7 @@ export default function CmsManager() {
             <span className="text-slate-400 font-bold text-sm">Branch:</span>
             <select 
               value={selectedBranchId} 
-              onChange={e => setSelectedBranchId(Number(e.target.value))}
+              onChange={handleBranchChange}
               className="bg-transparent text-white outline-none font-bold"
             >
               <option value={0}>All Branches (Global)</option>
@@ -267,12 +278,22 @@ export default function CmsManager() {
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#ec4899]"
                 />
               </div>
-              <div className="col-span-2">
+              <div className="col-span-1">
                 <label className="block text-xs font-bold text-slate-400 mb-1">Physical Address</label>
                 <input 
                   type="text" 
                   value={settings?.address || ''} 
                   onChange={e => setSettings({...settings, address: e.target.value})}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#ec4899]"
+                />
+              </div>
+              <div className="col-span-1">
+                <label className="block text-xs font-bold text-slate-400 mb-1">Google Map PIN (Embed URL)</label>
+                <input 
+                  type="text" 
+                  value={settings?.googleMapUrl || ''} 
+                  onChange={e => setSettings({...settings, googleMapUrl: e.target.value})}
+                  placeholder="https://maps.google.com/..."
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#ec4899]"
                 />
               </div>
@@ -348,6 +369,26 @@ export default function CmsManager() {
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#ec4899]"
                 />
               </div>
+            </div>
+            <div className="mt-6">
+              <label className="block text-xs font-bold text-slate-400 mb-1">About Text (Footer)</label>
+              <textarea 
+                value={settings?.aboutText || ''} 
+                onChange={e => setSettings({...settings, aboutText: e.target.value})}
+                rows={3}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#ec4899] custom-scrollbar"
+                placeholder="The future of fast-casual dining..."
+              />
+            </div>
+            <div className="mt-6">
+              <label className="block text-xs font-bold text-slate-400 mb-1">Company Info (Footer Links/Text)</label>
+              <textarea 
+                value={settings?.companyText || ''} 
+                onChange={e => setSettings({...settings, companyText: e.target.value})}
+                rows={3}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#ec4899] custom-scrollbar"
+                placeholder="Our Culinary Journey..."
+              />
             </div>
           </form>
         </div>

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PackageOpen, Plus, Save, Trash2, ShoppingCart, List } from 'lucide-react';
+import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
+import { useAdminContext } from '../context/AdminContext';
 
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
@@ -9,12 +11,15 @@ export default function InventoryManager() {
   const [loading, setLoading] = useState(false);
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
 
+  const { selectedBranchId } = useAdminContext();
+
   // Purchase Form State
   const [purchaseForm, setPurchaseForm] = useState({ inventory_id: 0, quantity: 0, total_cost: 0 });
 
   const fetchItems = async () => {
+    if (!selectedBranchId) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/inventory/items/1`);
+      const res = await fetch(`${BACKEND_URL}/inventory/items/${selectedBranchId}`);
       if (res.ok) setItems(await res.json());
     } catch (e) {
       console.error('Failed to fetch inventory', e);
@@ -23,7 +28,7 @@ export default function InventoryManager() {
 
   useEffect(() => {
     fetchItems();
-  }, []);
+  }, [selectedBranchId]);
 
   // --- Inline Grid Editing ---
   const handleInlineUpdate = async (id: number, field: string, value: any) => {
@@ -44,12 +49,16 @@ export default function InventoryManager() {
   };
 
   const handleCreateNewRow = async () => {
-    const newBlankItem = { name: 'New Material', quantity: 0, unit: 'kg', reorder_level: 0, unit_price: 0 };
+    if (!selectedBranchId) {
+      customAlert("Please select a branch first.");
+      return;
+    }
+    const newBlankItem = { name: 'New Material', quantity: 0, unit: 'Count', reorder_level: 0, unit_price: 0 };
     try {
       const res = await fetch(`${BACKEND_URL}/inventory/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: 1, ...newBlankItem })
+        body: JSON.stringify({ store_id: selectedBranchId, ...newBlankItem })
       });
       if (res.ok) {
         fetchItems();
@@ -60,7 +69,7 @@ export default function InventoryManager() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this raw material?')) return;
+    if (!(await customConfirm('Are you sure you want to delete this raw material?'))) return;
     try {
       await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE' });
       setItems(items.filter(i => i.id !== id));
@@ -72,7 +81,7 @@ export default function InventoryManager() {
 
   const handleBulkDelete = async () => {
     if (selectedItems.length === 0) return;
-    if (!window.confirm(`Are you sure you want to delete ${selectedItems.length} items?`)) return;
+    if (!(await customConfirm(`Are you sure you want to delete ${selectedItems.length} items?`))) return;
     try {
       for (const id of selectedItems) {
         await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE' });
@@ -103,7 +112,7 @@ export default function InventoryManager() {
   // --- Purchase Logic ---
   const handlePurchaseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (purchaseForm.inventory_id === 0) return alert('Please select a material');
+    if (purchaseForm.inventory_id === 0) return customAlert('Please select a material');
     
     setLoading(true);
     try {
@@ -118,7 +127,7 @@ export default function InventoryManager() {
         })
       });
       if (res.ok) {
-        alert('Stock Purchased & Average Cost Updated!');
+        customSuccess('Stock Purchased & Average Cost Updated!');
         setPurchaseForm({ inventory_id: 0, quantity: 0, total_cost: 0 });
         fetchItems();
         setActiveTab('MATERIALS');
@@ -214,12 +223,16 @@ export default function InventoryManager() {
                         />
                       </td>
                       <td className="p-0 border-r border-slate-700/50">
-                        <input 
-                          type="text" 
-                          value={item.unit}
+                        <select 
+                          value={item.unit || ''}
                           onChange={(e) => handleInlineUpdate(item.id, 'unit', e.target.value)}
-                          className="w-full bg-transparent p-3 text-slate-300 outline-none focus:bg-slate-700/50 focus:ring-1 focus:ring-[#8b5cf6] transition-all"
-                        />
+                          className="w-full bg-transparent p-3 text-slate-300 outline-none focus:bg-slate-700/50 focus:ring-1 focus:ring-[#8b5cf6] transition-all appearance-none cursor-pointer"
+                        >
+                          <option value="" className="bg-slate-800">Select...</option>
+                          {['Count', 'kg', 'gram', 'ml', 'Liter', 'piece', 'box', 'bottle', 'packet', 'slice'].map(u => (
+                            <option key={u} value={u} className="bg-slate-800">{u}</option>
+                          ))}
+                        </select>
                       </td>
                       <td className="p-0 border-r border-slate-700/50">
                         <input 

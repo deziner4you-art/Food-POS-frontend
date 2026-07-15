@@ -35,7 +35,10 @@ export class AuthService {
         id: user.id,
         name: user.name,
         role: user.role.name,
-        store_id: user.store_id
+        role_id: user.role_id,
+        store_id: user.store_id,
+        store: { name: user.store?.name },
+        module_permissions: user.module_permissions
       }
     };
   }

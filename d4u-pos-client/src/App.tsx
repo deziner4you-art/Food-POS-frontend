@@ -70,6 +70,8 @@ function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
   const [password, setPassword] = useState('');
   const [errors, setErrors]     = useState({ phone: false, password: false, invalid: false, msg: '' });
   const [loading, setLoading]   = useState(false);
+  const [showTerminalLogin, setShowTerminalLogin] = useState(false);
+  const [terminalPinInput, setTerminalPinInput] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,7 +181,65 @@ function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
               </>
             )}
           </button>
+
+          <button
+            type="button"
+            onClick={() => setShowTerminalLogin(true)}
+            style={{ width: '100%', padding: '12px', background: 'transparent', border: '1.5px solid #f5a623', borderRadius: '8px', color: '#f5a623', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', marginTop: '4px' }}
+          >
+            Waiter Terminal Login
+          </button>
         </form>
+
+        {/* Terminal Login Modal */}
+        {showTerminalLogin && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+            <div style={{ background: 'white', padding: '30px', borderRadius: '16px', width: '300px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+              <h3 style={{ margin: 0, color: '#333', fontSize: '1.2rem', textAlign: 'center' }}>Enter Terminal PIN</h3>
+              <p style={{ margin: 0, color: '#666', fontSize: '0.8rem', textAlign: 'center' }}>Issued by Cashier from Garage settings</p>
+              <input 
+                type="text" 
+                autoFocus
+                placeholder="PIN" 
+                value={terminalPinInput} 
+                onChange={e => setTerminalPinInput(e.target.value)} 
+                style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '1.2rem', textAlign: 'center', letterSpacing: '4px', outline: 'none' }} 
+              />
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => { setShowTerminalLogin(false); setTerminalPinInput(''); }} style={{ flex: 1, padding: '10px', background: '#f1f5f9', border: 'none', borderRadius: '8px', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
+                <button 
+                  onClick={() => {
+                    if (!terminalPinInput.trim()) return;
+                    fetch(BACKEND_URL + '/terminal/login', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ pin: terminalPinInput.trim() })
+                    }).then(res => res.json()).then(data => {
+                      if (data.success) {
+                        onLogin({
+                          email: terminalPinInput,
+                          password: terminalPinInput,
+                          name: data.waiter_name,
+                          role: 'Waiter',
+                          id: 0,
+                          store_id: data.store_id
+                        });
+                      } else {
+                        setErrors(p => ({ ...p, invalid: true, msg: 'Invalid Terminal PIN' }));
+                        setShowTerminalLogin(false);
+                      }
+                    }).catch(() => {
+                      setErrors(p => ({ ...p, invalid: true, msg: 'Connection failed' }));
+                      setShowTerminalLogin(false);
+                    });
+                  }}
+                  style={{ flex: 1, padding: '10px', background: '#f5a623', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>
+                  Login
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Demo hint */}
         <p style={{ marginTop: '18px', fontSize: '0.7rem', color: '#aaa', textAlign: 'center', lineHeight: '1.5' }}>
@@ -194,27 +254,23 @@ function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
 }
 
 function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUser: typeof USERS[0]; dayStartTime: Date; onLogout: () => void; onCashOut: () => void }) {
+  const isWaiterMode = currentUser?.role === 'Waiter';
+
   const [activeMenu, setActiveMenu] = useState('Home');
+  const [isWaiterConnected, setIsWaiterConnected] = useState(false);
   const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
   const lowStockItems = inventoryItems.filter(ing => ing.currentStock <= ing.warningThreshold);
-  const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
+  const [activeCategoryId, setActiveCategoryId] = useState<number | string | null>('ALL')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeCampaigns, setActiveCampaigns] = useState<any[]>([])
   
-  // WhatsApp Simulation State
+  // WhatsApp Simulation State (for future real WhatsApp API integration)
   const [showWhatsAppPopup, setShowWhatsAppPopup] = useState(false);
   const [whatsAppMessage, setWhatsAppMessage] = useState<any>(null);
 
-  useEffect(() => {
-    // Simulate an incoming WhatsApp message after 15 seconds
-    const timer = setTimeout(() => {
-      setWhatsAppMessage({
-        id: 4, name: 'Ali Customer', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-        message: 'Hi, mujhe 1 Zinger Burger aur 1 Fries chahiye, delivery address: Block 5, Clifton',
-        repeatItems: '1x Zinger Burger, 1x Fries'
-      });
-      setShowWhatsAppPopup(true);
-    }, 15000);
-    return () => clearTimeout(timer);
-  }, []);
+  // Removed: fake WhatsApp message simulation timer
+  // Real WhatsApp integration requires WhatsApp Business API webhook
+
   const [orderType, setOrderType] = useState('Dine In')
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -226,6 +282,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH'>('NONE');
+  const [waiterPinModalOpen, setWaiterPinModalOpen] = useState(false);
+  const [generatedWaiterPin, setGeneratedWaiterPin] = useState('');
+  const [activeWaiters, setActiveWaiters] = useState<any[]>([]);
   const [cashier, setCashier] = useState<{ name: string } | null>(() => {
     try { return JSON.parse(localStorage.getItem('d4u_cashier') || 'null'); } catch { return null; }
   });
@@ -275,6 +334,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [isCashedOut, setIsCashedOut] = useState<boolean>(false);
   const [isTerminalLockedByUser, setIsTerminalLockedByUser] = useState<boolean>(false);
   const [terminalUnlockPin, setTerminalUnlockPin] = useState<string>('');
+  const [waiterNameInput, setWaiterNameInput] = useState('');
+  const [generatedTerminalPin, setGeneratedTerminalPin] = useState('');
 
   const [selectedChatId, setSelectedChatId] = useState(1)
 
@@ -376,8 +437,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   // Fetch online orders from backend (website orders)
   const [backendOnlineOrders, setBackendOnlineOrders] = useState<any[]>([]);
-
-
+  const [terminalOrders, setTerminalOrders] = useState<any[]>([]);
+  const [activeTerminalKotId, setActiveTerminalKotId] = useState<number | null>(null);
+  const terminalKots = useLiveQuery(() => db.kots.toArray())?.filter(kot => kot.source === 'Terminal' && kot.status !== 'PAID' && kot.status !== 'CANCELLED') || [];
 
   // Offline Sync Engine
   useEffect(() => {
@@ -495,17 +557,34 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         }
       };
 
+      const handleTerminalOrder = (order: any) => {
+        if (!posSettings.terminalEngineEnabled) return; // Ignore if Engine is OFF
+        setTerminalOrders(prev => {
+          setToast({ message: `New Terminal Order from ${order.waiter_name} (Table ${order.table_no})`, type: 'success' });
+          return [...prev, { ...order, id: Date.now() }]; // Give it a unique ID
+        });
+      };
+
       // Join the store-specific room
       socket.emit('join_store', { store_id: currentUser?.store_id || 1 });
   
       socket.on('new_order', handleNewOrder);
       socket.on('order_updated', handleOrderUpdated);
       socket.on('negative_inventory_alert', handleNegativeInventoryAlert);
+      socket.on('TERMINAL_ORDER_RECEIVED', handleTerminalOrder);
+      socket.on('waiter_connected', () => setIsWaiterConnected(true));
+      socket.on('waiter_disconnected', () => setIsWaiterConnected(false));
+      socket.on('update_active_waiters', (waiters: any[]) => {
+        setActiveWaiters(waiters);
+      });
       
       return () => {
         socket.off('new_order', handleNewOrder);
         socket.off('order_updated', handleOrderUpdated);
         socket.off('negative_inventory_alert', handleNegativeInventoryAlert);
+        socket.off('TERMINAL_ORDER_RECEIVED', handleTerminalOrder);
+        socket.off('waiter_connected');
+        socket.off('waiter_disconnected');
       };
     }, [currentUser]);
 
@@ -516,16 +595,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const categories = useLiveQuery(() => db.categories.toArray()) || []
   const products = useLiveQuery(() =>
-    activeCategoryId
+    typeof activeCategoryId === 'number'
       ? db.products.where('category_id').equals(activeCategoryId).toArray()
-      : db.products.toArray()
+      : db.products.toArray(),
+    [activeCategoryId]
   ) || []
 
   useEffect(() => {
     const fetchCatalog = async () => {
       try {
         const storeId = currentUser?.store_id || 1;
-        const res = await fetch(`${BACKEND_URL}/catalog/sync?store_id=${storeId}`);
+        const res = await fetch(`${BACKEND_URL}/catalog/sync/${storeId}`);
         if (res.ok) {
           const data = await res.json();
           await db.categories.clear();
@@ -542,7 +622,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           if (data.products && data.products.length > 0) {
             await db.products.bulkPut(data.products.map((p: any) => ({
               id: p.id,
-              category_id: p.category_id,
+              category_id: p.categories && p.categories.length > 0 ? p.categories[0].id : p.category_id,
               name: p.name,
               price: p.price,
               desc: p.sku || 'No description',
@@ -550,6 +630,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             })));
           }
         }
+
+        const campRes = await fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}`);
+        if (campRes.ok) setActiveCampaigns(await campRes.json());
+
       } catch (err) {
         console.error('Failed to sync catalog:', err);
       }
@@ -652,6 +736,44 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     return () => { socket.off('gps_update', handleGpsUpdate); };
   }, []);
 
+  const getProductDiscount = (product: any) => {
+    let maxDiscount = 0;
+    for (const camp of activeCampaigns) {
+      if (!camp.published_pos) continue;
+
+      const hasStoreTarget = camp.target_stores?.length > 0;
+      const hasCategoryTarget = camp.target_categories?.length > 0;
+      const hasProductTarget = camp.target_products?.length > 0;
+
+      const storeId = currentUser?.store_id || 1;
+      const storeMatches = hasStoreTarget ? camp.target_stores.some((s:any) => s.id === storeId) : true;
+      const categoryMatches = hasCategoryTarget ? camp.target_categories.some((c:any) => c.id === product.category_id) : true;
+      const productMatches = hasProductTarget ? camp.target_products.some((p:any) => p.id === product.id) : true;
+
+      const isGlobal = !hasStoreTarget && !hasCategoryTarget && !hasProductTarget;
+
+      let applies = false;
+      if (isGlobal) {
+        applies = true;
+      } else {
+        if (!storeMatches) continue; 
+        
+        if (hasProductTarget) {
+          if (productMatches) applies = true;
+        } else if (hasCategoryTarget) {
+          if (categoryMatches) applies = true;
+        } else {
+          applies = true;
+        }
+      }
+
+      if (applies && camp.discount_pct > maxDiscount) {
+        maxDiscount = camp.discount_pct;
+      }
+    }
+    return maxDiscount;
+  };
+
   const addToCart = (product: any) => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
@@ -676,49 +798,24 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     });
   }
 
-  const handleRepeatOrder = (itemsStr: string) => {
+  const handleRepeatOrder = async (itemsStr: string) => {
     const items = itemsStr.split(',').map(s => s.trim());
     const newCartItems: any[] = [];
 
-    const itemMap: { [key: string]: number } = {
-      'Zinger Deluxe': 1,
-      'Zinger Deluxe Burger': 1,
-      'Mint Margarita': 5,
-      'Chicken Fajita Pizza (Large)': 3,
-      'Fajita Pizza': 3,
-      'Large Pizza': 3,
-      'Fresh Lime Soda': 6,
-      'Chocolate Fudge Brownie': 7
-    };
-
-    const mockProducts: any[] = [
-      { id: 1, name: 'Zinger Deluxe Burger', price: 450, desc: 'Crispy chicken fillet with cheese, lettuce and mayo', img: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=300&q=80' },
-      { id: 2, name: 'Grilled Chicken Sandwich', price: 380, desc: 'Juicy grilled breast slice with cheese and special sauce', img: 'https://images.unsplash.com/photo-1521305916504-4a1121188589?auto=format&fit=crop&w=300&q=80' },
-      { id: 3, name: 'Chicken Fajita Pizza (Large)', price: 1200, desc: 'Rich pizza loaded with chicken chunks, onions, peppers and cheese', img: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=300&q=80' },
-      { id: 4, name: 'Pepperoni Pizza (Medium)', price: 950, desc: 'Classic marinara sauce with pepperoni slices and mozzarella', img: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?auto=format&fit=crop&w=300&q=80' },
-      { id: 5, name: 'Mint Margarita', price: 220, desc: 'Refreshing blender beverage with mint, lemon and syrup', img: 'https://images.unsplash.com/photo-1497534446932-c925b458314e?auto=format&fit=crop&w=300&q=80' },
-      { id: 6, name: 'Fresh Lime Soda', price: 150, desc: 'Sparkling cold beverage with lemon and soda', img: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=300&q=80' },
-      { id: 7, name: 'Chocolate Fudge Brownie', price: 280, desc: 'Rich, gooey fudge chocolate brownie topped with chocolate syrup', img: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&w=300&q=80' }
-    ];
+    // Use live products from IndexedDB (synced from backend)
+    const liveProducts = await db.products.toArray();
 
     items.forEach(item => {
       const match = item.match(/^(\d+)x\s+(.+)$/);
       if (match) {
         const qty = parseInt(match[1]);
         const name = match[2].trim();
-
-        let prodId = itemMap[name];
-        if (!prodId) {
-          const keys = Object.keys(itemMap);
-          const foundKey = keys.find(k => name.toLowerCase().includes(k.toLowerCase()));
-          if (foundKey) prodId = itemMap[foundKey];
-        }
-
-        if (prodId) {
-          const prod = mockProducts.find(p => p.id === prodId);
-          if (prod) {
-            newCartItems.push({ ...prod, qty });
-          }
+        // Fuzzy match: exact name first, then partial match
+        const prod = liveProducts.find(p => p.name.toLowerCase() === name.toLowerCase())
+          || liveProducts.find(p => p.name.toLowerCase().includes(name.toLowerCase())
+            || name.toLowerCase().includes(p.name.toLowerCase()));
+        if (prod) {
+          newCartItems.push({ ...prod, qty });
         }
       }
     });
@@ -727,32 +824,37 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       setCart(newCartItems);
       setOrderType('Delivery');
       setActiveMenu('Home');
+    } else {
+      setToast({ message: 'Could not match items from live menu. Please add manually.', type: 'error' });
     }
   };
 
-  const simulatedChats = [
-    {
-      id: 1,
-      phone: '03001234567',
-      name: 'Raza',
-      isOld: true,
-      message: '1 Large Pizza bhej dain usi address per.',
-      history: 'Last time ordered 1x Chicken Fajita Pizza (Large)',
-      repeatItems: '1x Chicken Fajita Pizza (Large)'
-    },
-    {
-      id: 2,
-      phone: '03459876543',
-      name: 'Hassan',
-      isOld: false,
-      message: 'Zinger Deluxe Burger aur Fresh Lime Soda chahiye, Clifton Phase 6.',
-      history: 'No previous history (New Customer)',
-      repeatItems: '1x Zinger Deluxe Burger, 1x Fresh Lime Soda'
-    }
-  ];
+  // WhatsApp chats: No hardcoded/simulated data. Real WhatsApp API integration required.
+  const simulatedChats: { id: number; phone: string; name: string; isOld: boolean; message: string; history: string; repeatItems: string }[] = [];
 
-  const handleConvertWhatsAppOrder = (chat: typeof simulatedChats[0]) => {
+  const handleConvertWhatsAppOrder = (chat: { id: number; phone: string; name: string; isOld: boolean; message: string; history: string; repeatItems: string }) => {
     handleRepeatOrder(chat.repeatItems);
+  };
+
+  const sendWaiterOrder = () => {
+    if (cart.length === 0) return setToast({ message: 'Cart is empty', type: 'error' });
+    if (orderType === 'Dine In' && (!tableNumber || tableNumber === 'T1')) {
+      // Just a warning, but we can allow T1
+    }
+    
+    const orderData = {
+      store_id: currentUser?.store_id || 1,
+      waiter_name: currentUser?.name || 'Waiter',
+      terminal_pin: currentUser?.password || '',
+      table_no: tableNumber || 'T1',
+      items: cart,
+      total: grandTotal,
+      timestamp: new Date().toISOString()
+    };
+    
+    socket.emit('NEW_TERMINAL_ORDER', orderData);
+    setToast({ message: 'Order sent to Cashier!', type: 'success' });
+    setCart([]);
   };
 
   const handleCreateKOT = async () => {
@@ -902,9 +1004,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [pendingDeliveryAction, setPendingDeliveryAction] = useState<'KOT' | 'PAY' | null>(null);
   const [tableNumber, setTableNumber] = useState<string>('T1');
 
-  const subTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0)
-  const discountAmount = subTotal * (discountPercent / 100);
-  const afterDiscount = subTotal - discountAmount;
+  const subTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const promoDiscountAmount = cart.reduce((sum, item) => {
+    const pct = getProductDiscount(item);
+    return sum + (item.price * item.qty * (pct / 100));
+  }, 0);
+  const afterPromo = subTotal - promoDiscountAmount;
+  const discountAmount = afterPromo * (discountPercent / 100);
+  const totalDiscountAmount = promoDiscountAmount + discountAmount;
+  const afterDiscount = subTotal - totalDiscountAmount;
   const tax = afterDiscount * 0.10;
   const grandTotal = afterDiscount + tax;
 
@@ -956,17 +1064,23 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   // Real-time GPS sync handled globally by WebSockets above
 
-  const branchNames: Record<number, string> = {
-    1: 'DHA Branch',
-    2: 'Gulberg Branch',
-    3: 'Johar Town Branch',
-  };
-  const branchName = branchNames[currentUser?.store_id || 1] || `Branch ${currentUser?.store_id || 1}`;
+  const [branchName, setBranchName] = useState(`Branch ${currentUser?.store_id || 1}`);
+  
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/stores`)
+      .then(res => res.json())
+      .then(data => {
+         const stores = Array.isArray(data) ? data : (data.value || data.stores || []);
+         const s = stores.find((x: any) => x.id === (currentUser?.store_id || 1));
+         if (s) setBranchName(s.name);
+      }).catch(console.error);
+  }, [currentUser?.store_id]);
 
   return (
     <div className="pos-layout" onClick={() => showMoreMenu && setShowMoreMenu(false)}>
 
       {/* SIDEBAR */}
+      {!isWaiterMode && (
       <aside className="sidebar">
         <div
           className={`sidebar-logo-btn ${activeMenu === 'Dashboard' ? 'active' : ''}`}
@@ -998,6 +1112,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           </div>
           <span>Online</span>
         </div>
+        {posSettings.terminalEngineEnabled && (
+          <div
+            className={`sidebar-item ${activeMenu === 'Terminal' ? 'active' : ''}`}
+            onClick={() => setActiveMenu('Terminal')}
+          >
+            <div className="icon-box" style={{ position: 'relative' }}>
+              <Navigation size={20} color={isWaiterConnected ? '#4edea3' : undefined} />
+              {terminalOrders.length > 0 && <span style={{ position: 'absolute', top: '0', right: '0', background: 'var(--primary)', color: 'white', borderRadius: '50%', padding: '2px 5px', fontSize: '0.65rem', fontWeight: 'bold' }}>{terminalOrders.length}</span>}
+            </div>
+            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', marginTop: '4px', color: isWaiterConnected ? '#4edea3' : undefined }}>Terminal</span>
+          </div>
+        )}
         <div className={`sidebar-item ${activeMenu === 'Delivery' ? 'active' : ''}`} onClick={() => setActiveMenu('Delivery')}>
           <div className="icon-box"><Truck size={22} /></div><span>Delivery</span>
         </div>
@@ -1021,6 +1147,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
 
       </aside>
+      )}
 
       {/* MAIN CONTENT AREA */}
       <main className="main-content">
@@ -1092,24 +1219,16 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               )}
             </div>
 
-            {/* Cash Out */}
-            <button
+            {!isWaiterMode && (
+              <>
+                {/* Cash Out */}
+                <button
               onClick={() => setModalType('CASH_OUT')}
               style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-md)', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-yellow)'; e.currentTarget.style.color = 'var(--accent-yellow)'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'white'; }}
             >
               <Banknote size={14} /> Cash Out
-            </button>
-
-            {/* Business Day Close */}
-            <button
-              onClick={() => isCashedOut ? setModalType('DAY_CLOSE') : setToast({ message: 'Please Cash Out first before closing the day!', type: 'error' })}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: isCashedOut ? 'white' : 'var(--text-muted)', opacity: isCashedOut ? 1 : 0.6, borderRadius: 'var(--radius-md)', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.75rem', cursor: isCashedOut ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
-              onMouseEnter={e => { if(isCashedOut) { e.currentTarget.style.borderColor = '#818cf8'; e.currentTarget.style.color = '#818cf8'; } }}
-              onMouseLeave={e => { if(isCashedOut) { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'white'; } }}
-            >
-              <Moon size={14} /> Day Close
             </button>
 
             {/* Lock Terminal */}
@@ -1122,20 +1241,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             >
               <Lock size={14} /> Lock Terminal
             </button>
-
-            {/* Global Terminal Logout */}
-            <button
-              onClick={() => {
-                if (isCashedOut) onCashOut();
-                onLogout();
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: '#fca5a5', borderRadius: 'var(--radius-md)', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = '#fca5a5'; }}
-              title="Logout Cashier"
-            >
-              <LogOut size={14} /> Logout
-            </button>
+            </>
+            )}
 
             {/* Full Screen */}
             <button
@@ -1154,9 +1261,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             </button>
 
             {/* Global Search */}
-            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '6px 12px', width: '200px', transition: 'border-color 0.2s' }}>
-              <Search size={14} color="var(--text-muted)" style={{ marginRight: '8px' }} />
-              <input type="text" placeholder="Global Search..." style={{ flex: 1, background: 'transparent', border: 'none', color: 'white', outline: 'none', fontSize: '0.8rem' }} />
+            <div style={{ display: 'flex', alignItems: 'center', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 'var(--radius-md)', padding: '6px 12px', width: '220px', transition: 'border-color 0.2s' }}>
+              <Search size={14} color="#64748b" style={{ marginRight: '8px' }} />
+              <input type="text" placeholder="Global Search..." style={{ flex: 1, background: 'transparent', border: 'none', color: 'black', outline: 'none', fontSize: '0.85rem' }} />
             </div>
           </div>
         </header>
@@ -1176,13 +1283,25 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         {/* HOME (POS) VIEW */}
         {activeMenu === 'Home' && (
           <>
-            <div className="categories-row">
+            <div className="categories-row" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <div className={`category-pill ${activeCategoryId === 'ALL' ? 'active' : ''}`} onClick={() => setActiveCategoryId('ALL')}>All Items</div>
+              <div className={`category-pill ${activeCategoryId === 'DISCOUNT' ? 'active' : ''}`} style={{ borderColor: activeCategoryId === 'DISCOUNT' ? '#ec4899' : 'transparent', color: activeCategoryId === 'DISCOUNT' ? 'white' : 'var(--text-muted)' }} onClick={() => setActiveCategoryId('DISCOUNT')}>🔥 Discounted</div>
               {categories.map(cat => (
                 <div key={cat.id} className={`category-pill ${activeCategoryId === cat.id ? 'active' : ''}`} onClick={() => setActiveCategoryId(cat.id)}>{cat.name}</div>
               ))}
+              <div style={{ marginLeft: 'auto', marginRight: '24px', display: 'flex', alignItems: 'center', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 'var(--radius-md)', padding: '6px 12px', width: '220px' }}>
+                <Search size={14} color="#64748b" style={{ marginRight: '8px' }} />
+                <input type="text" placeholder="Search menu..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ flex: 1, background: 'transparent', border: 'none', color: 'black', outline: 'none', fontSize: '0.85rem' }} />
+              </div>
             </div>
             <div className="product-grid">
-              {products.map(prod => (
+              {products.filter(prod => {
+                if (searchQuery && !prod.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+                if (activeCategoryId === 'DISCOUNT' && getProductDiscount(prod) === 0) return false;
+                return true;
+              }).map(prod => {
+                const discount = getProductDiscount(prod);
+                return (
                 <div
                   key={prod.id}
                   className="product-card"
@@ -1195,10 +1314,36 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   }}
                   style={{ position: 'relative', opacity: prod.isApproved === false ? 0.6 : 1, cursor: prod.isApproved === false ? 'not-allowed' : 'pointer' }}
                 >
+                  {discount > 0 && (
+                    <div style={{
+                      position: 'absolute', top: '10px', left: '0',
+                      background: 'linear-gradient(135deg, #ec4899, #be185d)',
+                      color: 'white', fontWeight: '900', fontSize: '0.72rem',
+                      padding: '4px 10px 4px 8px',
+                      borderRadius: '0 20px 20px 0',
+                      zIndex: 10,
+                      letterSpacing: '0.05em',
+                      boxShadow: '2px 2px 8px rgba(236,72,153,0.5)',
+                      display: 'flex', alignItems: 'center', gap: '3px'
+                    }}>
+                      🔥 {discount}% OFF
+                    </div>
+                  )}
                   <div className="product-img-wrapper"><img src={prod.img || ''} alt={prod.name} className="product-img" /></div>
                   <div className="product-name">{prod.name}</div>
-                  <div className="product-desc">{prod.desc || 'Delicious and freshly prepared'}</div>
-                  <div className="product-price-badge">Rs. {prod.price}</div>
+                  <div className="product-price-badge" style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'center' }}>
+                    {discount > 0 && (
+                      <span style={{ 
+                        textDecoration: 'line-through', 
+                        textDecorationThickness: '2px',
+                        textDecorationColor: '#7c2d12',
+                        color: '#92400e', 
+                        fontSize: '0.85rem',
+                        fontWeight: '700'
+                      }}>Rs. {prod.price}</span>
+                    )}
+                    Rs. {discount > 0 ? (prod.price * (1 - discount/100)).toFixed(0) : prod.price}
+                  </div>
                   {prod.isApproved === false && (
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', borderRadius: '10px' }}>
                       <Lock size={40} color="var(--accent-yellow)" />
@@ -1206,7 +1351,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     </div>
                   )}
                 </div>
-              ))}
+              )})}
               {posSettings.allowCustomItems && (
                 <div
                   onClick={() => setModalType('ADD_CUSTOM_ITEM')}
@@ -1409,6 +1554,167 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     <button className="btn-action btn-order" style={{ padding: '12px', width: '100%', fontWeight: 'bold' }} onClick={async () => {
                       handleAcceptOnlineOrder(order);
                     }}>Accept & Send to KDS</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TERMINAL ORDERS VIEW */}
+        {activeMenu === 'Terminal' && (
+          <div style={{ padding: '20px', background: 'var(--bg-panel)', borderRadius: 'var(--radius-lg)', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
+              <h2 style={{ margin: 0, color: 'var(--accent-green)' }}><Navigation size={24} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '10px' }} />Incoming Terminal Orders</h2>
+              <button 
+                onClick={() => {
+                  const pin = Math.floor(1000 + Math.random() * 9000).toString();
+                  socket.emit('generate_waiter_pin', { store_id: currentUser.store_id || 1, pin });
+                  setGeneratedWaiterPin(pin);
+                  setWaiterPinModalOpen(true);
+                }}
+                style={{ background: 'var(--accent-green)', color: 'black', padding: '10px 20px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                <Plus size={18} /> Generate Tablet Link
+              </button>
+            </div>
+            
+            <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <h3 style={{ margin: 0, color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Navigation size={20} color="var(--accent-green)" /> Connected Waiter Tablets ({activeWaiters.length})
+              </h3>
+              
+              {activeWaiters.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px', background: 'var(--bg-base)', borderRadius: 'var(--radius-md)' }}>
+                  No tablets currently connected. Generate a PIN to let waiters login.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '15px' }}>
+                  {activeWaiters.map((waiter, idx) => (
+                    <div key={idx} style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--accent-green)', boxShadow: '0 0 10px var(--accent-green)' }}></div>
+                        <span style={{ color: 'white', fontWeight: 'bold' }}>{waiter.name}</span>
+                      </div>
+                      <button 
+                        onClick={() => socket.emit('kick_waiter', { name: waiter.name, store_id: currentUser.store_id || 1 })}
+                        style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                        Disconnect
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <h3 style={{ margin: '20px 0 10px 0', color: 'white' }}>Pending Orders</h3>
+            <div className="custom-scrollbar" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', overflowY: 'auto', paddingRight: '10px' }}>
+              {terminalOrders.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem', gridColumn: '1 / -1' }}>
+                  No pending terminal orders
+                </div>
+              )}
+              {terminalOrders.map(order => (
+                <div key={order.id} style={{ display: 'flex', flexDirection: 'column', gap: '15px', background: 'var(--bg-base)', padding: '20px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid var(--accent-green)` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: 'white' }}>Table {order.table_no}</h3>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Waiter: {order.waiter_name}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {order.total.toFixed(2)}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{new Date(order.timestamp).toLocaleTimeString()}</div>
+                    </div>
+                  </div>
+                  
+                  <div style={{ background: '#0f172a', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.9rem', color: '#cbd5e1' }}>
+                    {order.items.map((i: any, idx: number) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span>{i.qty}x {i.name}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>Rs. {i.price * i.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <button className="btn-action" style={{ background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', border: 'none', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={async () => {
+                    const newKot = {
+                      orderId: 'T' + Math.floor(Math.random() * 10000),
+                      type: 'Dine-In',
+                      items: JSON.stringify(order.items.map((i: any) => ({ name: i.name, qty: i.qty }))),
+                      notes: `Terminal - Table ${order.table_no}`,
+                      timePlaced: new Date().toLocaleTimeString(),
+                      prepTimeMinutes: 0,
+                      status: 'NEW' as const,
+                      startTime: '',
+                      printCount: 0,
+                      totalAmount: parseFloat(order.total) || 0,
+                      customer: order.table_no,
+                      source: 'Terminal',
+                    };
+                    await db.kots.add(newKot);
+                    setToast({ message: 'Order sent to KDS!', type: 'success' });
+                    setTerminalOrders(prev => prev.filter(o => o.id !== order.id));
+                  }}>
+                    Accept & Send to KDS
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <h3 style={{ margin: '20px 0 10px 0', color: 'white' }}>Active Terminal Orders (In Kitchen)</h3>
+            <div className="custom-scrollbar" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', overflowY: 'auto', paddingRight: '10px' }}>
+              {terminalKots.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem', gridColumn: '1 / -1' }}>
+                  No active terminal orders
+                </div>
+              )}
+              {terminalKots.map(kot => (
+                <div key={kot.id} style={{ display: 'flex', flexDirection: 'column', gap: '15px', background: 'var(--bg-base)', padding: '20px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid ${kot.status === 'READY' ? 'var(--accent-green)' : 'var(--accent-yellow)'}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: 'white' }}>Table {kot.customer}</h3>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Order #{kot.orderId}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {(kot.totalAmount || 0).toFixed(2)}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{kot.timePlaced}</div>
+                    </div>
+                  </div>
+                  
+                  <div style={{ background: '#0f172a', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.9rem', color: '#cbd5e1' }}>
+                    {JSON.parse(kot.items).map((i: any, idx: number) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span>{i.qty}x {i.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {kot.status === 'READY' ? (
+                    <button className="btn-action" style={{ background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', border: 'none', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={() => {
+                      // Load into cart
+                      try {
+                        const parsedItems = JSON.parse(kot.items);
+                        const newCart = parsedItems.map((i: any) => {
+                          const product = products.find(p => p.name.toLowerCase() === i.name.toLowerCase());
+                          return { name: i.name, price: product ? product.price : 0, qty: i.qty };
+                        });
+                        setCart(newCart);
+                        setOrderType('Dine In');
+                        setOrderNotes(`Terminal - Table ${kot.customer}`);
+                        setActiveTerminalKotId(kot.id!);
+                        setActiveMenu('Home');
+                        setModalType('PAYMENT');
+                      } catch (e) {
+                        setToast({ message: 'Error loading order', type: 'error' });
+                      }
+                    }}>
+                      Pay Order
+                    </button>
+                  ) : (
+                    <div style={{ padding: '12px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: 'rgba(251, 191, 36, 0.1)', color: 'var(--accent-yellow)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-yellow)' }}>
+                      <Clock size={18} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
+                      In Kitchen
+                    </div>
                   )}
                 </div>
               ))}
@@ -1808,6 +2114,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 { label: 'Cash In / Out', desc: 'Record cash drawer entries and withdrawals', icon: <Banknote size={26} />, action: () => setModalType('CASH_OUT'), color: 'var(--accent-yellow)' },
                 { label: 'Business Day Close', desc: 'End current business day and generate daily report', icon: <Moon size={26} />, action: () => setModalType('DAY_CLOSE'), color: '#818cf8' },
                 { label: 'POS Settings', desc: 'Configure printer, KOT mode and till lock', icon: <Settings size={26} />, action: () => setModalType('SETTINGS'), color: 'var(--primary)' },
+                ...(posSettings.terminalEngineEnabled ? [{ label: 'Generate Waiter PIN', desc: 'Create temporary login for Waiter Terminal', icon: <Navigation size={26} />, action: () => setModalType('WAITER_PIN'), color: 'var(--accent-green)' }] : []),
               ].map(item => (
                 <div key={item.label} onClick={item.action} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '24px', cursor: 'pointer', transition: 'all 0.2s' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = item.color; e.currentTarget.style.transform = 'translateY(-2px)'; }}
@@ -1864,7 +2171,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       </main>
 
       {/* CART SIDEBAR */}
-      {activeMenu === 'Home' && (
+      {(activeMenu === 'Home' || activeMenu === 'Online') && (
         <aside className="cart-sidebar">
           <div className="cart-header">
             <h2>Order #45555</h2>
@@ -1874,6 +2181,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             <select 
               value={orderType} 
               onChange={(e) => setOrderType(e.target.value)}
+              disabled={isWaiterMode}
               style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', padding: '6px 10px', outline: 'none', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
             >
               {['Dine In', 'Delivery', 'Take Away'].map(type => (
@@ -1935,7 +2243,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     <button className="cart-qty-btn" onClick={() => updateQty(item.id, 1)}><Plus size={14}/></button>
                   </div>
                 </div>
-                <div className="cart-item-price">Rs. {item.price * item.qty}</div>
+                <div className="cart-item-price" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                  <span>Rs. {item.price * item.qty}</span>
+                  {getProductDiscount(item) > 0 && (
+                    <span style={{ fontSize: '0.65rem', color: '#ec4899', marginTop: '2px' }}>
+                      {getProductDiscount(item)}% OFF (Rs. {item.price * item.qty - (item.price * item.qty * (getProductDiscount(item) / 100))})
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -1950,6 +2265,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               />
             </div>
             <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem' }}><span>Sub Total</span><span>Rs. {subTotal.toFixed(2)}</span></div>
+            {promoDiscountAmount > 0 && (
+              <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', color: '#ec4899' }}><span>Promotional Discounts</span><span>-Rs. {promoDiscountAmount.toFixed(2)}</span></div>
+            )}
             <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', alignItems: 'center' }}>
               <span>Discount</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1967,6 +2285,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             </div>
             <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem' }}><span>Tax (10%)</span><span>Rs. {tax.toFixed(2)}</span></div>
             <div className="totals-row grand" style={{ padding: '2px 0', marginTop: '2px', marginBottom: '4px' }}><span style={{ fontSize: '0.85rem' }}>Grand Total</span><span className="value" style={{ fontSize: '1.1rem' }}>Rs. {grandTotal.toFixed(2)}</span></div>
+            {isWaiterMode ? (
+              <div className="action-buttons" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '4px' }}>
+                <button className="btn-action btn-save" style={{ fontSize: '1rem', padding: '10px 0', minHeight: '40px', fontWeight: 'bold' }} onClick={sendWaiterOrder}>Send Order</button>
+                <button className="btn-action btn-danger" style={{ fontSize: '0.75rem', padding: '2px 0', minHeight: '26px' }} onClick={() => setCart([])}>Cancel</button>
+              </div>
+            ) : (
             <div className="action-buttons" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
               <button className="btn-action" style={{ background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '0.75rem', padding: '2px 0', minHeight: '26px' }} onClick={handleHoldOrder}>Hold</button>
               <button className="btn-action btn-save" style={{ fontSize: '0.75rem', padding: '2px 0', minHeight: '26px' }} onClick={handleCreateKOT}>KOT</button>
@@ -1980,7 +2304,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 setModalType('PAYMENT');
               }}>Pay</button>
             </div>
-            {heldOrders.length > 0 && (
+            )}
+            {heldOrders.length > 0 && !isWaiterMode && (
               <button className="btn-action" style={{ width: '100%', marginTop: '6px', padding: '4px 0', fontSize: '0.8rem', minHeight: '26px', background: 'var(--bg-panel-hover)', color: 'var(--accent-yellow)', border: '1px solid var(--accent-yellow)' }} onClick={() => setModalType('HOLD_ORDERS')}>
                 <PauseCircle size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} /> Orders on Hold ({heldOrders.length})
               </button>
@@ -1988,6 +2313,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           </div>
         </aside>
       )}
+
 
       {/* TILL LOCK OVERLAY */}
       {posSettings.tillLockEnabled && !isTillLocked && (
@@ -2257,10 +2583,68 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     <span style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Allow Custom Items from POS</span>
                     <input type="checkbox" checked={posSettings.allowCustomItems} onChange={e => setPosSettings({...posSettings, allowCustomItems: e.target.checked})} style={{ width: '20px', height: '20px', accentColor: 'var(--accent-yellow)', cursor: 'pointer' }}/>
                   </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--accent-green)' }}>Waiter Terminal Engine</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Allow Waiters to connect via mobile</span>
+                    </div>
+                    <input type="checkbox" checked={posSettings.terminalEngineEnabled} onChange={e => setPosSettings({...posSettings, terminalEngineEnabled: e.target.checked})} style={{ width: '20px', height: '20px', accentColor: 'var(--accent-green)', cursor: 'pointer' }}/>
+                  </div>
                 </div>
               </div>
 
               <button className="btn-action btn-order" onClick={() => { localStorage.setItem('d4u_pos_settings', JSON.stringify(posSettings)); setModalType('NONE'); setToast({message: 'Settings Saved', type: 'success'}); }} style={{ padding: '16px', fontSize: '1.1rem', width: '100%', borderRadius: '8px', fontWeight: 'bold', background: 'var(--accent-green)', color: 'white', border: 'none', cursor: 'pointer', transition: 'background-color 0.2s' }}>Save & Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WAITER PIN MODAL */}
+      {modalType === 'WAITER_PIN' && (
+        <div className="modal-overlay">
+          <div className="modal-content animate-slide-up" style={{ width: '400px' }}>
+            <div className="modal-header">
+              <h2><Navigation size={24} color="var(--accent-green)" /> Generate Waiter PIN</h2>
+              <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setWaiterNameInput(''); setGeneratedTerminalPin(''); }} />
+            </div>
+            <div style={{ padding: '20px' }}>
+              {!generatedTerminalPin ? (
+                <>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '15px' }}>Enter the Waiter's name to generate a temporary PIN for the Terminal.</p>
+                  <input type="text" placeholder="e.g. John Doe" value={waiterNameInput} onChange={e => setWaiterNameInput(e.target.value)} style={{ width: '100%', padding: '15px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', marginBottom: '15px', fontSize: '1.1rem' }} autoFocus />
+                  <button className="btn-action btn-order" style={{ width: '100%', padding: '15px', fontSize: '1.1rem', background: 'var(--accent-green)', color: '#00311f' }} onClick={async () => {
+                     if (!waiterNameInput.trim()) return setToast({ message: 'Waiter Name is required', type: 'error' });
+                     try {
+                       const res = await fetch(BACKEND_URL + '/terminal/generate', {
+                         method: 'POST',
+                         headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify({ store_id: currentUser?.store_id || 1, waiter_name: waiterNameInput.trim() })
+                       });
+                       const data = await res.json();
+                       if (data.success) {
+                         setGeneratedTerminalPin(data.pin);
+                         setToast({ message: 'Terminal PIN Generated!', type: 'success' });
+                       } else {
+                         setToast({ message: 'Failed to generate PIN', type: 'error' });
+                       }
+                     } catch (e) {
+                       setToast({ message: 'Connection Error', type: 'error' });
+                     }
+                  }}>
+                    Generate PIN
+                  </button>
+                </>
+              ) : (
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '10px' }}>Give this PIN to {waiterNameInput}:</p>
+                  <div style={{ background: '#0f172a', border: '2px dashed var(--accent-green)', color: 'var(--accent-green)', fontSize: '2.5rem', fontWeight: '900', letterSpacing: '5px', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
+                    {generatedTerminalPin}
+                  </div>
+                  <button className="btn-action" onClick={() => { setModalType('NONE'); setWaiterNameInput(''); setGeneratedTerminalPin(''); }} style={{ width: '100%', padding: '15px', background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)' }}>
+                    Done
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2469,7 +2853,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     store_id: currentUser?.store_id || 1,
                     created_by: currentUser?.id || 1,
                     customer_id: customerId,
-                    discount: discountAmount,
+                    discount: totalDiscountAmount,
                     payment_method: paymentMethod.toUpperCase(),
                     order_source: orderType,
                     table_no: tableNumber || undefined,
@@ -2522,12 +2906,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     await db.kots.add(newKot);
                   }
                 }
+                const cartWithPromo = cart.map(item => ({
+                  ...item,
+                  promoPct: getProductDiscount(item),
+                  discountedPrice: item.price - (item.price * (getProductDiscount(item) / 100))
+                }));
+
                 const currentOrder = {
                   orderType: orderType === 'Dine In' ? `Dine In (${tableNumber})` : orderType,
-                  cart,
+                  cart: cartWithPromo,
                   subTotal,
                   tax,
-                  discount: discountAmount,
+                  discount: totalDiscountAmount,
+                  promoDiscount: promoDiscountAmount,
+                  manualDiscount: discountAmount,
                   grandTotal,
                   cashGiven: tendered,
                   returnAmount,
@@ -2538,6 +2930,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 if (activeShift === 'Shift 1') setShift1Sales(prev => prev + grandTotal);
                 else setShift2Sales(prev => prev + grandTotal);
 
+                if (activeTerminalKotId) {
+                  db.kots.update(activeTerminalKotId, { status: 'PAID' });
+                  setActiveTerminalKotId(null);
+                }
                 setOrderNotes('');
                 setCart([]); setCashGiven(''); setModalType('NONE');
                 setToast({ message: 'Transaction Complete!', type: 'success' });
@@ -2598,7 +2994,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
-                        store_id: 1,
+                        store_id: currentUser?.store_id || 1,
                         name: customItemName,
                         price: parseFloat(customItemPrice) || 0,
                         category_id: customItemCategory || (categories[0]?.id || 1),
@@ -2622,6 +3018,30 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {waiterPinModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content animate-slide-up" style={{ width: '400px', textAlign: 'center' }}>
+            <div className="modal-header" style={{ justifyContent: 'space-between' }}>
+              <h2><Navigation size={24} /> Tablet Pairing</h2>
+              <X size={24} style={{cursor:'pointer'}} onClick={() => setWaiterPinModalOpen(false)} />
+            </div>
+            <div style={{ padding: '20px' }}>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>Ask the waiter to go to the following URL on their tablet and enter this PIN:</p>
+              
+              <div style={{ background: '#0f172a', padding: '15px', borderRadius: '10px', marginBottom: '20px', wordBreak: 'break-all' }}>
+                <a href={`${window.location.origin}/${(currentUser?.store?.name || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '')}/waiter`} target="_blank" rel="noreferrer" style={{ color: '#3b82f6', fontWeight: 'bold', textDecoration: 'underline', fontSize: '1.1rem' }}>
+                  {window.location.origin}/{(currentUser?.store?.name || 'branch').toLowerCase().replace(/[^a-z0-9]/g, '')}/waiter
+                </a>
+              </div>
+              
+              <div style={{ fontSize: '4rem', fontWeight: '900', letterSpacing: '10px', color: 'var(--accent-green)', background: '#1e293b', padding: '20px', borderRadius: '15px', border: '2px dashed var(--border-color)' }}>
+                {generatedWaiterPin}
+              </div>
+            </div>
+            <button className="btn-action" style={{ width: '100%', padding: '15px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', marginTop: '20px' }} onClick={() => setWaiterPinModalOpen(false)}>Close</button>
           </div>
         </div>
       )}
@@ -2665,13 +3085,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
 type DayRecord = { id: number; dayStart: string; dayClose: string };
 
-function fmt(iso: string) {
+function fmt(iso: string | null | undefined) {
+  if (!iso) return '—';
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
     + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function DayStartPage({ currentUser, onDayStart }: { currentUser: any; onDayStart: (t: Date) => void }) {
+function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any; onDayStart: (t: Date) => void; onLogout?: () => void }) {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState('');
@@ -2687,6 +3109,25 @@ function DayStartPage({ currentUser, onDayStart }: { currentUser: any; onDayStar
 
   const lastRecord = history[0] ?? null;
 
+  // On mount, check if there's already an open day — if so, auto-proceed
+  useEffect(() => {
+    const checkOpenDay = async () => {
+      try {
+        const res = await fetch(BACKEND_URL + `/business-day/current?store_id=${currentUser.store_id || 1}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.id) {
+            // A day is already open — just proceed directly, no need to start a new one
+            onDayStart(new Date(data.dayStart || new Date()));
+          }
+        }
+      } catch (e) {
+        // ignore — will fall through to manual Day Start
+      }
+    };
+    checkOpenDay();
+  }, [currentUser.store_id]);
+
   const handleStart = async () => {
     setLoading(true);
     try {
@@ -2697,6 +3138,9 @@ function DayStartPage({ currentUser, onDayStart }: { currentUser: any; onDayStar
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        onDayStart(new Date());
+      } else if (data.message && data.message.includes('already open')) {
+        // Day is already open — auto-proceed to POS
         onDayStart(new Date());
       } else {
         setErrMsg(data.message || 'Error starting day');
@@ -2738,7 +3182,10 @@ function DayStartPage({ currentUser, onDayStart }: { currentUser: any; onDayStar
     <div style={s.page}>
       {/* Left Panel */}
       <div style={s.left}>
-        <div style={s.userName}>{currentUser.name}</div>
+        <div style={{ ...s.userName, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{currentUser.name}</span>
+          {onLogout && <button onClick={onLogout} style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #f87171', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>Logout</button>}
+        </div>
         {lastRecord ? (
           <div style={s.closedTime}>
             Closed Time<br />
@@ -2783,7 +3230,7 @@ function DayStartPage({ currentUser, onDayStart }: { currentUser: any; onDayStar
   );
 }
 
-function CashInPage({ currentUser, onCashIn }: { currentUser: any; onCashIn: (amount: number) => void }) {
+function CashInPage({ currentUser, onCashIn, onLogout }: { currentUser: any; onCashIn: (amount: number) => void; onLogout?: () => void }) {
   const [amount, setAmount] = useState('');
   const [comment, setComment] = useState('');
   const [history, setHistory] = useState<any[]>([]);
@@ -2829,7 +3276,7 @@ function CashInPage({ currentUser, onCashIn }: { currentUser: any; onCashIn: (am
     startBtn: { background: '#22c55e', color: '#fff', border: 'none', borderRadius: '8px', padding: '14px', fontWeight: '800', fontSize: '1.1rem', cursor: 'pointer', letterSpacing: '0.04em', width: '100%', marginTop: '10px' },
     hint: { fontSize: '0.85rem', color: '#ef4444', marginTop: '10px', textAlign: 'center' },
     right: { flex: 1, padding: '28px 32px', overflowY: 'auto' },
-    title: { fontSize: '1.2rem', fontWeight: '700', color: '#111827', marginBottom: '18px' },
+    title: { fontSize: '1.2rem', fontWeight: '700', color: '#111827', marginBottom: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
     table: { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 6px rgba(0,0,0,0.08)' },
     th: { background: '#e5e7eb', padding: '12px 16px', textAlign: 'left', fontSize: '0.85rem', fontWeight: '700', color: '#374151' },
     td: { padding: '11px 16px', fontSize: '0.82rem', color: '#374151', borderBottom: '1px solid #f3f4f6' },
@@ -2841,7 +3288,10 @@ function CashInPage({ currentUser, onCashIn }: { currentUser: any; onCashIn: (am
   return (
     <div style={s.page}>
       <div style={s.left}>
-        <div style={s.userName}>{currentUser.name}</div>
+        <div style={{ ...s.userName, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{currentUser.name}</span>
+          {onLogout && <button onClick={onLogout} style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #f87171', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>Logout</button>}
+        </div>
         <div>
           <label style={{display: 'block', marginBottom: '5px', fontWeight: 'bold', fontSize: '0.85rem', color: '#4b5563'}}>Cash in amount</label>
           <input type="number" placeholder="0" style={s.input} value={amount} onChange={e => setAmount(e.target.value)} />
@@ -2871,10 +3321,10 @@ function CashInPage({ currentUser, onCashIn }: { currentUser: any; onCashIn: (am
             {demoRows.map((row) => (
               <tr key={row.id}>
                 <td style={s.td}>{row.id}</td>
-                <td style={s.td}>{new Date(row.timestamp).toLocaleString()}</td>
+                <td style={s.td}>{fmt(row.timestamp || row.created_at)}</td>
                 <td style={s.td}>{row.type === 'CASH_IN' ? row.amount : 0}</td>
-                <td style={s.td}>{row.type === 'CASH_OUT' ? new Date(row.timestamp).toLocaleString() : '-'}</td>
-                <td style={s.td}>{row.type === 'CASH_OUT' ? row.amount : '-'}</td>
+                <td style={s.td}>{row.type === 'CASH_OUT' ? fmt(row.timestamp || row.created_at) : '—'}</td>
+                <td style={s.td}>{row.type === 'CASH_OUT' ? row.amount : '—'}</td>
                 <td style={s.td}>
                   <button style={s.actionBtn} title="Print"><Printer size={16}/></button>
                   <button style={s.actionBtn} title="View"><Globe size={16}/></button>
@@ -2888,12 +3338,16 @@ function CashInPage({ currentUser, onCashIn }: { currentUser: any; onCashIn: (am
   );
 }
 
+import WaiterMode from './WaiterMode'
+import WaiterTerminalLogin from './WaiterTerminalLogin'
+
 export default function App() {
-  // Routing moved below hooks
+  const isWaiterModeURL = window.location.pathname.endsWith('/waiter') || window.location.search.includes('mode=waiter');
+  const userStorageKey = isWaiterModeURL ? 'd4u_waiter_user' : 'd4u_main_user';
 
   const [settings, setSettings] = useState<any>(null);
   const [loggedInUser, setLoggedInUser] = useState<typeof USERS[0] | null>(() => {
-    try { return JSON.parse(localStorage.getItem('d4u_main_user') || 'null'); } catch { return null; }
+    try { return JSON.parse(localStorage.getItem(userStorageKey) || 'null'); } catch { return null; }
   });
   const [dayStartTime, setDayStartTime] = useState<Date | null>(() => {
     try { const d = localStorage.getItem('d4u_day_start'); return d ? new Date(d) : null; } catch { return null; }
@@ -2904,9 +3358,33 @@ export default function App() {
   const [cashInAmount, setCashInAmount] = useState<number>(() => {
     try { return parseFloat(localStorage.getItem('d4u_cashin_amt') || '0'); } catch { return 0; }
   });
+  const [forceShowLogin, setForceShowLogin] = useState(false);
+
+  const handleLogout = () => {
+    if (loggedInUser?.role === 'Waiter') {
+      socket.emit('waiter_disconnected', { store_id: loggedInUser.store_id });
+    }
+    setLoggedInUser(null);
+    setIsCashedIn(false);
+    setDayStartTime(null);
+    setDayStartTime(null);
+    localStorage.removeItem(userStorageKey);
+    localStorage.removeItem('d4u_day_start');
+    localStorage.setItem('d4u_is_cashed_in', 'false');
+    setForceShowLogin(true);
+  };
 
   useEffect(() => {
-    fetch(BACKEND_URL + '/cms/settings')
+    const handleForceLogout = () => {
+      handleLogout();
+    };
+    socket.on('force_logout', handleForceLogout);
+    return () => { socket.off('force_logout', handleForceLogout); };
+  }, []);
+
+  useEffect(() => {
+    const storeId = loggedInUser?.store_id || 1;
+    fetch(`${BACKEND_URL}/cms/settings?store_id=${storeId}`)
       .then(res => res.json())
       .then(data => {
         setSettings(data);
@@ -2918,12 +3396,12 @@ export default function App() {
         }
       })
       .catch(console.error);
-  }, []);
+  }, [loggedInUser?.store_id]);
 
   useEffect(() => {
-    if (loggedInUser) localStorage.setItem('d4u_main_user', JSON.stringify(loggedInUser));
-    else localStorage.removeItem('d4u_main_user');
-  }, [loggedInUser]);
+    if (loggedInUser) localStorage.setItem(userStorageKey, JSON.stringify(loggedInUser));
+    else localStorage.removeItem(userStorageKey);
+  }, [loggedInUser, userStorageKey]);
 
   useEffect(() => {
     if (dayStartTime) localStorage.setItem('d4u_day_start', dayStartTime.toISOString());
@@ -2937,12 +3415,18 @@ export default function App() {
 
   if (!settings) return <div style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center'}}>Loading POS System...</div>;
 
-  // Enforce Login if module is enabled
-  if (settings.module_auth_enabled && !loggedInUser) {
-    return <LoginScreen onLogin={setLoggedInUser} />;
+  if (isWaiterModeURL && (!loggedInUser || loggedInUser.role !== 'Waiter')) {
+    return <WaiterTerminalLogin onAuthenticated={(user) => { setLoggedInUser(user); setForceShowLogin(false); }} />;
+  }
+
+  // Show login if auth is enabled OR user manually logged out
+  if (forceShowLogin || (settings.module_auth_enabled && !loggedInUser)) {
+    return <LoginScreen onLogin={(user) => { setLoggedInUser(user); setForceShowLogin(false); }} />;
   }
 
   const activeUser = loggedInUser || { id: 1, name: 'Bypass Access', store_id: 1, role: 'Admin' };
+
+
 
   if (activeUser.role === 'Chef') {
     if (!settings.module_kds_enabled) {
@@ -2968,7 +3452,9 @@ export default function App() {
     );
   }
 
-  if (!dayStartTime) return <DayStartPage currentUser={activeUser} onDayStart={setDayStartTime} />;
-  if (!isCashedIn) return <CashInPage currentUser={activeUser} onCashIn={(amount) => { setCashInAmount(amount); setIsCashedIn(true); }} />;
-  return <POSApp currentUser={activeUser} dayStartTime={dayStartTime} onLogout={() => setLoggedInUser(null)} onCashOut={() => setIsCashedIn(false)} />;
+  if (activeUser.role !== 'Waiter') {
+    if (!dayStartTime) return <DayStartPage currentUser={activeUser} onDayStart={setDayStartTime} onLogout={handleLogout} />;
+    if (!isCashedIn) return <CashInPage currentUser={activeUser} onCashIn={(amount) => { setCashInAmount(amount); setIsCashedIn(true); }} onLogout={handleLogout} />;
+  }
+  return <POSApp currentUser={activeUser} dayStartTime={dayStartTime} onLogout={handleLogout} onCashOut={handleLogout} />;
 }

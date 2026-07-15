@@ -25,7 +25,10 @@ import { CmsModule } from './cms/cms.module';
 import { StoresModule } from './stores/stores.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { SubscriptionModule } from './subscription/subscription.module';
+import { UsersModule } from './users/users.module';
+import { SaasPackageModule } from './saas-package/saas-package.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { TerminalModule } from './terminal/terminal.module';
 
 @Module({
   imports: [
@@ -69,6 +72,10 @@ import { ScheduleModule } from '@nestjs/schedule';
     RecipesModule,
 
     SubscriptionModule,
+
+    UsersModule,
+    SaasPackageModule,
+    TerminalModule,
   ],
   controllers: [AppController],
   providers: [AppService, AppGateway],

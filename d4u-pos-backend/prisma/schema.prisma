@@ -38,9 +38,11 @@ model Store {
   name      String
   location  String?
   is_online Boolean  @default(true)
+  saas_package_id Int?
   createdAt DateTime @default(now())
 
   brand         Brand           @relation(fields: [brand_id], references: [id])
+  saas_package  SaasPackage?    @relation(fields: [saas_package_id], references: [id])
   users         User[]
   products      Product[]
   orders        Order[]
@@ -54,8 +56,28 @@ model Store {
   menus             Menu[]     @relation("MenuStores")
   assignedCategories Category[] @relation("CategoryStores")
   assignedProducts  Product[]  @relation("ProductStores")
+  MarketingCampaign MarketingCampaign[] @relation("CampaignStores")
+  socialAccount     BranchSocialAccount?
+  terminalSessions  TerminalSession[]
+  cmsSettings       CmsSettings?
+  newsletterSubscribers NewsletterSubscriber[]
 }
 
+
+model TerminalSession {
+  id        Int      @id @default(autoincrement())
+  store_id  Int
+  pin       String   @unique
+  waiter_name String
+  is_active Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  store Store @relation(fields: [store_id], references: [id])
+}
+
+// -------------------------------------------------------------
+// ANALYTICS & REPORTS
+// -------------------------------------------------------------
 // -------------------------------------------------------------
 // RBAC & USERS
 // -------------------------------------------------------------
@@ -74,6 +96,8 @@ model User {
   name      String
   phone     String   @unique
   hashedPin String // For local credential caching
+  image_url String?
+  module_permissions Json? // Per-user module access: {pos, kds, rider, admin, website, ...}
   createdAt DateTime @default(now())
 
   brand Brand? @relation(fields: [brand_id], references: [id])
@@ -87,6 +111,7 @@ model User {
   closed_days    BusinessDay[] @relation("DayCloser")
   cash_flows     CashFlow[]
 }
+
 
 // -------------------------------------------------------------
 // CRM & CUSTOMERS
@@ -123,12 +148,34 @@ model Subscription {
   module_loyalty_enabled Boolean @default(false)
   module_tv_board_enabled Boolean @default(false)
   module_online_website_enabled Boolean @default(false)
+  module_waiter_terminal_enabled Boolean @default(false)
   module_analytics_enabled Boolean @default(true)
   billing_amount        Float    @default(0) // Dynamic total based on pricing
   updatedAt             DateTime @updatedAt
   createdAt             DateTime @default(now())
 
   brand Brand @relation(fields: [brand_id], references: [id])
+}
+
+model SaasPackage {
+  id                    Int      @id @default(autoincrement())
+  name                  String
+  price                 Float    @default(0)
+  has_pos               Boolean  @default(true)
+  has_website           Boolean  @default(false)
+  has_customer_app      Boolean  @default(false)
+  has_rider_app         Boolean  @default(false)
+  has_kds               Boolean  @default(false)
+  has_tv_board          Boolean  @default(false)
+  has_warehouse         Boolean  @default(false)
+  has_recipes           Boolean  @default(false)
+  has_marketing         Boolean  @default(false)
+  has_loyalty           Boolean  @default(false)
+  has_accounts          Boolean  @default(false)
+  has_manager_app       Boolean  @default(false)
+  has_waiter_terminal   Boolean  @default(false)
+
+  stores                Store[]
 }
 
 model SaaSPricing {
@@ -165,13 +212,13 @@ model Category {
   
   menu            Menu?     @relation(fields: [menu_id], references: [id])
   assigned_stores Store[]   @relation("CategoryStores")
-  products        Product[]
+  products        Product[] @relation("ProductCategories")
+  marketingCampaigns MarketingCampaign[] @relation("CampaignCategories")
 }
 
 model Product {
   id          Int      @id @default(autoincrement())
   store_id    Int
-  category_id Int
   name        String
   price       Float
   cost        Float
@@ -183,11 +230,11 @@ model Product {
   createdAt   DateTime @default(now())
 
   store           Store              @relation(fields: [store_id], references: [id])
-  category        Category           @relation(fields: [category_id], references: [id])
+  categories      Category[]         @relation("ProductCategories")
   assigned_stores Store[]            @relation("ProductStores")
   orderItems      OrderItem[]
   recipeItems RecipeIngredient[]
-  marketingCampaigns MarketingCampaign[]
+  marketingCampaigns MarketingCampaign[] @relation("CampaignProducts")
 }
 
 model InventoryItem {
@@ -465,13 +512,19 @@ model CmsBanner {
 model CmsSettings {
   id             Int      @id @default(autoincrement())
   brand_id       Int      @default(1)
+  store_id       Int?     @unique
   siteTitle      String   @default("D4U Restaurant")
   contactPhone   String?
   contactEmail   String?
   address        String?
+  googleMapUrl   String?
   facebookUrl    String?
   instagramUrl   String?
   whatsappNumber String?
+  twitterUrl     String?
+  youtubeUrl     String?
+  aboutText      String?
+  companyText    String?
 
   // Feature Flags / Module Toggles
   module_auth_enabled     Boolean @default(false)
@@ -482,6 +535,7 @@ model CmsSettings {
   updatedAt      DateTime @updatedAt
 
   brand Brand @relation(fields: [brand_id], references: [id])
+  store Store? @relation(fields: [store_id], references: [id])
 }
 
 model MarketingCampaign {
@@ -491,15 +545,36 @@ model MarketingCampaign {
   description      String?
   discount_pct     Float
   image_url        String?
-  target_product_id Int?
   is_active        Boolean  @default(true)
   published_pos    Boolean  @default(false)
   published_web    Boolean  @default(false)
   published_social Boolean  @default(false)
   createdAt        DateTime @default(now())
 
-  brand   Brand    @relation(fields: [brand_id], references: [id])
-  product Product? @relation(fields: [target_product_id], references: [id])
+  brand             Brand      @relation(fields: [brand_id], references: [id])
+  target_stores     Store[]    @relation("CampaignStores")
+  target_categories Category[] @relation("CampaignCategories")
+  target_products   Product[]  @relation("CampaignProducts")
+  status            String     @default("active")
+  scheduled_at      DateTime?
+  published_facebook Boolean   @default(false)
+  published_instagram Boolean  @default(false)
+}
+
+model BranchSocialAccount {
+  id                     String   @id @default(uuid())
+  branch_id              Int      @unique
+  facebook_page_id       String?
+  facebook_page_name     String?
+  instagram_user_id      String?
+  instagram_username     String?
+  access_token           String?
+  is_facebook_connected  Boolean  @default(false)
+  is_instagram_connected Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @default(now()) @updatedAt
+
+  branch                 Store    @relation(fields: [branch_id], references: [id])
 }
 
 
@@ -523,4 +598,15 @@ model ScheduledDiscount {
   createdAt        DateTime @default(now())
 
   brand Brand @relation(fields: [brand_id], references: [id])
+}
+
+model NewsletterSubscriber {
+  id         Int      @id @default(autoincrement())
+  store_id   Int
+  email      String
+  createdAt  DateTime @default(now())
+
+  store      Store    @relation(fields: [store_id], references: [id])
+
+  @@unique([store_id, email])
 }

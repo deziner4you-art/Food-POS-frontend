@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const PrintBill = ({ cart, subTotal, tax, grandTotal, cashGiven, returnAmount, time, orderType, orderId, paymentMethod, cashOutAmount }: any) => (
+export const PrintBill = ({ cart, subTotal, tax, grandTotal, cashGiven, returnAmount, time, orderType, orderId, paymentMethod, cashOutAmount, promoDiscount, manualDiscount }: any) => (
   <div style={{ padding: '10px', width: '80mm', fontFamily: 'monospace', color: 'black', background: 'white', letterSpacing: '-0.5px' }}>
     <div style={{ textAlign: 'center', marginBottom: '15px' }}>
       <h2 style={{ margin: 0, fontSize: '1.8rem', fontWeight: '900', textTransform: 'uppercase' }}>D4U POS</h2>
@@ -30,10 +30,17 @@ export const PrintBill = ({ cart, subTotal, tax, grandTotal, cashGiven, returnAm
             <span style={{ flex: 1, textAlign: 'right' }}>AMT</span>
           </div>
           {(cart || []).map((item: any, idx: number) => (
-            <div key={idx} style={{ display: 'flex', marginTop: '3px', fontSize: '0.95rem', fontWeight: 'bold' }}>
-              <span style={{ flex: 2, textTransform: 'uppercase' }}>{item.name}</span>
-              <span style={{ flex: 1, textAlign: 'center' }}>{item.qty}</span>
-              <span style={{ flex: 1, textAlign: 'right' }}>{item.price * item.qty}</span>
+            <div key={idx} style={{ marginTop: '3px', fontSize: '0.95rem', fontWeight: 'bold' }}>
+              <div style={{ display: 'flex' }}>
+                <span style={{ flex: 2, textTransform: 'uppercase' }}>{item.name}</span>
+                <span style={{ flex: 1, textAlign: 'center' }}>{item.qty}</span>
+                <span style={{ flex: 1, textAlign: 'right' }}>{item.price * item.qty}</span>
+              </div>
+              {item.promoPct > 0 && (
+                <div style={{ display: 'flex', fontSize: '0.8rem' }}>
+                  <span style={{ flex: 2 }}>{item.promoPct}% OFF (Rs. {item.discountedPrice})</span>
+                </div>
+              )}
             </div>
           ))}
         </>
@@ -44,6 +51,12 @@ export const PrintBill = ({ cart, subTotal, tax, grandTotal, cashGiven, returnAm
       <>
         <div style={{ borderTop: '2px dashed black', paddingTop: '5px', marginBottom: '5px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}><span>SUBTOTAL</span><span>{subTotal?.toFixed(2)}</span></div>
+          {promoDiscount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}><span>PROMO DISCOUNTS</span><span>-{promoDiscount?.toFixed(2)}</span></div>
+          )}
+          {manualDiscount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}><span>DISCOUNT</span><span>-{manualDiscount?.toFixed(2)}</span></div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}><span>TAX (10%)</span><span>{tax?.toFixed(2)}</span></div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '900', fontSize: '1.3rem', marginTop: '5px' }}>
             <span>TOTAL</span><span>{grandTotal?.toFixed(2)}</span>

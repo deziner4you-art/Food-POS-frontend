@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { DeliveryOrder } from '../types';
 import { DISPATCHABLE_MOCK_ORDERS } from '../data';
 import { Network, Terminal, Plus, Send, Radio, ShoppingBag, DollarSign, ArrowRight } from 'lucide-react';
+import { customAlert } from '../utils/alerts';
 
 interface POSPanelProps {
   onDispatchOrderToRider: (order: DeliveryOrder) => void;
@@ -26,11 +27,11 @@ export default function POSPanel({
   const handleCustomDispatch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isRiderOnline) {
-      alert("⚠️ Cannot dispatch order. The Rider is currently OFFLINE! Toggle status to 'Online' in the rider app header first.");
+      customAlert("⚠️ Cannot dispatch order. The Rider is currently OFFLINE! Toggle status to 'Online' in the rider app header first.");
       return;
     }
     if (activeOrder) {
-      alert("⚠️ Rider is already busy with an active task. Complete or skip the existing task first!");
+      customAlert("⚠️ Rider is already busy with an active task. Complete or skip the existing task first!");
       return;
     }
 
@@ -87,11 +88,11 @@ export default function POSPanel({
 
   const handlePresetDispatch = (preset: DeliveryOrder) => {
     if (!isRiderOnline) {
-      alert("⚠️ Cannot dispatch order. The Rider is currently OFFLINE! Toggle status to 'Online' in the rider app header first.");
+      customAlert("⚠️ Cannot dispatch order. The Rider is currently OFFLINE! Toggle status to 'Online' in the rider app header first.");
       return;
     }
     if (activeOrder) {
-      alert("⚠️ Rider is already busy with an active task. Please finish or skip the current trip first.");
+      customAlert("⚠️ Rider is already busy with an active task. Please finish or skip the current trip first.");
       return;
     }
     onDispatchOrderToRider({

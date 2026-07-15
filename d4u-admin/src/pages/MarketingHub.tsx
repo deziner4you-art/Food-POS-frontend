@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Megaphone, Globe, Share2, Tag, Percent, CheckCircle, Store, Edit2, Trash2, PauseCircle, PlayCircle, ImagePlus } from 'lucide-react';
+import { Megaphone, Globe, Share2, Tag, Percent, CheckCircle, Store, Edit2, Trash2, PauseCircle, PlayCircle, ImagePlus, ChevronDown, ChevronRight } from 'lucide-react';
+
+import { useAdminContext } from '../context/AdminContext';
 
 // Inline SVG icons for social platforms not in lucide-react
 const FacebookIcon = ({ size = 20 }: { size?: number }) => (
@@ -16,6 +18,7 @@ const InstagramIcon = ({ size = 20 }: { size?: number }) => (
 const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
 
 export default function MarketingHub() {
+  const { selectedBranchId, isBranchEntered } = useAdminContext();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -36,6 +39,13 @@ export default function MarketingHub() {
   const [fbLinked, setFbLinked] = useState(false);
   const [igLinked, setIgLinked] = useState(false);
 
+  // Social OAuth Modal State
+  const [showPageModal, setShowPageModal] = useState(false);
+  const [fbPages, setFbPages] = useState<any[]>([]);
+  const [igAccounts, setIgAccounts] = useState<any[]>([]);
+  const [oauthToken, setOauthToken] = useState('');
+  const [oauthPlatform, setOauthPlatform] = useState('');
+
   // Scheduling State
   const [isScheduled, setIsScheduled] = useState(false);
   const [startDate, setStartDate] = useState('');
@@ -43,9 +53,107 @@ export default function MarketingHub() {
   const [scheduledCampaigns, setScheduledCampaigns] = useState<any[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
 
+  // Stores and Targeting
+  const [stores, setStores] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  
+  const [targetStoreIds, setTargetStoreIds] = useState<number[]>([]);
+  const [targetCategoryIds, setTargetCategoryIds] = useState<number[]>([]);
+  const [targetProductIds, setTargetProductIds] = useState<number[]>([]);
+
+  // Expanded state for tree
+  const [expandedStores, setExpandedStores] = useState<number[]>([]);
+  const [expandedCategories, setExpandedCategories] = useState<number[]>([]);
+
   useEffect(() => {
     fetchCampaigns();
   }, []);
+
+  useEffect(() => {
+    if (selectedBranchId) {
+      fetchSocialStatus();
+    }
+  }, [selectedBranchId]);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('oauth') === 'success') {
+      const platform = urlParams.get('platform') || '';
+      const token = urlParams.get('token') || '';
+      
+      setOauthToken(token);
+      setOauthPlatform(platform);
+
+      if (platform === 'facebook') {
+        fetch(`${BACKEND_URL}/marketing/social/facebook/pages?token=${token}`)
+          .then(res => res.json())
+          .then(data => {
+            setFbPages(data);
+            setShowPageModal(true);
+          });
+      } else if (platform === 'instagram') {
+        fetch(`${BACKEND_URL}/marketing/social/instagram/accounts?token=${token}`)
+          .then(res => res.json())
+          .then(data => {
+            setIgAccounts(data);
+            setShowPageModal(true);
+          });
+      }
+      
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  const fetchSocialStatus = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/marketing/social/status?branchId=${selectedBranchId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setFbLinked(data.is_facebook_connected || false);
+        setIgLinked(data.is_instagram_connected || false);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleSelectPage = async (page: any) => {
+    if (oauthPlatform === 'facebook') {
+      await fetch(`${BACKEND_URL}/marketing/social/facebook/select`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branchId: selectedBranchId, pageId: page.id, pageName: page.name, token: oauthToken })
+      });
+      setFbLinked(true);
+    } else {
+      await fetch(`${BACKEND_URL}/marketing/social/instagram/select`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branchId: selectedBranchId, accountId: page.id, username: page.username, token: oauthToken })
+      });
+      setIgLinked(true);
+    }
+    setShowPageModal(false);
+  };
+
+  const handleFacebookConnect = () => {
+    if (!selectedBranchId) return alert('Select a branch first');
+    if (fbLinked) {
+      fetch(`${BACKEND_URL}/marketing/social/facebook/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE' })
+        .then(() => setFbLinked(false));
+    } else {
+      window.location.href = `${BACKEND_URL}/marketing/social/facebook/connect?branchId=${selectedBranchId}`;
+    }
+  };
+
+  const handleInstagramConnect = () => {
+    if (!selectedBranchId) return alert('Select a branch first');
+    if (igLinked) {
+      fetch(`${BACKEND_URL}/marketing/social/instagram/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE' })
+        .then(() => setIgLinked(false));
+    } else {
+      window.location.href = `${BACKEND_URL}/marketing/social/instagram/connect?branchId=${selectedBranchId}`;
+    }
+  };
 
   const fetchCampaigns = async () => {
     try {
@@ -54,9 +162,16 @@ export default function MarketingHub() {
 
       const res2 = await fetch(`${BACKEND_URL}/marketing/schedule`);
       if (res2.ok) setScheduledCampaigns(await res2.json());
-    } catch (err) {
-      console.error(err);
-    }
+
+      const res3 = await fetch(`${BACKEND_URL}/stores`);
+      if (res3.ok) setStores(await res3.json());
+
+      const res4 = await fetch(`${BACKEND_URL}/catalog/categories`);
+      if (res4.ok) setCategories(await res4.json());
+
+      const res5 = await fetch(`${BACKEND_URL}/catalog/products`);
+      if (res5.ok) setProducts(await res5.json());
+    } catch (e) { console.error(e); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,13 +191,21 @@ export default function MarketingHub() {
         const endpoint = isScheduled ? `/marketing/schedule/${editingId}` : `/marketing/campaign/${editingId}`;
         
         if (isScheduled) {
-          formData.append('start_date', startDate);
-          formData.append('end_date', endDate);
+          if (!startDate || !endDate) {
+            setSuccessMsg('Start and End dates are required.');
+            setIsSubmitting(false);
+            return;
+          }
+          formData.append('start_date', new Date(startDate).toISOString());
+          formData.append('end_date', new Date(endDate).toISOString());
         } else {
           if (description) formData.append('description', description);
           formData.append('published_web', String(publishWeb));
           formData.append('published_pos', String(publishPos));
           formData.append('published_social', String(publishSocial));
+          targetStoreIds.forEach(id => formData.append('target_store_ids[]', String(id)));
+          targetCategoryIds.forEach(id => formData.append('target_category_ids[]', String(id)));
+          targetProductIds.forEach(id => formData.append('target_product_ids[]', String(id)));
         }
 
         const res = await fetch(`${BACKEND_URL}${endpoint}`, {
@@ -107,15 +230,23 @@ export default function MarketingHub() {
         setPublishPos(true);
         setPublishSocial(false);
         setImageFile(null);
+        setTargetStoreIds([]);
+        setTargetCategoryIds([]);
+        setTargetProductIds([]);
       } else if (isScheduled) {
         if (!startDate || !endDate) {
-          setSuccessMsg('');
+          setSuccessMsg('Start and End dates are required.');
           setIsSubmitting(false);
           return;
         }
-        formData.append('start_date', startDate);
-        formData.append('end_date', endDate);
-        formData.append('target_stores', 'ALL');
+        formData.append('start_date', new Date(startDate).toISOString());
+        formData.append('end_date', new Date(endDate).toISOString());
+        formData.append('published_web', String(publishWeb));
+        formData.append('published_pos', String(publishPos));
+        formData.append('published_social', String(publishSocial));
+        targetStoreIds.forEach(id => formData.append('target_store_ids[]', String(id)));
+        targetCategoryIds.forEach(id => formData.append('target_category_ids[]', String(id)));
+        targetProductIds.forEach(id => formData.append('target_product_ids[]', String(id)));
 
         const res = await fetch(`${BACKEND_URL}/marketing/schedule`, {
           method: 'POST',
@@ -126,6 +257,9 @@ export default function MarketingHub() {
           await fetchCampaigns();
           setTitle(''); setDescription(''); setDiscountPct('');
           setStartDate(''); setEndDate(''); setImageFile(null);
+          setTargetStoreIds([]);
+          setTargetCategoryIds([]);
+          setTargetProductIds([]);
         }
       } else {
         // ── CREATE new campaign ──
@@ -133,6 +267,9 @@ export default function MarketingHub() {
         formData.append('published_web', String(publishWeb));
         formData.append('published_pos', String(publishPos));
         formData.append('published_social', String(publishSocial));
+        targetStoreIds.forEach(id => formData.append('target_store_ids[]', String(id)));
+        targetCategoryIds.forEach(id => formData.append('target_category_ids[]', String(id)));
+        targetProductIds.forEach(id => formData.append('target_product_ids[]', String(id)));
 
         const res = await fetch(`${BACKEND_URL}/marketing/campaign`, {
           method: 'POST',
@@ -144,6 +281,7 @@ export default function MarketingHub() {
           setTitle(''); setDescription(''); setDiscountPct('');
           setPublishWeb(true); setPublishPos(true); setPublishSocial(false);
           setImageFile(null);
+          setTargetStoreIds([]);
         }
       }
     } catch (err) {
@@ -153,17 +291,65 @@ export default function MarketingHub() {
     }
   };
 
+  const handleEdit = (camp: any) => {
+    setEditingId(camp.id);
+    setTitle(camp.title);
+    setDescription(camp.description || '');
+    setDiscountPct(String(camp.discount_pct));
+    setPublishWeb(camp.published_web);
+    setPublishPos(camp.published_pos);
+    setPublishSocial(camp.published_social);
+    setTargetStoreIds(camp.target_stores?.map((s:any) => s.id) || []);
+    setTargetCategoryIds(camp.target_categories?.map((c:any) => c.id) || []);
+    setTargetProductIds(camp.target_products?.map((p:any) => p.id) || []);
+    setIsScheduled(false);
+    setSuccessMsg('');
+    setImageFile(null);
+    const formEl = document.getElementById('campaign-form-top');
+    if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleEditSchedule = (camp: any) => {
+    setEditingId(camp.id);
+    setTitle(camp.title);
+    setDescription('');
+    setDiscountPct(String(camp.discount_pct));
+    if (camp.start_date) {
+      const d = new Date(camp.start_date);
+      const localStr = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+      setStartDate(localStr);
+    }
+    if (camp.end_date) {
+      const d = new Date(camp.end_date);
+      const localStr = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+      setEndDate(localStr);
+    }
+    setTargetStoreIds(camp.target_stores?.map((s:any) => s.id) || []);
+    setTargetCategoryIds(camp.target_categories?.map((c:any) => c.id) || []);
+    setTargetProductIds(camp.target_products?.map((p:any) => p.id) || []);
+    setIsScheduled(true);
+    setSuccessMsg('');
+    setImageFile(null);
+    const formEl = document.getElementById('campaign-form-top');
+    if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleCancelEdit = () => {
     setEditingId(null);
     setTitle('');
     setDescription('');
     setDiscountPct('');
-    setStartDate('');
-    setEndDate('');
-    setIsScheduled(false);
     setPublishWeb(true);
     setPublishPos(true);
     setPublishSocial(false);
+    setStartDate('');
+    setEndDate('');
+    setIsScheduled(false);
+    setTargetStoreIds([]);
+    setTargetCategoryIds([]);
+    setTargetProductIds([]);
     setSuccessMsg('');
     setImageFile(null);
   };
@@ -227,36 +413,6 @@ export default function MarketingHub() {
     }
   };
 
-  const handleEdit = (camp: any) => {
-    setEditingId(camp.id);
-    setTitle(camp.title);
-    setDescription(camp.description || '');
-    setDiscountPct(String(camp.discount_pct));
-    setPublishWeb(camp.published_web);
-    setPublishPos(camp.published_pos);
-    setPublishSocial(camp.published_social);
-    setIsScheduled(false);
-    setSuccessMsg('');
-    setImageFile(null);
-    const formEl = document.getElementById('campaign-form-top');
-    if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
-    else window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleEditSchedule = (camp: any) => {
-    setEditingId(camp.id);
-    setTitle(camp.title);
-    setDescription('');
-    setDiscountPct(String(camp.discount_pct));
-    setStartDate(new Date(camp.start_date).toISOString().slice(0, 16));
-    setEndDate(new Date(camp.end_date).toISOString().slice(0, 16));
-    setIsScheduled(true);
-    setSuccessMsg('');
-    setImageFile(null);
-    const formEl = document.getElementById('campaign-form-top');
-    if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
-    else window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
 
   return (
     <div className="animate-fade-in max-w-5xl mx-auto space-y-6">
@@ -267,9 +423,9 @@ export default function MarketingHub() {
         <p className="text-slate-400 text-sm mt-1">Create deals and push them to POS, Website, and Social Media instantly.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="flex flex-col xl:flex-row gap-8">
         {/* Deal Creator / Editor Form */}
-        <div className={`border rounded-3xl p-8 shadow-xl transition-all ${editingId ? 'bg-slate-800 border-amber-500/50 ring-2 ring-amber-500/20' : 'bg-slate-800 border-slate-700'}`}>
+        <div className={`flex-1 border rounded-3xl p-8 shadow-xl transition-all ${editingId ? 'bg-slate-800 border-amber-500/50 ring-2 ring-amber-500/20' : 'bg-slate-800 border-slate-700'}`}>
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
               <Tag size={20} className={editingId ? 'text-amber-400' : 'text-[#3b82f6]'} />
@@ -344,14 +500,94 @@ export default function MarketingHub() {
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Target Branches, Categories & Items</label>
+              <div className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white max-h-64 overflow-y-auto flex flex-col gap-1">
+                {(() => {
+                  const displayStores = isBranchEntered && selectedBranchId ? stores.filter(s => s.id === selectedBranchId) : stores;
+                  return displayStores.length === 0 ? (
+                    <span className="text-sm text-slate-500">No branches found.</span>
+                  ) : displayStores.map(s => {
+                  const isStoreExpanded = expandedStores.includes(s.id);
+                  return (
+                  <div key={`store-${s.id}`} className="flex flex-col">
+                    <div className="flex items-center gap-2 hover:bg-slate-800 p-1.5 rounded">
+                      <button type="button" onClick={() => setExpandedStores(prev => isStoreExpanded ? prev.filter(id => id !== s.id) : [...prev, s.id])} className="p-1 hover:bg-slate-700 rounded text-slate-400">
+                        {isStoreExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </button>
+                      <label className="flex items-center gap-2 cursor-pointer flex-1">
+                        <input 
+                          type="checkbox" 
+                          checked={targetStoreIds.includes(s.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setTargetStoreIds([...targetStoreIds, s.id]);
+                            else setTargetStoreIds(targetStoreIds.filter(id => id !== s.id));
+                          }}
+                          className="accent-[#ec4899]"
+                        />
+                        <span className="text-sm font-bold">{s.name}</span>
+                      </label>
+                    </div>
+                    {isStoreExpanded && (
+                      <div className="ml-6 pl-2 border-l border-slate-700/50 flex flex-col gap-1 mt-1">
+                        {categories.map(c => {
+                          const isCatExpanded = expandedCategories.includes(c.id);
+                          return (
+                          <div key={`cat-${c.id}`} className="flex flex-col">
+                            <div className="flex items-center gap-2 hover:bg-slate-800 p-1.5 rounded">
+                              <button type="button" onClick={() => setExpandedCategories(prev => isCatExpanded ? prev.filter(id => id !== c.id) : [...prev, c.id])} className="p-1 hover:bg-slate-700 rounded text-slate-400">
+                                {isCatExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                              </button>
+                              <label className="flex items-center gap-2 cursor-pointer flex-1">
+                                <input 
+                                  type="checkbox" 
+                                  checked={targetCategoryIds.includes(c.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) setTargetCategoryIds([...targetCategoryIds, c.id]);
+                                    else setTargetCategoryIds(targetCategoryIds.filter(id => id !== c.id));
+                                  }}
+                                  className="accent-amber-500"
+                                />
+                                <span className="text-sm text-slate-300">{c.name}</span>
+                              </label>
+                            </div>
+                            {isCatExpanded && (
+                              <div className="ml-6 pl-2 border-l border-slate-700/50 flex flex-col gap-1 mt-1">
+                                {products.filter(p => p.categories?.some((cat: any) => cat.id === c.id)).map(p => (
+                                  <label key={`prod-${p.id}`} className="flex items-center gap-2 hover:bg-slate-800 p-1.5 rounded cursor-pointer">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={targetProductIds.includes(p.id)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) setTargetProductIds([...targetProductIds, p.id]);
+                                        else setTargetProductIds(targetProductIds.filter(id => id !== p.id));
+                                      }}
+                                      className="accent-blue-500 ml-4"
+                                    />
+                                    <span className="text-sm text-slate-400">{p.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )})}
+                      </div>
+                    )}
+                  </div>
+                  )})}
+                )()}
+              </div>
+              <p className="text-xs text-slate-500 mt-1">If no branch/category/item is selected, the deal applies globally.</p>
+            </div>
+
             <div className="pt-4 border-t border-slate-700">
               <label className="flex items-center gap-3 cursor-pointer mb-4">
                 <input type="checkbox" checked={isScheduled} onChange={e => setIsScheduled(e.target.checked)} className="w-5 h-5 accent-[#8b5cf6]" />
                 <span className="text-sm font-bold text-white">Schedule for later (Automated)</span>
               </label>
 
-              {isScheduled ? (
-                <div className="grid grid-cols-2 gap-4 animate-fade-in">
+              {isScheduled && (
+                <div className="grid grid-cols-2 gap-4 animate-fade-in mb-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-400 mb-2">Start Date</label>
                     <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#8b5cf6]" required={isScheduled} />
@@ -361,31 +597,30 @@ export default function MarketingHub() {
                     <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#8b5cf6]" required={isScheduled} />
                   </div>
                 </div>
-              ) : (
-                <>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Publish To</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#4edea3] transition-colors">
-                      <input type="checkbox" checked={publishWeb} onChange={(e) => setPublishWeb(e.target.checked)} className="w-5 h-5 accent-[#4edea3]" />
-                      <div className="flex items-center gap-2"><Globe size={18} className="text-[#4edea3]" /> <span className="text-sm font-bold text-white">Website</span></div>
-                    </label>
-                    
-                    <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#fbbf24] transition-colors">
-                      <input type="checkbox" checked={publishPos} onChange={(e) => setPublishPos(e.target.checked)} className="w-5 h-5 accent-[#fbbf24]" />
-                      <div className="flex items-center gap-2"><Store size={18} className="text-[#fbbf24]" /> <span className="text-sm font-bold text-white">POS System</span></div>
-                    </label>
-
-                    <label className="col-span-2 flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#3b82f6] transition-colors">
-                      <input type="checkbox" checked={publishSocial} onChange={(e) => setPublishSocial(e.target.checked)} className="w-5 h-5 accent-[#3b82f6]" />
-                      <div className="flex items-center gap-2 text-white font-bold text-sm">
-                        <Share2 size={18} className="text-[#3b82f6]" /> Social Media 
-                        <span className="ml-2 text-blue-500 text-xs">FB</span>
-                        <span className="text-pink-500 text-xs">IG</span>
-                      </div>
-                    </label>
-                  </div>
-                </>
               )}
+
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Publish To</label>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#4edea3] transition-colors">
+                  <input type="checkbox" checked={publishWeb} onChange={(e) => setPublishWeb(e.target.checked)} className="w-5 h-5 accent-[#4edea3]" />
+                  <div className="flex items-center gap-2"><Globe size={18} className="text-[#4edea3]" /> <span className="text-sm font-bold text-white">Website</span></div>
+                </label>
+                
+                <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#fbbf24] transition-colors">
+                  <input type="checkbox" checked={publishPos} onChange={(e) => setPublishPos(e.target.checked)} className="w-5 h-5 accent-[#fbbf24]" />
+                  <div className="flex items-center gap-2"><Store size={18} className="text-[#fbbf24]" /> <span className="text-sm font-bold text-white">POS System</span></div>
+                </label>
+                {(fbLinked || igLinked) && (
+                  <label className="col-span-2 flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#3b82f6] transition-colors">
+                    <input type="checkbox" checked={publishSocial} onChange={(e) => setPublishSocial(e.target.checked)} className="w-5 h-5 accent-[#3b82f6]" />
+                    <div className="flex items-center gap-2 text-white font-bold text-sm">
+                      <Share2 size={18} className="text-[#3b82f6]" /> Social Media 
+                      {fbLinked && <span className="ml-2 text-blue-500 text-xs">FB</span>}
+                      {igLinked && <span className="text-pink-500 text-xs">IG</span>}
+                    </div>
+                  </label>
+                )}
+              </div>
             </div>
 
             {successMsg && (
@@ -415,23 +650,23 @@ export default function MarketingHub() {
           </form>
         </div>
 
-        {/* Active Campaigns List */}
-        <div>
-          <div className="mb-8 p-6 bg-slate-800 border border-slate-700 rounded-2xl">
+        {/* Active Campaigns List & Social Media */}
+        <div className="w-full xl:w-[450px] shrink-0 space-y-8">
+          <div className="p-6 bg-slate-800 border border-slate-700 rounded-2xl">
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               <Share2 size={20} className="text-[#3b82f6]" /> Social Media Integration
             </h3>
             <p className="text-sm text-slate-400 mb-6">Link your branch's social media accounts to auto-post campaigns and deals.</p>
             <div className="grid grid-cols-2 gap-4">
               <button 
-                onClick={() => setFbLinked(!fbLinked)}
+                onClick={handleFacebookConnect}
                 className={`flex items-center justify-between p-4 rounded-xl border font-bold transition-all ${fbLinked ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}
               >
                 <div className="flex items-center gap-2"><FacebookIcon size={20} /> Facebook Page</div>
                 {fbLinked ? <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded">Linked</span> : <span className="text-xs">Connect</span>}
               </button>
               <button 
-                onClick={() => setIgLinked(!igLinked)}
+                onClick={handleInstagramConnect}
                 className={`flex items-center justify-between p-4 rounded-xl border font-bold transition-all ${igLinked ? 'bg-pink-500/20 border-pink-500 text-pink-400' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}
               >
                 <div className="flex items-center gap-2"><InstagramIcon size={20} /> Instagram Account</div>
@@ -480,12 +715,18 @@ export default function MarketingHub() {
                   <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
                     <div className="flex items-center gap-3">
                       <span className="text-xs font-bold text-slate-500">LIVE ON:</span>
-                      {camp.published_web && <Globe size={14} className="text-[#4edea3]" />}
-                      {camp.published_pos && <Store size={14} className="text-[#fbbf24]" />}
+                      {camp.published_web && <Globe size={14} className="text-[#4edea3]" title="Website" />}
+                      {camp.published_pos && <Store size={14} className="text-[#fbbf24]" title="POS System" />}
                       {camp.published_social && (
-                        <div className="flex gap-1">
-                          <span className="text-blue-500 text-xs font-bold">FB</span>
-                          <span className="text-pink-500 text-xs font-bold">IG</span>
+                        <div className="flex gap-2">
+                          <div className="group relative">
+                            <FacebookIcon size={14} />
+                            <div className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${camp.published_facebook ? 'bg-green-500' : 'bg-red-500'}`} title={camp.published_facebook ? "Published to Facebook" : "Publishing failed"}></div>
+                          </div>
+                          <div className="group relative">
+                            <InstagramIcon size={14} />
+                            <div className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${camp.published_instagram ? 'bg-green-500' : 'bg-red-500'}`} title={camp.published_instagram ? "Published to Instagram" : "Publishing failed"}></div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -636,6 +877,36 @@ export default function MarketingHub() {
           </div>
         </div>
       )}
+        {showPageModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-slate-800 rounded-3xl w-full max-w-md overflow-hidden border border-slate-700 shadow-2xl">
+              <div className="p-6 border-b border-slate-700">
+                <h2 className="text-xl font-black text-white">Select {oauthPlatform === 'facebook' ? 'Facebook Page' : 'Instagram Account'}</h2>
+                <p className="text-sm text-slate-400 mt-1">Choose the account to link with this branch.</p>
+              </div>
+              <div className="p-6 space-y-3">
+                {oauthPlatform === 'facebook' && fbPages.map(page => (
+                  <button key={page.id} onClick={() => handleSelectPage(page)} className="w-full text-left p-4 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-blue-500/10 hover:border-blue-500 transition-colors">
+                    <div className="font-bold text-white">{page.name}</div>
+                    <div className="text-xs text-slate-500 mt-1">ID: {page.id}</div>
+                  </button>
+                ))}
+                {oauthPlatform === 'instagram' && igAccounts.map(account => (
+                  <button key={account.id} onClick={() => handleSelectPage(account)} className="w-full text-left p-4 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-pink-500/10 hover:border-pink-500 transition-colors">
+                    <div className="font-bold text-white">{account.username}</div>
+                    <div className="text-xs text-slate-500 mt-1">ID: {account.id}</div>
+                  </button>
+                ))}
+                {((oauthPlatform === 'facebook' && fbPages.length === 0) || (oauthPlatform === 'instagram' && igAccounts.length === 0)) && (
+                  <p className="text-slate-400 text-sm text-center py-4">No accounts found.</p>
+                )}
+              </div>
+              <div className="p-6 border-t border-slate-700 bg-slate-900/50 flex justify-end">
+                <button onClick={() => setShowPageModal(false)} className="px-6 py-2.5 rounded-full font-bold text-slate-300 hover:text-white transition-colors">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

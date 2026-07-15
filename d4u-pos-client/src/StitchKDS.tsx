@@ -7,6 +7,7 @@ const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location
 const socket = io(BACKEND_URL);
 import { AnimatePresence, motion } from 'framer-motion'; // using framer-motion since motion/react might not be installed
 import { ShieldAlert, Check } from 'lucide-react';
+import { customConfirm } from './utils/alerts';
 
 import Sidebar from './kds/components/Sidebar';
 import Header from './kds/components/Header';
@@ -72,6 +73,44 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
   const [activeTab, setActiveTab] = useState<Tab>('kitchen');
   const [isEmergencyStop, setIsEmergencyStop] = useState<boolean>(false);
   const [settings, setSettings] = useState<StationSettings>(INITIAL_SETTINGS);
+  
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
+  const [showPinModal, setShowPinModal] = useState<boolean>(false);
+  const [pinPhone, setPinPhone] = useState('');
+  const [pinCode, setPinCode] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [isUnlocking, setIsUnlocking] = useState(false);
+
+  const handleAdminUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUnlocking(true);
+    setPinError('');
+    try {
+      const res = await fetch(`${BACKEND_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: pinPhone, pin: pinCode })
+      });
+      const data = await res.json();
+      if (res.ok && data.user) {
+        const role = data.user.role || '';
+        if (['Manager', 'Admin', 'Super Admin', 'Branch Manager', 'Business Owner'].includes(role)) {
+          setIsAdminUnlocked(true);
+          setShowPinModal(false);
+          setPinPhone('');
+          setPinCode('');
+        } else {
+          setPinError('Insufficient permissions. Admin required.');
+        }
+      } else {
+        setPinError(data.message || 'Invalid Phone or PIN');
+      }
+    } catch (err) {
+      setPinError('Network error connecting to auth server.');
+    } finally {
+      setIsUnlocking(false);
+    }
+  };
   const [logs, setLogs] = useState<LogEvent[]>([]);
 
   const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
@@ -423,7 +462,7 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
   };
 
   const handleResetData = async () => {
-    const confirmation = window.confirm("Reset KDS to factory defaults? This clears history logs and all orders in Database.");
+    const confirmation = await customConfirm("Reset KDS to factory defaults? This clears history logs and all orders in Database.");
     if (confirmation) {
       await db.kots.clear();
       await db.inventory.clear();
@@ -464,6 +503,9 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
         toggleEmergencyStop={toggleEmergencyStop}
         activeOrdersCount={pendingOrdersCount}
         onLogout={onLogout}
+        isAdminUnlocked={isAdminUnlocked}
+        onAdminLogin={() => setShowPinModal(true)}
+        onAdminLogout={() => setIsAdminUnlocked(false)}
       />
 
       <main className="flex-1 flex flex-col min-w-0 bg-[#0c1322] relative overflow-hidden">
@@ -509,6 +551,7 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
               ingredients={ingredients}
               onUpdateInventory={handleUpdateInventoryUnit}
               onRestockAll={handleRestockAll}
+              readOnly={!isAdminUnlocked}
             />
           )}
 
@@ -516,6 +559,7 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
             <SettingsView 
               settings={settings}
               updateSettings={handleUpdateSettings}
+              readOnly={!isAdminUnlocked}
             />
           )}
 
@@ -575,6 +619,65 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
                   <p className="text-xs text-[#d3c5ac] mt-0.5 leading-snug">{toast.subtitle}</p>
                 </div>
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* PIN Modal Overlay */}
+        <AnimatePresence>
+          {showPinModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.95 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.95 }}
+                className="bg-[#141b2b] border border-[#2e3545] rounded-2xl p-6 md:p-8 max-w-sm w-full shadow-2xl relative"
+              >
+                <button onClick={() => setShowPinModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+                  ✕
+                </button>
+                <div className="text-center mb-6">
+                  <ShieldAlert className="w-12 h-12 text-brand-yellow mx-auto mb-3" />
+                  <h3 className="text-xl font-display font-bold text-white">Admin Access</h3>
+                  <p className="text-xs text-slate-400 mt-1">Enter your manager phone and PIN</p>
+                </div>
+                <form onSubmit={handleAdminUnlock} className="space-y-4">
+                  <div>
+                    <input 
+                      type="text" 
+                      placeholder="Phone Number (e.g. 0300...)" 
+                      value={pinPhone}
+                      onChange={e => setPinPhone(e.target.value)}
+                      className="w-full bg-[#0c1322] border border-[#2e3545] text-white rounded-xl px-4 py-3 focus:outline-none focus:border-brand-yellow transition"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="password" 
+                      placeholder="Enter PIN" 
+                      value={pinCode}
+                      onChange={e => setPinCode(e.target.value)}
+                      className="w-full bg-[#0c1322] border border-[#2e3545] text-white rounded-xl px-4 py-3 focus:outline-none focus:border-brand-yellow transition"
+                      required
+                    />
+                  </div>
+                  {pinError && <div className="text-xs text-brand-red text-center font-bold">{pinError}</div>}
+                  <button 
+                    type="submit" 
+                    disabled={isUnlocking}
+                    className="w-full bg-brand-yellow hover:bg-brand-yellowHover text-brand-dark font-black py-3 rounded-xl uppercase tracking-wider transition disabled:opacity-50"
+                  >
+                    {isUnlocking ? 'Verifying...' : 'Unlock'}
+                  </button>
+                </form>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>

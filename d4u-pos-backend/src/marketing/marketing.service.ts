@@ -52,11 +52,7 @@ export class MarketingService {
     };
   }
 
-  // 3. Create Marketing Campaign
   async createCampaign(body: any) {
-    // Basic Margin Protection check could be added here if deal.service was injected,
-    // but for simplicity, we assume margin checks passed on frontend or are static here.
-    
     const campaign = await this.prisma.marketingCampaign.create({
       data: {
         title: body.title,
@@ -66,35 +62,89 @@ export class MarketingService {
         published_pos: body.published_pos === 'true' || body.published_pos === true,
         published_web: body.published_web === 'true' || body.published_web === true,
         published_social: body.published_social === 'true' || body.published_social === true,
-      }
+        status: body.schedule_for_later ? 'scheduled' : 'active',
+        scheduled_at: body.schedule_for_later && body.scheduled_at ? new Date(body.scheduled_at) : null,
+        target_stores: {
+          connect: (body.target_store_ids || []).map((id: number) => ({ id: Number(id) }))
+        },
+        target_categories: {
+          connect: (body.target_category_ids || []).map((id: number) => ({ id: Number(id) }))
+        },
+        target_products: {
+          connect: (body.target_product_ids || []).map((id: number) => ({ id: Number(id) }))
+        }
+      },
+      include: { target_stores: true, target_categories: true, target_products: true }
     });
 
-    // Mock Social Media Posting
-    if (campaign.published_social) {
-      console.log(`[SOCIAL MEDIA] Successfully posted "${campaign.title}" to Facebook Graph API.`);
-      console.log(`[SOCIAL MEDIA] Successfully posted "${campaign.title}" to Instagram Graph API.`);
+    let fbSuccess = false;
+    let igSuccess = false;
+
+    // Trigger Social Media Posting if active now and social is true
+    if (campaign.published_social && campaign.status === 'active') {
+      try {
+        console.log(`[SOCIAL MEDIA] Publishing "${campaign.title}" to Facebook Graph API.`);
+        fbSuccess = true; // Simulated success
+      } catch(e) { console.error('FB error', e); }
+
+      try {
+        console.log(`[SOCIAL MEDIA] Publishing "${campaign.title}" to Instagram Graph API.`);
+        igSuccess = true; // Simulated success
+      } catch(e) { console.error('IG error', e); }
+      
+      if (fbSuccess || igSuccess) {
+        await this.prisma.marketingCampaign.update({
+          where: { id: campaign.id },
+          data: { published_facebook: fbSuccess, published_instagram: igSuccess }
+        });
+        campaign.published_facebook = fbSuccess;
+        campaign.published_instagram = igSuccess;
+      }
     }
 
     return {
       success: true,
-      message: 'Campaign created successfully',
+      message: campaign.status === 'scheduled' ? 'Campaign scheduled successfully' : 'Campaign created successfully',
       campaign,
     };
   }
 
   // 4. Get Active Campaigns
-  async getCampaigns() {
+  async getCampaigns(store_id?: number) {
+    const whereClause: any = { is_active: true };
+    
+    if (store_id) {
+      whereClause.OR = [
+        { target_stores: { none: {} } },
+        { target_stores: { some: { id: store_id } } }
+      ];
+    }
+
     return this.prisma.marketingCampaign.findMany({
-      where: { is_active: true },
+      where: whereClause,
+      include: { target_stores: true, target_categories: true, target_products: true },
       orderBy: { createdAt: 'desc' }
     });
   }
 
   async updateCampaign(id: number, data: any) {
-    const { id: _, createdAt, updatedAt, ...updateData } = data;
+    const { id: _, createdAt, updatedAt, target_store_ids, target_category_ids, target_product_ids, ...updateData } = data;
+    const updatePayload: any = { ...updateData };
+
+    if (target_store_ids !== undefined) {
+      updatePayload.target_stores = { set: target_store_ids.map((id: number) => ({ id: Number(id) })) };
+    }
+    if (target_category_ids !== undefined) {
+      updatePayload.target_categories = { set: target_category_ids.map((id: number) => ({ id: Number(id) })) };
+    }
+    if (target_product_ids !== undefined) {
+      updatePayload.target_products = { set: target_product_ids.map((id: number) => ({ id: Number(id) })) };
+    }
+
     return this.prisma.marketingCampaign.update({
       where: { id },
-      data: updateData,
+      data: updatePayload,
+      include: { target_stores: true, target_categories: true, target_products: true }
     });
   }
 
@@ -124,6 +174,7 @@ export class MarketingService {
   // 6. Get Scheduled Discounts
   async getScheduledDiscounts() {
     return this.prisma.scheduledDiscount.findMany({
+      where: { is_active: true },
       orderBy: { start_date: 'asc' }
     });
   }
@@ -196,5 +247,41 @@ export class MarketingService {
       },
       data: { is_active: false }
     });
+
+    // Handle new MarketingCampaign scheduled publishes
+    const scheduledCampaigns = await this.prisma.marketingCampaign.findMany({
+      where: {
+        status: 'scheduled',
+        scheduled_at: { lte: now }
+      }
+    });
+
+    for (const campaign of scheduledCampaigns) {
+      console.log(`[CRON] Auto-publishing Scheduled Campaign: ${campaign.title}`);
+      
+      let fbSuccess = false;
+      let igSuccess = false;
+
+      if (campaign.published_social) {
+        try {
+          console.log(`[SOCIAL MEDIA] Publishing "${campaign.title}" to Facebook Graph API.`);
+          fbSuccess = true;
+        } catch(e) {}
+  
+        try {
+          console.log(`[SOCIAL MEDIA] Publishing "${campaign.title}" to Instagram Graph API.`);
+          igSuccess = true;
+        } catch(e) {}
+      }
+
+      await this.prisma.marketingCampaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: 'active',
+          published_facebook: fbSuccess,
+          published_instagram: igSuccess
+        }
+      });
+    }
   }
 }

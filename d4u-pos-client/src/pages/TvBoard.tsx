@@ -49,25 +49,42 @@ export default function TvBoard() {
 
         {campaigns.length > 0 ? (
           <div className="w-full h-full flex flex-col justify-center items-center text-center p-12 transition-all duration-1000 animate-fade-in relative z-0">
-            {campaigns[currentSlide].image_url && (
+            {campaigns[currentSlide].image_url ? (
+              <img 
+                src={`${BACKEND_URL}${campaigns[currentSlide].image_url}`} 
+                alt={campaigns[currentSlide].title}
+                className="absolute inset-0 w-full h-full object-cover z-0"
+              />
+            ) : (
               <>
-                <img 
-                  src={`${BACKEND_URL}${campaigns[currentSlide].image_url}`} 
-                  alt={campaigns[currentSlide].title}
-                  className="absolute inset-0 w-full h-full object-cover z-[-2]"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-slate-900/40 z-[-1]" />
+                <div className="bg-[#ec4899] text-white text-3xl font-black px-6 py-2 rounded-xl mb-8 transform -rotate-3 shadow-2xl relative z-10">
+                  {campaigns[currentSlide].discount_pct}% OFF
+                </div>
+                <h1 className="text-6xl font-black text-white mb-6 leading-tight relative z-10 drop-shadow-2xl">
+                  {campaigns[currentSlide].title}
+                </h1>
+                <p className="text-2xl text-slate-200 max-w-lg relative z-10 drop-shadow-lg font-medium mb-8">
+                  {campaigns[currentSlide].description}
+                </p>
+                {campaigns[currentSlide].target_products?.length > 0 && (
+                  <div className="grid grid-cols-2 gap-6 w-full max-w-2xl relative z-10">
+                    {campaigns[currentSlide].target_products.slice(0, 4).map((p: any) => (
+                      <div key={p.id} className="bg-slate-900/80 backdrop-blur rounded-2xl p-4 flex items-center gap-4 border border-slate-700 shadow-xl">
+                        {p.image_url ? (
+                          <img src={p.image_url.startsWith('http') ? p.image_url : `${BACKEND_URL}${p.image_url}`} className="w-20 h-20 rounded-xl object-cover border-2 border-slate-700" alt={p.name} />
+                        ) : (
+                          <div className="w-20 h-20 rounded-xl bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-500 font-black text-2xl">?</div>
+                        )}
+                        <div className="text-left">
+                          <h4 className="font-bold text-xl text-white line-clamp-1">{p.name}</h4>
+                          <div className="text-amber-400 font-black text-lg mt-1">Rs {p.price}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             )}
-            <div className="bg-[#ec4899] text-white text-3xl font-black px-6 py-2 rounded-xl mb-8 transform -rotate-3 shadow-2xl relative z-10">
-              {campaigns[currentSlide].discount_pct}% OFF
-            </div>
-            <h1 className="text-6xl font-black text-white mb-6 leading-tight relative z-10 drop-shadow-2xl">
-              {campaigns[currentSlide].title}
-            </h1>
-            <p className="text-2xl text-slate-200 max-w-lg relative z-10 drop-shadow-lg font-medium">
-              {campaigns[currentSlide].description}
-            </p>
           </div>
         ) : (
           <div className="text-slate-500 text-center animate-pulse">

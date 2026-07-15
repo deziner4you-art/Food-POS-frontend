@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { DeliveryOrder, DeliveryStatus } from '../types';
 import { Check, ClipboardList, Navigation, Phone, MessageSquare, ShieldAlert, Sparkles, AlertTriangle, CreditCard, CheckCircle, ChevronRight, X } from 'lucide-react';
 import { motion, useMotionValue, useTransform } from 'motion/react';
+import { customAlert } from '../utils/alerts';
 
 interface TrackingPanelProps {
   status: DeliveryStatus;
@@ -395,10 +396,6 @@ export default function TrackingPanel({
           {/* Finalize Delivery button */}
           <button
             onClick={() => {
-              if (activeOrder.paymentMethod !== 'ONLINE_PAID') {
-                alert("⚠️ Please collect the required Cash on Delivery or open the client online payment terminal first to avoid discrepancies!");
-                return;
-              }
               onMarkDelivered();
             }}
             className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-[#002113] font-display font-black uppercase text-xs tracking-wider rounded-xl transition shadow-lg cursor-pointer"

@@ -23,6 +23,7 @@ import {
 
 interface MobileModeProps {
   storeId: number;
+  storeName?: string;
   foodItems: FoodItem[];
   cart: CartItem[];
   onAddToCart: (item: FoodItem) => void;
@@ -30,17 +31,20 @@ interface MobileModeProps {
   onDecreaseQuantity: (itemId: string) => void;
   onIncreaseQuantity: (itemId: string) => void;
   onClearCart: () => void;
+  campaigns?: any[];
 }
 
 export default function MobileMode({
   storeId,
+  storeName = 'D4U',
   foodItems,
   cart,
   onAddToCart,
   onRemoveFromCart,
   onDecreaseQuantity,
   onIncreaseQuantity,
-  onClearCart
+  onClearCart,
+  campaigns = []
 }: MobileModeProps) {
   const [activeCategory, setActiveCategory] = useState<'Burgers' | 'Pizzas' | 'Sides' | 'Drinks' | 'Desserts'>('Burgers');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -243,7 +247,7 @@ export default function MobileMode({
         </div>
         <div className="flex justify-between items-center mb-4 mt-1">
           <div className="flex items-center gap-2">
-            <h1 className="font-headline-md text-2xl font-black text-[#ffe1a7] tracking-tight">DineDash</h1>
+            <h1 className="font-headline-md text-2xl font-black text-[#ffe1a7] tracking-tight">D4U - {storeName}</h1>
             {trackedOrderId && (
               <div className="flex items-center gap-1.5 bg-[#141b2b] border border-[#4edea3]/40 px-2 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-pulse" />
@@ -288,41 +292,84 @@ export default function MobileMode({
         {/* Story Categories Ring List */}
         <span className="px-6 block text-[10px] uppercase font-bold tracking-widest text-[#d3c5ac] mt-4 mb-2">Explore Categories</span>
         <section id="story-categories-slider" className="flex items-center gap-5 overflow-x-auto hide-scrollbar px-6 mb-2 py-3">
-          {[
-            { catName: 'Burgers', display: 'Burgers', icon: '🍔' },
-            { catName: 'Pizzas', display: 'Pizza', icon: '🍕' },
-            { catName: 'Sides', display: 'Bowls & Pasta', icon: '🥗' },
-            { catName: 'Drinks', display: 'Beverages', icon: '🍹' },
-            { catName: 'Desserts', display: 'Desserts', icon: '🍰' }
-          ].map((item) => {
-            const isActive = activeCategory === item.catName;
+          {[...new Set(foodItems.map(f => f.category))].slice(0, 8).map((categoryName) => {
+            const isActive = activeCategory === categoryName;
             // Draw matching item preview image
-            const matchingItem = foodItems.find(f => f.category === item.catName);
+            const matchingItem = foodItems.find(f => f.category === categoryName);
             return (
               <div 
-                key={`story-${item.catName}`}
-                onClick={() => setActiveCategory(item.catName as any)}
+                key={`story-${categoryName}`}
+                onClick={() => setActiveCategory(categoryName as any)}
                 className="flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer"
               >
                 <div className={`w-16 h-16 rounded-full p-[2px] transition-all duration-300 ${
                   isActive ? 'bg-gradient-to-tr from-[#ffe1a7] via-[#fbbf24] to-[#f9bd22] scale-105 shadow-md shadow-amber-400/10' : 'border border-slate-700/50'
                 }`}>
                   <div className="w-full h-full rounded-full bg-[#0c1322] p-[3px] overflow-hidden">
-                    <img 
-                      className="w-full h-full rounded-full object-cover image-no-referrer" 
-                      src={matchingItem?.image} 
-                      alt=""
-                      referrerPolicy="no-referrer"
-                    />
+                    {matchingItem?.image ? (
+                      <img 
+                        className="w-full h-full rounded-full object-cover image-no-referrer" 
+                        src={matchingItem.image.startsWith('http') ? matchingItem.image : `${BACKEND_URL}${matchingItem.image}`} 
+                        alt=""
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-xl font-bold text-slate-500">{categoryName.charAt(0)}</div>
+                    )}
                   </div>
                 </div>
-                <span className={`text-[10px] font-bold uppercase tracking-wider ${isActive ? 'text-[#ffe1a7]' : 'text-[#d3c5ac]'}`}>
-                  {item.display}
+                <span className={`text-[10px] uppercase font-bold tracking-widest max-w-[70px] truncate text-center ${
+                  isActive ? 'text-[#ffe1a7]' : 'text-[#d3c5ac]'
+                }`}>
+                  {categoryName}
                 </span>
               </div>
             );
           })}
         </section>
+
+        {/* Special Offers Zone */}
+        {campaigns.length > 0 && (
+          <section className="px-6 mt-6 mb-2">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="bg-[#ec4899] text-white text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-widest">Offers</span>
+              <h2 className="font-headline-lg-mobile text-lg font-extrabold tracking-tight text-[#dce2f7]">Special Deals</h2>
+            </div>
+            <div className="flex overflow-x-auto gap-4 pb-4 custom-scrollbar snap-x">
+              {campaigns.map(camp => (
+                <div key={camp.id} className="snap-center shrink-0 w-[85%] bg-[#191f2f] border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                  {camp.image_url && (
+                    <img src={`${BACKEND_URL}${camp.image_url}`} alt={camp.title} className="w-full h-32 object-cover border-b border-slate-700" />
+                  )}
+                  <div className="p-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[#ec4899] font-black text-sm">{camp.discount_pct}% OFF</span>
+                      <h3 className="text-white font-bold text-base truncate">{camp.title}</h3>
+                    </div>
+                    <p className="text-slate-400 text-xs line-clamp-2 mb-3">{camp.description}</p>
+                    {camp.target_products && camp.target_products.length > 0 && (
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {camp.target_products.slice(0, 3).map((p: any) => (
+                           <div key={p.id} className="flex-shrink-0 bg-slate-800 rounded-lg p-1.5 flex items-center gap-2 border border-slate-700 w-32">
+                             {p.image_url ? (
+                               <img src={p.image_url.startsWith('http') ? p.image_url : `${BACKEND_URL}${p.image_url}`} className="w-8 h-8 rounded object-cover" />
+                             ) : (
+                               <div className="w-8 h-8 rounded bg-slate-700 flex items-center justify-center text-slate-500 font-bold text-xs">?</div>
+                             )}
+                             <div className="flex-1 min-w-0">
+                               <div className="text-[10px] text-white font-bold truncate">{p.name}</div>
+                               <div className="text-amber-400 font-black text-[10px]">Rs {p.price}</div>
+                             </div>
+                           </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Product Grid - Styled accurately like dynamic mobile design */}
         <section className="px-6 space-y-6 mt-4">
@@ -570,7 +617,7 @@ export default function MobileMode({
           <div className="space-y-2">
             <h3 className="text-xl font-black text-[#ffe1a7] uppercase tracking-tight">Enjoy Cooking!</h3>
             <p className="text-xs text-[#d3c5ac] px-4 leading-relaxed">
-              Your server will carry out your DineDash order immediately. Order registered successfully under Session ID #DD-893!
+              Your server will carry out your D4U order immediately. Order registered successfully under Session ID #DD-893!
             </p>
           </div>
 
