@@ -55,6 +55,7 @@ Never use native browser popups (e.g., `alert()`, `confirm()`, `prompt()`) anywh
 | Cashier (Branch 2) | 03000000004 | 1234 |
 | Manager (Branch 2) | 03000000005 | manager123 |
 | Cashier (Branch 3) | 03000000006 | 1234 |
+| Kitchen Chef | 03000000008 | 1234 |
 
 ## Branch / Store Mapping
 - Branch 1 (store_id: 1) — DHA Branch

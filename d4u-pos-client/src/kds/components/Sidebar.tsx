@@ -196,13 +196,14 @@ export default function Sidebar({
           </button>
         )}
 
-        {!isSidebarOpen && onLogout && (
+        {onLogout && (
           <button 
             onClick={onLogout}
-            className="w-full mt-1 flex items-center justify-center py-3 rounded-xl bg-[#410006] border border-[#ff3333]/30 hover:bg-[#690005] text-[#ffdad6] transition-all cursor-pointer shadow-sm hover:shadow-[#93000a]/20"
+            className={`w-full mt-2 flex items-center justify-center py-3 rounded-xl bg-[#410006] border border-[#ff3333]/30 hover:bg-[#690005] text-[#ffdad6] font-bold font-display text-sm tracking-widest uppercase transition-all cursor-pointer shadow-sm hover:shadow-[#93000a]/20 ${!isSidebarOpen ? 'px-0' : 'gap-2'}`}
             title="Logout from Station"
           >
-            <LogOut className="w-5 h-5" />
+            <LogOut className="w-5 h-5 shrink-0" />
+            {isSidebarOpen && <span>LOGOUT STATION</span>}
           </button>
         )}
       </div>

@@ -1172,6 +1172,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             )}
           </div>
 
+          {isWaiterMode && (
+            <button onClick={onLogout} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <LogOut size={18} /> Logout
+            </button>
+          )}
+
           {/* TOAST NOTIFICATION AREA (IN HEADER) */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
             {toast && (
@@ -3417,6 +3423,13 @@ export default function App() {
 
   if (isWaiterModeURL && (!loggedInUser || loggedInUser.role !== 'Waiter')) {
     return <WaiterTerminalLogin onAuthenticated={(user) => { setLoggedInUser(user); setForceShowLogin(false); }} />;
+  }
+
+  // Prevent Waiter from accessing the main link (Auto-logout if stuck)
+  if (!isWaiterModeURL && loggedInUser?.role === 'Waiter') {
+    localStorage.removeItem('d4u_main_user');
+    setLoggedInUser(null);
+    return null;
   }
 
   // Show login if auth is enabled OR user manually logged out
