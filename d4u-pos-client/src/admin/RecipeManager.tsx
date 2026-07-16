@@ -3,7 +3,7 @@ import { ChefHat, Search, Plus, Trash2, Calculator, AlertTriangle } from 'lucide
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 import { db } from '../db';
 
-const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://api.pos.deziner4you.com';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function RecipeManager() {
   const [products, setProducts] = useState<any[]>([]);

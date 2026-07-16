@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import { Lock, Navigation } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://api.pos.deziner4you.com';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 const socket = io(BACKEND_URL);
 
 interface Props {

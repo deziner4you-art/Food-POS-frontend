@@ -3,7 +3,7 @@ import { TrendingUp, Users, DollarSign, ShoppingBag, ArrowUpRight, Database, Dow
 import { db } from './db';
 import { customAlert, customSuccess, customConfirm } from './utils/alerts';
 
-const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://api.pos.deziner4you.com';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const storeId = currentUser?.store_id || 1;

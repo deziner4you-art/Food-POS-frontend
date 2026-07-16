@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DeliveryStatus, DeliveryOrder, SavedCompletedMission, RiderStats } from './types';
 import { INITIAL_PAST_MISSIONS } from './data';
-const BACKEND_URL = 'https://api.pos.deziner4you.com';
+const BACKEND_URL = 'https://pos-api.deziner4you.com';
 import { generateGridPath } from './utils';
 
 // New Components
