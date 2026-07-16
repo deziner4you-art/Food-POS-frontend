@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, Store, Globe, ShieldCheck, ChevronRight, PackageCheck, Monitor, Utensils, Users, Smartphone, Tv, AlertCircle } from 'lucide-react';
 
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 type PricingModule = {
   module_key: string;

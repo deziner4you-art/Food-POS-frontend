@@ -2441,12 +2441,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                      setPrintData({ type: 'BILL', data: { orderType: 'Cash Out Receipt', cashOutAmount: amt, shiftSales, time: new Date().toLocaleString() }, printCount: 1 });
                      setToast({ message: `Cash Out of Rs. ${amt} recorded! Printing...`, type: 'success' });
                      setIsCashedOut(true);
-                     const currentHour = new Date().getHours();
-                     if (currentHour >= 1 && currentHour <= 3) {
-                       setModalType('DAY_CLOSE');
-                     } else {
-                       setModalType('NONE');
-                     }
+                     setModalType('DAY_CLOSE');
                    } catch (e) {
                      setToast({ message: 'Error recording Cash Out to server', type: 'error' });
                    }
