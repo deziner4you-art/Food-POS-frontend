@@ -15,7 +15,7 @@ const InstagramIcon = ({ size = 20 }: { size?: number }) => (
   </svg>
 );
 
-const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function MarketingHub() {
   const { selectedBranchId, isBranchEntered } = useAdminContext();

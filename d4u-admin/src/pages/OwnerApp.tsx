@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Store, TrendingUp, PackageOpen, PieChart, AlertTriangle, Users, MapPin, RefreshCcw } from 'lucide-react';
 
-const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function OwnerApp() {
   const [loading, setLoading] = useState(true);

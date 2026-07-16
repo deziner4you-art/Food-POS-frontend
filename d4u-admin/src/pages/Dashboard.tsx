@@ -7,7 +7,7 @@ import { TrendingUp, DollarSign, ShoppingBag, Store, AlertCircle, ArrowRight } f
 import { useAdminContext } from '../context/AdminContext';
 import { customAlert } from '../utils/alerts';
 
-const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function Dashboard() {
   const [brandOverview, setBrandOverview] = useState<any[]>([]);

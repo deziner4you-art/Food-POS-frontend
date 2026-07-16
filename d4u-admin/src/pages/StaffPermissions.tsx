@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Users, Shield, Plus, Trash2, Edit2, Check, X, AlertCircle, CheckCircle, Upload } from 'lucide-react';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
-const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function StaffPermissions() {
   const [users, setUsers] = useState<any[]>([]);
