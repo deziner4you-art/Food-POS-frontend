@@ -3,7 +3,7 @@ import { ChefHat, ShoppingCart, Search, Plus, Minus, X, CheckCircle, Navigation,
 import { io } from 'socket.io-client';
 import toast from 'react-hot-toast';
 
-const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://api.pos.deziner4you.com';
 const socket = io(BACKEND_URL);
 
 interface WaiterModeProps {

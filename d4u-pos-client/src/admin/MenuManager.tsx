@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ListTree, Plus, Edit, Trash2, Tag, Utensils } from 'lucide-react';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
-const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://api.pos.deziner4you.com';
 
 export default function MenuManager() {
   const [activeTab, setActiveTab] = useState<'CATEGORIES' | 'PRODUCTS'>('CATEGORIES');
