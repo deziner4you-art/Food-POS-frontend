@@ -31,6 +31,10 @@ console.log('Copying Rider...');
 run(`New-Item -ItemType Directory -Force -Path ${destDir}\\rider`);
 run(`Copy-Item -Path g:\\RESTAURANT_POS_WITH_BACKEND\\d4u-rider\\dist\\* -Destination ${destDir}\\rider -Recurse -Force`);
 
+console.log('Copying Backend...');
+run(`New-Item -ItemType Directory -Force -Path ${destDir}\\d4u-pos-backend`);
+run(`Copy-Item -Path g:\\RESTAURANT_POS_WITH_BACKEND\\d4u-pos-backend\\* -Destination ${destDir}\\d4u-pos-backend -Recurse -Force`);
+
 console.log('Generating .htaccess...');
 const htaccessContent = `<IfModule mod_rewrite.c>
   RewriteEngine On
