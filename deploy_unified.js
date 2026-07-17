@@ -43,27 +43,24 @@ const htaccessContent = `<IfModule mod_rewrite.c>
   RewriteCond %{HTTP_HOST} ^api\\.pos\\.deziner4you\\.com$ [NC]
   RewriteRule ^ - [L]
 
-  RewriteRule ^website/(.*)$ website/$1 [L]
   RewriteCond %{REQUEST_URI} ^/website
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^website/.* website/index.html [L]
+  RewriteRule ^website/(.*)$ /website/index.html [L]
 
-  RewriteRule ^admin/(.*)$ admin/$1 [L]
   RewriteCond %{REQUEST_URI} ^/admin
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^admin/.* admin/index.html [L]
+  RewriteRule ^admin/(.*)$ /admin/index.html [L]
 
-  RewriteRule ^rider/(.*)$ rider/$1 [L]
   RewriteCond %{REQUEST_URI} ^/rider
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^rider/.* rider/index.html [L]
+  RewriteRule ^rider/(.*)$ /rider/index.html [L]
 
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^(.*)$ index.html [L]
+  RewriteRule ^(.*)$ /index.html [L]
 </IfModule>`;
 
 fs.writeFileSync('g:\\\\POS_LIVE_DEPLOYMENT\\\\.htaccess', htaccessContent);

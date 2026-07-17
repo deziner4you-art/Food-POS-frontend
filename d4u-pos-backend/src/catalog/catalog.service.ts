@@ -39,7 +39,7 @@ export class CatalogService {
           { categories: { some: { menu: { stores: { some: { id: store_id } } } } } }
         ]
       },
-      include: { categories: true },
+      include: { categories: true, variants: true },
       orderBy: { id: 'asc' },
     });
 
@@ -188,7 +188,7 @@ export class CatalogService {
     // Admin needs to see all products
     return this.prisma.product.findMany({
       where: { is_active: true },
-      include: { categories: true, assigned_stores: true },
+      include: { categories: true, assigned_stores: true, variants: true },
       orderBy: { createdAt: 'desc' }
     });
   }
@@ -204,8 +204,9 @@ export class CatalogService {
     image_url?: string;
     status?: string;
     assigned_store_ids?: number[];
+    variants?: { name: string; price: number }[];
   }) {
-    const { assigned_store_ids, category_ids, ...productData } = data;
+    const { assigned_store_ids, category_ids, variants, ...productData } = data;
     return this.prisma.product.create({
       data: {
         ...productData,
@@ -215,20 +216,23 @@ export class CatalogService {
         },
         assigned_stores: {
           connect: (assigned_store_ids || []).map(id => ({ id }))
-        }
+        },
+        variants: variants && variants.length > 0 ? {
+          create: variants.map(v => ({ name: v.name, price: v.price }))
+        } : undefined
       },
-      include: { assigned_stores: true, categories: true }
+      include: { assigned_stores: true, categories: true, variants: true }
     });
   }
 
   async updateProduct(
     id: number,
-    data: { name?: string; price?: number; cost?: number; margin_pct?: number; is_active?: boolean; sku?: string; image_url?: string; status?: string; assigned_store_ids?: number[]; category_ids?: number[] },
+    data: { name?: string; price?: number; cost?: number; margin_pct?: number; is_active?: boolean; sku?: string; image_url?: string; status?: string; assigned_store_ids?: number[]; category_ids?: number[]; variants?: { name: string; price: number }[] },
   ) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException(`Product #${id} not found`);
 
-    const { assigned_store_ids, category_ids, ...updateData } = data;
+    const { assigned_store_ids, category_ids, variants, ...updateData } = data;
     const updatePayload: any = { ...updateData };
 
     if (assigned_store_ids !== undefined) {
@@ -239,10 +243,20 @@ export class CatalogService {
       updatePayload.categories = { set: category_ids.map(cid => ({ id: cid })) };
     }
 
+    if (variants !== undefined) {
+      // For updates, we delete existing variants and create new ones (simplest approach)
+      await this.prisma.productVariant.deleteMany({ where: { product_id: id } });
+      if (variants.length > 0) {
+        updatePayload.variants = {
+          create: variants.map(v => ({ name: v.name, price: v.price }))
+        };
+      }
+    }
+
     return this.prisma.product.update({
       where: { id },
       data: updatePayload,
-      include: { assigned_stores: true, categories: true }
+      include: { assigned_stores: true, categories: true, variants: true }
     });
   }
 

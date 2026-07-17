@@ -94,6 +94,7 @@ export class CatalogController {
       image_url?: string;
       status?: string;
       assigned_store_ids?: number[];
+      variants?: { name: string; price: number }[];
     },
   ) {
     console.log(`[NEW PRODUCT] ${body.name} — Rs.${body.price}`);
@@ -103,7 +104,7 @@ export class CatalogController {
   @Patch('products/:id')
   updateProduct(
     @Param('id') id: string,
-    @Body() body: { name?: string; price?: number; cost?: number; margin_pct?: number; is_active?: boolean; sku?: string; image_url?: string; status?: string; assigned_store_ids?: number[]; category_ids?: number[] },
+    @Body() body: { name?: string; price?: number; cost?: number; margin_pct?: number; is_active?: boolean; sku?: string; image_url?: string; status?: string; assigned_store_ids?: number[]; category_ids?: number[]; variants?: { name: string; price: number }[] },
   ) {
     console.log(`[UPDATE PRODUCT] #${id}`);
     return this.service.updateProduct(Number(id), body);

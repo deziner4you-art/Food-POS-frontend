@@ -281,7 +281,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [pendingLastDaySettlements, setPendingLastDaySettlements] = useState<any[]>([])
 
   const [showMoreMenu, setShowMoreMenu] = useState(false)
-  const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH'>('NONE');
+  const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH' | 'SELECT_VARIANT' | 'ADD_ONS'>('NONE');
+  const [pendingVariantProduct, setPendingVariantProduct] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'SIZES' | 'TOPPINGS'>('SIZES');
   const [waiterPinModalOpen, setWaiterPinModalOpen] = useState(false);
   const [generatedWaiterPin, setGeneratedWaiterPin] = useState('');
   const [activeWaiters, setActiveWaiters] = useState<any[]>([]);
@@ -774,22 +776,25 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     return maxDiscount;
   };
 
-  const addToCart = (product: any) => {
+  const addToCart = (product: any, variant?: any) => {
     setCart(prev => {
-      const existing = prev.find(item => item.id === product.id);
+      const cartItemId = variant ? `${product.id}-${variant.id}` : `${product.id}`;
+      const existing = prev.find(item => (item.cartItemId || item.id) === cartItemId);
       if (existing) {
         return prev.map(item =>
-          item.id === product.id ? { ...item, qty: item.qty + 1 } : item
+          (item.cartItemId || item.id) === cartItemId ? { ...item, qty: item.qty + 1 } : item
         );
       }
-      return [...prev, { ...product, qty: 1 }];
+      const priceToUse = variant ? variant.price : product.price;
+      const nameToUse = variant ? `${product.name} (${variant.name})` : product.name;
+      return [...prev, { ...product, cartItemId, name: nameToUse, price: priceToUse, variant_id: variant?.id, qty: 1 }];
     });
   }
 
-  const updateQty = (id: number, delta: number) => {
+  const updateQty = (id: any, delta: number) => {
     setCart(prev => {
       return prev.map(item => {
-        if (item.id === id) {
+        if ((item.cartItemId || item.id) === id) {
           const newQty = item.qty + delta;
           return newQty > 0 ? { ...item, qty: newQty } : null;
         }
@@ -1150,7 +1155,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       )}
 
       {/* MAIN CONTENT AREA */}
-      <main className="main-content">
+      <main className="main-content" style={{ position: 'relative' }}>
         {lowStockItems.length > 0 && (
           <div style={{ background: '#ef4444', color: 'white', padding: '8px 24px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.9rem', animation: 'pulse 2s infinite' }}>
             <AlertCircle size={18} />
@@ -1314,6 +1319,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   onClick={() => {
                     if (prod.isApproved === false) {
                       setToast({ message: 'This item requires Admin approval before sale.', type: 'error' });
+                    } else if (prod.variants && prod.variants.length > 0) {
+                      setPendingVariantProduct(prod);
+                      setModalType('SELECT_VARIANT');
                     } else {
                       addToCart(prod);
                     }
@@ -2174,6 +2182,79 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             </div>
           </div>
         )}
+
+        {/* SELECT VARIANT MODAL */}
+        {modalType === 'SELECT_VARIANT' && pendingVariantProduct && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(5px)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="modal-content animate-slide-up" style={{ width: '600px', height: '80%', display: 'flex', flexDirection: 'column' }}>
+              <div className="modal-header" style={{ flexShrink: 0 }}>
+                <h2>Select Options for {pendingVariantProduct.name}</h2>
+                <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setPendingVariantProduct(null); }} />
+              </div>
+              
+              <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '10px' }}>
+                <button 
+                  onClick={() => setActiveTab('SIZES')}
+                  style={{ flex: 1, padding: '10px', background: activeTab === 'SIZES' ? 'var(--accent-yellow)' : 'transparent', color: activeTab === 'SIZES' ? 'black' : 'var(--text-muted)', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
+                >
+                  Pizza Sizes
+                </button>
+                <button 
+                  onClick={() => setActiveTab('TOPPINGS')}
+                  style={{ flex: 1, padding: '10px', background: activeTab === 'TOPPINGS' ? 'var(--accent-yellow)' : 'transparent', color: activeTab === 'TOPPINGS' ? 'black' : 'var(--text-muted)', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
+                >
+                  Extra Toppings
+                </button>
+              </div>
+
+              <div style={{ padding: '10px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {activeTab === 'SIZES' && pendingVariantProduct.variants.map((v: any) => (
+                  <button 
+                    key={v.id} 
+                    className="btn-action" 
+                    onClick={() => {
+                      addToCart(pendingVariantProduct, v);
+                      setToast({ message: `${v.name} added`, type: 'success' });
+                    }}
+                    style={{ padding: '20px', background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '1.2rem', fontWeight: 'bold', borderRadius: '10px', width: '100%' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{v.name}</span>
+                      <span style={{ color: 'var(--accent-green)' }}>Rs. {v.price}</span>
+                    </div>
+                  </button>
+                ))}
+
+                {activeTab === 'TOPPINGS' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).length === 0 && (
+                      <p style={{ color: 'var(--text-muted)', gridColumn: '1 / -1', textAlign: 'center', padding: '20px 0' }}>No Extra Toppings found. Please create an "Extra Toppings" category in the Admin panel and add products to it.</p>
+                    )}
+                    {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).map(topping => (
+                      <div key={topping.id} 
+                        className="product-card"
+                        onClick={() => { addToCart(topping); setToast({message: `${topping.name} Added`, type: 'success'}); }}
+                        style={{ cursor: 'pointer', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '15px', textAlign: 'center' }}
+                      >
+                        <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{topping.name}</div>
+                        <div style={{ color: 'var(--accent-green)' }}>Rs. {topping.price}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <div style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0 }}>
+                <button 
+                  onClick={() => { setModalType('NONE'); setPendingVariantProduct(null); }}
+                  style={{ width: '100%', padding: '15px', background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* CART SIDEBAR */}
@@ -2244,9 +2325,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 <div className="cart-item-details">
                   <div className="cart-item-name">{item.name}</div>
                   <div className="cart-qty-controls">
-                    <button className="cart-qty-btn" onClick={() => updateQty(item.id, -1)}><Minus size={14}/></button>
+                    <button className="cart-qty-btn" onClick={() => updateQty(item.cartItemId || item.id, -1)}><Minus size={14}/></button>
                     <span>{item.qty}</span>
-                    <button className="cart-qty-btn" onClick={() => updateQty(item.id, 1)}><Plus size={14}/></button>
+                    <button className="cart-qty-btn" onClick={() => updateQty(item.cartItemId || item.id, 1)}><Plus size={14}/></button>
                   </div>
                 </div>
                 <div className="cart-item-price" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
@@ -2262,6 +2343,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           </div>
           <div className="totals-panel" style={{ padding: '6px 12px', borderTop: '1px solid var(--border-color)' }}>
             <div style={{ marginBottom: '4px' }}>
+              <button 
+                onClick={() => setModalType('ADD_ONS')}
+                style={{ width: '100%', padding: '8px', background: 'var(--bg-panel-hover)', border: '1px dashed #fbbf24', color: '#fbbf24', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px', cursor: 'pointer' }}
+              >
+                + Add ons
+              </button>
               <input
                 type="text"
                 placeholder="Add special instructions (e.g. Extra Cheese)"
@@ -2318,6 +2405,33 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             )}
           </div>
         </aside>
+      )}
+
+      {/* ADD_ONS MODAL (GLOBAL) */}
+      {modalType === 'ADD_ONS' && (
+        <div className="modal-overlay">
+          <div className="modal-content animate-slide-up" style={{ width: '600px' }}>
+            <div className="modal-header">
+              <h2><Plus size={24} /> Select Add-ons</h2>
+              <X size={24} style={{cursor:'pointer'}} onClick={() => setModalType('NONE')} />
+            </div>
+            <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px', maxHeight: '60vh', overflowY: 'auto' }}>
+              {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).length === 0 && (
+                <p style={{ color: 'var(--text-muted)', gridColumn: '1 / -1', textAlign: 'center', padding: '20px 0' }}>No Add-ons found. Please create an "Add-ons" category in the Admin panel and add products to it.</p>
+              )}
+              {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).map(addon => (
+                <div key={addon.id} 
+                  className="product-card"
+                  onClick={() => { addToCart(addon); setModalType('NONE'); setToast({message: `${addon.name} Added`, type: 'success'}); }}
+                  style={{ cursor: 'pointer', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '10px', textAlign: 'center' }}
+                >
+                  <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{addon.name}</div>
+                  <div style={{ color: 'var(--accent-green)' }}>Rs. {addon.price}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
 

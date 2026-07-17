@@ -21,7 +21,7 @@ export default function MenuManager() {
 
   // Products State
   const [products, setProducts] = useState<any[]>([]);
-  const [productForm, setProductForm] = useState({ id: 0, name: '', price: 0, category_ids: [] as number[], sku: '', image_url: '', assigned_store_ids: [] as number[] });
+  const [productForm, setProductForm] = useState({ id: 0, name: '', price: 0, category_ids: [] as number[], sku: '', image_url: '', assigned_store_ids: [] as number[], hasVariants: false, variants: [] as {name: string, price: number}[] });
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [productFilterCategoryId, setProductFilterCategoryId] = useState<number>(0);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
@@ -96,8 +96,8 @@ export default function MenuManager() {
       const url = isEditingProduct ? `${BACKEND_URL}/catalog/products/${productForm.id}` : `${BACKEND_URL}/catalog/products`;
       
       const payload = isEditingProduct 
-        ? { name: productForm.name, price: productForm.price, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url }
-        : { store_id: 1, name: productForm.name, price: productForm.price, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED' };
+        ? { name: productForm.name, price: productForm.price, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, variants: productForm.hasVariants ? productForm.variants : [] }
+        : { store_id: 1, name: productForm.name, price: productForm.price, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] };
       
       const res = await fetch(url, {
         method,
@@ -106,7 +106,7 @@ export default function MenuManager() {
       });
       
       if (res.ok) {
-        setProductForm({ id: 0, name: '', price: 0, category_ids: [], sku: '', image_url: '', assigned_store_ids: [] });
+        setProductForm({ id: 0, name: '', price: 0, category_ids: [], sku: '', image_url: '', assigned_store_ids: [], hasVariants: false, variants: [] });
         setIsEditingProduct(false);
         fetchAll();
       }
@@ -313,16 +313,54 @@ export default function MenuManager() {
                       className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono font-bold text-sm focus:outline-none focus:border-[#fbbf24] h-[38px]"
                     />
                   </div>
+                    <div className="flex-1 flex flex-col justify-end">
+                      <button type="submit" className="w-full bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 rounded-md p-2 font-bold text-sm transition-colors flex items-center justify-center gap-2 h-[38px]">
+                        <Plus size={16} /> {isEditingProduct ? 'Update' : 'Add'}
+                      </button>
+                      {isEditingProduct && (
+                        <button type="button" onClick={() => { setProductForm({ id: 0, name: '', price: 0, category_ids: [], sku: '', image_url: '', assigned_store_ids: [], hasVariants: false, variants: [] }); setIsEditingProduct(false); }} className="w-full mt-1 text-xs text-slate-400 hover:text-white">Cancel Edit</button>
+                      )}
+                    </div>
+                  </div>
 
-                  <div className="flex-1 flex flex-col justify-end">
-                    <button type="submit" className="w-full bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 rounded-md p-2 font-bold text-sm transition-colors flex items-center justify-center gap-2 h-[38px]">
-                      <Plus size={16} /> {isEditingProduct ? 'Update' : 'Add'}
-                    </button>
-                    {isEditingProduct && (
-                      <button type="button" onClick={() => { setProductForm({ id: 0, name: '', price: 0, category_ids: [], sku: '', image_url: '', assigned_store_ids: [] }); setIsEditingProduct(false); }} className="w-full mt-1 text-xs text-slate-400 hover:text-white">Cancel Edit</button>
+                  {/* Variants Section */}
+                  <div className="mt-4 p-4 bg-slate-900 border border-slate-700 rounded-xl">
+                    <div className="flex items-center gap-2 mb-3">
+                      <input 
+                        type="checkbox" 
+                        checked={productForm.hasVariants}
+                        onChange={e => setProductForm({...productForm, hasVariants: e.target.checked, variants: e.target.checked && productForm.variants.length === 0 ? [{name: 'Small', price: 0}] : productForm.variants})}
+                        className="w-4 h-4 accent-[#fbbf24] cursor-pointer"
+                        id="hasVariantsToggle"
+                      />
+                      <label htmlFor="hasVariantsToggle" className="text-sm font-bold text-white cursor-pointer">Has Variants (e.g., Pizza Sizes)</label>
+                    </div>
+
+                    {productForm.hasVariants && (
+                      <div className="flex flex-col gap-2">
+                        {productForm.variants.map((v: any, idx: number) => (
+                          <div key={idx} className="flex gap-2 items-center">
+                            <input 
+                              type="text" placeholder="Size (e.g. Medium)" 
+                              value={v.name} onChange={e => { const nv = [...productForm.variants]; nv[idx].name = e.target.value; setProductForm({...productForm, variants: nv}) }}
+                              className="bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm focus:border-[#fbbf24] flex-1"
+                            />
+                            <input 
+                              type="number" placeholder="Price" 
+                              value={v.price || ''} onChange={e => { const nv = [...productForm.variants]; nv[idx].price = parseFloat(e.target.value) || 0; setProductForm({...productForm, variants: nv}) }}
+                              className="bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono font-bold text-sm focus:border-[#fbbf24] w-24"
+                            />
+                            <button type="button" onClick={() => { const nv = productForm.variants.filter((_: any, i: number) => i !== idx); setProductForm({...productForm, variants: nv}); }} className="text-red-400 p-2 hover:bg-red-400/10 rounded-md">
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => setProductForm({...productForm, variants: [...productForm.variants, {name: '', price: 0}]})} className="text-xs text-[#fbbf24] flex items-center gap-1 mt-1 font-bold w-max hover:underline">
+                          <Plus size={14} /> Add Size Variant
+                        </button>
+                      </div>
                     )}
                   </div>
-                </div>
               </form>
             </div>
 
@@ -362,10 +400,10 @@ export default function MenuManager() {
                           ))}
                         </div>
                       </td>
-                      <td className="p-4 font-mono font-bold text-[#4edea3]">Rs. {p.price}</td>
+                      <td className="p-4 font-mono font-bold text-[#4edea3]">{p.variants?.length > 0 ? `${p.variants.length} Variants` : `Rs. ${p.price}`}</td>
                       <td className="p-4 flex justify-end gap-3 items-center">
                         <button 
-                          onClick={() => { setProductForm({ id: p.id, name: p.name, price: p.price, category_ids: p.categories?.map((c:any) => c.id) || [], sku: p.sku || '', image_url: p.image_url || '', assigned_store_ids: p.assigned_stores?.map((s:any) => s.id) || [] }); setIsEditingProduct(true); }} 
+                          onClick={() => { setProductForm({ id: p.id, name: p.name, price: p.price, category_ids: p.categories?.map((c:any) => c.id) || [], sku: p.sku || '', image_url: p.image_url || '', assigned_store_ids: p.assigned_stores?.map((s:any) => s.id) || [], hasVariants: p.variants && p.variants.length > 0, variants: p.variants ? p.variants.map((v:any) => ({name: v.name, price: v.price})) : [] }); setIsEditingProduct(true); }} 
                           className="text-slate-400 hover:text-white transition-colors"
                         >
                           <Edit size={18} />

@@ -11,35 +11,35 @@ datasource db {
 // CORE & MULTI-TENANT
 // -------------------------------------------------------------
 model Brand {
-  id          Int           @id @default(autoincrement())
-  name        String
-  createdAt   DateTime      @default(now())
-  is_chain_store Boolean @default(false)
-  menu_strategy  String  @default("UNIFIED") // UNIFIED or INDEPENDENT
-  
-  // Global Setup
-  currency       String  @default("PKR")
-  vat_percentage Float   @default(0)
+  id             Int      @id @default(autoincrement())
+  name           String
+  createdAt      DateTime @default(now())
+  is_chain_store Boolean  @default(false)
+  menu_strategy  String   @default("UNIFIED") // UNIFIED or INDEPENDENT
 
-  subscription  Subscription?
-  stores      Store[]
-  users       User[]
-  customers   Customer[]
-  menus       Menu[]
-  CmsBanner   CmsBanner[]
-  CmsSettings CmsSettings[]
+  // Global Setup
+  currency       String @default("PKR")
+  vat_percentage Float  @default(0)
+
+  subscription       Subscription?
+  stores             Store[]
+  users              User[]
+  customers          Customer[]
+  menus              Menu[]
+  CmsBanner          CmsBanner[]
+  CmsSettings        CmsSettings[]
   MarketingCampaigns MarketingCampaign[]
   ScheduledDiscounts ScheduledDiscount[]
 }
 
 model Store {
-  id        Int      @id @default(autoincrement())
-  brand_id  Int
-  name      String
-  location  String?
-  is_online Boolean  @default(true)
+  id              Int      @id @default(autoincrement())
+  brand_id        Int
+  name            String
+  location        String?
+  is_online       Boolean  @default(true)
   saas_package_id Int?
-  createdAt DateTime @default(now())
+  createdAt       DateTime @default(now())
 
   brand         Brand           @relation(fields: [brand_id], references: [id])
   saas_package  SaasPackage?    @relation(fields: [saas_package_id], references: [id])
@@ -52,25 +52,24 @@ model Store {
   kots          KOT[]
   Vendor        Vendor[]
   PurchaseOrder PurchaseOrder[]
-  
-  menus             Menu[]     @relation("MenuStores")
-  assignedCategories Category[] @relation("CategoryStores")
-  assignedProducts  Product[]  @relation("ProductStores")
-  MarketingCampaign MarketingCampaign[] @relation("CampaignStores")
-  socialAccount     BranchSocialAccount?
-  terminalSessions  TerminalSession[]
-  cmsSettings       CmsSettings?
+
+  menus                 Menu[]                 @relation("MenuStores")
+  assignedCategories    Category[]             @relation("CategoryStores")
+  assignedProducts      Product[]              @relation("ProductStores")
+  MarketingCampaign     MarketingCampaign[]    @relation("CampaignStores")
+  socialAccount         BranchSocialAccount?
+  terminalSessions      TerminalSession[]
+  cmsSettings           CmsSettings?
   newsletterSubscribers NewsletterSubscriber[]
 }
 
-
 model TerminalSession {
-  id        Int      @id @default(autoincrement())
-  store_id  Int
-  pin       String   @unique
+  id          Int      @id @default(autoincrement())
+  store_id    Int
+  pin         String   @unique
   waiter_name String
-  is_active Boolean  @default(true)
-  createdAt DateTime @default(now())
+  is_active   Boolean  @default(true)
+  createdAt   DateTime @default(now())
 
   store Store @relation(fields: [store_id], references: [id])
 }
@@ -89,16 +88,16 @@ model Role {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  brand_id  Int?
-  store_id  Int?
-  role_id   Int
-  name      String
-  phone     String   @unique
-  hashedPin String // For local credential caching
-  image_url String?
+  id                 Int      @id @default(autoincrement())
+  brand_id           Int?
+  store_id           Int?
+  role_id            Int
+  name               String
+  phone              String   @unique
+  hashedPin          String // For local credential caching
+  image_url          String?
   module_permissions Json? // Per-user module access: {pos, kds, rider, admin, website, ...}
-  createdAt DateTime @default(now())
+  createdAt          DateTime @default(now())
 
   brand Brand? @relation(fields: [brand_id], references: [id])
   store Store? @relation(fields: [store_id], references: [id])
@@ -111,7 +110,6 @@ model User {
   closed_days    BusinessDay[] @relation("DayCloser")
   cash_flows     CashFlow[]
 }
-
 
 // -------------------------------------------------------------
 // CRM & CUSTOMERS
@@ -138,52 +136,52 @@ model Customer {
 // SAAS BILLING & PRICING
 // -------------------------------------------------------------
 model Subscription {
-  id                    Int      @id @default(autoincrement())
-  brand_id              Int      @unique
-  plan_name             String   @default("FREE")
-  status                String   @default("ACTIVE")
-  module_auth_enabled   Boolean  @default(true)
-  module_kds_enabled    Boolean  @default(false)
-  module_riders_enabled Boolean  @default(false)
-  module_loyalty_enabled Boolean @default(false)
-  module_tv_board_enabled Boolean @default(false)
-  module_online_website_enabled Boolean @default(false)
-  module_waiter_terminal_enabled Boolean @default(false)
-  module_analytics_enabled Boolean @default(true)
-  billing_amount        Float    @default(0) // Dynamic total based on pricing
-  updatedAt             DateTime @updatedAt
-  createdAt             DateTime @default(now())
+  id                             Int      @id @default(autoincrement())
+  brand_id                       Int      @unique
+  plan_name                      String   @default("FREE")
+  status                         String   @default("ACTIVE")
+  module_auth_enabled            Boolean  @default(true)
+  module_kds_enabled             Boolean  @default(false)
+  module_riders_enabled          Boolean  @default(false)
+  module_loyalty_enabled         Boolean  @default(false)
+  module_tv_board_enabled        Boolean  @default(false)
+  module_online_website_enabled  Boolean  @default(false)
+  module_waiter_terminal_enabled Boolean  @default(false)
+  module_analytics_enabled       Boolean  @default(true)
+  billing_amount                 Float    @default(0) // Dynamic total based on pricing
+  updatedAt                      DateTime @updatedAt
+  createdAt                      DateTime @default(now())
 
   brand Brand @relation(fields: [brand_id], references: [id])
 }
 
 model SaasPackage {
-  id                    Int      @id @default(autoincrement())
-  name                  String
-  price                 Float    @default(0)
-  has_pos               Boolean  @default(true)
-  has_website           Boolean  @default(false)
-  has_customer_app      Boolean  @default(false)
-  has_rider_app         Boolean  @default(false)
-  has_kds               Boolean  @default(false)
-  has_tv_board          Boolean  @default(false)
-  has_warehouse         Boolean  @default(false)
-  has_recipes           Boolean  @default(false)
-  has_marketing         Boolean  @default(false)
-  has_loyalty           Boolean  @default(false)
-  has_accounts          Boolean  @default(false)
-  has_manager_app       Boolean  @default(false)
-  has_waiter_terminal   Boolean  @default(false)
+  id                  Int     @id @default(autoincrement())
+  name                String
+  price               Float   @default(0)
+  has_pos             Boolean @default(true)
+  has_website         Boolean @default(false)
+  has_customer_app    Boolean @default(false)
+  has_rider_app       Boolean @default(false)
+  has_kds             Boolean @default(false)
+  has_tv_board        Boolean @default(false)
+  has_warehouse       Boolean @default(false)
+  has_recipes         Boolean @default(false)
+  has_marketing       Boolean @default(false)
+  has_loyalty         Boolean @default(false)
+  has_accounts        Boolean @default(false)
+  has_manager_app     Boolean @default(false)
+  has_waiter_terminal Boolean @default(false)
 
-  stores                Store[]
+  stores Store[]
 }
 
 model SaaSPricing {
-  id             Int      @id @default(autoincrement())
-  module_key     String   @unique // e.g., "BASE_POS", "KDS", "RIDER", "TV_BOARD"
-  module_name    String
-  price_monthly  Float
-  currency       String   @default("USD") // Base currency for pricing
+  id            Int    @id @default(autoincrement())
+  module_key    String @unique // e.g., "BASE_POS", "KDS", "RIDER", "TV_BOARD"
+  module_name   String
+  price_monthly Float
+  currency      String @default("USD") // Base currency for pricing
 }
 
 // -------------------------------------------------------------
@@ -205,36 +203,46 @@ model Menu {
 }
 
 model Category {
-  id       Int       @id @default(autoincrement())
-  store_id Int       // Creator Store (Admin)
+  id       Int    @id @default(autoincrement())
+  store_id Int // Creator Store (Admin)
   menu_id  Int?
   name     String
-  
-  menu            Menu?     @relation(fields: [menu_id], references: [id])
-  assigned_stores Store[]   @relation("CategoryStores")
-  products        Product[] @relation("ProductCategories")
+
+  menu               Menu?               @relation(fields: [menu_id], references: [id])
+  assigned_stores    Store[]             @relation("CategoryStores")
+  products           Product[]           @relation("ProductCategories")
   marketingCampaigns MarketingCampaign[] @relation("CampaignCategories")
 }
 
 model Product {
-  id          Int      @id @default(autoincrement())
-  store_id    Int
-  name        String
-  price       Float
-  cost        Float
-  margin_pct  Float // Dynamic margin calculation
-  is_active   Boolean  @default(true)
-  sku         String?
-  image_url   String?
-  status      String   @default("APPROVED") // PENDING, APPROVED
-  createdAt   DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  store_id   Int
+  name       String
+  price      Float
+  cost       Float
+  margin_pct Float // Dynamic margin calculation
+  is_active  Boolean  @default(true)
+  sku        String?
+  image_url  String?
+  status     String   @default("APPROVED") // PENDING, APPROVED
+  createdAt  DateTime @default(now())
 
-  store           Store              @relation(fields: [store_id], references: [id])
-  categories      Category[]         @relation("ProductCategories")
-  assigned_stores Store[]            @relation("ProductStores")
-  orderItems      OrderItem[]
-  recipeItems RecipeIngredient[]
+  store              Store               @relation(fields: [store_id], references: [id])
+  categories         Category[]          @relation("ProductCategories")
+  assigned_stores    Store[]             @relation("ProductStores")
+  orderItems         OrderItem[]
+  recipeItems        RecipeIngredient[]
   marketingCampaigns MarketingCampaign[] @relation("CampaignProducts")
+  variants           ProductVariant[]
+}
+
+model ProductVariant {
+  id         Int         @id @default(autoincrement())
+  product_id Int
+  name       String // e.g. "Small", "Medium"
+  price      Float
+  product    Product     @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  OrderItem  OrderItem[]
 }
 
 model InventoryItem {
@@ -365,12 +373,14 @@ model OrderItem {
   id           Int     @id @default(autoincrement())
   order_id     Int
   product_id   Int
+  variant_id   Int?
   quantity     Int
   price        Float
   special_inst String? // "Extra Mayo" printed in bold/Urdu KOT
 
-  order   Order   @relation(fields: [order_id], references: [id])
-  product Product @relation(fields: [product_id], references: [id])
+  order   Order           @relation(fields: [order_id], references: [id])
+  product Product         @relation(fields: [product_id], references: [id])
+  variant ProductVariant? @relation(fields: [variant_id], references: [id])
 }
 
 // -------------------------------------------------------------
@@ -510,10 +520,10 @@ model CmsBanner {
 }
 
 model CmsSettings {
-  id             Int      @id @default(autoincrement())
-  brand_id       Int      @default(1)
-  store_id       Int?     @unique
-  siteTitle      String   @default("D4U Restaurant")
+  id             Int     @id @default(autoincrement())
+  brand_id       Int     @default(1)
+  store_id       Int?    @unique
+  siteTitle      String  @default("D4U Restaurant")
   contactPhone   String?
   contactEmail   String?
   address        String?
@@ -532,9 +542,9 @@ model CmsSettings {
   module_loyalty_enabled  Boolean @default(false)
   module_payments_enabled Boolean @default(false)
 
-  updatedAt      DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 
-  brand Brand @relation(fields: [brand_id], references: [id])
+  brand Brand  @relation(fields: [brand_id], references: [id])
   store Store? @relation(fields: [store_id], references: [id])
 }
 
@@ -551,14 +561,14 @@ model MarketingCampaign {
   published_social Boolean  @default(false)
   createdAt        DateTime @default(now())
 
-  brand             Brand      @relation(fields: [brand_id], references: [id])
-  target_stores     Store[]    @relation("CampaignStores")
-  target_categories Category[] @relation("CampaignCategories")
-  target_products   Product[]  @relation("CampaignProducts")
-  status            String     @default("active")
-  scheduled_at      DateTime?
-  published_facebook Boolean   @default(false)
-  published_instagram Boolean  @default(false)
+  brand               Brand      @relation(fields: [brand_id], references: [id])
+  target_stores       Store[]    @relation("CampaignStores")
+  target_categories   Category[] @relation("CampaignCategories")
+  target_products     Product[]  @relation("CampaignProducts")
+  status              String     @default("active")
+  scheduled_at        DateTime?
+  published_facebook  Boolean    @default(false)
+  published_instagram Boolean    @default(false)
 }
 
 model BranchSocialAccount {
@@ -574,39 +584,38 @@ model BranchSocialAccount {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @default(now()) @updatedAt
 
-  branch                 Store    @relation(fields: [branch_id], references: [id])
+  branch Store @relation(fields: [branch_id], references: [id])
 }
 
-
 model ScheduledDiscount {
-  id               Int      @id @default(autoincrement())
-  brand_id         Int
-  title            String
-  discount_pct     Float
-  image_url        String?
-  
+  id           Int     @id @default(autoincrement())
+  brand_id     Int
+  title        String
+  discount_pct Float
+  image_url    String?
+
   target_category_id Int?
   target_product_id  Int?
-  
-  start_date       DateTime
-  end_date         DateTime
-  is_active        Boolean  @default(true)
-  
+
+  start_date DateTime
+  end_date   DateTime
+  is_active  Boolean  @default(true)
+
   // Target branches: "ALL", or comma-separated store IDs e.g. "1,4"
-  target_stores    String   @default("ALL")
-  
-  createdAt        DateTime @default(now())
+  target_stores String @default("ALL")
+
+  createdAt DateTime @default(now())
 
   brand Brand @relation(fields: [brand_id], references: [id])
 }
 
 model NewsletterSubscriber {
-  id         Int      @id @default(autoincrement())
-  store_id   Int
-  email      String
-  createdAt  DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  store_id  Int
+  email     String
+  createdAt DateTime @default(now())
 
-  store      Store    @relation(fields: [store_id], references: [id])
+  store Store @relation(fields: [store_id], references: [id])
 
   @@unique([store_id, email])
 }
