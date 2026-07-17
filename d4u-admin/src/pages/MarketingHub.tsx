@@ -715,8 +715,8 @@ export default function MarketingHub() {
                   <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
                     <div className="flex items-center gap-3">
                       <span className="text-xs font-bold text-slate-500">LIVE ON:</span>
-                      {camp.published_web && <Globe size={14} className="text-[#4edea3]" title="Website" />}
-                      {camp.published_pos && <Store size={14} className="text-[#fbbf24]" title="POS System" />}
+                      {camp.published_web && <Globe size={14} className="text-[#4edea3]" />}
+                      {camp.published_pos && <Store size={14} className="text-[#fbbf24]" />}
                       {camp.published_social && (
                         <div className="flex gap-2">
                           <div className="group relative">

@@ -5,7 +5,7 @@ import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function MenuManager() {
-  const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORIES' | 'PRODUCTS'>('MENUS');
+  const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORIES' | 'PRODUCTS' | 'EXTRA_TOPPINGS' | 'ADD_ONS'>('MENUS');
   
   const [stores, setStores] = useState<any[]>([]);
 
@@ -143,6 +143,42 @@ export default function MenuManager() {
     else setter([...currentList, storeId]);
   };
 
+  const ensureCategoryExists = async (name: string) => {
+    let cat = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (cat) return cat.id;
+    try {
+      const res = await fetch(`${BACKEND_URL}/catalog/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: 1, name: name, store_ids: [1] }) // Default to store 1
+      });
+      if (res.ok) {
+        const newCat = await res.json();
+        await fetchAll();
+        return newCat.id;
+      }
+    } catch (e) { console.error(e); }
+    return null;
+  };
+
+  const handleQuickAdd = async (name: string, price: number, categoryName: string) => {
+    if (!name || price < 0) return customAlert('Please enter valid name and price');
+    const catId = await ensureCategoryExists(categoryName);
+    if (!catId) return customAlert(`Failed to find or create ${categoryName} category`);
+    
+    try {
+      const res = await fetch(`${BACKEND_URL}/catalog/products`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: 1, name, price, category_ids: [catId], sku: '', image_url: '', cost: 0, margin_pct: 100, status: 'APPROVED', variants: [] })
+      });
+      if (res.ok) {
+        customSuccess(`${name} added to ${categoryName}!`);
+        fetchAll();
+      }
+    } catch (e) { console.error(e); }
+  };
+
   return (
     <div className="animate-fade-in flex flex-col h-[calc(100vh-160px)]">
       
@@ -164,6 +200,18 @@ export default function MenuManager() {
           className={`px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${activeTab === 'PRODUCTS' ? 'bg-[#3b82f6] text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
         >
           <Utensils size={18} /> Products
+        </button>
+        <button 
+          onClick={() => setActiveTab('EXTRA_TOPPINGS')}
+          className={`px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${activeTab === 'EXTRA_TOPPINGS' ? 'bg-[#3b82f6] text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+        >
+          <Plus size={18} /> Extra Toppings
+        </button>
+        <button 
+          onClick={() => setActiveTab('ADD_ONS')}
+          className={`px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${activeTab === 'ADD_ONS' ? 'bg-[#3b82f6] text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+        >
+          <Plus size={18} /> Add-ons
         </button>
       </div>
 
@@ -308,9 +356,10 @@ export default function MenuManager() {
                   <div className="flex-1">
                     <label className="block text-xs font-bold text-slate-400 mb-1">Price (Rs.)</label>
                     <input 
-                      required type="number" placeholder="e.g. 500"
+                      required={!productForm.hasVariants} type="number" placeholder="e.g. 500"
                       value={productForm.price || ''} onChange={e => setProductForm({...productForm, price: parseFloat(e.target.value) || 0})}
-                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono font-bold text-sm focus:outline-none focus:border-[#fbbf24] h-[38px]"
+                      disabled={productForm.hasVariants}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono font-bold text-sm focus:outline-none focus:border-[#fbbf24] h-[38px] disabled:opacity-50"
                     />
                   </div>
                     <div className="flex-1 flex flex-col justify-end">
@@ -419,6 +468,82 @@ export default function MenuManager() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* EXTRA TOPPINGS TAB */}
+        {activeTab === 'EXTRA_TOPPINGS' && (
+          <div className="flex flex-col h-full">
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Plus className="text-[#3b82f6]" /> Extra Toppings
+              </h3>
+            </div>
+            <div className="bg-slate-900 border-b border-slate-700 p-4">
+              <form onSubmit={(e) => { e.preventDefault(); const t = e.currentTarget as any; handleQuickAdd(t.tname.value, parseFloat(t.tprice.value), 'Extra Toppings').then(() => t.reset()); }} className="flex gap-4 items-end max-w-lg">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Topping Name</label>
+                  <input name="tname" required type="text" placeholder="e.g. Extra Cheese" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm" />
+                </div>
+                <div className="w-32">
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Price (Rs.)</label>
+                  <input name="tprice" required type="number" placeholder="50" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono text-sm" />
+                </div>
+                <button type="submit" className="bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 rounded-md px-4 py-2 font-bold text-sm h-[38px] flex items-center gap-2">
+                  <Plus size={16} /> Add
+                </button>
+              </form>
+            </div>
+            <div className="flex-1 p-6 overflow-y-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'extra toppings')).map(p => (
+                  <div key={p.id} className="bg-slate-900 p-3 rounded-lg border border-slate-700 flex flex-col justify-between group relative">
+                    <span className="font-bold text-white text-sm">{p.name}</span>
+                    <span className="text-[#4edea3] font-mono text-xs">Rs. {p.price}</span>
+                    <button onClick={() => handleDeleteProduct(p.id)} className="absolute top-2 right-2 text-red-400 opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button>
+                  </div>
+                ))}
+                {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'extra toppings')).length === 0 && <p className="text-slate-500 col-span-full">No Extra Toppings found. Add one above.</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ADD_ONS TAB */}
+        {activeTab === 'ADD_ONS' && (
+          <div className="flex flex-col h-full">
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Plus className="text-[#3b82f6]" /> Add-ons
+              </h3>
+            </div>
+            <div className="bg-slate-900 border-b border-slate-700 p-4">
+              <form onSubmit={(e) => { e.preventDefault(); const t = e.currentTarget as any; handleQuickAdd(t.aname.value, parseFloat(t.aprice.value), 'Add-ons').then(() => t.reset()); }} className="flex gap-4 items-end max-w-lg">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Add-on Name</label>
+                  <input name="aname" required type="text" placeholder="e.g. Dip Sauce" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm" />
+                </div>
+                <div className="w-32">
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Price (Rs.)</label>
+                  <input name="aprice" required type="number" placeholder="50" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono text-sm" />
+                </div>
+                <button type="submit" className="bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 rounded-md px-4 py-2 font-bold text-sm h-[38px] flex items-center gap-2">
+                  <Plus size={16} /> Add
+                </button>
+              </form>
+            </div>
+            <div className="flex-1 p-6 overflow-y-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).map(p => (
+                  <div key={p.id} className="bg-slate-900 p-3 rounded-lg border border-slate-700 flex flex-col justify-between group relative">
+                    <span className="font-bold text-white text-sm">{p.name}</span>
+                    <span className="text-[#4edea3] font-mono text-xs">Rs. {p.price}</span>
+                    <button onClick={() => handleDeleteProduct(p.id)} className="absolute top-2 right-2 text-red-400 opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button>
+                  </div>
+                ))}
+                {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).length === 0 && <p className="text-slate-500 col-span-full">No Add-ons found. Add one above.</p>}
+              </div>
             </div>
           </div>
         )}

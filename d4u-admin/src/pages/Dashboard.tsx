@@ -219,7 +219,7 @@ export default function Dashboard() {
                   <td className="p-4 text-[#4edea3] font-bold">${store.today_sales.toFixed(2)}</td>
                   <td className="p-4">
                     <div className="w-full bg-slate-900 rounded-full h-2 mt-1 overflow-hidden">
-                      <div className="bg-[#fbbf24] h-2 rounded-full" style={{ width: `${Math.min(100, (store.today_sales / (totalBrandRevenue || 1)) * 100)}%` }}></div>
+                      <div className="bg-[#fbbf24] h-2 rounded-full" style={{ width: `${Math.min(100, (store.today_sales / (totalRevenue || 1)) * 100)}%` }}></div>
                     </div>
                   </td>
                 </tr>
