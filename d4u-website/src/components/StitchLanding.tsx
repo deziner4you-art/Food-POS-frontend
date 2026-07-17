@@ -43,7 +43,7 @@ export default function StitchLanding({
   onRemoveFromCart, onDecreaseQuantity, onIncreaseQuantity, onClearCart, 
   banners, campaigns, onChangeBranch, settings
 }: any) {
-  const BACKEND_URL = 'http://' + (typeof window !== 'undefined' ? window.location.hostname : 'localhost') + ':3001';
+  const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
   
   const PRODUCTS = (foodItems || []).map((fi: any) => ({
     id: fi.id,

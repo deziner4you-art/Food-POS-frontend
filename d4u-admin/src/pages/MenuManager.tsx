@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ListTree, Plus, Edit, Trash2, Tag, Utensils, Store } from 'lucide-react';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
-const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function MenuManager() {
   const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORIES' | 'PRODUCTS' | 'EXTRA_TOPPINGS' | 'ADD_ONS'>('MENUS');
@@ -96,8 +96,8 @@ export default function MenuManager() {
       const url = isEditingProduct ? `${BACKEND_URL}/catalog/products/${productForm.id}` : `${BACKEND_URL}/catalog/products`;
       
       const payload = isEditingProduct 
-        ? { name: productForm.name, price: productForm.price, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, variants: productForm.hasVariants ? productForm.variants : [] }
-        : { store_id: 1, name: productForm.name, price: productForm.price, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] };
+        ? { name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, variants: productForm.hasVariants ? productForm.variants : [] }
+        : { store_id: 1, name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] };
       
       const res = await fetch(url, {
         method,
@@ -481,7 +481,12 @@ export default function MenuManager() {
               </h3>
             </div>
             <div className="bg-slate-900 border-b border-slate-700 p-4">
-              <form onSubmit={(e) => { e.preventDefault(); const t = e.currentTarget as any; handleQuickAdd(t.tname.value, parseFloat(t.tprice.value), 'Extra Toppings').then(() => t.reset()); }} className="flex gap-4 items-end max-w-lg">
+              <form onSubmit={(e) => { 
+                e.preventDefault(); 
+                const form = e.currentTarget;
+                const fd = new FormData(form);
+                handleQuickAdd(fd.get('tname') as string, parseFloat(fd.get('tprice') as string), 'Extra Toppings').then(() => form.reset()); 
+              }} className="flex gap-4 items-end max-w-lg">
                 <div className="flex-1">
                   <label className="block text-xs font-bold text-slate-400 mb-1">Topping Name</label>
                   <input name="tname" required type="text" placeholder="e.g. Extra Cheese" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm" />
@@ -519,7 +524,12 @@ export default function MenuManager() {
               </h3>
             </div>
             <div className="bg-slate-900 border-b border-slate-700 p-4">
-              <form onSubmit={(e) => { e.preventDefault(); const t = e.currentTarget as any; handleQuickAdd(t.aname.value, parseFloat(t.aprice.value), 'Add-ons').then(() => t.reset()); }} className="flex gap-4 items-end max-w-lg">
+              <form onSubmit={(e) => { 
+                e.preventDefault(); 
+                const form = e.currentTarget;
+                const fd = new FormData(form);
+                handleQuickAdd(fd.get('aname') as string, parseFloat(fd.get('aprice') as string), 'Add-ons').then(() => form.reset()); 
+              }} className="flex gap-4 items-end max-w-lg">
                 <div className="flex-1">
                   <label className="block text-xs font-bold text-slate-400 mb-1">Add-on Name</label>
                   <input name="aname" required type="text" placeholder="e.g. Dip Sauce" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm" />

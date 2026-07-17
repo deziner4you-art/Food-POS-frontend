@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Store, Plus, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react';
 import { customConfirm } from '../utils/alerts';
 
-const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function StoreManager() {
   const [stores, setStores] = useState<any[]>([]);

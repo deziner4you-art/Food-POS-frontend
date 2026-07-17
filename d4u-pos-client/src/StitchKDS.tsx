@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import type { OfflineKOT } from './db';
 import { io } from 'socket.io-client';
-const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 const socket = io(BACKEND_URL);
 import { AnimatePresence, motion } from 'framer-motion'; // using framer-motion since motion/react might not be installed
 import { ShieldAlert, Check } from 'lucide-react';

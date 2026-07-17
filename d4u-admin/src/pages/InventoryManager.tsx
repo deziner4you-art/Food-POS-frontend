@@ -3,7 +3,7 @@ import { PackageOpen, Plus, Save, Trash2, ShoppingCart, List } from 'lucide-reac
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 import { useAdminContext } from '../context/AdminContext';
 
-const BACKEND_URL = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function InventoryManager() {
   const [activeTab, setActiveTab] = useState<'MATERIALS' | 'PURCHASE'>('MATERIALS');

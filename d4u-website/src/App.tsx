@@ -5,7 +5,7 @@ import KioskMode from './components/KioskMode';
 import MobileMode from './components/MobileMode';
 import BranchSelectorModal from './components/BranchSelectorModal';
 
-const BACKEND_URL = 'https://pos-api.deziner4you.com';
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);

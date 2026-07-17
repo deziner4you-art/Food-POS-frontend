@@ -17,7 +17,7 @@ import SetupWizard from './pages/SetupWizard';
 
 import { Megaphone, ShieldCheck } from 'lucide-react';
 
-const BACKEND_URL = 'https://pos-api.deziner4you.com';
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
