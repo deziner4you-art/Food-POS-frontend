@@ -13,6 +13,7 @@ interface ActiveRideViewProps {
   onSettle: (tip: number) => void;
   driverCoords: { x: number; y: number } | null;
   activePath: { x: number; y: number }[];
+  storeName: string;
 }
 
 export default function ActiveRideView({
@@ -25,7 +26,8 @@ export default function ActiveRideView({
   onDelivered,
   onSettle,
   driverCoords,
-  activePath
+  activePath,
+  storeName
 }: ActiveRideViewProps) {
 
   const [prepTimeLeft, setPrepTimeLeft] = React.useState<string>('');
@@ -100,7 +102,7 @@ export default function ActiveRideView({
         <Menu size={24} />
         <div className="flex items-center gap-2 font-display font-bold text-lg tracking-tight">
           <MapPin size={20} className="fill-white/20" />
-          DineDash
+          {storeName}
         </div>
         <Bell size={24} />
       </div>

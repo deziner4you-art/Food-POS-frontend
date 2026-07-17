@@ -1,4 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import { CatalogService } from './catalog.service';
 
 @Controller('catalog')
@@ -12,6 +15,21 @@ export class CatalogController {
   syncCatalog(@Param('store_id') store_id: string) {
     console.log(`[CATALOG SYNC] Store: ${store_id}`);
     return this.service.syncCatalogForPos(Number(store_id));
+  }
+
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('image', {
+    storage: diskStorage({
+      destination: './uploads',
+      filename: (req: any, file: any, cb: any) => {
+        const randomName = Array(32).fill(null).map(() => (Math.round(Math.random() * 16)).toString(16)).join('');
+        cb(null, `${randomName}${extname(file.originalname)}`);
+      }
+    })
+  }))
+  uploadImage(@UploadedFile() file: any) {
+    if (!file) return { imageUrl: null };
+    return { imageUrl: `/uploads/${file.filename}` };
   }
 
   // -------------------------------------------------------------

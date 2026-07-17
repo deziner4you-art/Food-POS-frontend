@@ -199,8 +199,8 @@ export default function App() {
   const isSetupRoute = currentPath === '/setup';
   const isOwnerRoute = currentPath === '/owner';
 
-  if (isSetupRoute) return <BrowserRouter><Routes><Route path="/setup" element={<SetupWizard />} /></Routes></BrowserRouter>;
-  if (isOwnerRoute) return <BrowserRouter><Routes><Route path="/owner" element={<OwnerApp />} /></Routes></BrowserRouter>;
+  if (isSetupRoute) return <BrowserRouter basename="/admin"><Routes><Route path="/setup" element={<SetupWizard />} /></Routes></BrowserRouter>;
+  if (isOwnerRoute) return <BrowserRouter basename="/admin"><Routes><Route path="/owner" element={<OwnerApp />} /></Routes></BrowserRouter>;
 
   if (!settings) return <div className="h-screen bg-slate-900 flex items-center justify-center text-white">Loading System...</div>;
 
@@ -262,7 +262,7 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/admin">
       <AdminProvider>
         <Toaster position="bottom-right" />
         <Routes>

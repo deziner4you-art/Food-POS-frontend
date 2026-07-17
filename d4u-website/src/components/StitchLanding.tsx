@@ -52,12 +52,14 @@ export default function StitchLanding({
     price: fi.priceUSD || fi.priceRs,
     priceRs: fi.priceRs,
     is_active: true,
-    image_url: fi.image && fi.image.startsWith('http') ? fi.image : `${BACKEND_URL}${fi.image}`,
+    image_url: fi.image ? (fi.image.startsWith('http') ? fi.image : `${BACKEND_URL}${fi.image}`) : null,
     category: fi.category,
-    description: fi.description
+    description: fi.description,
+    variants: fi.variants,
+    categories: fi.categories
   }));
 
-  const CATEGORIES: string[] = Array.from(new Set(PRODUCTS.map((p: any) => p.category as string)));
+  const CATEGORIES: string[] = Array.from(new Set(PRODUCTS.map((p: any) => p.category as string))).filter(c => !['extra toppings', 'add-ons', 'addons'].includes((c || '').toLowerCase()));
 
   // Navigation & Location states — pre-set to the chosen store
   const [selectedLocation, setSelectedLocation] = useState<{ city: string; branch: string } | null>(
@@ -98,6 +100,9 @@ export default function StitchLanding({
   // Checkout States
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+  const [modalType, setModalType] = useState<'NONE' | 'SELECT_VARIANT' | 'ADD_ONS'>('NONE');
+  const [pendingVariantProduct, setPendingVariantProduct] = useState<any>(null);
+  const [activeVariantTab, setActiveVariantTab] = useState<'SIZES' | 'TOPPINGS'>('SIZES');
   const [orderTracking, setOrderTracking] = useState<{ id: string; status: string; eta: number } | null>(null);
   const [isTrackModalOpen, setIsTrackModalOpen] = useState<boolean>(false);
   const [trackInput, setTrackInput] = useState<string>('');
@@ -162,16 +167,18 @@ export default function StitchLanding({
     localStorage.setItem('d4u_cart', JSON.stringify(newCart));
   };
 
-  const addToCart = (product: Product) => {
-    const existingIndex = cart.findIndex(item => item.product.id === product.id);
+  const addToCart = (product: Product, variant?: any) => {
+    const itemToUse = variant ? { ...product, name: `${product.name} (${variant.name})`, price: variant.price, priceRs: variant.price, id: `${product.id}-${variant.id}` } : product;
+    
+    const existingIndex = cart.findIndex(item => item.product.id === itemToUse.id);
     if (existingIndex > -1) {
       const updated = [...cart];
       updated[existingIndex].quantity += 1;
       updateCart(updated);
     } else {
-      updateCart([...cart, { product, quantity: 1, specialInstructions: '' }]);
+      updateCart([...cart, { product: itemToUse as Product, quantity: 1, specialInstructions: '' }]);
     }
-    triggerToast(`Added ${product.name} to cart!`);
+    triggerToast(`Added ${itemToUse.name} to cart!`);
   };
 
   const adjustQuantity = (productId: number, delta: number) => {
@@ -332,7 +339,13 @@ export default function StitchLanding({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-    }).then(res => res.json()).then(data => {
+    }).then(async res => {
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text);
+      }
+      return res.json();
+    }).then(data => {
       const trackingId = data.order?.id || `D4U-${Math.floor(100000 + Math.random() * 900000)}`;
       setOrderTracking({
         id: trackingId.toString(),
@@ -347,7 +360,12 @@ export default function StitchLanding({
       triggerToast("Order placed successfully!", "success");
     }).catch(e => {
       console.error(e);
-      triggerToast("Failed to place order.", "error");
+      let errMsg = e.message;
+      try {
+        const errObj = JSON.parse(e.message);
+        errMsg = errObj.message || errObj.error || e.message;
+      } catch (parseErr) {}
+      triggerToast(`Failed to place order: ${errMsg}`, "error");
       setIsSubmittingOrder(false);
     });
   };
@@ -355,6 +373,9 @@ export default function StitchLanding({
 
   // Filtered Products list based on category and search
   const getProductDiscount = (product: any) => {
+    if (product.id && product.id.toString().includes('-')) return 0; // Variant item in cart
+    if (['extra toppings', 'add-ons', 'addons'].includes((product.category || '').toLowerCase())) return 0;
+    
     let maxDiscount = 0;
     const activeCampaigns = campaigns || [];
     for (const camp of activeCampaigns) {
@@ -389,11 +410,16 @@ export default function StitchLanding({
 
   const filteredProducts = PRODUCTS.filter((prod: any) => {
     let matchesCategory = true;
+    const isExemptCategory = ['extra toppings', 'add-ons', 'addons'].includes((prod.category || '').toLowerCase());
+    
     if (activeCategory === 'Discounted') {
       matchesCategory = getProductDiscount(prod) > 0;
     } else if (activeCategory && activeCategory !== 'All Items') {
       matchesCategory = prod.category === activeCategory;
+    } else if (activeCategory === 'All Items') {
+      matchesCategory = !isExemptCategory;
     }
+    
     const matchesSearch = (prod.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
                           (prod.description || '').toLowerCase().includes((searchQuery || '').toLowerCase());
     return matchesCategory && matchesSearch;
@@ -712,12 +738,7 @@ export default function StitchLanding({
                 
                 {/* Simple Menu Search & View All Menu */}
                 <div className="flex items-center gap-4 max-w-md w-full justify-end">
-                  <button 
-                    onClick={() => setActiveCategory('All Items')}
-                    className="whitespace-nowrap px-4 py-1.5 border-2 border-red-600 text-red-500 font-bold text-sm hover:bg-red-600/10 transition rounded-md"
-                  >
-                    View All Menu
-                  </button>
+
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input 
@@ -767,22 +788,38 @@ export default function StitchLanding({
                         <div className="flex-1 pr-3">
                           <h3 className="text-white font-black text-lg sm:text-xl tracking-tight mb-1">{product.name}</h3>
                           <p className="text-slate-400 text-xs line-clamp-1 mb-2 leading-snug">{product.description}</p>
-                          <div className="flex items-center gap-2">
-                            <p className="text-brand-yellow font-black text-lg">
-                              ${getProductDiscount(product) > 0 ? (product.price * (1 - getProductDiscount(product)/100)).toFixed(2) : product.price.toFixed(2)}
-                            </p>
-                            {getProductDiscount(product) > 0 && (
-                              <p className="text-slate-500 text-sm line-through">${product.price.toFixed(2)}</p>
-                            )}
-                          </div>
                         </div>
-                        <button 
-                          onClick={() => addToCart(product)}
-                          className="w-11 h-11 bg-white hover:bg-brand-yellow text-brand-dark rounded-full flex items-center justify-center transition shadow-lg shrink-0"
-                          aria-label={`Add ${product.name} to cart`}
-                        >
-                          <Plus className="w-5 h-5 stroke-[3px]" />
-                        </button>
+                        <div className="flex items-end justify-between mt-4 relative z-10">
+                          <div>
+                            <p className="text-sm text-slate-400 font-bold tracking-widest uppercase mb-1">{product.category}</p>
+                            <div className="flex items-baseline gap-2">
+                              {product.variants && product.variants.length > 0 ? (
+                                <p className="text-xl font-black text-brand-yellow">Choose Size</p>
+                              ) : (
+                                <p className="text-2xl font-black text-brand-yellow">
+                                  Rs. {getProductDiscount(product) > 0 ? (product.priceRs * (1 - getProductDiscount(product)/100)).toFixed(0) : product.priceRs}
+                                </p>
+                              )}
+                              {getProductDiscount(product) > 0 && !(product.variants && product.variants.length > 0) && (
+                                <p className="text-slate-500 text-sm line-through">Rs. {product.priceRs}</p>
+                              )}
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              if (product.variants && product.variants.length > 0) {
+                                setPendingVariantProduct(product);
+                                setModalType('SELECT_VARIANT');
+                              } else {
+                                addToCart(product);
+                              }
+                            }}
+                            className="w-11 h-11 bg-white hover:bg-brand-yellow text-brand-dark rounded-full flex items-center justify-center transition shadow-lg shrink-0"
+                            aria-label={`Add ${product.name} to cart`}
+                          >
+                            <Plus className="w-5 h-5 stroke-[3px]" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -790,45 +827,37 @@ export default function StitchLanding({
               )}
             </section>
 
-            {/* ORDER STATUS TRACKING INDICATOR (Matches modern POS guidelines) */}
+            {/* ORDER STATUS TRACKING INDICATOR */}
             {orderTracking && (
               <section id="order-tracking-indicator" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 mb-8 scroll-mt-24">
-                <div className="bg-slate-900 border-2 border-brand-yellow/40 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+                <div className="bg-[#141b2b] border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 cursor-pointer hover:border-[#4edea3]/30 transition-colors"
+                     onClick={() => {
+                       setIsTrackModalOpen(true);
+                       setTrackInput(orderTracking.id);
+                     }}>
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-brand-yellow/10 rounded-full flex items-center justify-center text-brand-yellow animate-pulse shrink-0">
-                      <Clock className="w-6 h-6" />
+                    <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center">
+                      <Clock className="w-5 h-5 text-brand-yellow" />
                     </div>
                     <div>
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Active POS Order</p>
-                      <h4 className="text-lg font-black text-white">ID: {orderTracking.id}</h4>
-                      <p className="text-sm text-slate-300">Status: <span className="text-brand-yellow font-black uppercase">{orderTracking.status}</span></p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Active POS Order</p>
+                      <h4 className="text-base font-black text-white">ID: {orderTracking.id}</h4>
+                      <p className="text-[10px] text-slate-300">Status: <span className="text-brand-yellow font-black uppercase">{orderTracking.status}</span></p>
                     </div>
                   </div>
-                  <div className="w-full md:w-auto flex items-center gap-4">
-                    <div className="text-center md:text-right">
-                      <p className="text-xs text-slate-400 font-bold">Estimated Arrival</p>
-                      <p className="text-2xl font-black text-brand-yellow">{orderTracking.eta} Mins</p>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-[10px] text-slate-400 font-bold">Estimated Arrival</p>
+                      <p className="text-xl font-black text-brand-yellow">{orderTracking.eta} Mins</p>
                     </div>
-                    <button 
-                      onClick={() => {
-                        triggerToast("Checking live dispatch status...", "info");
-                        // Simulated update
-                        setOrderTracking({
-                          ...orderTracking,
-                          status: "DISPATCHED",
-                          eta: 12
-                        });
-                      }}
-                      className="bg-brand-yellow hover:bg-brand-yellowHover text-brand-dark font-black text-xs px-5 py-3 rounded-full transition"
-                    >
+                    <button className="bg-brand-yellow text-slate-950 font-black text-[10px] uppercase tracking-widest px-4 py-2 rounded-xl hover:scale-105 transition-transform">
                       Track Order
                     </button>
                     <button 
-                      onClick={() => setOrderTracking(null)}
-                      className="text-slate-400 hover:text-white"
-                      aria-label="Dismiss tracking panel"
+                      onClick={(e) => { e.stopPropagation(); setOrderTracking(null); }}
+                      className="text-slate-500 hover:text-white p-2"
                     >
-                      <X className="w-5 h-5" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -1297,6 +1326,15 @@ export default function StitchLanding({
             {/* Calculations & Checkout */}
             {cart.length > 0 && (
               <div className="p-5 border-t border-slate-800 bg-slate-950/40 space-y-4">
+                {/* Add Ons Button */}
+                <div className="p-4 sm:p-6 bg-brand-light border-t border-slate-800/50">
+                    <button 
+                      onClick={() => setModalType('ADD_ONS')}
+                      className="w-full py-2.5 mb-4 border-2 border-dashed border-brand-yellow text-brand-yellow rounded-xl font-black hover:bg-brand-yellow hover:text-brand-dark transition flex items-center justify-center gap-2"
+                    >
+                      <Plus className="w-5 h-5" /> Add ons
+                    </button>
+                </div>
                 {/* Promo Code Info */}
                 {appliedCoupon && (
                   <div className="flex justify-between items-center bg-brand-yellow/5 border border-brand-yellow/20 px-3 py-2 rounded-xl text-xs">
@@ -1348,58 +1386,235 @@ export default function StitchLanding({
 
       {/* ================= MODAL: TRACK ORDER ================= */}
       {isTrackModalOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center px-4 bg-brand-dark/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-[0_20px_50px_rgba(0,0,0,0.8)] relative">
-            <button 
-              onClick={() => setIsTrackModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className="text-xl font-black text-white mb-2 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-brand-yellow" />
-              Track Order
-            </h3>
-            <p className="text-slate-400 text-xs mb-6">Enter your Order ID to check live status.</p>
-            
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              if(!trackInput) return;
-              try {
-                const res = await fetch(`${BACKEND_URL}/online-orders/${trackInput}`);
-                if (!res.ok) throw new Error("Not found");
-                const data = await res.json();
-                setOrderTracking({
-                  id: data.id.toString(),
-                  status: data.kdsStatus !== 'PENDING' ? data.kdsStatus : data.status,
-                  eta: data.prepTimeMinutes || 25
-                });
-                setIsTrackModalOpen(false);
-                setTrackInput('');
-                
-                // Scroll to indicator
-                setTimeout(() => {
-                  document.getElementById('order-tracking-indicator')?.scrollIntoView({ behavior: 'smooth' });
-                }, 100);
-              } catch (err) {
-                triggerToast("Order not found. Please check the ID.", "error");
-              }
-            }}>
-              <input
-                type="number"
-                value={trackInput}
-                onChange={e => setTrackInput(e.target.value)}
-                placeholder="e.g. 1001"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-yellow text-white mb-4"
-                autoFocus
-              />
-              <button 
-                type="submit"
-                className="w-full bg-brand-yellow text-brand-dark hover:bg-brand-yellowHover font-black py-3 rounded-xl transition tracking-wider uppercase text-sm shadow-lg"
-              >
-                Check Status
+        <div className="fixed inset-0 z-[250] flex justify-end">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsTrackModalOpen(false)} />
+          <aside className="relative w-full max-w-sm bg-[#191f2f] border-l border-slate-800 flex flex-col h-full shadow-2xl animate-slide-in-right overflow-y-auto custom-scrollbar">
+            {/* Header */}
+            <div className="flex justify-between items-center p-6 border-b border-slate-800 shrink-0">
+              <div>
+                <h3 className="text-xl font-black text-white flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-[#4edea3]" />
+                  Track Order
+                </h3>
+                <p className="text-xs text-[#d3c5ac] mt-1">Enter Order ID</p>
+              </div>
+              <button onClick={() => setIsTrackModalOpen(false)} className="text-slate-500 hover:text-white p-2">
+                <X className="w-5 h-5" />
               </button>
-            </form>
+            </div>
+
+            <div className="p-6 flex-1 flex flex-col gap-6">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if(!trackInput) return;
+                try {
+                  const res = await fetch(`${BACKEND_URL}/online-orders/${trackInput}`);
+                  if (!res.ok) throw new Error("Not found");
+                  const data = await res.json();
+                  setOrderTracking({
+                    id: data.id.toString(),
+                    status: data.kdsStatus !== 'PENDING' ? data.kdsStatus : data.status,
+                    eta: data.prepTimeMinutes || 25,
+                    ...data
+                  });
+                } catch (err) {
+                  triggerToast("Order not found. Please check the ID.", "error");
+                }
+              }}>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={trackInput}
+                    onChange={(e) => setTrackInput(e.target.value)}
+                    className="flex-1 bg-slate-900 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 outline-none focus:border-[#4edea3] transition-colors"
+                    placeholder="e.g. 1033"
+                  />
+                  <button type="submit" className="bg-[#4edea3] hover:bg-emerald-400 text-slate-950 px-5 rounded-xl font-bold transition-colors">
+                    Find
+                  </button>
+                </div>
+              </form>
+
+              {orderTracking && orderTracking.status !== 'Unknown' && (
+                <div className="space-y-4">
+                  {/* Order found details */}
+                  <div className="bg-[#141b2b] rounded-2xl border border-slate-800 p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-black text-white text-base">Order #{orderTracking.id}</p>
+                        <p className="text-[10px] text-[#d3c5ac]">{(orderTracking as any).customer} · {(orderTracking as any).timePlaced}</p>
+                      </div>
+                      <span className="text-xs font-black text-[#fbbf24]">${(orderTracking as any).totalAmount}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {[
+                      { label: 'Order Placed', sub: (orderTracking as any).timePlaced || 'Received', done: true },
+                      {
+                        label: 'Confirmed by Restaurant',
+                        sub: (orderTracking as any).kdsStatus === 'PENDING' ? 'Waiting for cashier...' : 'Accepted ✓',
+                        done: (orderTracking as any).kdsStatus !== 'PENDING',
+                      },
+                      {
+                        label: 'In Kitchen',
+                        sub: (orderTracking as any).kdsStatus === 'PREPARING'
+                          ? `~${(orderTracking as any).prepTimeMinutes || 15} mins · Working on it`
+                          : (orderTracking as any).kdsStatus === 'READY' ? 'Done ✓' : 'Waiting...',
+                        done: (orderTracking as any).kdsStatus === 'PREPARING' || (orderTracking as any).kdsStatus === 'READY' || orderTracking.status === 'DISPATCHED' || orderTracking.status === 'PAID' || orderTracking.status === 'SETTLED',
+                      },
+                      {
+                        label: 'Ready for Delivery',
+                        sub: (orderTracking as any).kdsStatus === 'READY' ? 'Food is packed!' : 'Pending...',
+                        done: (orderTracking as any).kdsStatus === 'READY' || orderTracking.status === 'DISPATCHED' || orderTracking.status === 'PAID' || orderTracking.status === 'SETTLED',
+                      },
+                      {
+                        label: 'Dispatched',
+                        sub: (orderTracking.status === 'DISPATCHED' || orderTracking.status === 'PAID' || orderTracking.status === 'SETTLED') ? 'Rider on the way' : 'Waiting for rider...',
+                        done: orderTracking.status === 'DISPATCHED' || orderTracking.status === 'PAID' || orderTracking.status === 'SETTLED',
+                      },
+                      {
+                        label: 'Delivered',
+                        sub: (orderTracking.status === 'PAID' || orderTracking.status === 'SETTLED') ? 'Cash Collected & Delivered ✓' : 'Pending...',
+                        done: orderTracking.status === 'PAID' || orderTracking.status === 'SETTLED',
+                      },
+                    ].map((step, i) => (
+                      <div key={i} className="flex items-start gap-3 relative">
+                        {i < 5 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
+                        <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
+                          step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
+                        }`}>
+                          {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
+                        </div>
+                        <div>
+                          <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
+                          <p className="text-[9px] text-[#d3c5ac]">{step.sub}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {orderTracking.status === 'DISPATCHED' && (
+                    <div className="bg-[#141b2b] border border-[#4edea3]/30 rounded-xl overflow-hidden mt-4">
+                      <div className="bg-[#4edea3]/10 px-4 py-2 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-[#4edea3] animate-ping" />
+                        <span className="text-[10px] font-black uppercase text-[#4edea3]">Rider is approaching!</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {(orderTracking.status === 'PAID' || orderTracking.status === 'SETTLED') && (
+                    <div className="bg-[#141b2b] border border-amber-500/30 rounded-xl p-4 mt-4 text-center">
+                      <h4 className="text-sm font-black text-[#4edea3] mb-1">Thanks for ordering!</h4>
+                      <p className="text-[10px] text-slate-400">Your food was delivered.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* ================= MODAL: SELECT VARIANT ================= */}
+      {modalType === 'SELECT_VARIANT' && pendingVariantProduct && (
+        <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-xl max-h-[85vh] flex flex-col shadow-2xl relative overflow-hidden animate-slide-up">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
+              <div className="flex items-center gap-4">
+                <h2 className="text-xl font-black text-brand-yellow">Select Options for {pendingVariantProduct.name}</h2>
+              </div>
+              <button onClick={() => { setModalType('NONE'); setPendingVariantProduct(null); }} className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="flex border-b border-slate-800 bg-slate-900">
+              <button 
+                onClick={() => setActiveVariantTab('SIZES')}
+                className={`flex-1 py-4 text-sm font-bold tracking-wider transition ${activeVariantTab === 'SIZES' ? 'bg-brand-yellow text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              >
+                Pizza Sizes
+              </button>
+              <button 
+                onClick={() => setActiveVariantTab('TOPPINGS')}
+                className={`flex-1 py-4 text-sm font-bold tracking-wider transition ${activeVariantTab === 'TOPPINGS' ? 'bg-brand-yellow text-slate-900' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              >
+                Extra Toppings
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-3">
+              {activeVariantTab === 'SIZES' && pendingVariantProduct.variants?.map((v: any) => (
+                <button 
+                  key={v.id} 
+                  onClick={() => {
+                    addToCart(pendingVariantProduct, v);
+                  }}
+                  className="w-full text-left p-3 bg-slate-800 border border-slate-700 hover:border-brand-yellow/50 rounded-xl flex items-center gap-4 group transition"
+                >
+                  {pendingVariantProduct.image_url && (
+                    <img src={pendingVariantProduct.image_url} alt={pendingVariantProduct.name} className="w-12 h-12 rounded-lg object-cover border border-slate-700" />
+                  )}
+                  <span className="text-white font-bold group-hover:text-brand-yellow transition flex-1">{v.name}</span>
+                  <span className="text-brand-green font-bold">Rs. {v.price}</span>
+                </button>
+              ))}
+
+              {activeVariantTab === 'TOPPINGS' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {PRODUCTS.filter((p: any) => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).length === 0 && (
+                    <p className="text-slate-500 col-span-2 text-center py-8">No Extra Toppings available.</p>
+                  )}
+                  {PRODUCTS.filter((p: any) => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).map((topping: any) => (
+                    <button key={topping.id} onClick={() => addToCart(topping)} className="flex items-center gap-3 p-3 bg-slate-800 border border-slate-700 hover:border-brand-yellow/50 rounded-xl group transition">
+                      <div className="flex-1 text-left">
+                        <p className="text-white font-bold text-sm group-hover:text-brand-yellow transition line-clamp-1">{topping.name}</p>
+                        <p className="text-brand-green text-xs font-bold mt-1">Rs. {topping.priceRs}</p>
+                      </div>
+                      <Plus className="w-4 h-4 text-slate-500 group-hover:text-brand-yellow" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-slate-800 bg-slate-900">
+              <button onClick={() => { setModalType('NONE'); setPendingVariantProduct(null); }} className="w-full bg-slate-800 text-white font-bold py-3 rounded-xl hover:bg-slate-700 transition">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: ADD ONS ================= */}
+      {modalType === 'ADD_ONS' && (
+        <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl relative overflow-hidden animate-slide-up">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
+              <h2 className="text-xl font-black text-white flex items-center gap-2"><Plus className="text-brand-yellow w-6 h-6" /> Select Add-ons</h2>
+              <button onClick={() => setModalType('NONE')} className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {PRODUCTS.filter((p: any) => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).length === 0 && (
+                  <p className="text-slate-500 col-span-2 text-center py-8">No Add-ons available.</p>
+                )}
+                {PRODUCTS.filter((p: any) => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).map((addon: any) => (
+                  <button key={addon.id} onClick={() => { addToCart(addon); setModalType('NONE'); }} className="flex items-center gap-3 p-4 bg-slate-800 border border-slate-700 hover:border-brand-yellow/50 rounded-xl group transition">
+                    {addon.image_url && <img src={addon.image_url} alt={addon.name} className="w-12 h-12 rounded-lg object-cover" />}
+                    <div className="flex-1 text-left">
+                      <p className="text-white font-bold text-sm group-hover:text-brand-yellow transition line-clamp-1">{addon.name}</p>
+                      <p className="text-brand-green text-xs font-bold mt-1">Rs. {addon.priceRs}</p>
+                    </div>
+                    <div className="w-8 h-8 rounded-full bg-slate-700 group-hover:bg-brand-yellow flex items-center justify-center transition">
+                      <Plus className="w-4 h-4 text-slate-300 group-hover:text-slate-900 font-bold" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}

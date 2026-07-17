@@ -136,6 +136,36 @@ export class CatalogService {
   }
 
   async deleteMenu(id: number) {
+    // Find all categories for this menu
+    const categories = await this.prisma.category.findMany({
+      where: { menu_id: id },
+      include: { products: true }
+    });
+
+    const categoryIds = categories.map(c => c.id);
+    const productIdsToDelete = new Set<number>();
+
+    for (const category of categories) {
+      for (const product of category.products) {
+        productIdsToDelete.add(product.id);
+      }
+    }
+
+    // Delete products associated with these categories
+    if (productIdsToDelete.size > 0) {
+      await this.prisma.product.deleteMany({
+        where: { id: { in: Array.from(productIdsToDelete) } }
+      });
+    }
+
+    // Delete categories
+    if (categoryIds.length > 0) {
+      await this.prisma.category.deleteMany({
+        where: { id: { in: categoryIds } }
+      });
+    }
+
+    // Delete the menu itself
     return this.prisma.menu.delete({ where: { id } });
   }
 

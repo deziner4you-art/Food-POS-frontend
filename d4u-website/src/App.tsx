@@ -68,7 +68,9 @@ export default function App() {
                 category: catName,
                 tag: 'New',
                 preparationTime: '10 mins',
-                calories: 500
+                calories: 500,
+                variants: p.variants || [],
+                categories: p.categories || []
               };
             });
             setFoodItems(mappedItems);

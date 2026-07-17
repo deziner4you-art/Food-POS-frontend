@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ListTree, Plus, Edit, Trash2, Tag, Utensils, Store } from 'lucide-react';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
@@ -25,6 +25,21 @@ export default function MenuManager() {
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [productFilterCategoryId, setProductFilterCategoryId] = useState<number>(0);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
+        setIsCategoryDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const fetchAll = async () => {
     try {
@@ -96,7 +111,7 @@ export default function MenuManager() {
       const url = isEditingProduct ? `${BACKEND_URL}/catalog/products/${productForm.id}` : `${BACKEND_URL}/catalog/products`;
       
       const payload = isEditingProduct 
-        ? { name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, variants: productForm.hasVariants ? productForm.variants : [] }
+        ? { name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] }
         : { store_id: 1, name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] };
       
       const res = await fetch(url, {
@@ -121,8 +136,71 @@ export default function MenuManager() {
     } catch (e) { console.error(e); }
   };
 
+  const handleBulkDeleteProducts = async () => {
+    if (selectedProducts.length === 0) return customAlert('Please select items to delete');
+    if (!(await customConfirm(`Delete ${selectedProducts.length} selected items?`))) return;
+    try {
+      await Promise.all(selectedProducts.map(id => 
+        fetch(`${BACKEND_URL}/catalog/products/${id}`, { method: 'DELETE' })
+      ));
+      setSelectedProducts([]);
+      fetchAll();
+      customSuccess('Selected items deleted');
+    } catch (e) {
+      console.error(e);
+      customAlert('Error deleting some items');
+    }
+  };
+
+  const handleDeleteCategory = async (id: number) => {
+    if (!(await customConfirm('Are you sure you want to delete this category?'))) return;
+    try {
+      await fetch(`${BACKEND_URL}/catalog/categories/${id}`, { method: 'DELETE' });
+      fetchAll();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleBulkDeleteCategories = async () => {
+    if (selectedCategories.length === 0) return customAlert('Please select items to delete');
+    if (!(await customConfirm(`Delete ${selectedCategories.length} selected categories?`))) return;
+    try {
+      await Promise.all(selectedCategories.map(id => 
+        fetch(`${BACKEND_URL}/catalog/categories/${id}`, { method: 'DELETE' })
+      ));
+      setSelectedCategories([]);
+      fetchAll();
+      customSuccess('Selected categories deleted');
+    } catch (e) {
+      console.error(e);
+      customAlert('Error deleting some categories');
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      const res = await fetch(`${BACKEND_URL}/catalog/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.imageUrl) {
+          setter(data.imageUrl);
+          customSuccess('Image uploaded successfully!');
+        }
+      }
+    } catch (err) {
+      console.error('Upload failed', err);
+      customError('Failed to upload image.');
+    }
+  };
+
   const handleDeleteMenu = async (id: number) => {
-    if (!(await customConfirm('Delete this menu collection?'))) return;
+    if (!(await customConfirm('Delete this menu collection? Menu k sath is ki jitni cheezein (categories, products, toppings, add-ons) thi wo bhi remove hoo gi.'))) return;
     try {
       await fetch(`${BACKEND_URL}/catalog/menus/${id}`, { method: 'DELETE' });
       fetchAll();
@@ -263,7 +341,7 @@ export default function MenuManager() {
         {/* CATEGORIES TAB */}
         {activeTab === 'CATEGORIES' && (
           <div className="flex flex-col h-full">
-            <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <ListTree className="text-[#3b82f6]" /> Menu Categories
               </h3>
@@ -274,17 +352,83 @@ export default function MenuManager() {
                 <Plus size={18} /> Add Category
               </button>
             </div>
-            <div className="flex-1 p-6 overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {categories.map(c => (
-                  <div key={c.id} className="bg-slate-900 p-4 rounded-xl border border-slate-700 flex flex-col gap-2 relative group">
-                    <span className="font-bold text-white text-lg">{c.name}</span>
-                    <span className="text-xs text-slate-400">Menu: {c.menu?.name || 'Unassigned'}</span>
-                    <button onClick={() => { setCategoryForm({ id: c.id, name: c.name, menu_id: c.menu_id || 0, store_ids: c.assigned_stores.map((s:any)=>s.id) }); setShowCategoryModal(true); }} className="absolute top-4 right-4 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-white transition-all"><Edit size={16}/></button>
-                  </div>
-                ))}
-                {categories.length === 0 && <p className="text-slate-500 col-span-full">No categories found.</p>}
+            
+            <div className="bg-slate-900 border-b border-slate-700 p-3 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-bold text-white px-2">Total Categories: {categories.length}</span>
+                {selectedCategories.length > 0 && (
+                  <button 
+                    onClick={handleBulkDeleteCategories}
+                    className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                  >
+                    <Trash2 size={14} /> Delete Selected ({selectedCategories.length})
+                  </button>
+                )}
               </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-800 text-xs uppercase font-bold text-slate-400 sticky top-0 z-10">
+                  <tr>
+                    <th className="p-4 w-12">
+                      <input 
+                        type="checkbox" 
+                        className="accent-[#fbbf24] cursor-pointer"
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedCategories(categories.map(c => c.id));
+                          else setSelectedCategories([]);
+                        }}
+                        checked={selectedCategories.length > 0 && selectedCategories.length === categories.length}
+                      />
+                    </th>
+                    <th className="p-4">Category Name</th>
+                    <th className="p-4">Menu</th>
+                    <th className="p-4">Assigned Branches</th>
+                    <th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map(c => (
+                    <tr key={c.id} className={`border-t border-slate-700/50 hover:bg-slate-700/20 ${selectedCategories.includes(c.id) ? 'bg-[#fbbf24]/10' : ''}`}>
+                      <td className="p-4">
+                        <input 
+                          type="checkbox" 
+                          className="accent-[#fbbf24] cursor-pointer"
+                          checked={selectedCategories.includes(c.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedCategories([...selectedCategories, c.id]);
+                            else setSelectedCategories(selectedCategories.filter(id => id !== c.id));
+                          }}
+                        />
+                      </td>
+                      <td className="p-4 font-bold text-white">{c.name}</td>
+                      <td className="p-4 text-slate-400 text-sm">{c.menu?.name || 'Unassigned'}</td>
+                      <td className="p-4">
+                        <div className="flex flex-wrap gap-1">
+                          {c.assigned_stores?.map((s:any) => (
+                            <span key={s.id} className="bg-slate-700 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-wider">{s.name}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="p-4 flex justify-end gap-3 items-center">
+                        <button 
+                          onClick={() => { setCategoryForm({ id: c.id, name: c.name, menu_id: c.menu_id || 0, store_ids: c.assigned_stores.map((s:any)=>s.id) }); setShowCategoryModal(true); }}
+                          className="text-slate-400 hover:text-white transition-colors"
+                        >
+                          <Edit size={18} />
+                        </button>
+                        <button onClick={() => handleDeleteCategory(c.id)} className="text-red-400 hover:text-red-300 transition-colors">
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {categories.length === 0 && (
+                    <tr><td colSpan={5} className="p-8 text-center text-slate-500">No categories found.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -320,7 +464,7 @@ export default function MenuManager() {
                     />
                   </div>
 
-                  <div className="flex-[1.5] relative">
+                  <div className="flex-[1.5] relative" ref={categoryDropdownRef}>
                     <label className="block text-xs font-bold text-slate-400 mb-1">Categories (Select Multiple)</label>
                     <div 
                       onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
@@ -353,15 +497,25 @@ export default function MenuManager() {
                     )}
                   </div>
 
-                  <div className="flex-1">
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Price (Rs.)</label>
-                    <input 
-                      required={!productForm.hasVariants} type="number" placeholder="e.g. 500"
-                      value={productForm.price || ''} onChange={e => setProductForm({...productForm, price: parseFloat(e.target.value) || 0})}
-                      disabled={productForm.hasVariants}
-                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono font-bold text-sm focus:outline-none focus:border-[#fbbf24] h-[38px] disabled:opacity-50"
-                    />
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Price (Rs.)</label>
+                  <input 
+                    required={!productForm.hasVariants} type="number" placeholder="e.g. 500"
+                    value={productForm.price || ''} onChange={e => setProductForm({...productForm, price: parseFloat(e.target.value) || 0})}
+                    disabled={productForm.hasVariants}
+                    className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono font-bold text-sm focus:outline-none focus:border-[#fbbf24] h-[38px] disabled:opacity-50"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Image</label>
+                  <div className="flex gap-2 items-center">
+                    <label className="bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm cursor-pointer hover:bg-slate-700 h-[38px] flex items-center justify-center flex-1 whitespace-nowrap">
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, (url) => setProductForm({...productForm, image_url: url}))} />
+                      <span className="truncate">{productForm.image_url ? 'Change Image' : 'Browse'}</span>
+                    </label>
+                    {productForm.image_url && <img src={`${BACKEND_URL}${productForm.image_url}`} alt="Preview" className="w-9 h-9 rounded-md object-cover border border-[#334155]" />}
                   </div>
+                </div>
                     <div className="flex-1 flex flex-col justify-end">
                       <button type="submit" className="w-full bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 rounded-md p-2 font-bold text-sm transition-colors flex items-center justify-center gap-2 h-[38px]">
                         <Plus size={16} /> {isEditingProduct ? 'Update' : 'Add'}
@@ -415,7 +569,17 @@ export default function MenuManager() {
 
             {/* Filter */}
             <div className="bg-slate-900 border-b border-slate-700 p-3 flex items-center justify-between">
-              <span className="text-sm font-bold text-white px-2">Total Products: {products.length}</span>
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-bold text-white px-2">Total Products: {products.length}</span>
+                {selectedProducts.length > 0 && (
+                  <button 
+                    onClick={handleBulkDeleteProducts}
+                    className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                  >
+                    <Trash2 size={14} /> Delete Selected ({selectedProducts.length})
+                  </button>
+                )}
+              </div>
               <select 
                 value={productFilterCategoryId} 
                 onChange={e => setProductFilterCategoryId(parseInt(e.target.value))}
@@ -430,6 +594,21 @@ export default function MenuManager() {
               <table className="w-full text-left text-sm text-slate-300">
                 <thead className="bg-slate-900/50 text-slate-400">
                   <tr>
+                    <th className="p-4 w-12">
+                      <input 
+                        type="checkbox" 
+                        className="accent-[#fbbf24] cursor-pointer"
+                        onChange={(e) => {
+                          const filtered = products.filter(p => productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId));
+                          if (e.target.checked) {
+                            setSelectedProducts(filtered.map(p => p.id));
+                          } else {
+                            setSelectedProducts([]);
+                          }
+                        }}
+                        checked={selectedProducts.length > 0 && selectedProducts.length === products.filter(p => productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId)).length}
+                      />
+                    </th>
                     <th className="p-4">Product Name</th>
                     <th className="p-4">SKU</th>
                     <th className="p-4">Categories</th>
@@ -438,9 +617,69 @@ export default function MenuManager() {
                   </tr>
                 </thead>
                 <tbody>
-                  {products.filter(p => productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId)).map(p => (
-                    <tr key={p.id} className="border-t border-slate-700/50 hover:bg-slate-700/20">
-                      <td className="p-4 font-bold text-white">{p.name}</td>
+                  {products.filter(p => p.status === 'PENDING').length > 0 && (
+                    <>
+                      <tr>
+                        <td colSpan={6} className="bg-amber-500/20 text-amber-400 font-bold p-3 text-xs uppercase tracking-wider">
+                          Pending Approvals (From POS)
+                        </td>
+                      </tr>
+                      {products.filter(p => p.status === 'PENDING').map(p => (
+                        <tr key={p.id} className="border-t border-slate-700/50 bg-amber-500/5">
+                          <td className="p-4">
+                            <input type="checkbox" className="accent-[#fbbf24] cursor-pointer" checked={selectedProducts.includes(p.id)} onChange={(e) => { if (e.target.checked) setSelectedProducts([...selectedProducts, p.id]); else setSelectedProducts(selectedProducts.filter(id => id !== p.id)); }} />
+                          </td>
+                          <td className="p-4 font-bold text-white flex items-center gap-3">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                            {p.name}
+                          </td>
+                          <td className="p-4 font-mono text-slate-400">{p.sku || '-'}</td>
+                          <td className="p-4">
+                            <span className="text-amber-400 text-xs italic">Needs Category Assignment</span>
+                          </td>
+                          <td className="p-4 font-mono font-bold text-[#4edea3]">Rs. {p.price}</td>
+                          <td className="p-4 flex justify-end gap-3 items-center">
+                            <button 
+                              onClick={() => { setProductForm({ id: p.id, name: p.name, price: p.price, category_ids: [], sku: p.sku || '', image_url: p.image_url || '', assigned_store_ids: p.assigned_stores?.map((s:any) => s.id) || [], hasVariants: false, variants: [] }); setIsEditingProduct(true); customAlert('Please assign a category and verify details, then click Update to Approve.'); }} 
+                              className="bg-amber-500 hover:bg-amber-600 text-slate-900 px-3 py-1 rounded text-xs font-bold transition-colors"
+                            >
+                              Review & Approve
+                            </button>
+                            <button onClick={() => handleDeleteProduct(p.id)} className="text-red-400 hover:text-red-300 transition-colors">
+                              <Trash2 size={18} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td colSpan={6} className="bg-slate-800 text-slate-400 font-bold p-3 text-xs uppercase tracking-wider">
+                          Approved Products
+                        </td>
+                      </tr>
+                    </>
+                  )}
+
+                  {products.filter(p => p.status !== 'PENDING' && (productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId))).map(p => (
+                    <tr key={p.id} className={`border-t border-slate-700/50 hover:bg-slate-700/20 ${selectedProducts.includes(p.id) ? 'bg-[#fbbf24]/10' : ''}`}>
+                      <td className="p-4">
+                        <input 
+                          type="checkbox" 
+                          className="accent-[#fbbf24] cursor-pointer"
+                          checked={selectedProducts.includes(p.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedProducts([...selectedProducts, p.id]);
+                            else setSelectedProducts(selectedProducts.filter(id => id !== p.id));
+                          }}
+                        />
+                      </td>
+                      <td className="p-4 font-bold text-white flex items-center gap-3">
+                        {p.image_url ? (
+                          <img src={`${BACKEND_URL}${p.image_url}`} alt={p.name} className="w-8 h-8 rounded object-cover border border-slate-600" />
+                        ) : (
+                          <div className="w-8 h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500">No Img</div>
+                        )}
+                        {p.name}
+                      </td>
                       <td className="p-4 font-mono text-slate-400">{p.sku || '-'}</td>
                       <td className="p-4">
                         <div className="flex flex-wrap gap-1">
@@ -605,6 +844,14 @@ export default function MenuManager() {
                 required type="text" value={categoryForm.name} onChange={e => setCategoryForm({...categoryForm, name: e.target.value})}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#3b82f6] mb-4"
               />
+              <label className="block text-xs font-bold text-slate-400 mb-1">Category Image (Optional)</label>
+              <div className="flex gap-3 items-center mb-4">
+                <label className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-white text-sm cursor-pointer hover:bg-slate-800 flex-1 text-center whitespace-nowrap">
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, (url) => setCategoryForm({...categoryForm, image_url: url}))} />
+                  <span>{categoryForm.image_url ? 'Change Image' : 'Browse Image'}</span>
+                </label>
+                {categoryForm.image_url && <img src={`${BACKEND_URL}${categoryForm.image_url}`} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-slate-700" />}
+              </div>
               <label className="block text-xs font-bold text-slate-400 mb-1">Belongs to Menu Collection (Optional)</label>
               <select 
                 value={categoryForm.menu_id} onChange={e => setCategoryForm({...categoryForm, menu_id: parseInt(e.target.value)})}

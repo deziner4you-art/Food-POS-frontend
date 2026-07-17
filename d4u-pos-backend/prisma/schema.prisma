@@ -97,6 +97,7 @@ model User {
   hashedPin          String // For local credential caching
   image_url          String?
   module_permissions Json? // Per-user module access: {pos, kds, rider, admin, website, ...}
+  rider_details      Json? // Additional rider specific information
   createdAt          DateTime @default(now())
 
   brand Brand? @relation(fields: [brand_id], references: [id])
@@ -569,6 +570,7 @@ model MarketingCampaign {
   scheduled_at        DateTime?
   published_facebook  Boolean    @default(false)
   published_instagram Boolean    @default(false)
+  published_tv        Boolean    @default(false)
 }
 
 model BranchSocialAccount {

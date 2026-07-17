@@ -22,6 +22,11 @@ export default function StaffPermissions() {
   const [roleId, setRoleId] = useState<number>(0);
   const [storeId, setStoreId] = useState<number | null>(null);
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  
+  const [activeTab, setActiveTab] = useState<'staff' | 'rider'>('staff');
+  const [riderDetails, setRiderDetails] = useState<any>({
+    vehicle_type: '', model: '', color: '', cc: '', license_plate: '', registration_no: '', dob: '', city: ''
+  });
 
   const MODULES = [
     { id: 'pos', label: 'POS Terminal' },
@@ -60,13 +65,21 @@ export default function StaffPermissions() {
       setRoleId(user.role_id || user.role?.id || 0);
       setStoreId(user.store_id ?? null);
       setPermissions(user.module_permissions || {});
+      setRiderDetails(user.rider_details || {
+        vehicle_type: '', model: '', color: '', cc: '', license_plate: '', registration_no: '', dob: '', city: ''
+      });
+      if (user.role?.name?.toLowerCase() === 'rider') {
+        setActiveTab('rider');
+      } else {
+        setActiveTab('staff');
+      }
     } else {
       setEditingUser(null);
       setName('');
       setPhone('');
       setPin('');
       setImageUrl('');
-      setRoleId(roles[0]?.id || 0);
+      setRoleId(roles.find(r => r.name.toLowerCase() !== 'rider')?.id || roles[0]?.id || 0);
       setStoreId(branches[0]?.id || null);
       setPermissions({
         pos: true,
@@ -75,6 +88,10 @@ export default function StaffPermissions() {
         admin: false,
         website: false
       });
+      setRiderDetails({
+        vehicle_type: '', model: '', color: '', cc: '', license_plate: '', registration_no: '', dob: '', city: ''
+      });
+      setActiveTab('staff');
     }
     setIsModalOpen(true);
   };
@@ -108,16 +125,25 @@ export default function StaffPermissions() {
   const handleSave = async () => {
     if (!name.trim() || !phone.trim()) return customAlert('Name and Phone are required');
     if (!editingUser && !pin.trim()) return customAlert('PIN is required for new users');
-    if (roleId === 0) return customAlert('Please select a role');
+    if (activeTab === 'staff' && roleId === 0) return customAlert('Please select a role');
 
     setSaving(true);
     try {
       const method = editingUser ? 'PATCH' : 'POST';
       const url = editingUser ? `${BACKEND_URL}/users/${editingUser.id}` : `${BACKEND_URL}/users`;
 
-      const payload: any = { name, phone, role_id: roleId, store_id: storeId, module_permissions: permissions };
+      let finalRoleId = roleId;
+      let finalPermissions = permissions;
+      if (activeTab === 'rider') {
+        const riderRole = roles.find((r:any) => r.name.toLowerCase() === 'rider');
+        if (riderRole) finalRoleId = riderRole.id;
+        finalPermissions = { pos: false, kds: false, admin: false, website: false, rider: true };
+      }
+
+      const payload: any = { name, phone, role_id: finalRoleId, store_id: storeId, module_permissions: finalPermissions };
       if (pin.trim()) payload.pin = pin;
       if (imageUrl.trim()) payload.image_url = imageUrl;
+      if (activeTab === 'rider') payload.rider_details = riderDetails;
 
       const res = await fetch(url, {
         method,
@@ -261,12 +287,30 @@ export default function StaffPermissions() {
       {/* Add/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-lg">
-            <div className="p-6 border-b border-slate-700 flex justify-between items-center">
-              <h2 className="text-2xl font-bold">{editingUser ? 'Edit Staff Member' : 'Add New Staff'}</h2>
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-700 flex justify-between items-center shrink-0">
+              <h2 className="text-2xl font-bold">{editingUser ? (activeTab === 'rider' ? 'Edit Rider' : 'Edit Staff') : 'Add New Staff'}</h2>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white p-2 hover:bg-slate-700 rounded-lg transition-colors"><X size={20} /></button>
             </div>
-            <div className="p-6 space-y-5">
+            
+            {!editingUser && (
+              <div className="flex border-b border-slate-700 shrink-0">
+                <button 
+                  onClick={() => setActiveTab('staff')}
+                  className={`flex-1 py-4 font-bold text-sm transition-all ${activeTab === 'staff' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/10' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+                >
+                  STAFF
+                </button>
+                <button 
+                  onClick={() => setActiveTab('rider')}
+                  className={`flex-1 py-4 font-bold text-sm transition-all ${activeTab === 'rider' ? 'text-indigo-400 border-b-2 border-indigo-500 bg-indigo-500/10' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+                >
+                  RIDERS
+                </button>
+              </div>
+            )}
+
+            <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-400 mb-2">Full Name *</label>
@@ -295,24 +339,87 @@ export default function StaffPermissions() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-2">Role *</label>
-                  <select value={roleId} onChange={e => setRoleId(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500">
-                    <option value={0} disabled>Select Role...</option>
-                    {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
+              {activeTab === 'staff' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-2">Role *</label>
+                    <select value={roleId} onChange={e => setRoleId(Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500">
+                      <option value={0} disabled>Select Role...</option>
+                      {roles.filter(r => r.name.toLowerCase() !== 'rider').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-2">
+                      PIN / Password {editingUser ? '(leave blank to keep)' : '*'}
+                    </label>
+                    <input type="password" value={pin} onChange={e => setPin(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500 tracking-widest"
+                      placeholder="e.g. 1234" />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-2">
-                    PIN / Password {editingUser ? '(leave blank to keep)' : '*'}
-                  </label>
-                  <input type="password" value={pin} onChange={e => setPin(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500 tracking-widest"
-                    placeholder="e.g. 1234" />
-                </div>
-              </div>
+              )}
+
+              {activeTab === 'rider' && (
+                <>
+                  <div className="pt-4 mt-2 border-t border-slate-700">
+                    <h3 className="text-sm font-bold text-indigo-400 mb-4">Rider Details</h3>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 mb-2">Vehicle Type</label>
+                        <select value={riderDetails.vehicle_type} onChange={e => setRiderDetails({...riderDetails, vehicle_type: e.target.value})}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500">
+                          <option value="">Select...</option>
+                          <option value="Bicycle">Bicycle</option>
+                          <option value="Motorbike">Motorbike</option>
+                          <option value="Car">Car</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 mb-2">Registration No.</label>
+                        <input type="text" value={riderDetails.registration_no} onChange={e => setRiderDetails({...riderDetails, registration_no: e.target.value})}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500"
+                          placeholder="e.g. 6WED2098" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 mb-2">License Plate No.</label>
+                        <input type="text" value={riderDetails.license_plate} onChange={e => setRiderDetails({...riderDetails, license_plate: e.target.value})}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500"
+                          placeholder="e.g. 6WED2098" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 mb-2">Date of Birth</label>
+                        <input type="date" value={riderDetails.dob} onChange={e => setRiderDetails({...riderDetails, dob: e.target.value})}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 mb-2">City</label>
+                        <input type="text" value={riderDetails.city} onChange={e => setRiderDetails({...riderDetails, city: e.target.value})}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500"
+                          placeholder="City name" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 mb-2">Color</label>
+                        <input type="text" value={riderDetails.color} onChange={e => setRiderDetails({...riderDetails, color: e.target.value})}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500"
+                          placeholder="e.g. Red" />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-2">
+                      PIN / Password {editingUser ? '(leave blank to keep)' : '*'}
+                    </label>
+                    <input type="password" value={pin} onChange={e => setPin(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500 tracking-widest"
+                      placeholder="e.g. 1234" />
+                  </div>
+                </>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-2">Assign to Branch *</label>
@@ -326,23 +433,25 @@ export default function StaffPermissions() {
                 </p>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-3">Module Permissions (Access Control)</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {MODULES.map(mod => (
-                    <div 
-                      key={mod.id}
-                      onClick={() => setPermissions(prev => ({ ...prev, [mod.id]: !prev[mod.id] }))}
-                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${permissions[mod.id] ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}
-                    >
-                      <div className={`w-5 h-5 rounded flex items-center justify-center ${permissions[mod.id] ? 'bg-indigo-500 text-white' : 'bg-slate-800'}`}>
-                        {permissions[mod.id] && <Check size={14} />}
+              {activeTab === 'staff' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-3">Module Permissions (Access Control)</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {MODULES.filter(m => m.id !== 'rider').map(mod => (
+                      <div 
+                        key={mod.id}
+                        onClick={() => setPermissions(prev => ({ ...prev, [mod.id]: !prev[mod.id] }))}
+                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${permissions[mod.id] ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                      >
+                        <div className={`w-5 h-5 rounded flex items-center justify-center ${permissions[mod.id] ? 'bg-indigo-500 text-white' : 'bg-slate-800'}`}>
+                          {permissions[mod.id] && <Check size={14} />}
+                        </div>
+                        <span className="font-bold text-xs">{mod.label}</span>
                       </div>
-                      <span className="font-bold text-xs">{mod.label}</span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 text-xs text-slate-400">
                 <strong className="text-slate-300">🔐 Login Info:</strong> Staff will login to POS using their <strong>Phone</strong> as username and <strong>PIN</strong> as password.

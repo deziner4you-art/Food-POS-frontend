@@ -6,7 +6,6 @@ import { generateGridPath } from './utils';
 
 // New Components
 import WelcomeView from './components/WelcomeView';
-import RegistrationView from './components/RegistrationView';
 import ActiveRideView from './components/ActiveRideView';
 import HistoryView from './components/HistoryView';
 import SettleCashView from './components/SettleCashView';
@@ -14,7 +13,7 @@ import POSPanel from './components/POSPanel';
 import LoginView from './components/LoginView';
 import { Clock, Navigation, CheckSquare, LogOut } from 'lucide-react';
 
-type ViewMode = 'login' | 'welcome' | 'map' | 'history' | 'settle' | 'register';
+type ViewMode = 'login' | 'welcome' | 'map' | 'history' | 'settle';
 
 export default function App() {
   const logout = () => {
@@ -34,6 +33,7 @@ export default function App() {
   // Rider Auth States
   const [riderStoreId, setRiderStoreId] = useState<number | null>(null);
   const [riderName, setRiderName] = useState<string>('');
+  const [riderStoreName, setRiderStoreName] = useState<string>('');
   const [riderId, setRiderId] = useState<string>('');
   
   // Active rider order
@@ -82,10 +82,12 @@ export default function App() {
     const token = localStorage.getItem('d4u_rider_token');
     const store = localStorage.getItem('d4u_rider_store');
     const name = localStorage.getItem('d4u_rider_name');
+    const storeName = localStorage.getItem('d4u_rider_store_name');
     
     if (token && store) {
       setRiderStoreId(Number(store));
       setRiderName(name || 'Rider');
+      setRiderStoreName(storeName || 'Branch');
       setCurrentView('welcome');
     } else {
       setCurrentView('login');
@@ -346,6 +348,7 @@ export default function App() {
                 setRiderId(rId);
                 setRiderStoreId(sId);
                 setRiderName(name);
+                setRiderStoreName(localStorage.getItem('d4u_rider_store_name') || 'Branch');
                 setCurrentView('welcome');
               }}
             />
@@ -354,17 +357,9 @@ export default function App() {
           {currentView === 'welcome' && (
             <WelcomeView 
               onContinue={() => setCurrentView('map')} 
-              onRegister={() => setCurrentView('register')}
             />
           )}
 
-          {currentView === 'register' && (
-            <RegistrationView 
-              onCancel={() => setCurrentView('welcome')}
-              onSubmit={() => setCurrentView('welcome')}
-            />
-          )}
-          
           {currentView === 'map' && (
             <>
               <div className="absolute top-12 left-4 right-4 flex justify-between items-center z-50">
@@ -391,6 +386,7 @@ export default function App() {
                 onSettle={() => handleCompleteRestReset({ tip: 0 })}
                 driverCoords={driverCoords}
                 activePath={activePath}
+                storeName={riderStoreName}
               />
             </>
           )}

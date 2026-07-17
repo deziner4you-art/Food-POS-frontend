@@ -16,6 +16,8 @@ export interface OfflineProduct {
   desc?: string;
   isApproved?: boolean;
   itemCode?: string;
+  variants?: any[];
+  categories?: any[];
 }
 
 export interface QueuedTransaction {

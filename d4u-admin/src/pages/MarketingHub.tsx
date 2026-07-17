@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Megaphone, Globe, Share2, Tag, Percent, CheckCircle, Store, Edit2, Trash2, PauseCircle, PlayCircle, ImagePlus, ChevronDown, ChevronRight } from 'lucide-react';
+import { Megaphone, Globe, Share2, Tag, Percent, CheckCircle, Store, Edit2, Trash2, PauseCircle, PlayCircle, ImagePlus, ChevronDown, ChevronRight, Users, MousePointer2, Activity } from 'lucide-react';
 
 import { useAdminContext } from '../context/AdminContext';
 
@@ -25,7 +25,9 @@ export default function MarketingHub() {
   const [discountPct, setDiscountPct] = useState('');
   const [publishWeb, setPublishWeb] = useState(true);
   const [publishPos, setPublishPos] = useState(true);
-  const [publishSocial, setPublishSocial] = useState(false);
+  const [publishFacebook, setPublishFacebook] = useState(false);
+  const [publishInstagram, setPublishInstagram] = useState(false);
+  const [publishTv, setPublishTv] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   
@@ -202,7 +204,9 @@ export default function MarketingHub() {
           if (description) formData.append('description', description);
           formData.append('published_web', String(publishWeb));
           formData.append('published_pos', String(publishPos));
-          formData.append('published_social', String(publishSocial));
+          formData.append('published_facebook', String(publishFacebook));
+          formData.append('published_instagram', String(publishInstagram));
+          formData.append('published_tv', String(publishTv));
           targetStoreIds.forEach(id => formData.append('target_store_ids[]', String(id)));
           targetCategoryIds.forEach(id => formData.append('target_category_ids[]', String(id)));
           targetProductIds.forEach(id => formData.append('target_product_ids[]', String(id)));
@@ -228,7 +232,9 @@ export default function MarketingHub() {
         setIsScheduled(false);
         setPublishWeb(true);
         setPublishPos(true);
-        setPublishSocial(false);
+        setPublishFacebook(false);
+        setPublishInstagram(false);
+        setPublishTv(false);
         setImageFile(null);
         setTargetStoreIds([]);
         setTargetCategoryIds([]);
@@ -243,7 +249,9 @@ export default function MarketingHub() {
         formData.append('end_date', new Date(endDate).toISOString());
         formData.append('published_web', String(publishWeb));
         formData.append('published_pos', String(publishPos));
-        formData.append('published_social', String(publishSocial));
+        formData.append('published_facebook', String(publishFacebook));
+        formData.append('published_instagram', String(publishInstagram));
+        formData.append('published_tv', String(publishTv));
         targetStoreIds.forEach(id => formData.append('target_store_ids[]', String(id)));
         targetCategoryIds.forEach(id => formData.append('target_category_ids[]', String(id)));
         targetProductIds.forEach(id => formData.append('target_product_ids[]', String(id)));
@@ -266,7 +274,9 @@ export default function MarketingHub() {
         if (description) formData.append('description', description);
         formData.append('published_web', String(publishWeb));
         formData.append('published_pos', String(publishPos));
-        formData.append('published_social', String(publishSocial));
+        formData.append('published_facebook', String(publishFacebook));
+        formData.append('published_instagram', String(publishInstagram));
+        formData.append('published_tv', String(publishTv));
         targetStoreIds.forEach(id => formData.append('target_store_ids[]', String(id)));
         targetCategoryIds.forEach(id => formData.append('target_category_ids[]', String(id)));
         targetProductIds.forEach(id => formData.append('target_product_ids[]', String(id)));
@@ -279,7 +289,7 @@ export default function MarketingHub() {
           setSuccessMsg('Campaign launched successfully!');
           await fetchCampaigns();
           setTitle(''); setDescription(''); setDiscountPct('');
-          setPublishWeb(true); setPublishPos(true); setPublishSocial(false);
+          setPublishWeb(true); setPublishPos(true); setPublishFacebook(false); setPublishInstagram(false); setPublishTv(false);
           setImageFile(null);
           setTargetStoreIds([]);
         }
@@ -298,7 +308,9 @@ export default function MarketingHub() {
     setDiscountPct(String(camp.discount_pct));
     setPublishWeb(camp.published_web);
     setPublishPos(camp.published_pos);
-    setPublishSocial(camp.published_social);
+    setPublishFacebook(camp.published_facebook || false);
+    setPublishInstagram(camp.published_instagram || false);
+    setPublishTv(camp.published_tv || false);
     setTargetStoreIds(camp.target_stores?.map((s:any) => s.id) || []);
     setTargetCategoryIds(camp.target_categories?.map((c:any) => c.id) || []);
     setTargetProductIds(camp.target_products?.map((p:any) => p.id) || []);
@@ -343,7 +355,9 @@ export default function MarketingHub() {
     setDiscountPct('');
     setPublishWeb(true);
     setPublishPos(true);
-    setPublishSocial(false);
+    setPublishFacebook(false);
+    setPublishInstagram(false);
+    setPublishTv(false);
     setStartDate('');
     setEndDate('');
     setIsScheduled(false);
@@ -415,7 +429,8 @@ export default function MarketingHub() {
 
 
   return (
-    <div className="animate-fade-in max-w-5xl mx-auto space-y-6">
+    <>
+    <div className="animate-fade-in max-w-7xl w-full mx-auto space-y-6">
       <div id="campaign-form-top" className="mb-8">
         <h2 className="text-3xl font-black text-white flex items-center gap-3">
           <Megaphone className="text-[#ec4899]" size={32} /> Marketing & Campaigns
@@ -530,7 +545,7 @@ export default function MarketingHub() {
                     </div>
                     {isStoreExpanded && (
                       <div className="ml-6 pl-2 border-l border-slate-700/50 flex flex-col gap-1 mt-1">
-                        {categories.map(c => {
+                        {categories.filter(c => !['extra toppings', 'add-ons', 'addons'].includes((c.name || '').toLowerCase())).map(c => {
                           const isCatExpanded = expandedCategories.includes(c.id);
                           return (
                           <div key={`cat-${c.id}`} className="flex flex-col">
@@ -610,16 +625,31 @@ export default function MarketingHub() {
                   <input type="checkbox" checked={publishPos} onChange={(e) => setPublishPos(e.target.checked)} className="w-5 h-5 accent-[#fbbf24]" />
                   <div className="flex items-center gap-2"><Store size={18} className="text-[#fbbf24]" /> <span className="text-sm font-bold text-white">POS System</span></div>
                 </label>
-                {(fbLinked || igLinked) && (
-                  <label className="col-span-2 flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#3b82f6] transition-colors">
-                    <input type="checkbox" checked={publishSocial} onChange={(e) => setPublishSocial(e.target.checked)} className="w-5 h-5 accent-[#3b82f6]" />
+                
+                {(fbLinked || true) && (
+                  <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#3b82f6] transition-colors">
+                    <input type="checkbox" checked={publishFacebook} onChange={(e) => setPublishFacebook(e.target.checked)} className="w-5 h-5 accent-[#3b82f6]" />
                     <div className="flex items-center gap-2 text-white font-bold text-sm">
-                      <Share2 size={18} className="text-[#3b82f6]" /> Social Media 
-                      {fbLinked && <span className="ml-2 text-blue-500 text-xs">FB</span>}
-                      {igLinked && <span className="text-pink-500 text-xs">IG</span>}
+                      <FacebookIcon size={18} /> Facebook
                     </div>
                   </label>
                 )}
+                
+                {(igLinked || true) && (
+                  <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#ec4899] transition-colors">
+                    <input type="checkbox" checked={publishInstagram} onChange={(e) => setPublishInstagram(e.target.checked)} className="w-5 h-5 accent-[#ec4899]" />
+                    <div className="flex items-center gap-2 text-white font-bold text-sm">
+                      <InstagramIcon size={18} /> Instagram
+                    </div>
+                  </label>
+                )}
+
+                <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-purple-400 transition-colors col-span-2 md:col-span-1">
+                  <input type="checkbox" checked={publishTv} onChange={(e) => setPublishTv(e.target.checked)} className="w-5 h-5 accent-purple-400" />
+                  <div className="flex items-center gap-2 text-white font-bold text-sm">
+                    <Megaphone size={18} className="text-purple-400" /> TV Board
+                  </div>
+                </label>
               </div>
             </div>
 
@@ -650,8 +680,7 @@ export default function MarketingHub() {
           </form>
         </div>
 
-        {/* Active Campaigns List & Social Media */}
-        <div className="w-full xl:w-[450px] shrink-0 space-y-8">
+        <div className="w-full xl:w-1/3 xl:min-w-[450px] space-y-8">
           <div className="p-6 bg-slate-800 border border-slate-700 rounded-2xl">
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               <Share2 size={20} className="text-[#3b82f6]" /> Social Media Integration
@@ -675,11 +704,77 @@ export default function MarketingHub() {
             </div>
           </div>
 
-          <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+          <div className="p-6 bg-slate-800 border border-slate-700 rounded-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Share2 size={20} className="text-[#4edea3]" /> Marketing Overview
+              </h3>
+              <select className="bg-slate-900 border border-slate-700 text-xs text-slate-400 p-1.5 rounded outline-none">
+                <option>This Month</option>
+                <option>Last Month</option>
+              </select>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-start gap-2">
+                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <Tag size={14} className="text-emerald-400" />
+                </div>
+                <div>
+                  <div className="text-xl font-black text-white">8</div>
+                  <div className="text-xs text-slate-400">Active Campaigns</div>
+                  <div className="text-[10px] text-emerald-400 mt-1">+2 from last month</div>
+                </div>
+              </div>
+              
+              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-start gap-2">
+                <div className="w-8 h-8 rounded-full bg-pink-500/20 flex items-center justify-center">
+                  <Users size={14} className="text-pink-400" />
+                </div>
+                <div>
+                  <div className="text-xl font-black text-white">24.5K</div>
+                  <div className="text-xs text-slate-400">Total Reach</div>
+                  <div className="text-[10px] text-emerald-400 mt-1">+18% from last month</div>
+                </div>
+              </div>
+              
+              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-start gap-2">
+                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
+                  <MousePointer2 size={14} className="text-amber-400" />
+                </div>
+                <div>
+                  <div className="text-xl font-black text-white">3.2K</div>
+                  <div className="text-xs text-slate-400">Engagement</div>
+                  <div className="text-[10px] text-emerald-400 mt-1">+12% from last month</div>
+                </div>
+              </div>
+              
+              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-start gap-2">
+                <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                  <Activity size={14} className="text-blue-400" />
+                </div>
+                <div>
+                  <div className="text-xl font-black text-white">12.7%</div>
+                  <div className="text-xs text-slate-400">Conversion Rate</div>
+                  <div className="text-[10px] text-emerald-400 mt-1">+5% from last month</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="w-full mt-8">
+        <div className="flex justify-between items-end mb-6">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <Share2 size={20} className="text-[#4edea3]" /> Active Campaigns
           </h3>
-          
-          <div className="space-y-4">
+          <button className="text-sm font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg transition-colors">
+            View All Campaigns
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
             {campaigns.length === 0 ? (
               <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 text-center text-slate-500">
                 <Megaphone size={48} className="mx-auto mb-4 opacity-20" />
@@ -715,20 +810,11 @@ export default function MarketingHub() {
                   <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
                     <div className="flex items-center gap-3">
                       <span className="text-xs font-bold text-slate-500">LIVE ON:</span>
-                      {camp.published_web && <Globe size={14} className="text-[#4edea3]" />}
-                      {camp.published_pos && <Store size={14} className="text-[#fbbf24]" />}
-                      {camp.published_social && (
-                        <div className="flex gap-2">
-                          <div className="group relative">
-                            <FacebookIcon size={14} />
-                            <div className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${camp.published_facebook ? 'bg-green-500' : 'bg-red-500'}`} title={camp.published_facebook ? "Published to Facebook" : "Publishing failed"}></div>
-                          </div>
-                          <div className="group relative">
-                            <InstagramIcon size={14} />
-                            <div className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${camp.published_instagram ? 'bg-green-500' : 'bg-red-500'}`} title={camp.published_instagram ? "Published to Instagram" : "Publishing failed"}></div>
-                          </div>
-                        </div>
-                      )}
+                      {camp.published_web && <Globe size={14} className="text-[#4edea3]" title="Website" />}
+                      {camp.published_pos && <Store size={14} className="text-[#fbbf24]" title="POS System" />}
+                      {camp.published_tv && <Megaphone size={14} className="text-purple-400" title="TV Board" />}
+                      {camp.published_facebook && <div className="text-[#3b82f6]" title="Facebook"><FacebookIcon size={14} /></div>}
+                      {camp.published_instagram && <div className="text-[#ec4899]" title="Instagram"><InstagramIcon size={14} /></div>}
                     </div>
                     <div className="flex gap-2">
                       {/* Pause / Resume button with color feedback */}
@@ -772,11 +858,11 @@ export default function MarketingHub() {
           </div>
 
           {scheduledCampaigns.length > 0 && (
-            <div className="mt-8">
+            <div className="mt-12">
               <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
                 <Percent size={20} className="text-[#8b5cf6]" /> Upcoming Scheduled Deals
               </h3>
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
                 {scheduledCampaigns.map((camp) => (
                   <div key={camp.id} className={`border rounded-2xl p-5 shadow-lg relative overflow-hidden transition-all ${
                     editingId === camp.id && isScheduled
@@ -808,8 +894,11 @@ export default function MarketingHub() {
                     <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
                       <div className="flex items-center gap-3">
                         <span className="text-xs font-bold text-slate-500">WILL PUBLISH TO:</span>
-                        <Globe size={14} className="text-[#4edea3]" />
-                        <Store size={14} className="text-[#fbbf24]" />
+                        {camp.published_web && <Globe size={14} className="text-[#4edea3]" title="Website" />}
+                        {camp.published_pos && <Store size={14} className="text-[#fbbf24]" title="POS System" />}
+                        {camp.published_tv && <Megaphone size={14} className="text-purple-400" title="TV Board" />}
+                        {camp.published_facebook && <div className="text-[#3b82f6]" title="Facebook"><FacebookIcon size={14} /></div>}
+                        {camp.published_instagram && <div className="text-[#ec4899]" title="Instagram"><InstagramIcon size={14} /></div>}
                       </div>
                       <div className="flex gap-2">
                         <button 
@@ -852,7 +941,6 @@ export default function MarketingHub() {
             </div>
           )}
         </div>
-      </div>
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
@@ -908,5 +996,6 @@ export default function MarketingHub() {
           </div>
         )}
     </div>
+    </>
   );
 }

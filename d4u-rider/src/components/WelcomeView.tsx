@@ -3,10 +3,9 @@ import { Bike } from 'lucide-react';
 
 interface WelcomeViewProps {
   onContinue: () => void;
-  onRegister: () => void;
 }
 
-export default function WelcomeView({ onContinue, onRegister }: WelcomeViewProps) {
+export default function WelcomeView({ onContinue }: WelcomeViewProps) {
   return (
     <div className="flex flex-col h-full bg-slate-900 relative overflow-hidden">
       {/* Top curved background element */}
@@ -36,13 +35,6 @@ export default function WelcomeView({ onContinue, onRegister }: WelcomeViewProps
           className="w-full bg-primary text-slate-900 font-bold py-4 rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all"
         >
           Continue as a rider
-        </button>
-        
-        <button 
-          onClick={onRegister}
-          className="w-full bg-slate-800 text-slate-300 font-semibold py-4 rounded-xl active:scale-[0.98] transition-all hover:bg-slate-700"
-        >
-          New Registration
         </button>
       </div>
 

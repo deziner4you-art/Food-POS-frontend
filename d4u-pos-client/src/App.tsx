@@ -596,6 +596,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
 
   const categories = useLiveQuery(() => db.categories.toArray()) || []
+  const allProducts = useLiveQuery(() => db.products.toArray()) || []
   const products = useLiveQuery(() =>
     typeof activeCategoryId === 'number'
       ? db.products.where('category_id').equals(activeCategoryId).toArray()
@@ -628,7 +629,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               name: p.name,
               price: p.price,
               desc: p.sku || 'No description',
-              img: p.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80'
+              img: p.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80',
+              variants: p.variants,
+              categories: p.categories,
+              isApproved: p.status === 'APPROVED'
             })));
           }
         }
@@ -739,6 +743,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   }, []);
 
   const getProductDiscount = (product: any) => {
+    if (product.variant_id) return 0;
+    if (product.categories?.some((c:any) => ['extra toppings', 'add-ons', 'addons'].includes((c.name || '').toLowerCase()))) return 0;
     let maxDiscount = 0;
     for (const camp of activeCampaigns) {
       if (!camp.published_pos) continue;
@@ -1294,19 +1300,32 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         {/* HOME (POS) VIEW */}
         {activeMenu === 'Home' && (
           <>
-            <div className="categories-row" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <div className={`category-pill ${activeCategoryId === 'ALL' ? 'active' : ''}`} onClick={() => setActiveCategoryId('ALL')}>All Items</div>
-              <div className={`category-pill ${activeCategoryId === 'DISCOUNT' ? 'active' : ''}`} style={{ borderColor: activeCategoryId === 'DISCOUNT' ? '#ec4899' : 'transparent', color: activeCategoryId === 'DISCOUNT' ? 'white' : 'var(--text-muted)' }} onClick={() => setActiveCategoryId('DISCOUNT')}>🔥 Discounted</div>
-              {categories.map(cat => (
-                <div key={cat.id} className={`category-pill ${activeCategoryId === cat.id ? 'active' : ''}`} onClick={() => setActiveCategoryId(cat.id)}>{cat.name}</div>
+            <div className="nav-categories" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '5px' }}>
+              <button 
+                className={`nav-category-btn ${activeCategoryId === null ? 'active' : ''}`}
+                onClick={() => setActiveCategoryId(null)}
+              >
+                All Items
+              </button>
+              <button 
+                className={`nav-category-btn ${activeCategoryId === 'DISCOUNT' ? 'active' : ''}`}
+                onClick={() => setActiveCategoryId('DISCOUNT')}
+              >
+                <span style={{ color: '#fbbf24', marginRight: '5px' }}>🔥</span> Discounted
+              </button>
+              {categories.filter(c => !['extra toppings', 'add-ons', 'addons'].includes(c.name.toLowerCase())).map(c => (
+                <button 
+                  key={c.id} 
+                  className={`nav-category-btn ${activeCategoryId === c.id ? 'active' : ''}`}
+                  onClick={() => setActiveCategoryId(c.id)}
+                >
+                  {c.name}
+                </button>
               ))}
-              <div style={{ marginLeft: 'auto', marginRight: '24px', display: 'flex', alignItems: 'center', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 'var(--radius-md)', padding: '6px 12px', width: '220px' }}>
-                <Search size={14} color="#64748b" style={{ marginRight: '8px' }} />
-                <input type="text" placeholder="Search menu..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ flex: 1, background: 'transparent', border: 'none', color: 'black', outline: 'none', fontSize: '0.85rem' }} />
-              </div>
             </div>
             <div className="product-grid">
               {products.filter(prod => {
+                if (activeCategoryId === 0 && prod.categories?.some((c:any) => ['extra toppings', 'add-ons', 'addons'].includes((c.name || '').toLowerCase()))) return false;
                 if (searchQuery && !prod.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
                 if (activeCategoryId === 'DISCOUNT' && getProductDiscount(prod) === 0) return false;
                 return true;
@@ -1346,7 +1365,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   <div className="product-img-wrapper"><img src={prod.img || ''} alt={prod.name} className="product-img" /></div>
                   <div className="product-name">{prod.name}</div>
                   <div className="product-price-badge" style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'center' }}>
-                    {discount > 0 && (
+                    {discount > 0 && !(prod.variants && prod.variants.length > 0) && (
                       <span style={{ 
                         textDecoration: 'line-through', 
                         textDecorationThickness: '2px',
@@ -1356,7 +1375,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         fontWeight: '700'
                       }}>Rs. {prod.price}</span>
                     )}
-                    Rs. {discount > 0 ? (prod.price * (1 - discount/100)).toFixed(0) : prod.price}
+                    {prod.variants && prod.variants.length > 0 ? (
+                      <span style={{ fontSize: '0.9rem', letterSpacing: '0.5px' }}>Choose Size</span>
+                    ) : (
+                      <span>Rs. {discount > 0 ? (prod.price * (1 - discount/100)).toFixed(0) : prod.price}</span>
+                    )}
                   </div>
                   {prod.isApproved === false && (
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', borderRadius: '10px' }}>
@@ -2181,14 +2204,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               </button>
             </div>
           </div>
-        )}
-
         {/* SELECT VARIANT MODAL */}
         {modalType === 'SELECT_VARIANT' && pendingVariantProduct && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(5px)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div className="modal-content animate-slide-up" style={{ width: '600px', height: '80%', display: 'flex', flexDirection: 'column' }}>
-              <div className="modal-header" style={{ flexShrink: 0 }}>
-                <h2>Select Options for {pendingVariantProduct.name}</h2>
+              <div className="modal-header" style={{ flexShrink: 0, alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <h2>Select Options for {pendingVariantProduct.name}</h2>
+                </div>
                 <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setPendingVariantProduct(null); }} />
               </div>
               
@@ -2207,7 +2230,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </button>
               </div>
 
-              <div style={{ padding: '10px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div style={{ padding: '10px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {activeTab === 'SIZES' && pendingVariantProduct.variants.map((v: any) => (
                   <button 
                     key={v.id} 
@@ -2216,9 +2239,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       addToCart(pendingVariantProduct, v);
                       setToast({ message: `${v.name} added`, type: 'success' });
                     }}
-                    style={{ padding: '20px', background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '1.2rem', fontWeight: 'bold', borderRadius: '10px', width: '100%' }}
+                    style={{ padding: '8px 15px', background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '1rem', fontWeight: 'bold', borderRadius: '10px', width: '100%', display: 'flex', alignItems: 'center', gap: '15px' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    {pendingVariantProduct.img && (
+                      <img src={pendingVariantProduct.img} alt={pendingVariantProduct.name} style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
                       <span>{v.name}</span>
                       <span style={{ color: 'var(--accent-green)' }}>Rs. {v.price}</span>
                     </div>
@@ -2227,10 +2253,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
                 {activeTab === 'TOPPINGS' && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).length === 0 && (
+                    {allProducts.filter(p => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).length === 0 && (
                       <p style={{ color: 'var(--text-muted)', gridColumn: '1 / -1', textAlign: 'center', padding: '20px 0' }}>No Extra Toppings found. Please create an "Extra Toppings" category in the Admin panel and add products to it.</p>
                     )}
-                    {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).map(topping => (
+                    {allProducts.filter(p => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).map(topping => (
                       <div key={topping.id} 
                         className="product-card"
                         onClick={() => { addToCart(topping); setToast({message: `${topping.name} Added`, type: 'success'}); }}
@@ -2416,10 +2442,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               <X size={24} style={{cursor:'pointer'}} onClick={() => setModalType('NONE')} />
             </div>
             <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px', maxHeight: '60vh', overflowY: 'auto' }}>
-              {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).length === 0 && (
+              {allProducts.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).length === 0 && (
                 <p style={{ color: 'var(--text-muted)', gridColumn: '1 / -1', textAlign: 'center', padding: '20px 0' }}>No Add-ons found. Please create an "Add-ons" category in the Admin panel and add products to it.</p>
               )}
-              {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).map(addon => (
+              {allProducts.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).map(addon => (
                 <div key={addon.id} 
                   className="product-card"
                   onClick={() => { addToCart(addon); setModalType('NONE'); setToast({message: `${addon.name} Added`, type: 'success'}); }}
@@ -3112,7 +3138,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         store_id: currentUser?.store_id || 1,
                         name: customItemName,
                         price: parseFloat(customItemPrice) || 0,
-                        category_id: customItemCategory || (categories[0]?.id || 1),
+                        category_ids: [customItemCategory || (categories[0]?.id || 1)],
                         sku: customItemCode,
                         cost: 0,
                         margin_pct: 100,
