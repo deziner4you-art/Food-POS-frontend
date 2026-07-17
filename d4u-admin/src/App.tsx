@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Store, PackageOpen, ChefHat, Globe, LayoutDashboard, LogOut, Lock, Users } from 'lucide-react';
 import { AdminProvider, useAdminContext } from './context/AdminContext';
 
@@ -89,15 +89,15 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
           const isActive = location.pathname === item.path;
           const Icon = item.icon;
           return (
-            <button 
+            <Link 
               key={item.path}
-              onClick={() => navigate(item.path)}
+              to={item.path}
               className={`flex items-center ${isSidebarOpen ? 'gap-3 px-4 py-4' : 'justify-center py-4 px-0'} w-full rounded-xl font-bold transition-all ${isActive ? `${item.bg} ${item.color}` : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
               title={!isSidebarOpen ? item.label : ''}
             >
               <Icon size={20} className="min-w-[20px]" /> 
               {isSidebarOpen && <span className="whitespace-nowrap overflow-hidden text-ellipsis">{item.label}</span>}
-            </button>
+            </Link>
           )
         })}
 

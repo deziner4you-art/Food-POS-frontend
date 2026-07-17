@@ -5,7 +5,6 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
 import { generateGridPath } from './utils';
 
 // New Components
-import WelcomeView from './components/WelcomeView';
 import ActiveRideView from './components/ActiveRideView';
 import HistoryView from './components/HistoryView';
 import SettleCashView from './components/SettleCashView';
@@ -13,7 +12,7 @@ import POSPanel from './components/POSPanel';
 import LoginView from './components/LoginView';
 import { Clock, Navigation, CheckSquare, LogOut } from 'lucide-react';
 
-type ViewMode = 'login' | 'welcome' | 'map' | 'history' | 'settle';
+type ViewMode = 'login' | 'map' | 'history' | 'settle';
 
 export default function App() {
   const logout = () => {
@@ -88,7 +87,7 @@ export default function App() {
       setRiderStoreId(Number(store));
       setRiderName(name || 'Rider');
       setRiderStoreName(storeName || 'Branch');
-      setCurrentView('welcome');
+      setCurrentView('map');
     } else {
       setCurrentView('login');
     }
@@ -349,14 +348,8 @@ export default function App() {
                 setRiderStoreId(sId);
                 setRiderName(name);
                 setRiderStoreName(localStorage.getItem('d4u_rider_store_name') || 'Branch');
-                setCurrentView('welcome');
+                setCurrentView('map');
               }}
-            />
-          )}
-
-          {currentView === 'welcome' && (
-            <WelcomeView 
-              onContinue={() => setCurrentView('map')} 
             />
           )}
 
@@ -410,8 +403,8 @@ export default function App() {
           )}
         </div>
 
-        {/* Bottom Navigation Bar (Hidden on Welcome) */}
-        {currentView !== 'welcome' && currentView !== 'login' && (
+        {/* Bottom Navigation Bar */}
+        {currentView !== 'login' && (
           <div className="bg-slate-900 border-t border-slate-800 flex justify-around items-center p-3 pb-6 md:pb-4 shadow-[0_-5px_20px_rgba(0,0,0,0.05)] z-40 relative">
             <button 
               onClick={() => setCurrentView('map')}
