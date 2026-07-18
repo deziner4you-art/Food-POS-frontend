@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { StoresService } from './stores.service';
+import { CreateStoreDto, UpdateStoreDto } from './dto';
 
 @Controller('stores')
 export class StoresController {
@@ -30,29 +31,14 @@ export class StoresController {
   }
 
   @Post()
-  createStore(
-    @Body()
-    body: {
-      name: string;
-      brand_id: number;
-      location?: string;
-      is_online?: boolean;
-      saas_package_id?: number;
-    },
-  ) {
+  createStore(@Body() body: CreateStoreDto) {
     return this.storesService.createStore(body);
   }
 
   @Patch(':id')
   updateStore(
     @Param('id', ParseIntPipe) id: number,
-    @Body()
-    body: {
-      name?: string;
-      location?: string;
-      is_online?: boolean;
-      saas_package_id?: number;
-    },
+    @Body() body: UpdateStoreDto,
   ) {
     return this.storesService.updateStore(id, body);
   }

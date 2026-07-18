@@ -14,6 +14,12 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { CmsService } from './cms.service';
+import {
+  CreateBannerDto,
+  UpdateBannerDto,
+  UpdateSettingsDto,
+  SubscribeDto,
+} from './dto';
 
 @Controller('cms')
 export class CmsController {
@@ -47,7 +53,7 @@ export class CmsController {
   )
   createBanner(
     @UploadedFile() file: any, // Express.Multer.File
-    @Body() body: any,
+    @Body() body: CreateBannerDto,
   ) {
     const imageUrl = file ? `/uploads/${file.filename}` : body.imageUrl;
 
@@ -55,7 +61,7 @@ export class CmsController {
       brand_id: body.brand_id ? parseInt(body.brand_id) : 1,
       title: body.title,
       subtitle: body.subtitle,
-      imageUrl: imageUrl,
+      imageUrl: imageUrl as string,
       linkUrl: body.linkUrl,
       buttonText: body.buttonText,
       isActive: body.isActive === 'true' || body.isActive === true,
@@ -64,7 +70,10 @@ export class CmsController {
   }
 
   @Patch('banners/:id')
-  updateBanner(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
+  updateBanner(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateBannerDto,
+  ) {
     return this.cmsService.updateBanner(id, body);
   }
 
@@ -87,13 +96,13 @@ export class CmsController {
   @Patch('settings/:storeId')
   updateSettings(
     @Param('storeId', ParseIntPipe) storeId: number,
-    @Body() body: any,
+    @Body() body: UpdateSettingsDto,
   ) {
     return this.cmsService.updateSettings(storeId, body);
   }
 
   @Post('subscribe')
-  subscribe(@Body() body: { store_id: number; email: string }) {
+  subscribe(@Body() body: SubscribeDto) {
     return this.cmsService.subscribeNewsletter(body.store_id, body.email);
   }
 }

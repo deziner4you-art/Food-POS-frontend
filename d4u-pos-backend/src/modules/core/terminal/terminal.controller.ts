@@ -1,12 +1,13 @@
 import { Controller, Post, Body, Delete, Param } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { TerminalLoginDto, GenerateTerminalDto } from './dto';
 
 @Controller('terminal')
 export class TerminalController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Post('login')
-  async login(@Body() body: { pin: string }) {
+  async login(@Body() body: TerminalLoginDto) {
     const session = await this.prisma.terminalSession.findUnique({
       where: { pin: body.pin },
     });
@@ -23,7 +24,7 @@ export class TerminalController {
   }
 
   @Post('generate')
-  async generatePin(@Body() body: { store_id: number; waiter_name: string }) {
+  async generatePin(@Body() body: GenerateTerminalDto) {
     // Generate a random 6-digit PIN
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
 

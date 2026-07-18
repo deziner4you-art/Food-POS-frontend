@@ -8,6 +8,12 @@ import {
   Query,
 } from '@nestjs/common';
 import { PosOrdersService } from './pos-orders.service';
+import {
+  CreatePosOrderDto,
+  VoidPosOrderDto,
+  SettlePosOrderDto,
+  SyncOfflineOrdersDto,
+} from './dto';
 
 @Controller('pos-orders')
 export class PosOrdersController {
@@ -48,7 +54,7 @@ export class PosOrdersController {
 
   // POST /pos-orders — نیا آرڈر
   @Post()
-  createOrder(@Body() body: any) {
+  createOrder(@Body() body: CreatePosOrderDto) {
     console.log(
       `[POST] New POS Order — Store: ${body.store_id} | Items: ${body.items?.length}`,
     );
@@ -57,21 +63,21 @@ export class PosOrdersController {
 
   // PATCH /pos-orders/:id/void — آرڈر کینسل (مینیجر PIN درکار)
   @Patch(':id/void')
-  voidOrder(@Param('id') id: string, @Body() body: any) {
+  voidOrder(@Param('id') id: string, @Body() body: VoidPosOrderDto) {
     console.log(`[VOID] Order #${id} — Reason: ${body.void_reason}`);
     return this.service.voidOrder(Number(id), body);
   }
 
   // PATCH /pos-orders/:id/settle — پیمنٹ وصول
   @Patch(':id/settle')
-  settleOrder(@Param('id') id: string, @Body() body: any) {
+  settleOrder(@Param('id') id: string, @Body() body: SettlePosOrderDto) {
     console.log(`[SETTLE] Order #${id} — Method: ${body.payment_method}`);
     return this.service.settleOrder(Number(id), body);
   }
 
   // POST /pos-orders/sync-offline — Sync locally stored Dexie KOTs
   @Post('sync-offline')
-  syncOffline(@Body() body: { orders: any[] }) {
+  syncOffline(@Body() body: SyncOfflineOrdersDto) {
     console.log(
       `[SYNC-OFFLINE] Received ${body.orders?.length} offline orders`,
     );

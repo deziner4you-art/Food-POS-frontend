@@ -11,6 +11,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { SocialService } from './social.service';
+import { SelectFacebookPageDto, SelectInstagramAccountDto } from './dto';
 
 @Controller('marketing/social')
 export class SocialController {
@@ -88,15 +89,7 @@ export class SocialController {
   }
 
   @Post('facebook/select')
-  async selectFacebookPage(
-    @Body()
-    body: {
-      branchId: string;
-      pageId: string;
-      pageName: string;
-      token: string;
-    },
-  ) {
+  async selectFacebookPage(@Body() body: SelectFacebookPageDto) {
     return this.socialService.saveFacebookPage(
       parseInt(body.branchId, 10),
       body.pageId,
@@ -117,15 +110,7 @@ export class SocialController {
   }
 
   @Post('instagram/select')
-  async selectInstagramAccount(
-    @Body()
-    body: {
-      branchId: string;
-      accountId: string;
-      username: string;
-      token: string;
-    },
-  ) {
+  async selectInstagramAccount(@Body() body: SelectInstagramAccountDto) {
     return this.socialService.saveInstagramAccount(
       parseInt(body.branchId, 10),
       body.accountId,

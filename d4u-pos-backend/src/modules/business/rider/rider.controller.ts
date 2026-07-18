@@ -1,12 +1,13 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { RiderService } from './rider.service';
+import { UpdateGpsDto, DispatchOrderDto } from './dto';
 
 @Controller('rider')
 export class RiderController {
   constructor(private readonly service: RiderService) {}
 
   @Post('gps')
-  updateGps(@Body() body: any) {
+  updateGps(@Body() body: UpdateGpsDto) {
     return this.service.updateRiderGps(body);
   }
 
@@ -31,7 +32,7 @@ export class DispatchOrderController {
   constructor(private readonly service: RiderService) {}
 
   @Post()
-  dispatchOrder(@Body() body: any) {
+  dispatchOrder(@Body() body: DispatchOrderDto) {
     return this.service.dispatchOrder(body);
   }
 }

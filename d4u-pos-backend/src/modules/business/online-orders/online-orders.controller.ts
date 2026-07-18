@@ -9,6 +9,11 @@ import {
   Query,
 } from '@nestjs/common';
 import { OnlineOrdersService } from './online-orders.service';
+import {
+  CreateOnlineOrderDto,
+  UpdateOnlineOrderStatusDto,
+  PostFeedbackDto,
+} from './dto';
 
 @Controller('online-orders')
 export class OnlineOrdersController {
@@ -33,18 +38,25 @@ export class OnlineOrdersController {
   }
 
   @Post()
-  createOrder(@Body() body: any) {
+  createOrder(@Body() body: CreateOnlineOrderDto) {
     return this.service.createOrder(body);
   }
 
   @Patch(':id')
-  updateOrderStatus(@Param('id') id: string, @Body() body: any) {
+  updateOrderStatus(
+    @Param('id') id: string,
+    @Body() body: UpdateOnlineOrderStatusDto,
+  ) {
     return this.service.updateOrderStatus(Number(id), body);
   }
 
   @Post(':id/feedback')
-  postFeedback(@Param('id') id: string, @Body() body: any) {
-    return this.service.postFeedback(Number(id), body.rating, body.comment);
+  postFeedback(@Param('id') id: string, @Body() body: PostFeedbackDto) {
+    return this.service.postFeedback(
+      Number(id),
+      body.rating as any,
+      body.comment as any,
+    );
   }
 
   @Delete(':id')

@@ -9,13 +9,19 @@ import {
   Delete,
 } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
+import {
+  CreateInventoryDto,
+  UpdateInventoryDto,
+  SyncOfflineDto,
+  RecordPurchaseDto,
+} from './dto';
 
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @Post('sync-offline')
-  async syncOffline(@Body() body: { store_id: number; transactions: any[] }) {
+  async syncOffline(@Body() body: SyncOfflineDto) {
     return this.inventoryService.syncOfflineTransactions(
       body.store_id,
       body.transactions,
@@ -39,31 +45,14 @@ export class InventoryController {
   }
 
   @Post('items')
-  async createInventoryItem(
-    @Body()
-    body: {
-      store_id: number;
-      name: string;
-      quantity: number;
-      unit: string;
-      reorder_level?: number;
-      unit_price?: number;
-    },
-  ) {
+  async createInventoryItem(@Body() body: CreateInventoryDto) {
     return this.inventoryService.createInventoryItem(body);
   }
 
   @Patch('items/:id')
   async updateInventoryItem(
     @Param('id', ParseIntPipe) id: number,
-    @Body()
-    body: {
-      name?: string;
-      quantity?: number;
-      unit?: string;
-      reorder_level?: number;
-      unit_price?: number;
-    },
+    @Body() body: UpdateInventoryDto,
   ) {
     return this.inventoryService.updateInventoryItem(id, body);
   }
@@ -74,15 +63,7 @@ export class InventoryController {
   }
 
   @Post('purchase')
-  async recordPurchase(
-    @Body()
-    body: {
-      store_id: number;
-      inventory_id: number;
-      quantity: number;
-      total_cost: number;
-    },
-  ) {
+  async recordPurchase(@Body() body: RecordPurchaseDto) {
     return this.inventoryService.recordPurchase(
       body.store_id,
       body.inventory_id,

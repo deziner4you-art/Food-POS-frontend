@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { RecipesService } from './recipes.service';
+import { CreateRecipeDto, BulkRecipeDto } from './dto';
 
 @Controller('recipes')
 export class RecipesController {
@@ -19,25 +20,14 @@ export class RecipesController {
   }
 
   @Post()
-  addIngredient(
-    @Body()
-    body: {
-      product_id: number;
-      inventory_id: number;
-      quantity: number;
-      unit: string;
-    },
-  ) {
+  addIngredient(@Body() body: CreateRecipeDto) {
     return this.recipesService.addIngredientToRecipe(body);
   }
 
   @Post('bulk/:product_id')
   saveBulk(
     @Param('product_id', ParseIntPipe) productId: number,
-    @Body()
-    body: {
-      ingredients: { inventory_id: number; quantity: number; unit: string }[];
-    },
+    @Body() body: BulkRecipeDto,
   ) {
     return this.recipesService.saveRecipeBulk(productId, body.ingredients);
   }

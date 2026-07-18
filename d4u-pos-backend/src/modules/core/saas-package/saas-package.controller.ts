@@ -8,13 +8,14 @@ import {
   Delete,
 } from '@nestjs/common';
 import { SaasPackageService } from './saas-package.service';
+import { CreateSaasPackageDto, UpdateSaasPackageDto } from './dto';
 
 @Controller('saas-package')
 export class SaasPackageController {
   constructor(private readonly saasPackageService: SaasPackageService) {}
 
   @Post()
-  create(@Body() body: any) {
+  create(@Body() body: CreateSaasPackageDto) {
     return this.saasPackageService.createPackage(body);
   }
 
@@ -29,7 +30,7 @@ export class SaasPackageController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() body: any) {
+  update(@Param('id') id: string, @Body() body: UpdateSaasPackageDto) {
     return this.saasPackageService.updatePackage(+id, body);
   }
 

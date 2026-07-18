@@ -15,6 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { UsersService } from './users.service';
+import { CreateUserDto, UpdateUserDto } from './dto';
 
 @Controller('users')
 export class UsersController {
@@ -32,20 +33,7 @@ export class UsersController {
   }
 
   @Post()
-  createUser(
-    @Body()
-    body: {
-      name: string;
-      phone: string;
-      pin: string;
-      role_id: number;
-      store_id?: number;
-      brand_id?: number;
-      image_url?: string;
-      module_permissions?: Record<string, boolean>;
-      rider_details?: any;
-    },
-  ) {
+  createUser(@Body() body: CreateUserDto) {
     console.log(`[NEW USER] ${body.name} → Store #${body.store_id || 'HQ'}`);
     return this.usersService.createUser(body);
   }
@@ -53,17 +41,7 @@ export class UsersController {
   @Patch(':id')
   updateUser(
     @Param('id', ParseIntPipe) id: number,
-    @Body()
-    body: {
-      name?: string;
-      phone?: string;
-      pin?: string;
-      role_id?: number;
-      store_id?: number;
-      image_url?: string;
-      module_permissions?: Record<string, boolean>;
-      rider_details?: any;
-    },
+    @Body() body: UpdateUserDto,
   ) {
     console.log(`[UPDATE USER] #${id}`);
     return this.usersService.updateUser(id, body);

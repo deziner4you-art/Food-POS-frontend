@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { CashFlowService } from './cash-flow.service';
+import { CashInDto, CashOutDto } from './dto';
 
 @Controller('cash-flow')
 export class CashFlowController {
@@ -25,30 +26,14 @@ export class CashFlowController {
 
   // POST /cash-flow/in — Cash In
   @Post('in')
-  cashIn(
-    @Body()
-    body: {
-      store_id: number;
-      user_id: number;
-      amount: number;
-      comment?: string;
-    },
-  ) {
+  cashIn(@Body() body: CashInDto) {
     console.log(`[POST] Cash In — Rs.${body.amount} — Store: ${body.store_id}`);
     return this.service.cashIn(body);
   }
 
   // POST /cash-flow/out — Cash Out
   @Post('out')
-  cashOut(
-    @Body()
-    body: {
-      store_id: number;
-      user_id: number;
-      amount: number;
-      comment?: string;
-    },
-  ) {
+  cashOut(@Body() body: CashOutDto) {
     console.log(
       `[POST] Cash Out — Rs.${body.amount} — Store: ${body.store_id}`,
     );

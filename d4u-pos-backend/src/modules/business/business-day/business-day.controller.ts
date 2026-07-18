@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { BusinessDayService } from './business-day.service';
+import { OpenBusinessDayDto, CloseBusinessDayDto } from './dto';
 
 @Controller('business-day')
 export class BusinessDayController {
@@ -27,14 +28,7 @@ export class BusinessDayController {
 
   // POST /business-day/start — Day Start بٹن
   @Post('start')
-  startDay(
-    @Body()
-    body: {
-      store_id: number;
-      started_by: number;
-      openingFloat: number;
-    },
-  ) {
+  startDay(@Body() body: OpenBusinessDayDto) {
     console.log(
       `[DAY START] Store: ${body.store_id} — Opening Float: Rs.${body.openingFloat}`,
     );
@@ -47,15 +41,7 @@ export class BusinessDayController {
 
   // POST /business-day/close — Day Close بٹن
   @Post('close')
-  closeDay(
-    @Body()
-    body: {
-      store_id: number;
-      closed_by: number;
-      closingCash: number;
-      notes?: string;
-    },
-  ) {
+  closeDay(@Body() body: CloseBusinessDayDto) {
     console.log(
       `[DAY CLOSE] Store: ${body.store_id} — Closing Cash: Rs.${body.closingCash}`,
     );

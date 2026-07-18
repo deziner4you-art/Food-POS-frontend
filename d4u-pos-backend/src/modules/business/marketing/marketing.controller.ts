@@ -14,21 +14,21 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { MarketingService } from './marketing.service';
+import {
+  CalculateSlaDto,
+  GenerateLinkDto,
+  CreateCampaignDto,
+  UpdateCampaignDto,
+  ScheduleDiscountDto,
+  UpdateScheduledDiscountDto,
+} from './dto';
 
 @Controller('marketing')
 export class MarketingController {
   constructor(private readonly marketingService: MarketingService) {}
 
   @Post('sla-performance')
-  calculateSla(
-    @Body()
-    body: {
-      agency: string;
-      target: number;
-      achieved: number;
-      retainer: number;
-    },
-  ) {
+  calculateSla(@Body() body: CalculateSlaDto) {
     return this.marketingService.calculateSlaPerformance(
       body.agency,
       body.target,
@@ -38,9 +38,7 @@ export class MarketingController {
   }
 
   @Post('generate-affiliate-link')
-  generateLink(
-    @Body() body: { affiliate_id: string; store_id: number; platform: string },
-  ) {
+  generateLink(@Body() body: GenerateLinkDto) {
     return this.marketingService.generateAffiliateLink(
       body.affiliate_id,
       body.store_id,
@@ -63,7 +61,7 @@ export class MarketingController {
       }),
     }),
   )
-  createCampaign(@UploadedFile() file: any, @Body() body: any) {
+  createCampaign(@UploadedFile() file: any, @Body() body: CreateCampaignDto) {
     if (file) body.image_url = `/uploads/${file.filename}`;
     return this.marketingService.createCampaign(body);
   }
@@ -93,7 +91,7 @@ export class MarketingController {
   updateCampaign(
     @Param('id') id: string,
     @UploadedFile() file: any,
-    @Body() body: any,
+    @Body() body: UpdateCampaignDto,
   ) {
     if (file) body.image_url = `/uploads/${file.filename}`;
     return this.marketingService.updateCampaign(parseInt(id), body);
@@ -120,7 +118,10 @@ export class MarketingController {
       }),
     }),
   )
-  createScheduledDiscount(@UploadedFile() file: any, @Body() body: any) {
+  createScheduledDiscount(
+    @UploadedFile() file: any,
+    @Body() body: ScheduleDiscountDto,
+  ) {
     if (file) body.image_url = `/uploads/${file.filename}`;
     return this.marketingService.createScheduledDiscount(body);
   }
@@ -148,7 +149,7 @@ export class MarketingController {
   updateScheduledDiscount(
     @Param('id') id: string,
     @UploadedFile() file: any,
-    @Body() body: any,
+    @Body() body: UpdateScheduledDiscountDto,
   ) {
     if (file) body.image_url = `/uploads/${file.filename}`;
     return this.marketingService.updateScheduledDiscount(parseInt(id), body);

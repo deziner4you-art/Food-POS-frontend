@@ -8,6 +8,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { VendorService } from './vendor.service';
+import { CreatePODto, ReceivePODto } from './dto';
 
 @Controller('vendor')
 export class VendorController {
@@ -19,12 +20,12 @@ export class VendorController {
   }
 
   @Post('po')
-  createPO(@Body() body: any) {
+  createPO(@Body() body: CreatePODto) {
     return this.vendorService.createPO(body);
   }
 
   @Patch('po/:id/receive')
-  receivePO(@Param('id') id: string, @Body() body: any) {
+  receivePO(@Param('id') id: string, @Body() body: ReceivePODto) {
     return this.vendorService.receivePO(Number(id), body);
   }
 }

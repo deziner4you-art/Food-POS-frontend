@@ -14,6 +14,14 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { CatalogService } from './catalog.service';
+import {
+  CreateMenuDto,
+  UpdateMenuDto,
+  CreateCategoryDto,
+  UpdateCategoryDto,
+  CreateProductDto,
+  UpdateProductDto,
+} from './dto';
 
 @Controller('catalog')
 export class CatalogController {
@@ -57,18 +65,13 @@ export class CatalogController {
   }
 
   @Post('menus')
-  createMenu(
-    @Body() body: { name: string; brand_id?: number; store_ids?: number[] },
-  ) {
+  createMenu(@Body() body: CreateMenuDto) {
     console.log(`[NEW MENU] ${body.name}`);
     return this.service.createMenu(body);
   }
 
   @Patch('menus/:id')
-  updateMenu(
-    @Param('id') id: string,
-    @Body() body: { name?: string; store_ids?: number[] },
-  ) {
+  updateMenu(@Param('id') id: string, @Body() body: UpdateMenuDto) {
     console.log(`[UPDATE MENU] #${id}`);
     return this.service.updateMenu(Number(id), body);
   }
@@ -94,15 +97,7 @@ export class CatalogController {
   }
 
   @Post('categories')
-  createCategory(
-    @Body()
-    body: {
-      store_id: number;
-      name: string;
-      menu_id?: number;
-      store_ids?: number[];
-    },
-  ) {
+  createCategory(@Body() body: CreateCategoryDto) {
     console.log(`[NEW CATEGORY] ${body.name}`);
     return this.service.createCategory(
       body.store_id,
@@ -113,10 +108,7 @@ export class CatalogController {
   }
 
   @Patch('categories/:id')
-  updateCategory(
-    @Param('id') id: string,
-    @Body() body: { name?: string; menu_id?: number; store_ids?: number[] },
-  ) {
+  updateCategory(@Param('id') id: string, @Body() body: UpdateCategoryDto) {
     console.log(`[UPDATE CATEGORY] #${id}`);
     return this.service.updateCategory(Number(id), body);
   }
@@ -136,44 +128,13 @@ export class CatalogController {
   }
 
   @Post('products')
-  createProduct(
-    @Body()
-    body: {
-      store_id: number;
-      category_ids: number[];
-      name: string;
-      price: number;
-      cost: number;
-      margin_pct: number;
-      sku?: string;
-      image_url?: string;
-      status?: string;
-      assigned_store_ids?: number[];
-      variants?: { name: string; price: number }[];
-    },
-  ) {
+  createProduct(@Body() body: CreateProductDto) {
     console.log(`[NEW PRODUCT] ${body.name} — Rs.${body.price}`);
     return this.service.createProduct(body);
   }
 
   @Patch('products/:id')
-  updateProduct(
-    @Param('id') id: string,
-    @Body()
-    body: {
-      name?: string;
-      price?: number;
-      cost?: number;
-      margin_pct?: number;
-      is_active?: boolean;
-      sku?: string;
-      image_url?: string;
-      status?: string;
-      assigned_store_ids?: number[];
-      category_ids?: number[];
-      variants?: { name: string; price: number }[];
-    },
-  ) {
+  updateProduct(@Param('id') id: string, @Body() body: UpdateProductDto) {
     console.log(`[UPDATE PRODUCT] #${id}`);
     return this.service.updateProduct(Number(id), body);
   }

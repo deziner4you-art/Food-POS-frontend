@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
+import { CreateSubscriptionDto, UpdateSubscriptionDto } from './dto';
 
 @Controller('subscription')
 export class SubscriptionController {
@@ -11,7 +12,7 @@ export class SubscriptionController {
   }
 
   @Post('onboarding')
-  async onboardClient(@Body() body: any) {
+  async onboardClient(@Body() body: CreateSubscriptionDto) {
     try {
       return await this.subscriptionService.onboardClient(body);
     } catch (error: any) {
@@ -34,7 +35,7 @@ export class SubscriptionController {
   }
 
   @Post()
-  updateSubscription(@Body() body: any) {
+  updateSubscription(@Body() body: UpdateSubscriptionDto) {
     return this.subscriptionService.createOrUpdateSubscription(body);
   }
 }
