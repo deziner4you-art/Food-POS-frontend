@@ -810,9 +810,9 @@ export default function MarketingHub() {
                   <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
                     <div className="flex items-center gap-3">
                       <span className="text-xs font-bold text-slate-500">LIVE ON:</span>
-                      {camp.published_web && <Globe size={14} className="text-[#4edea3]" title="Website" />}
-                      {camp.published_pos && <Store size={14} className="text-[#fbbf24]" title="POS System" />}
-                      {camp.published_tv && <Megaphone size={14} className="text-purple-400" title="TV Board" />}
+                      {camp.published_web && <span title="Website"><Globe size={14} className="text-[#4edea3]" /></span>}
+                      {camp.published_pos && <span title="POS System"><Store size={14} className="text-[#fbbf24]" /></span>}
+                      {camp.published_tv && <span title="TV Board"><Megaphone size={14} className="text-purple-400" /></span>}
                       {camp.published_facebook && <div className="text-[#3b82f6]" title="Facebook"><FacebookIcon size={14} /></div>}
                       {camp.published_instagram && <div className="text-[#ec4899]" title="Instagram"><InstagramIcon size={14} /></div>}
                     </div>
@@ -894,9 +894,9 @@ export default function MarketingHub() {
                     <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
                       <div className="flex items-center gap-3">
                         <span className="text-xs font-bold text-slate-500">WILL PUBLISH TO:</span>
-                        {camp.published_web && <Globe size={14} className="text-[#4edea3]" title="Website" />}
-                        {camp.published_pos && <Store size={14} className="text-[#fbbf24]" title="POS System" />}
-                        {camp.published_tv && <Megaphone size={14} className="text-purple-400" title="TV Board" />}
+                        {camp.published_web && <span title="Website"><Globe size={14} className="text-[#4edea3]" /></span>}
+                        {camp.published_pos && <span title="POS System"><Store size={14} className="text-[#fbbf24]" /></span>}
+                        {camp.published_tv && <span title="TV Board"><Megaphone size={14} className="text-purple-400" /></span>}
                         {camp.published_facebook && <div className="text-[#3b82f6]" title="Facebook"><FacebookIcon size={14} /></div>}
                         {camp.published_instagram && <div className="text-[#ec4899]" title="Instagram"><InstagramIcon size={14} /></div>}
                       </div>

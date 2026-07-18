@@ -2204,6 +2204,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               </button>
             </div>
           </div>
+        )}
+
         {/* SELECT VARIANT MODAL */}
         {modalType === 'SELECT_VARIANT' && pendingVariantProduct && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(5px)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

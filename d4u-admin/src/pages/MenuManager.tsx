@@ -17,7 +17,7 @@ export default function MenuManager() {
   // Categories State
   const [categories, setCategories] = useState<any[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [categoryForm, setCategoryForm] = useState({ id: 0, name: '', menu_id: 0, store_ids: [] as number[] });
+  const [categoryForm, setCategoryForm] = useState({ id: 0, name: '', menu_id: 0, store_ids: [] as number[], image_url: '' });
 
   // Products State
   const [products, setProducts] = useState<any[]>([]);
@@ -195,7 +195,7 @@ export default function MenuManager() {
       }
     } catch (err) {
       console.error('Upload failed', err);
-      customError('Failed to upload image.');
+      customAlert('Failed to upload image.');
     }
   };
 
@@ -346,7 +346,7 @@ export default function MenuManager() {
                 <ListTree className="text-[#3b82f6]" /> Menu Categories
               </h3>
               <button 
-                onClick={() => { setCategoryForm({ id: 0, name: '', menu_id: 0, store_ids: [] }); setShowCategoryModal(true); }}
+                onClick={() => { setCategoryForm({ id: 0, name: '', menu_id: 0, store_ids: [], image_url: '' }); setShowCategoryModal(true); }}
                 className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
               >
                 <Plus size={18} /> Add Category
@@ -413,7 +413,7 @@ export default function MenuManager() {
                       </td>
                       <td className="p-4 flex justify-end gap-3 items-center">
                         <button 
-                          onClick={() => { setCategoryForm({ id: c.id, name: c.name, menu_id: c.menu_id || 0, store_ids: c.assigned_stores.map((s:any)=>s.id) }); setShowCategoryModal(true); }}
+                          onClick={() => { setCategoryForm({ id: c.id, name: c.name, menu_id: c.menu_id || 0, store_ids: c.assigned_stores.map((s:any)=>s.id), image_url: c.image_url || '' }); setShowCategoryModal(true); }}
                           className="text-slate-400 hover:text-white transition-colors"
                         >
                           <Edit size={18} />
