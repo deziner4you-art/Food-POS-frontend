@@ -5,12 +5,24 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
 interface Store {
   id: number;
   name: string;
+  location?: string;
+  brand_id?: number;
+  today_orders?: number; // mock
+  today_sales?: number;  // mock
+}
+
+interface Brand {
+  id: number;
+  name: string;
+  is_chain_store: boolean;
+  stores: Store[];
 }
 
 interface AdminContextType {
   selectedBranchId: number | null;
   setSelectedBranchId: (id: number) => void;
   branches: Store[];
+  brands: Brand[];
   isBranchEntered: boolean;
   setIsBranchEntered: (value: boolean) => void;
 }
@@ -19,6 +31,7 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [branches, setBranches] = useState<Store[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(() => {
     return Number(localStorage.getItem('adminSelectedBranchId')) || null;
   });
@@ -27,13 +40,19 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
+    // Fetch Stores
     fetch(`${BACKEND_URL}/stores`)
       .then(res => res.json())
       .then(data => {
         setBranches(data);
-        if (data.length > 0 && !selectedBranchId) {
-          setSelectedBranchId(data[0].id);
-        }
+      })
+      .catch(console.error);
+
+    // Fetch Brands
+    fetch(`${BACKEND_URL}/stores/brands`)
+      .then(res => res.json())
+      .then(data => {
+        setBrands(data);
       })
       .catch(console.error);
   }, []);
@@ -49,7 +68,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   }, [isBranchEntered]);
 
   return (
-    <AdminContext.Provider value={{ selectedBranchId, setSelectedBranchId, branches, isBranchEntered, setIsBranchEntered }}>
+    <AdminContext.Provider value={{ selectedBranchId, setSelectedBranchId, branches, brands, isBranchEntered, setIsBranchEntered }}>
       {children}
     </AdminContext.Provider>
   );

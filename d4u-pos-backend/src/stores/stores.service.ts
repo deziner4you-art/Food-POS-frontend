@@ -5,6 +5,13 @@ import { PrismaService } from '../prisma/prisma.service';
 export class StoresService {
   constructor(private prisma: PrismaService) {}
 
+  async getAllBrands() {
+    return this.prisma.brand.findMany({
+      include: { stores: true },
+      orderBy: { id: 'asc' },
+    });
+  }
+
   async getAllStores() {
     return this.prisma.store.findMany({
       include: { brand: true, saas_package: true },

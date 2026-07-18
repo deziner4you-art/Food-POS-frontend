@@ -10,6 +10,11 @@ export class StoresController {
     return this.storesService.getAllStores();
   }
 
+  @Get('brands')
+  getAllBrands() {
+    return this.storesService.getAllBrands();
+  }
+
   @Get(':id')
   getStore(@Param('id', ParseIntPipe) id: number) {
     return this.storesService.getStore(id);

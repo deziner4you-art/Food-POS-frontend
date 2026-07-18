@@ -14,6 +14,9 @@ import CustomersManager from './pages/CustomersManager';
 import SuperAdmin from './pages/SuperAdmin';
 import OwnerApp from './pages/OwnerApp';
 import SetupWizard from './pages/SetupWizard';
+import StoreManager from './pages/StoreManager';
+import HQOverview from './pages/HQOverview';
+import HQOverview from './pages/HQOverview';
 
 import { Megaphone, ShieldCheck } from 'lucide-react';
 
@@ -48,6 +51,7 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
 
   if (user?.role === 'Super Admin') {
     navItems.push({ path: '/saas', label: 'SaaS Setup', icon: ShieldCheck, color: 'text-purple-400', bg: 'bg-purple-500/20' });
+    navItems.push({ path: '/branches', label: 'Branches (Stores)', icon: Store, color: 'text-teal-400', bg: 'bg-teal-500/20' });
   }
 
   return (
@@ -124,11 +128,32 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
   );
 }
 
-// Overview placeholder removed, we use Dashboard now
-
 import { Toaster } from 'react-hot-toast';
 
+function MainApp({ user, handleLogout }: { user: any, handleLogout: () => void }) {
+  const { isBranchEntered } = useAdminContext();
+  
+  if (!isBranchEntered) {
+    return <HQOverview />;
+  }
 
+  return (
+    <AdminLayout onLogout={handleLogout} user={user}>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/staff" element={<StaffPermissions />} />
+        <Route path="/menu" element={<MenuManager />} />
+        <Route path="/inventory" element={<InventoryManager />} />
+        <Route path="/recipes" element={<RecipeManager />} />
+        <Route path="/marketing" element={<MarketingHub />} />
+        <Route path="/customers" element={<CustomersManager />} />
+        <Route path="/cms" element={<CmsManager />} />
+        <Route path="/saas" element={<SuperAdmin />} />
+        <Route path="/branches" element={<StoreManager />} />
+      </Routes>
+    </AdminLayout>
+  );
+}
 
 export default function App() {
   const [settings, setSettings] = useState<any>(null);
@@ -268,21 +293,7 @@ export default function App() {
         <Routes>
           <Route path="/owner" element={<OwnerApp />} />
           <Route path="/setup" element={<SetupWizard />} />
-          <Route path="/*" element={
-            <AdminLayout onLogout={handleLogout} user={user}>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/staff" element={<StaffPermissions />} />
-                <Route path="/menu" element={<MenuManager />} />
-                <Route path="/inventory" element={<InventoryManager />} />
-                <Route path="/recipes" element={<RecipeManager />} />
-                <Route path="/marketing" element={<MarketingHub />} />
-                <Route path="/customers" element={<CustomersManager />} />
-                <Route path="/cms" element={<CmsManager />} />
-                <Route path="/saas" element={<SuperAdmin />} />
-              </Routes>
-            </AdminLayout>
-          } />
+          <Route path="/*" element={<MainApp user={user} handleLogout={handleLogout} />} />
         </Routes>
       </AdminProvider>
     </BrowserRouter>

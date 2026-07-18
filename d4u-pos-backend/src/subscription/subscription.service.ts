@@ -23,45 +23,74 @@ export class SubscriptionService {
   }
 
   async onboardClient(body: any) {
-    const { brand_name, currency, vat_percentage, selected_modules, total_billing_amount, admin_user } = body;
+    const { 
+      is_existing_brand, 
+      existing_brand_id, 
+      brand_name, 
+      currency, 
+      vat_percentage, 
+      selected_modules, 
+      total_billing_amount, 
+      admin_user, 
+      is_chain_store, 
+      menu_strategy,
+      store_location 
+    } = body;
 
-    // 1. Create the Brand
-    const brand = await this.prisma.brand.create({
-      data: {
-        name: brand_name,
-        currency: currency || 'PKR',
-        vat_percentage: vat_percentage || 0,
+    let brand;
+    if (is_existing_brand && existing_brand_id) {
+      brand = await this.prisma.brand.findUnique({ where: { id: Number(existing_brand_id) } });
+      if (!brand) throw new Error('Brand not found');
+      
+      // Update chain store settings if adding a branch makes it a chain
+      if (is_chain_store) {
+        await this.prisma.brand.update({
+          where: { id: brand.id },
+          data: { is_chain_store, menu_strategy: menu_strategy || 'UNIFIED' }
+        });
       }
-    });
+    } else {
+      // 1. Create the Brand
+      brand = await this.prisma.brand.create({
+        data: {
+          name: brand_name,
+          currency: currency || 'PKR',
+          vat_percentage: vat_percentage || 0,
+          is_chain_store: is_chain_store || false,
+          menu_strategy: menu_strategy || 'UNIFIED'
+        }
+      });
 
-    // 2. Create the first store
+      // Create the Subscription for NEW brands
+      await this.prisma.subscription.create({
+        data: {
+          brand_id: brand.id,
+          plan_name: 'CUSTOM_SAAS',
+          module_auth_enabled: true, // Always true
+          module_analytics_enabled: selected_modules.includes('ANALYTICS'),
+          module_kds_enabled: selected_modules.includes('KDS'),
+          module_riders_enabled: selected_modules.includes('RIDER'),
+          module_tv_board_enabled: selected_modules.includes('TV_BOARD'),
+          module_online_website_enabled: selected_modules.includes('ONLINE_WEBSITE'),
+          module_loyalty_enabled: selected_modules.includes('LOYALTY'),
+          billing_amount: total_billing_amount || 0,
+          status: 'ACTIVE'
+        }
+      });
+    }
+
+    // 2. Create the store (either first or additional branch)
+    const storeName = is_existing_brand ? `${brand.name} - Branch` : `${brand_name} - HQ`;
     const store = await this.prisma.store.create({
       data: {
         brand_id: brand.id,
-        name: `${brand_name} - HQ`,
-        location: 'Main Branch'
+        name: storeName,
+        location: store_location || 'Main Branch'
       }
     });
 
-    // 3. Create the Subscription
-    const subscription = await this.prisma.subscription.create({
-      data: {
-        brand_id: brand.id,
-        plan_name: 'CUSTOM_SAAS',
-        module_auth_enabled: true, // Always true
-        module_analytics_enabled: selected_modules.includes('ANALYTICS'),
-        module_kds_enabled: selected_modules.includes('KDS'),
-        module_riders_enabled: selected_modules.includes('RIDER'),
-        module_tv_board_enabled: selected_modules.includes('TV_BOARD'),
-        module_online_website_enabled: selected_modules.includes('ONLINE_WEBSITE'),
-        module_loyalty_enabled: selected_modules.includes('LOYALTY'),
-        billing_amount: total_billing_amount || 0,
-        status: 'ACTIVE'
-      }
-    });
-
-    // 4. Create HeadOffice User (if provided)
-    if (admin_user) {
+    // 4. Create HeadOffice User (if provided and new brand)
+    if (!is_existing_brand && admin_user) {
       await this.prisma.user.create({
         data: {
           brand_id: brand.id,
@@ -74,7 +103,7 @@ export class SubscriptionService {
       });
     }
 
-    return { success: true, brand, store, subscription };
+    return { success: true, brand, store };
   }
 
   async createOrUpdateSubscription(body: any) {
