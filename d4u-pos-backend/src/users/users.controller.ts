@@ -30,6 +30,7 @@ export class UsersController {
       brand_id?: number;
       image_url?: string;
       module_permissions?: Record<string, boolean>;
+      rider_details?: any;
     }
   ) {
     console.log(`[NEW USER] ${body.name} → Store #${body.store_id || 'HQ'}`);
@@ -39,7 +40,7 @@ export class UsersController {
   @Patch(':id')
   updateUser(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { name?: string; phone?: string; pin?: string; role_id?: number; store_id?: number; image_url?: string; module_permissions?: Record<string, boolean> }
+    @Body() body: { name?: string; phone?: string; pin?: string; role_id?: number; store_id?: number; image_url?: string; module_permissions?: Record<string, boolean>; rider_details?: any }
   ) {
     console.log(`[UPDATE USER] #${id}`);
     return this.usersService.updateUser(id, body);
