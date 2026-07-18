@@ -1,24 +1,31 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, NotFoundException } from '@nestjs/common';
-import { AppService } from './app.service';
-import { PrismaService } from './database/prisma/prisma.service';
-import { AppGateway } from './app.gateway';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AppGateway } from '../../../app.gateway';
 
-@Controller()
-export class AppController {
+@Injectable()
+export class RiderService {
   constructor(
-    private readonly appService: AppService,
-    private readonly prismaService: PrismaService,
-    private readonly appGateway: AppGateway,
+    private prisma: PrismaService,
+    private gateway: AppGateway,
   ) {}
 
-  @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  async getRiderOrders(storeId?: string) {
+    const whereClause: any = {
+      status: {
+        in: ['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID'],
+      },
+    };
+    if (storeId) {
+      whereClause.store_id = Number(storeId);
+    }
+    
+    return this.prisma.onlineOrder.findMany({
+      where: whereClause,
+      orderBy: { id: 'desc' },
+    });
   }
 
-  // POST /rider/gps
-  @Post('rider/gps')
-  async updateRiderGps(@Body() body: any) {
+  async updateRiderGps(body: any) {
     const orderId = Number(body.orderId);
     const lat = Number(body.lat);
     const lng = Number(body.lng);
@@ -31,24 +38,21 @@ export class AppController {
     };
 
     try {
-      await this.prismaService.onlineOrder.update({
+      await this.prisma.onlineOrder.update({
         where: { id: orderId },
         data: { delivery: deliveryInfo },
       });
       console.log(`[GPS UPDATE] Order #${orderId} -> lat: ${lat}, lng: ${lng}`);
     } catch (error) {
-      // Fallback: order might not be in DB or not found. That's fine, we still broadcast the live coordinates
       console.log(`[GPS UPDATE - FALLBACK] Delivery #${orderId} -> lat: ${lat}, lng: ${lng}`);
     }
 
-    this.appGateway.broadcast('gps_update', { orderId, lat, lng });
+    this.gateway.broadcast('gps_update', { orderId, lat, lng });
     return { success: true };
   }
 
-  // GET /rider/gps/:orderId
-  @Get('rider/gps/:orderId')
-  async getRiderGps(@Param('orderId') orderId: string) {
-    const order = await this.prismaService.onlineOrder.findUnique({
+  async getRiderGps(orderId: string) {
+    const order = await this.prisma.onlineOrder.findUnique({
       where: { id: Number(orderId) },
     });
 
@@ -58,21 +62,19 @@ export class AppController {
     throw new NotFoundException('Location not found');
   }
 
-  // POST /dispatch-order
-  @Post('dispatch-order')
-  async dispatchOrder(@Body() body: any) {
+  async dispatchOrder(body: any) {
     const bridgeId = Number(body.bridgeOrderId);
     let order: any = null;
 
     try {
-      order = await this.prismaService.onlineOrder.findUnique({
+      order = await this.prisma.onlineOrder.findUnique({
         where: { id: bridgeId },
       });
     } catch (e) {}
 
     if (!order && body.order) {
       try {
-        order = await this.prismaService.onlineOrder.create({
+        order = await this.prisma.onlineOrder.create({
           data: {
             id: bridgeId,
             orderId: Number(body.order.id),
@@ -92,7 +94,7 @@ export class AppController {
         console.error('[DISPATCH CREATE ERROR]', err);
       }
     } else if (order) {
-      order = await this.prismaService.onlineOrder.update({
+      order = await this.prisma.onlineOrder.update({
         where: { id: bridgeId },
         data: {
           status: 'DISPATCHED',
@@ -104,37 +106,22 @@ export class AppController {
 
     if (order) {
       console.log(`[DISPATCHED] Order #${order.id} sent to Rider`);
-      this.appGateway.broadcast('order_updated', order);
+      this.gateway.broadcast('order_updated', order);
       return { success: true, order };
     } else {
       throw new NotFoundException('Order not found in bridge');
     }
   }
 
-  // GET /rider-orders
-  @Get('rider-orders')
-  async getRiderOrders() {
-    return this.prismaService.onlineOrder.findMany({
-      where: {
-        status: {
-          in: ['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID'],
-        },
-      },
-      orderBy: { id: 'desc' },
-    });
-  }
-
-  // POST /settle-order/:id
-  @Post('settle-order/:id')
-  async settleOrder(@Param('id') id: string) {
+  async settleOrder(id: string) {
     try {
-      const updated = await this.prismaService.onlineOrder.update({
+      const updated = await this.prisma.onlineOrder.update({
         where: { id: Number(id) },
         data: { status: 'SETTLED', kdsStatus: 'SETTLED' },
       });
 
       console.log(`[SETTLED] Order #${id} cash collected by POS`);
-      this.appGateway.broadcast('order_updated', updated);
+      this.gateway.broadcast('order_updated', updated);
 
       return { success: true, order: updated };
     } catch (error) {
