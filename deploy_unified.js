@@ -64,4 +64,6 @@ const htaccessContent = `<IfModule mod_rewrite.c>
 </IfModule>`;
 
 fs.writeFileSync('g:\\\\POS_LIVE_DEPLOYMENT\\\\.htaccess', htaccessContent);
+console.log('Copying webhook deploy script...');
+run(`Copy-Item -Path g:\\RESTAURANT_POS_WITH_BACKEND\\deploy.php -Destination ${destDir}\\deploy.php -Force`);
 console.log('Done!');
