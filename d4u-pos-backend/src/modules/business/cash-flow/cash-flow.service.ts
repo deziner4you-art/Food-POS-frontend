@@ -22,7 +22,10 @@ export class CashFlowService {
       orderBy: { id: 'desc' },
     });
 
-    if (!openDay) throw new NotFoundException('No open business day. Please start the day first.');
+    if (!openDay)
+      throw new NotFoundException(
+        'No open business day. Please start the day first.',
+      );
 
     const record = await this.prisma.cashFlow.create({
       data: {
@@ -36,7 +39,9 @@ export class CashFlowService {
       include: { user: { select: { id: true, name: true } } },
     });
 
-    console.log(`[CASH IN] Rs.${amount} — Store: ${store_id} — Day: ${openDay.id}`);
+    console.log(
+      `[CASH IN] Rs.${amount} — Store: ${store_id} — Day: ${openDay.id}`,
+    );
     return { success: true, record };
   }
 
@@ -70,7 +75,9 @@ export class CashFlowService {
       include: { user: { select: { id: true, name: true } } },
     });
 
-    console.log(`[CASH OUT] Rs.${amount} — Store: ${store_id} — Day: ${openDay.id}`);
+    console.log(
+      `[CASH OUT] Rs.${amount} — Store: ${store_id} — Day: ${openDay.id}`,
+    );
     return { success: true, record };
   }
 
@@ -108,8 +115,12 @@ export class CashFlowService {
       where: { store_id, business_day_id: openDay.id },
     });
 
-    const cashIn = flows.filter((f) => f.type === 'CASH_IN').reduce((s, f) => s + f.amount, 0);
-    const cashOut = flows.filter((f) => f.type === 'CASH_OUT').reduce((s, f) => s + f.amount, 0);
+    const cashIn = flows
+      .filter((f) => f.type === 'CASH_IN')
+      .reduce((s, f) => s + f.amount, 0);
+    const cashOut = flows
+      .filter((f) => f.type === 'CASH_OUT')
+      .reduce((s, f) => s + f.amount, 0);
 
     return {
       business_day_id: openDay.id,

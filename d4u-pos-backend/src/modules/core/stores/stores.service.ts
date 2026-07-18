@@ -28,7 +28,13 @@ export class StoresService {
     return store;
   }
 
-  async createStore(data: { name: string; brand_id: number; location?: string; is_online?: boolean; saas_package_id?: number }) {
+  async createStore(data: {
+    name: string;
+    brand_id: number;
+    location?: string;
+    is_online?: boolean;
+    saas_package_id?: number;
+  }) {
     return this.prisma.store.create({
       data: {
         name: data.name,
@@ -40,7 +46,15 @@ export class StoresService {
     });
   }
 
-  async updateStore(id: number, data: { name?: string; location?: string; is_online?: boolean; saas_package_id?: number }) {
+  async updateStore(
+    id: number,
+    data: {
+      name?: string;
+      location?: string;
+      is_online?: boolean;
+      saas_package_id?: number;
+    },
+  ) {
     return this.prisma.store.update({
       where: { id },
       data,

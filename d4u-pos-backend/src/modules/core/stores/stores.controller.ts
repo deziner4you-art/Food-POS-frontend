@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+} from '@nestjs/common';
 import { StoresService } from './stores.service';
 
 @Controller('stores')
@@ -21,14 +30,29 @@ export class StoresController {
   }
 
   @Post()
-  createStore(@Body() body: { name: string; brand_id: number; location?: string; is_online?: boolean; saas_package_id?: number }) {
+  createStore(
+    @Body()
+    body: {
+      name: string;
+      brand_id: number;
+      location?: string;
+      is_online?: boolean;
+      saas_package_id?: number;
+    },
+  ) {
     return this.storesService.createStore(body);
   }
 
   @Patch(':id')
   updateStore(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { name?: string; location?: string; is_online?: boolean; saas_package_id?: number },
+    @Body()
+    body: {
+      name?: string;
+      location?: string;
+      is_online?: boolean;
+      saas_package_id?: number;
+    },
   ) {
     return this.storesService.updateStore(id, body);
   }

@@ -16,9 +16,15 @@ export class SubscriptionController {
       return await this.subscriptionService.onboardClient(body);
     } catch (error: any) {
       if (error.code === 'P2002') {
-        return { success: false, message: 'An account with this phone number already exists.' };
+        return {
+          success: false,
+          message: 'An account with this phone number already exists.',
+        };
       }
-      return { success: false, message: error.message || 'Server error during setup.' };
+      return {
+        success: false,
+        message: error.message || 'Server error during setup.',
+      };
     }
   }
 

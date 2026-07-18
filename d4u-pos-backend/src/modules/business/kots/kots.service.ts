@@ -26,14 +26,19 @@ export class KotsService {
   async getKot(id: number) {
     const kot = await this.prisma.kOT.findUnique({
       where: { id },
-      include: { order: { include: { items: { include: { product: true } } } } },
+      include: {
+        order: { include: { items: { include: { product: true } } } },
+      },
     });
     if (!kot) throw new NotFoundException(`KOT #${id} not found`);
     return kot;
   }
 
   // KOT Status اپڈیٹ (Chef نے دبایا)
-  async updateKotStatus(id: number, status: 'PREPARING' | 'READY' | 'CANCELLED') {
+  async updateKotStatus(
+    id: number,
+    status: 'PREPARING' | 'READY' | 'CANCELLED',
+  ) {
     const now = new Date();
     const data: any = { status };
 

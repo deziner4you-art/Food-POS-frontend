@@ -12,7 +12,12 @@ export class RecipesService {
     });
   }
 
-  async addIngredientToRecipe(data: { product_id: number; inventory_id: number; quantity: number; unit: string }) {
+  async addIngredientToRecipe(data: {
+    product_id: number;
+    inventory_id: number;
+    quantity: number;
+    unit: string;
+  }) {
     const item = await this.prisma.recipeIngredient.create({
       data,
     });
@@ -28,29 +33,34 @@ export class RecipesService {
     return item;
   }
 
-  async saveRecipeBulk(product_id: number, ingredients: { inventory_id: number; quantity: number; unit: string }[]) {
-    return this.prisma.$transaction(async (tx) => {
-      // Clear old recipe
-      await tx.recipeIngredient.deleteMany({
-        where: { product_id }
-      });
-      
-      // Insert new ones
-      if (ingredients.length > 0) {
-        await tx.recipeIngredient.createMany({
-          data: ingredients.map(i => ({
-            product_id,
-            inventory_id: i.inventory_id,
-            quantity: i.quantity,
-            unit: i.unit
-          }))
+  async saveRecipeBulk(
+    product_id: number,
+    ingredients: { inventory_id: number; quantity: number; unit: string }[],
+  ) {
+    return this.prisma
+      .$transaction(async (tx) => {
+        // Clear old recipe
+        await tx.recipeIngredient.deleteMany({
+          where: { product_id },
         });
-      }
-      return { success: true };
-    }).then(async (res) => {
-      await this.recalculateProductCost(product_id);
-      return res;
-    });
+
+        // Insert new ones
+        if (ingredients.length > 0) {
+          await tx.recipeIngredient.createMany({
+            data: ingredients.map((i) => ({
+              product_id,
+              inventory_id: i.inventory_id,
+              quantity: i.quantity,
+              unit: i.unit,
+            })),
+          });
+        }
+        return { success: true };
+      })
+      .then(async (res) => {
+        await this.recalculateProductCost(product_id);
+        return res;
+      });
   }
 
   // Dynamic Costing Engine
@@ -67,18 +77,21 @@ export class RecipesService {
     for (const recipeItem of product.recipeItems) {
       // Use the unit_price directly from the inventory item
       const unitPrice = recipeItem.inventory?.unit_price || 0;
-      totalCost += (unitPrice * recipeItem.quantity);
+      totalCost += unitPrice * recipeItem.quantity;
     }
 
     // Update Product Cost and Margin
-    const margin_pct = product.price > 0 ? ((product.price - totalCost) / product.price) * 100 : 0;
+    const margin_pct =
+      product.price > 0
+        ? ((product.price - totalCost) / product.price) * 100
+        : 0;
 
     await this.prisma.product.update({
       where: { id: product_id },
       data: {
         cost: totalCost,
         margin_pct: margin_pct,
-      }
+      },
     });
 
     return { totalCost, margin_pct };

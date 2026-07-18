@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 
 @Injectable()
@@ -43,7 +47,9 @@ export class BusinessDayService {
       },
     });
 
-    console.log(`[DAY START] Store ${store_id} — Day #${day.id} — Float: Rs.${openingFloat} — By: ${day.starter.name}`);
+    console.log(
+      `[DAY START] Store ${store_id} — Day #${day.id} — Float: Rs.${openingFloat} — By: ${day.starter.name}`,
+    );
     return { success: true, day };
   }
 
@@ -63,7 +69,11 @@ export class BusinessDayService {
 
     // آج کی total sales calculate کریں
     const orders = await this.prisma.order.findMany({
-      where: { store_id, business_day_id: openDay.id, status: { not: 'VOIDED' } },
+      where: {
+        store_id,
+        business_day_id: openDay.id,
+        status: { not: 'VOIDED' },
+      },
     });
 
     const totalSales = orders.reduce((s, o) => s + o.total_amount, 0);
@@ -82,16 +92,28 @@ export class BusinessDayService {
         totalSales,
         totalOrders,
         status: 'CLOSED',
-        notes: notes ?? (discrepancy !== 0 ? `Cash discrepancy: Rs.${discrepancy.toFixed(2)}` : null),
+        notes:
+          notes ??
+          (discrepancy !== 0
+            ? `Cash discrepancy: Rs.${discrepancy.toFixed(2)}`
+            : null),
       },
     });
 
-    console.log(`[DAY CLOSE] Store ${store_id} — Day #${day.id} — Sales: Rs.${totalSales} — Cash: Rs.${closingCash} — Diff: Rs.${discrepancy}`);
+    console.log(
+      `[DAY CLOSE] Store ${store_id} — Day #${day.id} — Sales: Rs.${totalSales} — Cash: Rs.${closingCash} — Diff: Rs.${discrepancy}`,
+    );
 
     return {
       success: true,
       day,
-      summary: { totalSales, totalOrders, expectedCash, closingCash, discrepancy },
+      summary: {
+        totalSales,
+        totalOrders,
+        expectedCash,
+        closingCash,
+        discrepancy,
+      },
     };
   }
 
@@ -101,7 +123,7 @@ export class BusinessDayService {
       where: { store_id },
       include: {
         starter: { select: { id: true, name: true } },
-        closer:  { select: { id: true, name: true } },
+        closer: { select: { id: true, name: true } },
       },
       orderBy: { id: 'desc' },
       take: limit,

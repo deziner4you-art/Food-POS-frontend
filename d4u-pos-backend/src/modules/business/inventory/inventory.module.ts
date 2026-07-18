@@ -9,6 +9,6 @@ import { AppGateway } from '../../../app.gateway';
   imports: [PrismaModule],
   providers: [InventoryService, AppGateway],
   controllers: [InventoryController],
-  exports: [InventoryService]
+  exports: [InventoryService],
 })
 export class InventoryModule {}

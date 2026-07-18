@@ -7,6 +7,6 @@ import { AppGateway } from '../../../app.gateway';
 @Module({
   imports: [PrismaModule],
   controllers: [OnlineOrdersController],
-  providers: [OnlineOrdersService, AppGateway]
+  providers: [OnlineOrdersService, AppGateway],
 })
 export class OnlineOrdersModule {}

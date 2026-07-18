@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -18,15 +29,20 @@ export class CatalogController {
   }
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('image', {
-    storage: diskStorage({
-      destination: './uploads',
-      filename: (req: any, file: any, cb: any) => {
-        const randomName = Array(32).fill(null).map(() => (Math.round(Math.random() * 16)).toString(16)).join('');
-        cb(null, `${randomName}${extname(file.originalname)}`);
-      }
-    })
-  }))
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination: './uploads',
+        filename: (req: any, file: any, cb: any) => {
+          const randomName = Array(32)
+            .fill(null)
+            .map(() => Math.round(Math.random() * 16).toString(16))
+            .join('');
+          cb(null, `${randomName}${extname(file.originalname)}`);
+        },
+      }),
+    }),
+  )
   uploadImage(@UploadedFile() file: any) {
     if (!file) return { imageUrl: null };
     return { imageUrl: `/uploads/${file.filename}` };
@@ -41,13 +57,18 @@ export class CatalogController {
   }
 
   @Post('menus')
-  createMenu(@Body() body: { name: string; brand_id?: number; store_ids?: number[] }) {
+  createMenu(
+    @Body() body: { name: string; brand_id?: number; store_ids?: number[] },
+  ) {
     console.log(`[NEW MENU] ${body.name}`);
     return this.service.createMenu(body);
   }
 
   @Patch('menus/:id')
-  updateMenu(@Param('id') id: string, @Body() body: { name?: string; store_ids?: number[] }) {
+  updateMenu(
+    @Param('id') id: string,
+    @Body() body: { name?: string; store_ids?: number[] },
+  ) {
     console.log(`[UPDATE MENU] #${id}`);
     return this.service.updateMenu(Number(id), body);
   }
@@ -73,13 +94,29 @@ export class CatalogController {
   }
 
   @Post('categories')
-  createCategory(@Body() body: { store_id: number; name: string; menu_id?: number; store_ids?: number[] }) {
+  createCategory(
+    @Body()
+    body: {
+      store_id: number;
+      name: string;
+      menu_id?: number;
+      store_ids?: number[];
+    },
+  ) {
     console.log(`[NEW CATEGORY] ${body.name}`);
-    return this.service.createCategory(body.store_id, body.name, body.menu_id, body.store_ids);
+    return this.service.createCategory(
+      body.store_id,
+      body.name,
+      body.menu_id,
+      body.store_ids,
+    );
   }
 
   @Patch('categories/:id')
-  updateCategory(@Param('id') id: string, @Body() body: { name?: string; menu_id?: number; store_ids?: number[] }) {
+  updateCategory(
+    @Param('id') id: string,
+    @Body() body: { name?: string; menu_id?: number; store_ids?: number[] },
+  ) {
     console.log(`[UPDATE CATEGORY] #${id}`);
     return this.service.updateCategory(Number(id), body);
   }
@@ -122,7 +159,20 @@ export class CatalogController {
   @Patch('products/:id')
   updateProduct(
     @Param('id') id: string,
-    @Body() body: { name?: string; price?: number; cost?: number; margin_pct?: number; is_active?: boolean; sku?: string; image_url?: string; status?: string; assigned_store_ids?: number[]; category_ids?: number[]; variants?: { name: string; price: number }[] },
+    @Body()
+    body: {
+      name?: string;
+      price?: number;
+      cost?: number;
+      margin_pct?: number;
+      is_active?: boolean;
+      sku?: string;
+      image_url?: string;
+      status?: string;
+      assigned_store_ids?: number[];
+      category_ids?: number[];
+      variants?: { name: string; price: number }[];
+    },
   ) {
     console.log(`[UPDATE PRODUCT] #${id}`);
     return this.service.updateProduct(Number(id), body);

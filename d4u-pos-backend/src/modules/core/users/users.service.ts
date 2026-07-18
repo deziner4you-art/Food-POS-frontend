@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 
 @Injectable()
@@ -8,14 +12,14 @@ export class UsersService {
   async getAllUsers() {
     return this.prisma.user.findMany({
       include: { role: true, store: true },
-      orderBy: { id: 'asc' }
+      orderBy: { id: 'asc' },
     });
   }
 
   async getUsersByStore(store_id: number) {
     return this.prisma.user.findMany({
       where: { store_id },
-      include: { role: true, store: true }
+      include: { role: true, store: true },
     });
   }
 
@@ -35,15 +39,24 @@ export class UsersService {
     rider_details?: any;
   }) {
     if (data.role_id === 0) {
-      let riderRole = await this.prisma.role.findFirst({ where: { name: 'Rider' } });
+      let riderRole = await this.prisma.role.findFirst({
+        where: { name: 'Rider' },
+      });
       if (!riderRole) {
-        riderRole = await this.prisma.role.create({ data: { id: 11, name: 'Rider', permissions: {} } });
+        riderRole = await this.prisma.role.create({
+          data: { id: 11, name: 'Rider', permissions: {} },
+        });
       }
       data.role_id = riderRole.id;
     }
 
-    const existing = await this.prisma.user.findUnique({ where: { phone: data.phone } });
-    if (existing) throw new BadRequestException(`Phone ${data.phone} is already registered`);
+    const existing = await this.prisma.user.findUnique({
+      where: { phone: data.phone },
+    });
+    if (existing)
+      throw new BadRequestException(
+        `Phone ${data.phone} is already registered`,
+      );
 
     return this.prisma.user.create({
       data: {
@@ -57,27 +70,34 @@ export class UsersService {
         module_permissions: data.module_permissions || {},
         rider_details: data.rider_details || null,
       },
-      include: { role: true, store: true }
+      include: { role: true, store: true },
     });
   }
 
-  async updateUser(id: number, data: {
-    name?: string;
-    phone?: string;
-    pin?: string;
-    role_id?: number;
-    store_id?: number;
-    image_url?: string;
-    module_permissions?: Record<string, boolean>;
-    rider_details?: any;
-  }) {
+  async updateUser(
+    id: number,
+    data: {
+      name?: string;
+      phone?: string;
+      pin?: string;
+      role_id?: number;
+      store_id?: number;
+      image_url?: string;
+      module_permissions?: Record<string, boolean>;
+      rider_details?: any;
+    },
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException(`User #${id} not found`);
 
     if (data.role_id === 0) {
-      let riderRole = await this.prisma.role.findFirst({ where: { name: 'Rider' } });
+      let riderRole = await this.prisma.role.findFirst({
+        where: { name: 'Rider' },
+      });
       if (!riderRole) {
-        riderRole = await this.prisma.role.create({ data: { id: 11, name: 'Rider', permissions: {} } });
+        riderRole = await this.prisma.role.create({
+          data: { id: 11, name: 'Rider', permissions: {} },
+        });
       }
       data.role_id = riderRole.id;
     }
@@ -87,15 +107,18 @@ export class UsersService {
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.pin !== undefined) updateData.hashedPin = data.pin;
     if (data.role_id !== undefined) updateData.role_id = data.role_id;
-    if (data.store_id !== undefined) updateData.store_id = data.store_id || null;
+    if (data.store_id !== undefined)
+      updateData.store_id = data.store_id || null;
     if (data.image_url !== undefined) updateData.image_url = data.image_url;
-    if (data.module_permissions !== undefined) updateData.module_permissions = data.module_permissions;
-    if (data.rider_details !== undefined) updateData.rider_details = data.rider_details;
+    if (data.module_permissions !== undefined)
+      updateData.module_permissions = data.module_permissions;
+    if (data.rider_details !== undefined)
+      updateData.rider_details = data.rider_details;
 
     return this.prisma.user.update({
       where: { id },
       data: updateData,
-      include: { role: true, store: true }
+      include: { role: true, store: true },
     });
   }
 

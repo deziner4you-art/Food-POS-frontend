@@ -8,6 +8,6 @@ import { SocialController } from './social.controller';
 @Module({
   imports: [PrismaModule],
   providers: [MarketingService, SocialService],
-  controllers: [MarketingController, SocialController]
+  controllers: [MarketingController, SocialController],
 })
 export class MarketingModule {}

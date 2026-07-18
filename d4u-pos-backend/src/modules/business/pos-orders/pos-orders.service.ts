@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { InventoryService } from '../inventory/inventory.service';
@@ -37,7 +41,11 @@ export class PosOrdersService {
   async getOrder(id: number) {
     const order = await this.prisma.order.findUnique({
       where: { id },
-      include: { items: { include: { product: true } }, customer: true, kot: true },
+      include: {
+        items: { include: { product: true } },
+        customer: true,
+        kot: true,
+      },
     });
     if (!order) throw new NotFoundException(`Order #${id} not found`);
     return order;
@@ -48,7 +56,12 @@ export class PosOrdersService {
     store_id: number;
     created_by: number;
     customer_id?: number;
-    items: { product_id: number; quantity: number; price: number; special_inst?: string }[];
+    items: {
+      product_id: number;
+      quantity: number;
+      price: number;
+      special_inst?: string;
+    }[];
     discount?: number;
     payment_method?: string;
     order_source?: string;
@@ -126,7 +139,9 @@ export class PosOrdersService {
       return order;
     });
 
-    console.log(`[NEW POS ORDER] #${result.id} | Total: Rs.${total_amount} | Store: ${body.store_id}`);
+    console.log(
+      `[NEW POS ORDER] #${result.id} | Total: Rs.${total_amount} | Store: ${body.store_id}`,
+    );
 
     // Socket event — KDS اسکرین کو بتائیں
     this.gateway.broadcast('new_kot', {
@@ -136,22 +151,35 @@ export class PosOrdersService {
     });
 
     // Auto-deduct inventory
-    this.inventoryService.deductForOrder(result.id).catch(err => 
-      console.error(`[PosOrders] Failed to deduct inventory for #${result.id}:`, err)
-    );
+    this.inventoryService
+      .deductForOrder(result.id)
+      .catch((err) =>
+        console.error(
+          `[PosOrders] Failed to deduct inventory for #${result.id}:`,
+          err,
+        ),
+      );
 
     // Auto-credit Loyalty Points
     if (body.customer_id) {
-      this.customersService.earnPoints(body.customer_id, result.id, total_amount).catch(err => 
-        console.error(`[PosOrders] Failed to credit loyalty points for #${result.id}:`, err)
-      );
+      this.customersService
+        .earnPoints(body.customer_id, result.id, total_amount)
+        .catch((err) =>
+          console.error(
+            `[PosOrders] Failed to credit loyalty points for #${result.id}:`,
+            err,
+          ),
+        );
     }
 
     return { success: true, order: result };
   }
 
   // آرڈر VOID کریں (مینیجر PIN لازمی)
-  async voidOrder(id: number, body: { void_reason: string; manager_pin: string; approved_by: number }) {
+  async voidOrder(
+    id: number,
+    body: { void_reason: string; manager_pin: string; approved_by: number },
+  ) {
     // مینیجر PIN چیک کریں
     const manager = await this.prisma.user.findUnique({
       where: { id: body.approved_by },
@@ -177,14 +205,19 @@ export class PosOrdersService {
       data: { status: 'CANCELLED' },
     });
 
-    console.log(`[VOID] Order #${id} — Reason: ${body.void_reason} — By Manager: ${manager.name}`);
+    console.log(
+      `[VOID] Order #${id} — Reason: ${body.void_reason} — By Manager: ${manager.name}`,
+    );
     this.gateway.broadcast('order_voided', { order_id: id });
 
     return { success: true, order };
   }
 
   // آرڈر SETTLE کریں (پیمنٹ وصول)
-  async settleOrder(id: number, body: { payment_method: string; amount_received?: number }) {
+  async settleOrder(
+    id: number,
+    body: { payment_method: string; amount_received?: number },
+  ) {
     const order = await this.prisma.order.update({
       where: { id },
       data: {
@@ -212,7 +245,11 @@ export class PosOrdersService {
     if (!openDay) return { total: 0, orders: 0, voids: 0 };
 
     const orders = await this.prisma.order.findMany({
-      where: { store_id, business_day_id: openDay.id, status: { not: 'VOIDED' } },
+      where: {
+        store_id,
+        business_day_id: openDay.id,
+        status: { not: 'VOIDED' },
+      },
     });
 
     const voids = await this.prisma.order.count({
@@ -255,9 +292,9 @@ export class PosOrdersService {
                 product_id: i.id || 1, // Extract product_id from structured local cart
                 quantity: i.qty || 1,
                 price: i.price || 0,
-              }))
-            }
-          }
+              })),
+            },
+          },
         });
         syncedCount++;
       }

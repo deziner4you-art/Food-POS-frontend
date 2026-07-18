@@ -27,18 +27,18 @@ export class InventoryService {
             operation: t.operation, // 'ADD' or 'SUBTRACT'
             amount: t.amount,
             reason: t.reason || 'Offline Sync',
-            changed_by: t.changed_by
-          }
+            changed_by: t.changed_by,
+          },
         });
 
         // Calculate the true balance increment/decrement safely (Atomic Operations)
         const modifier = t.operation === 'SUBTRACT' ? -t.amount : t.amount;
-        
+
         await tx.inventoryItem.update({
           where: { id: t.inventory_id },
           data: {
-            quantity: { increment: modifier } // Atomic update prevents overwrites
-          }
+            quantity: { increment: modifier }, // Atomic update prevents overwrites
+          },
         });
         totalSynced++;
       }
@@ -52,18 +52,20 @@ export class InventoryService {
     return this.prisma.inventoryItem.findMany({
       where: {
         store_id,
-        quantity: { lt: 0 } // Red Alert items
-      }
+        quantity: { lt: 0 }, // Red Alert items
+      },
     });
   }
 
   // 3. Deduct Inventory for Order & Emit Soft Block Alert
   async deductForOrder(orderId: number) {
     try {
-      const order = await this.prisma.order.findUnique({
+      const order = (await this.prisma.order.findUnique({
         where: { id: orderId },
-        include: { items: { include: { product: { include: { recipeItems: true } } } } }
-      }) as any; // Cast as any to bypass strict Prisma relation typings temporarily
+        include: {
+          items: { include: { product: { include: { recipeItems: true } } } },
+        },
+      })) as any; // Cast as any to bypass strict Prisma relation typings temporarily
 
       if (!order) return;
 
@@ -74,11 +76,11 @@ export class InventoryService {
 
         for (const recipe of item.product.recipeItems) {
           const deductionAmount = recipe.quantity_needed * item.quantity;
-          
+
           // Atomic Decrement
           const updatedItem = await this.prisma.inventoryItem.update({
             where: { id: recipe.inventory_id },
-            data: { quantity: { decrement: deductionAmount } }
+            data: { quantity: { decrement: deductionAmount } },
           });
 
           // Log transaction
@@ -88,8 +90,8 @@ export class InventoryService {
               operation: 'SUBTRACT',
               amount: deductionAmount,
               reason: `Auto-deduct for Order #${order.id}`,
-              changed_by: order.created_by || 1
-            }
+              changed_by: order.created_by || 1,
+            },
           });
 
           // Trigger Soft Block Alert if it goes into negative
@@ -98,13 +100,16 @@ export class InventoryService {
               store_id: storeId,
               inventory_id: updatedItem.id,
               name: updatedItem.name,
-              balance: updatedItem.quantity
+              balance: updatedItem.quantity,
             });
           }
         }
       }
     } catch (e) {
-      console.error(`[InventoryService] Error deducting for order ${orderId}:`, e);
+      console.error(
+        `[InventoryService] Error deducting for order ${orderId}:`,
+        e,
+      );
     }
   }
 
@@ -112,18 +117,25 @@ export class InventoryService {
   async getInventoryItems(store_id: number) {
     return this.prisma.inventoryItem.findMany({
       where: { store_id },
-      orderBy: { id: 'desc' }
+      orderBy: { id: 'desc' },
     });
   }
 
   async getInventoryItem(id: number) {
     return this.prisma.inventoryItem.findUnique({
       where: { id },
-      include: { recipes: true, transactions: true }
+      include: { recipes: true, transactions: true },
     });
   }
 
-  async createInventoryItem(data: { store_id: number; name: string; quantity: number; unit: string; reorder_level?: number; unit_price?: number }) {
+  async createInventoryItem(data: {
+    store_id: number;
+    name: string;
+    quantity: number;
+    unit: string;
+    reorder_level?: number;
+    unit_price?: number;
+  }) {
     return this.prisma.inventoryItem.create({
       data: {
         store_id: data.store_id,
@@ -132,13 +144,20 @@ export class InventoryService {
         unit: data.unit,
         reorder_level: data.reorder_level || 0,
         unit_price: data.unit_price || 0,
-      }
+      },
     });
   }
 
-  async recordPurchase(store_id: number, inventory_id: number, quantity_bought: number, total_cost: number) {
+  async recordPurchase(
+    store_id: number,
+    inventory_id: number,
+    quantity_bought: number,
+    total_cost: number,
+  ) {
     return this.prisma.$transaction(async (tx) => {
-      const item = await tx.inventoryItem.findUnique({ where: { id: inventory_id } });
+      const item = await tx.inventoryItem.findUnique({
+        where: { id: inventory_id },
+      });
       if (!item) throw new Error('Inventory item not found');
 
       // Current stock value
@@ -157,8 +176,8 @@ export class InventoryService {
         where: { id: inventory_id },
         data: {
           quantity: { increment: quantity_bought },
-          unit_price: newUnitPrice
-        }
+          unit_price: newUnitPrice,
+        },
       });
 
       // Log transaction
@@ -168,8 +187,8 @@ export class InventoryService {
           operation: 'ADD',
           amount: quantity_bought,
           reason: `Purchased Stock (Cost: ${total_cost}, Avg: ${newUnitPrice.toFixed(2)})`,
-          changed_by: 1 // Default user for now
-        }
+          changed_by: 1, // Default user for now
+        },
       });
 
       return { success: true, updatedItem };
@@ -181,12 +200,14 @@ export class InventoryService {
     // Look in the User's Downloads directory for the specific file
     const downloadsPath = path.join(os.homedir(), 'Downloads');
     const filePath = path.join(downloadsPath, 'Final NEW COSTING SHEET.xls');
-    
+
     let workbook;
     try {
       workbook = xlsx.readFile(filePath);
     } catch (e) {
-      throw new NotFoundException(`Excel file not found at ${filePath}. Please ensure the file exists.`);
+      throw new NotFoundException(
+        `Excel file not found at ${filePath}. Please ensure the file exists.`,
+      );
     }
 
     const uniqueItems = new Map<string, number>();
@@ -194,42 +215,57 @@ export class InventoryService {
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
       const data = xlsx.utils.sheet_to_json(sheet, { header: 1 });
-      
+
       for (const row of data as any[]) {
         if (!Array.isArray(row)) continue;
-        
+
         for (let i = 0; i < row.length; i++) {
-          if (typeof row[i] === 'string' && row[i].trim() && 
-              !row[i].toUpperCase().includes('TOTAL') && 
-              !row[i].toUpperCase().includes('COST') && 
-              !row[i].toUpperCase().includes('SALE')) {
-             
-             if (typeof row[i+1] === 'number' && typeof row[i+2] === 'number') {
-               const itemName = row[i].trim().replace(/\s+/g, ' '); // normalize spaces
-               const unitPrice = row[i+2];
-               
-               // Exclude headers
-               if (['ITEM', 'QTY', 'PRICE', 'DESCRIPTION', 'SR.NO', 'ITEM NAME'].includes(itemName.toUpperCase())) continue;
-               
-               if (!uniqueItems.has(itemName)) {
-                 uniqueItems.set(itemName, unitPrice);
-               }
-               break;
-             }
+          if (
+            typeof row[i] === 'string' &&
+            row[i].trim() &&
+            !row[i].toUpperCase().includes('TOTAL') &&
+            !row[i].toUpperCase().includes('COST') &&
+            !row[i].toUpperCase().includes('SALE')
+          ) {
+            if (
+              typeof row[i + 1] === 'number' &&
+              typeof row[i + 2] === 'number'
+            ) {
+              const itemName = row[i].trim().replace(/\s+/g, ' '); // normalize spaces
+              const unitPrice = row[i + 2];
+
+              // Exclude headers
+              if (
+                [
+                  'ITEM',
+                  'QTY',
+                  'PRICE',
+                  'DESCRIPTION',
+                  'SR.NO',
+                  'ITEM NAME',
+                ].includes(itemName.toUpperCase())
+              )
+                continue;
+
+              if (!uniqueItems.has(itemName)) {
+                uniqueItems.set(itemName, unitPrice);
+              }
+              break;
+            }
           }
         }
       }
     }
 
     let importedCount = 0;
-    
+
     // Default store_id = 1 (Head Office / Main Branch for global inventory)
     const store_id = 1;
 
     for (const [name, price] of uniqueItems.entries()) {
       // Check if it exists
       const existing = await this.prisma.inventoryItem.findFirst({
-        where: { store_id, name: { equals: name, mode: 'insensitive' } }
+        where: { store_id, name: { equals: name, mode: 'insensitive' } },
       });
 
       if (!existing) {
@@ -240,27 +276,36 @@ export class InventoryService {
             quantity: 0,
             unit: 'unit', // default unit
             reorder_level: 0,
-            unit_price: price
-          }
+            unit_price: price,
+          },
         });
         importedCount++;
       } else {
         // Optionally update the unit price if it already exists
         await this.prisma.inventoryItem.update({
           where: { id: existing.id },
-          data: { unit_price: price }
+          data: { unit_price: price },
         });
       }
     }
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: `Extracted ${uniqueItems.size} unique raw materials. Imported ${importedCount} new items to DB.`,
-      itemsExtracted: uniqueItems.size
+      itemsExtracted: uniqueItems.size,
     };
   }
 
-  async updateInventoryItem(id: number, data: { name?: string; quantity?: number; unit?: string; reorder_level?: number; unit_price?: number }) {
+  async updateInventoryItem(
+    id: number,
+    data: {
+      name?: string;
+      quantity?: number;
+      unit?: string;
+      reorder_level?: number;
+      unit_price?: number;
+    },
+  ) {
     return this.prisma.inventoryItem.update({
       where: { id },
       data,

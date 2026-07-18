@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  NotFoundException,
+} from '@nestjs/common';
 import { AppService } from './app.service';
 import { PrismaService } from './database/prisma/prisma.service';
 import { AppGateway } from './app.gateway';
@@ -38,7 +48,9 @@ export class AppController {
       console.log(`[GPS UPDATE] Order #${orderId} -> lat: ${lat}, lng: ${lng}`);
     } catch (error) {
       // Fallback: order might not be in DB or not found. That's fine, we still broadcast the live coordinates
-      console.log(`[GPS UPDATE - FALLBACK] Delivery #${orderId} -> lat: ${lat}, lng: ${lng}`);
+      console.log(
+        `[GPS UPDATE - FALLBACK] Delivery #${orderId} -> lat: ${lat}, lng: ${lng}`,
+      );
     }
 
     this.appGateway.broadcast('gps_update', { orderId, lat, lng });
@@ -82,10 +94,17 @@ export class AppController {
             source: 'POS',
             customer: body.order.customer || 'Guest',
             customerAddress: body.order.address || 'Address',
-            items: body.order.items ? body.order.items.map((i: any) => `${i.qty}x ${i.name}`).join(', ') : '',
+            items: body.order.items
+              ? body.order.items
+                  .map((i: any) => `${i.qty}x ${i.name}`)
+                  .join(', ')
+              : '',
             totalAmount: String(body.order.cod || 0),
             riderAssigned: true,
-            timePlaced: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            timePlaced: new Date().toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
           },
         });
       } catch (err) {

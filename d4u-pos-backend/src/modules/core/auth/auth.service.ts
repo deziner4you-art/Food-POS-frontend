@@ -6,7 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 export class AuthService {
   constructor(
     private prisma: PrismaService,
-    private jwtService: JwtService
+    private jwtService: JwtService,
   ) {}
 
   async login(phone: string, pin: string) {
@@ -26,7 +26,7 @@ export class AuthService {
       store_id: user.store_id,
       brand_id: user.brand_id,
       role: user.role.name,
-      permissions: user.role.permissions
+      permissions: user.role.permissions,
     };
 
     return {
@@ -38,8 +38,8 @@ export class AuthService {
         role_id: user.role_id,
         store_id: user.store_id,
         store: { name: user.store?.name },
-        module_permissions: user.module_permissions
-      }
+        module_permissions: user.module_permissions,
+      },
     };
   }
 
@@ -52,9 +52,9 @@ export class AuthService {
         phone: true,
         hashedPin: true, // Synced to secure local IndexedDB
         role: {
-          select: { name: true, permissions: true }
-        }
-      }
+          select: { name: true, permissions: true },
+        },
+      },
     });
     return users;
   }

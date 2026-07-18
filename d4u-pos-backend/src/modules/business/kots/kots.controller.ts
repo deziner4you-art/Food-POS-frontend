@@ -1,4 +1,12 @@
-import { Controller, Get, Patch, Post, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Body,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { KotsService } from './kots.service';
 
 @Controller('kots')
@@ -29,7 +37,10 @@ export class KotsController {
 
   // PATCH /kots/:id/status — Chef نے Accept یا Ready کیا
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body() body: { status: 'PREPARING' | 'READY' | 'CANCELLED' }) {
+  updateStatus(
+    @Param('id') id: string,
+    @Body() body: { status: 'PREPARING' | 'READY' | 'CANCELLED' },
+  ) {
     console.log(`[KDS] KOT #${id} → ${body.status}`);
     return this.service.updateKotStatus(Number(id), body.status);
   }

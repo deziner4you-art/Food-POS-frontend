@@ -18,7 +18,7 @@ export class RiderService {
     if (storeId) {
       whereClause.store_id = Number(storeId);
     }
-    
+
     return this.prisma.onlineOrder.findMany({
       where: whereClause,
       orderBy: { id: 'desc' },
@@ -44,7 +44,9 @@ export class RiderService {
       });
       console.log(`[GPS UPDATE] Order #${orderId} -> lat: ${lat}, lng: ${lng}`);
     } catch (error) {
-      console.log(`[GPS UPDATE - FALLBACK] Delivery #${orderId} -> lat: ${lat}, lng: ${lng}`);
+      console.log(
+        `[GPS UPDATE - FALLBACK] Delivery #${orderId} -> lat: ${lat}, lng: ${lng}`,
+      );
     }
 
     this.gateway.broadcast('gps_update', { orderId, lat, lng });
@@ -84,10 +86,17 @@ export class RiderService {
             source: 'POS',
             customer: body.order.customer || 'Guest',
             customerAddress: body.order.address || 'Address',
-            items: body.order.items ? body.order.items.map((i: any) => `${i.qty}x ${i.name}`).join(', ') : '',
+            items: body.order.items
+              ? body.order.items
+                  .map((i: any) => `${i.qty}x ${i.name}`)
+                  .join(', ')
+              : '',
             totalAmount: String(body.order.cod || 0),
             riderAssigned: true,
-            timePlaced: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            timePlaced: new Date().toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
           },
         });
       } catch (err) {

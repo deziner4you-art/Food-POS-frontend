@@ -21,7 +21,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`[MIGRATION] Found ${orders.length} orders. Starting migration...`);
+  console.log(
+    `[MIGRATION] Found ${orders.length} orders. Starting migration...`,
+  );
 
   for (const order of orders) {
     // Check if order already exists
@@ -30,7 +32,9 @@ async function main() {
     });
 
     if (existing) {
-      console.log(`[MIGRATION] Order ID ${order.orderId} already exists. Skipping.`);
+      console.log(
+        `[MIGRATION] Order ID ${order.orderId} already exists. Skipping.`,
+      );
       continue;
     }
 
@@ -58,7 +62,10 @@ async function main() {
       });
       console.log(`[MIGRATION] Successfully migrated order ${order.orderId}`);
     } catch (err) {
-      console.error(`[MIGRATION] Failed to migrate order ${order.orderId}:`, err);
+      console.error(
+        `[MIGRATION] Failed to migrate order ${order.orderId}:`,
+        err,
+      );
     }
   }
 

@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 
 @Controller('auth')
@@ -11,7 +18,9 @@ export class AuthController {
   }
 
   @Get('offline-credentials/:store_id')
-  async getOfflineCredentials(@Param('store_id', ParseIntPipe) storeId: number) {
+  async getOfflineCredentials(
+    @Param('store_id', ParseIntPipe) storeId: number,
+  ) {
     // This endpoint syncs hashed PINs to the local POS for offline shift changes
     return this.authService.getOfflineCredentials(storeId);
   }

@@ -10,43 +10,80 @@ export class SubscriptionService {
     // Default mock pricing if empty
     if (pricing.length === 0) {
       return [
-        { module_key: 'BASE_POS', module_name: 'Base POS System', price_monthly: 50, currency: 'USD' },
-        { module_key: 'KDS', module_name: 'Kitchen Display System', price_monthly: 15, currency: 'USD' },
-        { module_key: 'RIDER', module_name: 'Delivery Rider App', price_monthly: 10, currency: 'USD' },
-        { module_key: 'TV_BOARD', module_name: 'Customer TV Board', price_monthly: 10, currency: 'USD' },
-        { module_key: 'ONLINE_WEBSITE', module_name: 'Online Ordering Website', price_monthly: 25, currency: 'USD' },
-        { module_key: 'LOYALTY', module_name: 'Loyalty & Rewards', price_monthly: 5, currency: 'USD' },
-        { module_key: 'ANALYTICS', module_name: 'Advanced Analytics (Owner App)', price_monthly: 20, currency: 'USD' },
+        {
+          module_key: 'BASE_POS',
+          module_name: 'Base POS System',
+          price_monthly: 50,
+          currency: 'USD',
+        },
+        {
+          module_key: 'KDS',
+          module_name: 'Kitchen Display System',
+          price_monthly: 15,
+          currency: 'USD',
+        },
+        {
+          module_key: 'RIDER',
+          module_name: 'Delivery Rider App',
+          price_monthly: 10,
+          currency: 'USD',
+        },
+        {
+          module_key: 'TV_BOARD',
+          module_name: 'Customer TV Board',
+          price_monthly: 10,
+          currency: 'USD',
+        },
+        {
+          module_key: 'ONLINE_WEBSITE',
+          module_name: 'Online Ordering Website',
+          price_monthly: 25,
+          currency: 'USD',
+        },
+        {
+          module_key: 'LOYALTY',
+          module_name: 'Loyalty & Rewards',
+          price_monthly: 5,
+          currency: 'USD',
+        },
+        {
+          module_key: 'ANALYTICS',
+          module_name: 'Advanced Analytics (Owner App)',
+          price_monthly: 20,
+          currency: 'USD',
+        },
       ];
     }
     return pricing;
   }
 
   async onboardClient(body: any) {
-    const { 
-      is_existing_brand, 
-      existing_brand_id, 
-      brand_name, 
-      currency, 
-      vat_percentage, 
-      selected_modules, 
-      total_billing_amount, 
-      admin_user, 
-      is_chain_store, 
+    const {
+      is_existing_brand,
+      existing_brand_id,
+      brand_name,
+      currency,
+      vat_percentage,
+      selected_modules,
+      total_billing_amount,
+      admin_user,
+      is_chain_store,
       menu_strategy,
-      store_location 
+      store_location,
     } = body;
 
     let brand;
     if (is_existing_brand && existing_brand_id) {
-      brand = await this.prisma.brand.findUnique({ where: { id: Number(existing_brand_id) } });
+      brand = await this.prisma.brand.findUnique({
+        where: { id: Number(existing_brand_id) },
+      });
       if (!brand) throw new Error('Brand not found');
-      
+
       // Update chain store settings if adding a branch makes it a chain
       if (is_chain_store) {
         await this.prisma.brand.update({
           where: { id: brand.id },
-          data: { is_chain_store, menu_strategy: menu_strategy || 'UNIFIED' }
+          data: { is_chain_store, menu_strategy: menu_strategy || 'UNIFIED' },
         });
       }
     } else {
@@ -57,8 +94,8 @@ export class SubscriptionService {
           currency: currency || 'PKR',
           vat_percentage: vat_percentage || 0,
           is_chain_store: is_chain_store || false,
-          menu_strategy: menu_strategy || 'UNIFIED'
-        }
+          menu_strategy: menu_strategy || 'UNIFIED',
+        },
       });
 
       // Create the Subscription for NEW brands
@@ -71,22 +108,25 @@ export class SubscriptionService {
           module_kds_enabled: selected_modules.includes('KDS'),
           module_riders_enabled: selected_modules.includes('RIDER'),
           module_tv_board_enabled: selected_modules.includes('TV_BOARD'),
-          module_online_website_enabled: selected_modules.includes('ONLINE_WEBSITE'),
+          module_online_website_enabled:
+            selected_modules.includes('ONLINE_WEBSITE'),
           module_loyalty_enabled: selected_modules.includes('LOYALTY'),
           billing_amount: total_billing_amount || 0,
-          status: 'ACTIVE'
-        }
+          status: 'ACTIVE',
+        },
       });
     }
 
     // 2. Create the store (either first or additional branch)
-    const storeName = is_existing_brand ? `${brand.name} - Branch` : `${brand_name} - HQ`;
+    const storeName = is_existing_brand
+      ? `${brand.name} - Branch`
+      : `${brand_name} - HQ`;
     const store = await this.prisma.store.create({
       data: {
         brand_id: brand.id,
         name: storeName,
-        location: store_location || 'Main Branch'
-      }
+        location: store_location || 'Main Branch',
+      },
     });
 
     // 4. Create HeadOffice User (if provided and new brand)
@@ -98,8 +138,8 @@ export class SubscriptionService {
           role_id: 1, // Assuming 1 is HeadOffice/SuperAdmin
           name: admin_user.name || 'Admin',
           phone: admin_user.phone,
-          hashedPin: admin_user.password || '1234'
-        }
+          hashedPin: admin_user.password || '1234',
+        },
       });
     }
 
@@ -107,20 +147,28 @@ export class SubscriptionService {
   }
 
   async createOrUpdateSubscription(body: any) {
-    const { brand_id, plan_name, modules, is_chain_store, menu_strategy, currency, vat_percentage } = body;
-    
+    const {
+      brand_id,
+      plan_name,
+      modules,
+      is_chain_store,
+      menu_strategy,
+      currency,
+      vat_percentage,
+    } = body;
+
     await this.prisma.brand.update({
       where: { id: Number(brand_id) },
       data: {
         is_chain_store: is_chain_store ?? false,
         menu_strategy: menu_strategy || 'UNIFIED',
         ...(currency && { currency }),
-        ...(vat_percentage !== undefined && { vat_percentage })
-      }
+        ...(vat_percentage !== undefined && { vat_percentage }),
+      },
     });
 
     const existing = await this.prisma.subscription.findUnique({
-      where: { brand_id: Number(brand_id) }
+      where: { brand_id: Number(brand_id) },
     });
 
     if (existing) {
@@ -128,8 +176,8 @@ export class SubscriptionService {
         where: { id: existing.id },
         data: {
           plan_name,
-          ...modules
-        }
+          ...modules,
+        },
       });
     }
 
@@ -137,17 +185,17 @@ export class SubscriptionService {
       data: {
         brand_id: Number(brand_id),
         plan_name,
-        ...modules
-      }
+        ...modules,
+      },
     });
   }
 
   async getSubscription(brand_id: number) {
     const sub = await this.prisma.subscription.findUnique({
       where: { brand_id },
-      include: { brand: true }
+      include: { brand: true },
     });
-    
+
     if (!sub) {
       return {
         brand_id,
@@ -160,10 +208,15 @@ export class SubscriptionService {
         module_online_website_enabled: false,
         module_analytics_enabled: true,
         billing_amount: 0,
-        brand: { is_chain_store: false, menu_strategy: 'UNIFIED', currency: 'PKR', vat_percentage: 0 }
+        brand: {
+          is_chain_store: false,
+          menu_strategy: 'UNIFIED',
+          currency: 'PKR',
+          vat_percentage: 0,
+        },
       };
     }
-    
+
     return sub;
   }
 }

@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  Query,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -21,7 +33,8 @@ export class UsersController {
 
   @Post()
   createUser(
-    @Body() body: {
+    @Body()
+    body: {
       name: string;
       phone: string;
       pin: string;
@@ -31,7 +44,7 @@ export class UsersController {
       image_url?: string;
       module_permissions?: Record<string, boolean>;
       rider_details?: any;
-    }
+    },
   ) {
     console.log(`[NEW USER] ${body.name} → Store #${body.store_id || 'HQ'}`);
     return this.usersService.createUser(body);
@@ -40,7 +53,17 @@ export class UsersController {
   @Patch(':id')
   updateUser(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { name?: string; phone?: string; pin?: string; role_id?: number; store_id?: number; image_url?: string; module_permissions?: Record<string, boolean>; rider_details?: any }
+    @Body()
+    body: {
+      name?: string;
+      phone?: string;
+      pin?: string;
+      role_id?: number;
+      store_id?: number;
+      image_url?: string;
+      module_permissions?: Record<string, boolean>;
+      rider_details?: any;
+    },
   ) {
     console.log(`[UPDATE USER] #${id}`);
     return this.usersService.updateUser(id, body);
@@ -53,15 +76,20 @@ export class UsersController {
   }
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      destination: './uploads',
-      filename: (req, file, cb) => {
-        const randomName = Array(32).fill(null).map(() => (Math.round(Math.random() * 16)).toString(16)).join('');
-        cb(null, `${randomName}${extname(file.originalname)}`);
-      }
-    })
-  }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads',
+        filename: (req, file, cb) => {
+          const randomName = Array(32)
+            .fill(null)
+            .map(() => Math.round(Math.random() * 16).toString(16))
+            .join('');
+          cb(null, `${randomName}${extname(file.originalname)}`);
+        },
+      }),
+    }),
+  )
   uploadFile(@UploadedFile() file: any) {
     return { url: `/uploads/${file.filename}` };
   }

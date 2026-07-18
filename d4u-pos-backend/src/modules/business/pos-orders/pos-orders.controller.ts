@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { PosOrdersService } from './pos-orders.service';
 
 @Controller('pos-orders')
@@ -12,7 +20,10 @@ export class PosOrdersController {
     @Query('business_day_id') business_day_id?: string,
   ) {
     console.log(`[GET] POS Orders — Store: ${store_id}`);
-    return this.service.getOrders(Number(store_id), business_day_id ? Number(business_day_id) : undefined);
+    return this.service.getOrders(
+      Number(store_id),
+      business_day_id ? Number(business_day_id) : undefined,
+    );
   }
 
   // GET /pos-orders/summary?store_id=1
@@ -22,7 +33,10 @@ export class PosOrdersController {
     @Query('business_day_id') business_day_id?: string,
   ) {
     console.log(`[GET] Sales Summary — Store: ${store_id}`);
-    return this.service.getSalesSummary(Number(store_id), business_day_id ? Number(business_day_id) : undefined);
+    return this.service.getSalesSummary(
+      Number(store_id),
+      business_day_id ? Number(business_day_id) : undefined,
+    );
   }
 
   // GET /pos-orders/:id
@@ -35,7 +49,9 @@ export class PosOrdersController {
   // POST /pos-orders — نیا آرڈر
   @Post()
   createOrder(@Body() body: any) {
-    console.log(`[POST] New POS Order — Store: ${body.store_id} | Items: ${body.items?.length}`);
+    console.log(
+      `[POST] New POS Order — Store: ${body.store_id} | Items: ${body.items?.length}`,
+    );
     return this.service.createOrder(body);
   }
 
@@ -56,7 +72,9 @@ export class PosOrdersController {
   // POST /pos-orders/sync-offline — Sync locally stored Dexie KOTs
   @Post('sync-offline')
   syncOffline(@Body() body: { orders: any[] }) {
-    console.log(`[SYNC-OFFLINE] Received ${body.orders?.length} offline orders`);
+    console.log(
+      `[SYNC-OFFLINE] Received ${body.orders?.length} offline orders`,
+    );
     return this.service.syncOfflineOrders(body.orders || []);
   }
 }

@@ -18,9 +18,9 @@ export class CatalogService {
         OR: [
           { store_id },
           { assigned_stores: { some: { id: store_id } } },
-          { menu: { stores: { some: { id: store_id } } } }
-        ]
-      }
+          { menu: { stores: { some: { id: store_id } } } },
+        ],
+      },
     });
 
     // A store should see products that are:
@@ -35,9 +35,17 @@ export class CatalogService {
         OR: [
           { store_id },
           { assigned_stores: { some: { id: store_id } } },
-          { categories: { some: { assigned_stores: { some: { id: store_id } } } } },
-          { categories: { some: { menu: { stores: { some: { id: store_id } } } } } }
-        ]
+          {
+            categories: {
+              some: { assigned_stores: { some: { id: store_id } } },
+            },
+          },
+          {
+            categories: {
+              some: { menu: { stores: { some: { id: store_id } } } },
+            },
+          },
+        ],
       },
       include: { categories: true, variants: true },
       orderBy: { id: 'asc' },
@@ -51,20 +59,24 @@ export class CatalogService {
   // -------------------------------------------------------------
   async getMenus() {
     return this.prisma.menu.findMany({
-      include: { stores: true, categories: true }
+      include: { stores: true, categories: true },
     });
   }
 
-  async createMenu(data: { name: string; brand_id?: number; store_ids?: number[] }) {
+  async createMenu(data: {
+    name: string;
+    brand_id?: number;
+    store_ids?: number[];
+  }) {
     return this.prisma.menu.create({
       data: {
         name: data.name,
         brand_id: data.brand_id || 1,
         stores: {
-          connect: (data.store_ids || []).map(id => ({ id }))
-        }
+          connect: (data.store_ids || []).map((id) => ({ id })),
+        },
       },
-      include: { stores: true }
+      include: { stores: true },
     });
   }
 
@@ -72,13 +84,13 @@ export class CatalogService {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.store_ids !== undefined) {
-      updateData.stores = { set: data.store_ids.map(sid => ({ id: sid })) };
+      updateData.stores = { set: data.store_ids.map((sid) => ({ id: sid })) };
     }
 
     return this.prisma.menu.update({
       where: { id },
       data: updateData,
-      include: { stores: true }
+      include: { stores: true },
     });
   }
 
@@ -88,9 +100,9 @@ export class CatalogService {
       where: { id },
       include: {
         categories: {
-          include: { products: true }
-        }
-      }
+          include: { products: true },
+        },
+      },
     });
 
     if (!original) throw new NotFoundException('Menu not found');
@@ -101,7 +113,7 @@ export class CatalogService {
         name: `${original.name} (Copy)`,
         brand_id: original.brand_id,
         isActive: original.isActive,
-      }
+      },
     });
 
     // Clone categories and products
@@ -110,8 +122,8 @@ export class CatalogService {
         data: {
           name: category.name,
           store_id: category.store_id,
-          menu_id: newMenu.id
-        }
+          menu_id: newMenu.id,
+        },
       });
 
       for (const product of category.products) {
@@ -126,8 +138,8 @@ export class CatalogService {
             image_url: product.image_url,
             status: product.status,
             store_id: product.store_id,
-            categories: { connect: [{ id: newCategory.id }] }
-          }
+            categories: { connect: [{ id: newCategory.id }] },
+          },
         });
       }
     }
@@ -139,10 +151,10 @@ export class CatalogService {
     // Find all categories for this menu
     const categories = await this.prisma.category.findMany({
       where: { menu_id: id },
-      include: { products: true }
+      include: { products: true },
     });
 
-    const categoryIds = categories.map(c => c.id);
+    const categoryIds = categories.map((c) => c.id);
     const productIdsToDelete = new Set<number>();
 
     for (const category of categories) {
@@ -154,14 +166,14 @@ export class CatalogService {
     // Delete products associated with these categories
     if (productIdsToDelete.size > 0) {
       await this.prisma.product.deleteMany({
-        where: { id: { in: Array.from(productIdsToDelete) } }
+        where: { id: { in: Array.from(productIdsToDelete) } },
       });
     }
 
     // Delete categories
     if (categoryIds.length > 0) {
       await this.prisma.category.deleteMany({
-        where: { id: { in: categoryIds } }
+        where: { id: { in: categoryIds } },
       });
     }
 
@@ -175,35 +187,45 @@ export class CatalogService {
   async getCategories(store_id: number) {
     // Admin needs to see all categories. We can just return all for now.
     return this.prisma.category.findMany({
-      include: { menu: true, assigned_stores: true }
+      include: { menu: true, assigned_stores: true },
     });
   }
 
-  async createCategory(store_id: number, name: string, menu_id?: number, store_ids?: number[]) {
+  async createCategory(
+    store_id: number,
+    name: string,
+    menu_id?: number,
+    store_ids?: number[],
+  ) {
     return this.prisma.category.create({
       data: {
         store_id,
         name,
         menu_id,
         assigned_stores: {
-          connect: (store_ids || []).map(id => ({ id }))
-        }
+          connect: (store_ids || []).map((id) => ({ id })),
+        },
       },
-      include: { menu: true, assigned_stores: true }
+      include: { menu: true, assigned_stores: true },
     });
   }
 
-  async updateCategory(id: number, data: { name?: string; menu_id?: number; store_ids?: number[] }) {
+  async updateCategory(
+    id: number,
+    data: { name?: string; menu_id?: number; store_ids?: number[] },
+  ) {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.menu_id !== undefined) updateData.menu_id = data.menu_id;
     if (data.store_ids !== undefined) {
-      updateData.assigned_stores = { set: data.store_ids.map(sid => ({ id: sid })) };
+      updateData.assigned_stores = {
+        set: data.store_ids.map((sid) => ({ id: sid })),
+      };
     }
     return this.prisma.category.update({
       where: { id },
       data: updateData,
-      include: { menu: true, assigned_stores: true }
+      include: { menu: true, assigned_stores: true },
     });
   }
 
@@ -219,7 +241,7 @@ export class CatalogService {
     return this.prisma.product.findMany({
       where: { is_active: true },
       include: { categories: true, assigned_stores: true, variants: true },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -242,22 +264,37 @@ export class CatalogService {
         ...productData,
         status: data.status || 'APPROVED',
         categories: {
-          connect: (category_ids || []).map(id => ({ id }))
+          connect: (category_ids || []).map((id) => ({ id })),
         },
         assigned_stores: {
-          connect: (assigned_store_ids || []).map(id => ({ id }))
+          connect: (assigned_store_ids || []).map((id) => ({ id })),
         },
-        variants: variants && variants.length > 0 ? {
-          create: variants.map(v => ({ name: v.name, price: v.price }))
-        } : undefined
+        variants:
+          variants && variants.length > 0
+            ? {
+                create: variants.map((v) => ({ name: v.name, price: v.price })),
+              }
+            : undefined,
       },
-      include: { assigned_stores: true, categories: true, variants: true }
+      include: { assigned_stores: true, categories: true, variants: true },
     });
   }
 
   async updateProduct(
     id: number,
-    data: { name?: string; price?: number; cost?: number; margin_pct?: number; is_active?: boolean; sku?: string; image_url?: string; status?: string; assigned_store_ids?: number[]; category_ids?: number[]; variants?: { name: string; price: number }[] },
+    data: {
+      name?: string;
+      price?: number;
+      cost?: number;
+      margin_pct?: number;
+      is_active?: boolean;
+      sku?: string;
+      image_url?: string;
+      status?: string;
+      assigned_store_ids?: number[];
+      category_ids?: number[];
+      variants?: { name: string; price: number }[];
+    },
   ) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException(`Product #${id} not found`);
@@ -266,19 +303,25 @@ export class CatalogService {
     const updatePayload: any = { ...updateData };
 
     if (assigned_store_ids !== undefined) {
-      updatePayload.assigned_stores = { set: assigned_store_ids.map(sid => ({ id: sid })) };
+      updatePayload.assigned_stores = {
+        set: assigned_store_ids.map((sid) => ({ id: sid })),
+      };
     }
 
     if (category_ids !== undefined) {
-      updatePayload.categories = { set: category_ids.map(cid => ({ id: cid })) };
+      updatePayload.categories = {
+        set: category_ids.map((cid) => ({ id: cid })),
+      };
     }
 
     if (variants !== undefined) {
       // For updates, we delete existing variants and create new ones (simplest approach)
-      await this.prisma.productVariant.deleteMany({ where: { product_id: id } });
+      await this.prisma.productVariant.deleteMany({
+        where: { product_id: id },
+      });
       if (variants.length > 0) {
         updatePayload.variants = {
-          create: variants.map(v => ({ name: v.name, price: v.price }))
+          create: variants.map((v) => ({ name: v.name, price: v.price })),
         };
       }
     }
@@ -286,14 +329,14 @@ export class CatalogService {
     return this.prisma.product.update({
       where: { id },
       data: updatePayload,
-      include: { assigned_stores: true, categories: true, variants: true }
+      include: { assigned_stores: true, categories: true, variants: true },
     });
   }
 
   async approveProduct(id: number) {
     return this.prisma.product.update({
       where: { id },
-      data: { status: 'APPROVED' }
+      data: { status: 'APPROVED' },
     });
   }
 

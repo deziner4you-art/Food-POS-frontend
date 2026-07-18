@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -20,21 +31,26 @@ export class CmsController {
   }
 
   @Post('banners')
-  @UseInterceptors(FileInterceptor('image', {
-    storage: diskStorage({
-      destination: './uploads',
-      filename: (req: any, file: any, cb: any) => {
-        const randomName = Array(32).fill(null).map(() => (Math.round(Math.random() * 16)).toString(16)).join('');
-        cb(null, `${randomName}${extname(file.originalname)}`);
-      }
-    })
-  }))
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination: './uploads',
+        filename: (req: any, file: any, cb: any) => {
+          const randomName = Array(32)
+            .fill(null)
+            .map(() => Math.round(Math.random() * 16).toString(16))
+            .join('');
+          cb(null, `${randomName}${extname(file.originalname)}`);
+        },
+      }),
+    }),
+  )
   createBanner(
     @UploadedFile() file: any, // Express.Multer.File
     @Body() body: any,
   ) {
     const imageUrl = file ? `/uploads/${file.filename}` : body.imageUrl;
-    
+
     return this.cmsService.createBanner({
       brand_id: body.brand_id ? parseInt(body.brand_id) : 1,
       title: body.title,
@@ -48,10 +64,7 @@ export class CmsController {
   }
 
   @Patch('banners/:id')
-  updateBanner(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: any,
-  ) {
+  updateBanner(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
     return this.cmsService.updateBanner(id, body);
   }
 
@@ -80,9 +93,7 @@ export class CmsController {
   }
 
   @Post('subscribe')
-  subscribe(
-    @Body() body: { store_id: number; email: string },
-  ) {
+  subscribe(@Body() body: { store_id: number; email: string }) {
     return this.cmsService.subscribeNewsletter(body.store_id, body.email);
   }
 }

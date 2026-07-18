@@ -28,13 +28,16 @@ export class ReportsController {
       start_date,
       end_date,
       business_day_id ? Number(business_day_id) : undefined,
-      cashier_id ? Number(cashier_id) : undefined
+      cashier_id ? Number(cashier_id) : undefined,
     );
   }
 
   // GET /reports/shifts?store_id=1
   @Get('shifts')
-  getShifts(@Query('store_id') store_id: string, @Query('limit') limit?: string) {
+  getShifts(
+    @Query('store_id') store_id: string,
+    @Query('limit') limit?: string,
+  ) {
     return this.service.getShifts(Number(store_id), limit ? Number(limit) : 10);
   }
 
@@ -50,7 +53,10 @@ export class ReportsController {
     @Query('store_id') store_id: string,
     @Query('limit') limit?: string,
   ) {
-    return this.service.getTopProducts(Number(store_id), limit ? Number(limit) : 10);
+    return this.service.getTopProducts(
+      Number(store_id),
+      limit ? Number(limit) : 10,
+    );
   }
 
   // GET /reports/voids?store_id=1
@@ -59,7 +65,10 @@ export class ReportsController {
     @Query('store_id') store_id: string,
     @Query('business_day_id') business_day_id?: string,
   ) {
-    return this.service.getVoidedOrders(Number(store_id), business_day_id ? Number(business_day_id) : undefined);
+    return this.service.getVoidedOrders(
+      Number(store_id),
+      business_day_id ? Number(business_day_id) : undefined,
+    );
   }
 
   // GET /reports/brand/:brand_id — Multi-store overview

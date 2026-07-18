@@ -30,7 +30,10 @@ async function main() {
           customer: order.customer || 'Online Guest',
           customerPhone: order.customerPhone || '',
           customerAddress: order.customerAddress || '',
-          items: typeof order.items === 'string' ? order.items : JSON.stringify(order.items),
+          items:
+            typeof order.items === 'string'
+              ? order.items
+              : JSON.stringify(order.items),
           totalAmount: String(order.totalAmount || '0.00'),
           notes: order.notes || '',
           prepTimeMinutes: Number(order.prepTimeMinutes || 0),
@@ -50,7 +53,10 @@ async function main() {
           customer: order.customer || 'Online Guest',
           customerPhone: order.customerPhone || '',
           customerAddress: order.customerAddress || '',
-          items: typeof order.items === 'string' ? order.items : JSON.stringify(order.items),
+          items:
+            typeof order.items === 'string'
+              ? order.items
+              : JSON.stringify(order.items),
           totalAmount: String(order.totalAmount || '0.00'),
           notes: order.notes || '',
           prepTimeMinutes: Number(order.prepTimeMinutes || 0),
@@ -67,11 +73,13 @@ async function main() {
     }
   }
 
-  console.log(`Successfully migrated ${insertedCount}/${orders.length} orders.`);
+  console.log(
+    `Successfully migrated ${insertedCount}/${orders.length} orders.`,
+  );
 
   try {
     await prisma.$executeRawUnsafe(
-      `SELECT setval(pg_get_serial_sequence('"OnlineOrder"', 'id'), COALESCE((SELECT MAX(id) FROM "OnlineOrder"), 1));`
+      `SELECT setval(pg_get_serial_sequence('"OnlineOrder"', 'id'), COALESCE((SELECT MAX(id) FROM "OnlineOrder"), 1));`,
     );
     console.log('PostgreSQL ID sequence updated successfully.');
   } catch (err) {

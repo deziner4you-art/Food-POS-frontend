@@ -17,14 +17,20 @@ export class OnlineOrdersService {
         customer: body.customer || 'Online Guest',
         customerPhone: body.customerPhone || '',
         customerAddress: body.customerAddress || 'No Address Provided',
-        items: typeof body.items === 'string' ? body.items : JSON.stringify(body.items),
+        items:
+          typeof body.items === 'string'
+            ? body.items
+            : JSON.stringify(body.items),
         totalAmount: String(body.totalAmount || '0.00'),
         source: body.source || 'Website',
         notes: body.notes || '',
         status: 'PENDING',
         kdsStatus: 'PENDING',
         type: 'Online',
-        timePlaced: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        timePlaced: new Date().toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
       },
     });
 
@@ -33,25 +39,29 @@ export class OnlineOrdersService {
       data: { orderId: order.id },
     });
 
-    console.log(`[NEW ORDER] #${updatedOrder.id} — Store: ${storeId} — ${updatedOrder.items}`);
+    console.log(
+      `[NEW ORDER] #${updatedOrder.id} — Store: ${storeId} — ${updatedOrder.items}`,
+    );
     this.gateway.broadcast('new_order', updatedOrder, `store_${storeId}`);
 
     // Award Loyalty Points
     if (body.customerPhone) {
       const existingCustomer = await this.prisma.customer.findUnique({
-        where: { phone: body.customerPhone }
+        where: { phone: body.customerPhone },
       });
       if (existingCustomer) {
         const pointsEarned = Math.floor(parseFloat(body.totalAmount || '0'));
         if (pointsEarned > 0) {
           await this.prisma.customer.update({
             where: { id: existingCustomer.id },
-            data: { 
+            data: {
               loyalty_points: { increment: pointsEarned },
-              total_orders: { increment: 1 }
-            }
+              total_orders: { increment: 1 },
+            },
           });
-          console.log(`[LOYALTY] Awarded ${pointsEarned} points to ${existingCustomer.name}`);
+          console.log(
+            `[LOYALTY] Awarded ${pointsEarned} points to ${existingCustomer.name}`,
+          );
         }
       }
     }
@@ -87,10 +97,23 @@ export class OnlineOrdersService {
 
   async updateOrderStatus(id: number, data: any) {
     const allowedKeys = [
-      'orderId', 'status', 'kdsStatus', 'type', 'source', 'customer',
-      'customerPhone', 'customerAddress', 'items', 'totalAmount', 'notes',
-      'prepTimeMinutes', 'estimatedReadyAt', 'timePlaced', 'riderAssigned',
-      'feedback', 'delivery',
+      'orderId',
+      'status',
+      'kdsStatus',
+      'type',
+      'source',
+      'customer',
+      'customerPhone',
+      'customerAddress',
+      'items',
+      'totalAmount',
+      'notes',
+      'prepTimeMinutes',
+      'estimatedReadyAt',
+      'timePlaced',
+      'riderAssigned',
+      'feedback',
+      'delivery',
     ];
 
     const updateData: any = {};
@@ -101,7 +124,9 @@ export class OnlineOrdersService {
     }
 
     try {
-      const existingOrder = await this.prisma.onlineOrder.findUnique({ where: { id } });
+      const existingOrder = await this.prisma.onlineOrder.findUnique({
+        where: { id },
+      });
       if (!existingOrder) throw new NotFoundException('Order not found');
 
       const updated = await this.prisma.onlineOrder.update({
@@ -111,8 +136,8 @@ export class OnlineOrdersService {
 
       // Recipe Stock Deduction Logic
       if (
-        (data.status === 'SETTLED' || data.status === 'PAID') && 
-        existingOrder.status !== 'SETTLED' && 
+        (data.status === 'SETTLED' || data.status === 'PAID') &&
+        existingOrder.status !== 'SETTLED' &&
         existingOrder.status !== 'PAID'
       ) {
         try {
@@ -122,16 +147,16 @@ export class OnlineOrdersService {
             // We look up the product by name and store_id to get its recipe
             const product = await this.prisma.product.findFirst({
               where: { store_id: updated.store_id, name: item.name },
-              include: { recipeItems: true }
+              include: { recipeItems: true },
             });
 
             if (product && product.recipeItems.length > 0) {
               for (const recipe of product.recipeItems) {
                 const qtyToDeduct = recipe.quantity * (item.qty || 1);
-                
+
                 await this.prisma.inventoryItem.update({
                   where: { id: recipe.inventory_id },
-                  data: { quantity: { decrement: qtyToDeduct } }
+                  data: { quantity: { decrement: qtyToDeduct } },
                 });
 
                 // Log the deduction
@@ -141,8 +166,8 @@ export class OnlineOrdersService {
                     operation: 'SUBTRACT',
                     amount: qtyToDeduct,
                     reason: `Order #${updated.id} settled`,
-                    changed_by: 0 // System
-                  }
+                    changed_by: 0, // System
+                  },
                 });
               }
             }
@@ -162,23 +187,26 @@ export class OnlineOrdersService {
               dayStart: { lte: updated.createdAt },
               OR: [
                 { dayClose: null },
-                { dayClose: { gte: updated.createdAt } }
-              ]
-            }
+                { dayClose: { gte: updated.createdAt } },
+              ],
+            },
           });
 
           // Fallback: If no precise day matches, find the closest active day from the past
           if (!targetDay) {
             targetDay = await this.prisma.businessDay.findFirst({
-              where: { store_id: updated.store_id, dayStart: { lte: updated.createdAt } },
-              orderBy: { id: 'desc' }
+              where: {
+                store_id: updated.store_id,
+                dayStart: { lte: updated.createdAt },
+              },
+              orderBy: { id: 'desc' },
             });
           }
           // Ultimate fallback: Just get the latest day
           if (!targetDay) {
             targetDay = await this.prisma.businessDay.findFirst({
               where: { store_id: updated.store_id },
-              orderBy: { id: 'desc' }
+              orderBy: { id: 'desc' },
             });
           }
 
@@ -187,7 +215,9 @@ export class OnlineOrdersService {
             if (isNaN(total_amount)) total_amount = 0;
 
             let itemsArr: any[] = [];
-            try { itemsArr = JSON.parse(updated.items || '[]'); } catch(e) {}
+            try {
+              itemsArr = JSON.parse(updated.items || '[]');
+            } catch (e) {}
 
             // Create the official POS Order
             await this.prisma.order.create({
@@ -208,10 +238,10 @@ export class OnlineOrdersService {
                     product_id: parseInt(i.id) || 0,
                     quantity: i.qty || 1,
                     price: parseFloat(i.price) || 0,
-                    special_inst: i.special_inst || ''
-                  }))
-                }
-              }
+                    special_inst: i.special_inst || '',
+                  })),
+                },
+              },
             });
 
             // If the target day is ALREADY CLOSED, we retroactively update its totals
@@ -221,12 +251,16 @@ export class OnlineOrdersService {
                 data: {
                   totalSales: { increment: total_amount },
                   closingCash: { increment: total_amount },
-                  totalOrders: { increment: 1 }
-                }
+                  totalOrders: { increment: 1 },
+                },
               });
-              console.log(`[RETROACTIVE SALES] Added ${total_amount} to Closed Day #${targetDay.id}`);
+              console.log(
+                `[RETROACTIVE SALES] Added ${total_amount} to Closed Day #${targetDay.id}`,
+              );
             } else {
-              console.log(`[SALES] Added ${total_amount} to Open Day #${targetDay.id}`);
+              console.log(
+                `[SALES] Added ${total_amount} to Open Day #${targetDay.id}`,
+              );
             }
           }
         } catch (e) {
@@ -234,8 +268,14 @@ export class OnlineOrdersService {
         }
       }
 
-      console.log(`[STATUS UPDATE] Order #${id} → kdsStatus: ${updated.kdsStatus}`);
-      this.gateway.broadcast('order_updated', updated, `store_${updated.store_id}`);
+      console.log(
+        `[STATUS UPDATE] Order #${id} → kdsStatus: ${updated.kdsStatus}`,
+      );
+      this.gateway.broadcast(
+        'order_updated',
+        updated,
+        `store_${updated.store_id}`,
+      );
       return { success: true, order: updated };
     } catch (error) {
       throw new NotFoundException('Order not found or update failed');
@@ -270,7 +310,11 @@ export class OnlineOrdersService {
       });
 
       console.log(`[ACCEPTED] Order #${id}`);
-      this.gateway.broadcast('order_updated', updated, `store_${updated.store_id}`);
+      this.gateway.broadcast(
+        'order_updated',
+        updated,
+        `store_${updated.store_id}`,
+      );
 
       return { success: true };
     } catch (error) {

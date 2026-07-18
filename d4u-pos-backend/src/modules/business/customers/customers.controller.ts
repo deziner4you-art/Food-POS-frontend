@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { CustomersService } from './customers.service';
 
 @Controller('customers')
@@ -36,7 +44,13 @@ export class CustomersController {
   // POST /customers — نیا گاہک
   @Post()
   createCustomer(
-    @Body() body: { brand_id: number; phone: string; name: string; address?: string },
+    @Body()
+    body: {
+      brand_id: number;
+      phone: string;
+      name: string;
+      address?: string;
+    },
   ) {
     console.log(`[CRM] New Customer: ${body.name} — ${body.phone}`);
     return this.service.createCustomer(body);
@@ -57,15 +71,16 @@ export class CustomersController {
     @Param('id') id: string,
     @Body() body: { order_id: number; order_amount: number },
   ) {
-    return this.service.earnPoints(Number(id), body.order_id, body.order_amount);
+    return this.service.earnPoints(
+      Number(id),
+      body.order_id,
+      body.order_amount,
+    );
   }
 
   // POST /customers/:id/redeem — پوائنٹس استعمال کریں
   @Post(':id/redeem')
-  redeemPoints(
-    @Param('id') id: string,
-    @Body() body: { points: number },
-  ) {
+  redeemPoints(@Param('id') id: string, @Body() body: { points: number }) {
     return this.service.redeemPoints(Number(id), body.points);
   }
 }

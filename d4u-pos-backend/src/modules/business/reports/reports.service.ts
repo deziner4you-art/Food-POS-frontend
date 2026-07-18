@@ -23,10 +23,17 @@ export class ReportsService {
         include: { items: true },
       }),
       this.prisma.order.count({
-        where: { store_id, status: 'VOIDED', createdAt: { gte: start, lte: end } },
+        where: {
+          store_id,
+          status: 'VOIDED',
+          createdAt: { gte: start, lte: end },
+        },
       }),
       this.prisma.onlineOrder.count({
-        where: { status: { in: ['SETTLED', 'DELIVERED'] }, createdAt: { gte: start, lte: end } },
+        where: {
+          status: { in: ['SETTLED', 'DELIVERED'] },
+          createdAt: { gte: start, lte: end },
+        },
       }),
     ]);
 
@@ -49,7 +56,13 @@ export class ReportsService {
   }
 
   // Branch Analytics (Advanced Filtering)
-  async getBranchAnalytics(store_id: number, start_date?: string, end_date?: string, business_day_id?: number, cashier_id?: number) {
+  async getBranchAnalytics(
+    store_id: number,
+    start_date?: string,
+    end_date?: string,
+    business_day_id?: number,
+    cashier_id?: number,
+  ) {
     const where: any = {
       store_id,
       status: { not: 'VOIDED' },
@@ -79,11 +92,18 @@ export class ReportsService {
 
     const [posOrders, onlineOrdersDb, voidedCount] = await Promise.all([
       this.prisma.order.findMany({
-        where: { ...where, is_offline: false, order_source: { in: ['WALKIN', 'DINEIN'] } }, // Typical POS sales
+        where: {
+          ...where,
+          is_offline: false,
+          order_source: { in: ['WALKIN', 'DINEIN'] },
+        }, // Typical POS sales
         include: { items: true, approver: { select: { name: true } } },
       }),
       this.prisma.order.findMany({
-        where: { ...where, order_source: { in: ['ONLINE', 'WHATSAPP', 'CALL'] } }, // Online/Delivery
+        where: {
+          ...where,
+          order_source: { in: ['ONLINE', 'WHATSAPP', 'CALL'] },
+        }, // Online/Delivery
         include: { items: true },
       }),
       this.prisma.order.count({
@@ -94,7 +114,7 @@ export class ReportsService {
     const posSales = posOrders.reduce((s, o) => s + o.total_amount, 0);
     const onlineSales = onlineOrdersDb.reduce((s, o) => s + o.total_amount, 0);
     const totalSales = posSales + onlineSales;
-    
+
     const posDiscount = posOrders.reduce((s, o) => s + o.discount, 0);
     const onlineDiscount = onlineOrdersDb.reduce((s, o) => s + o.discount, 0);
     const totalDiscount = posDiscount + onlineDiscount;
@@ -105,21 +125,23 @@ export class ReportsService {
 
     for (const order of allOrders) {
       if (!order.created_by) continue;
-      
+
       let entry = cashierBreakdownMap.get(order.created_by);
       if (!entry) {
         // Fetch user details for the cashier once
-        const user = await this.prisma.user.findUnique({ where: { id: order.created_by } });
+        const user = await this.prisma.user.findUnique({
+          where: { id: order.created_by },
+        });
         entry = {
           cashier_id: order.created_by,
           cashier_name: user?.name || 'Unknown',
           total_orders: 0,
           total_sales: 0,
-          total_discount: 0
+          total_discount: 0,
         };
         cashierBreakdownMap.set(order.created_by, entry);
       }
-      
+
       entry.total_orders += 1;
       entry.total_sales += order.total_amount;
       entry.total_discount += order.discount;
@@ -134,9 +156,9 @@ export class ReportsService {
         posOrders: posOrders.length,
         onlineOrders: onlineOrdersDb.length,
         totalOrders: allOrders.length,
-        voidedCount
+        voidedCount,
       },
-      cashierBreakdown: Array.from(cashierBreakdownMap.values())
+      cashierBreakdown: Array.from(cashierBreakdownMap.values()),
     };
   }
 
@@ -148,8 +170,8 @@ export class ReportsService {
       take: limit,
       include: {
         starter: { select: { id: true, name: true } },
-        closer: { select: { id: true, name: true } }
-      }
+        closer: { select: { id: true, name: true } },
+      },
     });
   }
 
@@ -166,7 +188,9 @@ export class ReportsService {
 
     const products = await Promise.all(
       items.map(async (item) => {
-        const product = await this.prisma.product.findUnique({ where: { id: item.product_id } });
+        const product = await this.prisma.product.findUnique({
+          where: { id: item.product_id },
+        });
         return {
           product,
           total_qty: item._sum.quantity,
@@ -239,7 +263,11 @@ export class ReportsService {
       end.setHours(23, 59, 59, 999);
 
       const orders = await this.prisma.order.findMany({
-        where: { store_id, status: { not: 'VOIDED' }, createdAt: { gte: d, lte: end } },
+        where: {
+          store_id,
+          status: { not: 'VOIDED' },
+          createdAt: { gte: d, lte: end },
+        },
       });
 
       days.push({
