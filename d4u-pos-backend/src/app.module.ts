@@ -29,6 +29,7 @@ import { UsersModule } from './modules/core/users/users.module';
 import { SaasPackageModule } from './modules/core/saas-package/saas-package.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TerminalModule } from './modules/core/terminal/terminal.module';
+import { AccountingModule } from './modules/business/accounting/accounting.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { TerminalModule } from './modules/core/terminal/terminal.module';
     UsersModule,
     SaasPackageModule,
     TerminalModule,
+    AccountingModule,
   ],
   controllers: [AppController],
   providers: [AppService, AppGateway],

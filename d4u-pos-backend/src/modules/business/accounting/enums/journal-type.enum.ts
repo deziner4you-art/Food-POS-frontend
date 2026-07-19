@@ -1,0 +1,8 @@
+export enum JournalType {
+  GENERAL = 'GENERAL',
+  SALES = 'SALES',
+  PURCHASE = 'PURCHASE',
+  CASH = 'CASH',
+  BANK = 'BANK',
+  OPENING_BALANCE = 'OPENING_BALANCE',
+}

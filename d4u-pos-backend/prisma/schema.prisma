@@ -61,6 +61,22 @@ model Store {
   terminalSessions      TerminalSession[]
   cmsSettings           CmsSettings?
   newsletterSubscribers NewsletterSubscriber[]
+
+  // Accounting
+  accountGroups         AccountGroup[]
+  accounts              Account[]
+  fiscalYears           FiscalYear[]
+  accountingPeriods     AccountingPeriod[]
+  journals              Journal[]
+  journalEntries        JournalEntry[]
+  journalEntryLines     JournalEntryLine[]
+  voucherTypes          VoucherType[]
+  general_ledgers       GeneralLedger[]
+  vouchers              Voucher[]
+  exchangeRates         ExchangeRate[]
+  costCenters           CostCenter[]
+  profitCenters         ProfitCenter[]
+  systemAccountMappings SystemAccountMapping[]
 }
 
 model TerminalSession {
@@ -620,4 +636,362 @@ model NewsletterSubscriber {
   store Store @relation(fields: [store_id], references: [id])
 
   @@unique([store_id, email])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE ACCOUNTING ENGINE
+// ---------------------------------------------------------
+
+model AccountGroup {
+  id              Int       @id @default(autoincrement())
+  store_id        Int
+  parent_group_id Int?
+  name            String
+  code            String
+  root_type       String
+  is_active       Boolean   @default(true)
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+  created_by      Int?
+  updated_by      Int?
+  deleted_at      DateTime?
+
+  parent_group AccountGroup?  @relation("GroupToGroup", fields: [parent_group_id], references: [id])
+  child_groups AccountGroup[] @relation("GroupToGroup")
+  accounts     Account[]
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@unique([store_id, code])
+  @@index([store_id])
+}
+
+model Account {
+  id               Int       @id @default(autoincrement())
+  store_id         Int
+  account_group_id Int
+  currency_id      Int?
+  name             String
+  code             String
+  opening_balance  Decimal   @default(0.0) @db.Decimal(15, 4)
+  is_active        Boolean   @default(true)
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+  created_by       Int?
+  updated_by       Int?
+  deleted_at      DateTime?
+
+  account_group   AccountGroup           @relation(fields: [account_group_id], references: [id])
+  currency        Currency?              @relation(fields: [currency_id], references: [id])
+  journal_lines   JournalEntryLine[]
+  system_mappings SystemAccountMapping[]
+  general_ledgers GeneralLedger[]
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@unique([store_id, code])
+  @@index([store_id])
+  @@index([account_group_id])
+}
+
+model FiscalYear {
+  id         Int      @id @default(autoincrement())
+  store_id   Int
+  start_date DateTime
+  end_date   DateTime
+  is_closed  Boolean  @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  created_by Int?
+  updated_by Int?
+
+  accounting_periods AccountingPeriod[]
+  journal_entries    JournalEntry[]
+  general_ledgers    GeneralLedger[]
+  vouchers           Voucher[]
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model AccountingPeriod {
+  id             Int      @id @default(autoincrement())
+  store_id       Int
+  fiscal_year_id Int
+  month          Int
+  year           Int
+  start_date     DateTime
+  end_date       DateTime
+  status         String
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  created_by     Int?
+  updated_by     Int?
+
+  fiscal_year     FiscalYear      @relation(fields: [fiscal_year_id], references: [id])
+  journal_entries JournalEntry[]
+  general_ledgers GeneralLedger[]
+  vouchers        Voucher[]
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+  @@index([fiscal_year_id])
+  @@index([status])
+}
+
+model Journal {
+  id                      Int      @id @default(autoincrement())
+  store_id                Int
+  code                    String
+  name                    String
+  prefix                  String
+  type                    String
+  is_active               Boolean  @default(true)
+  allow_manual_entries    Boolean  @default(true)
+  allow_automatic_entries Boolean  @default(true)
+  require_approval        Boolean  @default(false)
+  is_system_generated     Boolean  @default(false)
+  default_currency_id     Int?
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+  created_by              Int?
+  updated_by              Int?
+
+  journal_entries JournalEntry[]
+  vouchers        Voucher[]
+  currency        Currency?      @relation(fields: [default_currency_id], references: [id])
+  store           Store          @relation(fields: [store_id], references: [id])
+
+  @@unique([store_id, code])
+  @@unique([store_id, name])
+  @@index([store_id])
+}
+
+model JournalEntry {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  journal_id           Int
+  fiscal_year_id       Int
+  accounting_period_id Int
+  posting_date         DateTime
+  reference_number     String
+  reference_type       String?
+  reference_id         String?
+  description          String?
+  currency_id          Int?
+  total_amount         Decimal  @db.Decimal(15, 4)
+  status               String
+  is_posted_to_ledger  Boolean  @default(false)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+  created_by           Int?
+  updated_by           Int?
+
+  journal           Journal            @relation(fields: [journal_id], references: [id])
+  fiscal_year       FiscalYear         @relation(fields: [fiscal_year_id], references: [id])
+  accounting_period AccountingPeriod   @relation(fields: [accounting_period_id], references: [id])
+  currency          Currency?          @relation(fields: [currency_id], references: [id])
+  lines             JournalEntryLine[]
+  general_ledgers   GeneralLedger[]
+  voucher           Voucher?
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@unique([store_id, reference_number])
+  @@index([store_id])
+  @@index([posting_date])
+  @@index([reference_id])
+  @@index([fiscal_year_id])
+}
+
+model JournalEntryLine {
+  id               Int      @id @default(autoincrement())
+  store_id         Int
+  journal_entry_id Int
+  account_id       Int
+  debit_amount     Decimal  @default(0.0) @db.Decimal(15, 4)
+  credit_amount    Decimal  @default(0.0) @db.Decimal(15, 4)
+  description      String?
+  cost_center_id   Int?
+  profit_center_id Int?
+  party_type       String?
+  party_id         Int?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  journal_entry JournalEntry  @relation(fields: [journal_entry_id], references: [id])
+  account       Account       @relation(fields: [account_id], references: [id])
+  cost_center   CostCenter?   @relation(fields: [cost_center_id], references: [id])
+  profit_center ProfitCenter? @relation(fields: [profit_center_id], references: [id])
+
+  store          Store          @relation(fields: [store_id], references: [id])
+  general_ledger GeneralLedger?
+
+  @@index([store_id])
+  @@index([account_id])
+  @@index([journal_entry_id])
+}
+
+model GeneralLedger {
+  id                    Int      @id @default(autoincrement())
+  store_id              Int
+  journal_entry_id      Int
+  journal_entry_line_id Int      @unique
+  account_id            Int
+  debit                 Decimal  @default(0.0) @db.Decimal(15, 4)
+  credit                Decimal  @default(0.0) @db.Decimal(15, 4)
+  running_balance       Decimal  @default(0.0) @db.Decimal(15, 4)
+  posting_date          DateTime
+  fiscal_year_id        Int
+  accounting_period_id  Int
+  reference             String?
+  currency_id           Int?
+  created_at            DateTime @default(now())
+
+  store              Store            @relation(fields: [store_id], references: [id])
+  journal_entry      JournalEntry     @relation(fields: [journal_entry_id], references: [id])
+  journal_entry_line JournalEntryLine @relation(fields: [journal_entry_line_id], references: [id])
+  account            Account          @relation(fields: [account_id], references: [id])
+  fiscal_year        FiscalYear       @relation(fields: [fiscal_year_id], references: [id])
+  accounting_period  AccountingPeriod @relation(fields: [accounting_period_id], references: [id])
+  currency           Currency?        @relation(fields: [currency_id], references: [id])
+
+  @@index([store_id, account_id])
+  @@index([store_id, posting_date])
+  @@index([store_id, fiscal_year_id])
+}
+
+model VoucherType {
+  id         Int      @id @default(autoincrement())
+  store_id   Int
+  name       String
+  prefix     String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  vouchers Voucher[]
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model Voucher {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  voucher_type_id      Int
+  fiscal_year_id       Int
+  accounting_period_id Int
+  journal_id           Int
+  currency_id          Int?
+  journal_entry_id     Int?     @unique
+  voucher_number       String
+  reference_number     String?
+  date                 DateTime
+  amount               Decimal  @db.Decimal(15, 4)
+  description          String?
+  status               String
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+  created_by           Int?
+  updated_by           Int?
+
+  voucher_type         VoucherType      @relation(fields: [voucher_type_id], references: [id])
+  fiscal_year          FiscalYear       @relation(fields: [fiscal_year_id], references: [id])
+  accounting_period    AccountingPeriod @relation(fields: [accounting_period_id], references: [id])
+  journal              Journal          @relation(fields: [journal_id], references: [id])
+  currency             Currency?      @relation(fields: [currency_id], references: [id])
+  journal_entry        JournalEntry?  @relation(fields: [journal_entry_id], references: [id])
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@unique([store_id, voucher_number])
+  @@index([store_id])
+  @@index([date])
+}
+
+model Currency {
+  id              Int      @id @default(autoincrement())
+  code            String   @unique
+  symbol          String
+  rounding_method String
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  accounts        Account[]
+  journals        Journal[]
+  journal_entries JournalEntry[]
+  general_ledgers GeneralLedger[]
+  vouchers        Voucher[]
+  base_rates      ExchangeRate[]  @relation("BaseCurrency")
+  target_rates    ExchangeRate[]  @relation("TargetCurrency")
+}
+
+model ExchangeRate {
+  id                 Int      @id @default(autoincrement())
+  store_id           Int
+  base_currency_id   Int
+  target_currency_id Int
+  rate               Decimal  @db.Decimal(15, 6)
+  effective_date     DateTime
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  base_currency   Currency @relation("BaseCurrency", fields: [base_currency_id], references: [id])
+  target_currency Currency @relation("TargetCurrency", fields: [target_currency_id], references: [id])
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model CostCenter {
+  id         Int      @id @default(autoincrement())
+  store_id   Int
+  code       String
+  name       String
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  journal_lines JournalEntryLine[]
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model ProfitCenter {
+  id         Int      @id @default(autoincrement())
+  store_id   Int
+  code       String
+  name       String
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  journal_lines JournalEntryLine[]
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model SystemAccountMapping {
+  id           Int      @id @default(autoincrement())
+  store_id     Int
+  mapping_type String
+  account_id   Int
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  account Account @relation(fields: [account_id], references: [id])
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@unique([store_id, mapping_type])
+  @@index([store_id])
 }
