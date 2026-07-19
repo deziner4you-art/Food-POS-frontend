@@ -7,3 +7,5 @@ export * from './voucher-status.enum';
 export * from './accounting-period-status.enum';
 export * from './currency-rounding.enum';
 export * from './system-account-type.enum';
+export * from './business-module.enum';
+export * from './business-event.enum';

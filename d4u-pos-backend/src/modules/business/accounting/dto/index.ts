@@ -22,3 +22,5 @@ export * from './create-voucher.dto';
 export * from './update-voucher.dto';
 export * from './approve-voucher.dto';
 export * from './cancel-voucher.dto';
+export * from './create-posting-rule.dto';
+export * from './update-posting-rule.dto';

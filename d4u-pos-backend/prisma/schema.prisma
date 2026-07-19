@@ -73,10 +73,15 @@ model Store {
   voucherTypes          VoucherType[]
   general_ledgers       GeneralLedger[]
   vouchers              Voucher[]
+  posting_rules         PostingRule[]
   exchangeRates         ExchangeRate[]
   costCenters           CostCenter[]
   profitCenters         ProfitCenter[]
   systemAccountMappings SystemAccountMapping[]
+  InventoryMovement     InventoryMovement[]
+  StockCountSession     StockCountSession[]
+  WasteSession          WasteSession[]
+  InventoryBatch        InventoryBatch[]
 }
 
 model TerminalSession {
@@ -276,6 +281,10 @@ model InventoryItem {
   recipes           RecipeIngredient[]
   PurchaseOrderItem PurchaseOrderItem[]
   TransitLoss       TransitLoss[]
+  InventoryMovement InventoryMovement[]
+  StockCountLine    StockCountLine[]
+  WasteLine         WasteLine[]
+  InventoryBatch    InventoryBatch[]
 }
 
 model InventoryTransactionLog {
@@ -679,7 +688,7 @@ model Account {
   updated_at       DateTime  @updatedAt
   created_by       Int?
   updated_by       Int?
-  deleted_at      DateTime?
+  deleted_at       DateTime?
 
   account_group   AccountGroup           @relation(fields: [account_group_id], references: [id])
   currency        Currency?              @relation(fields: [currency_id], references: [id])
@@ -898,12 +907,12 @@ model Voucher {
   created_by           Int?
   updated_by           Int?
 
-  voucher_type         VoucherType      @relation(fields: [voucher_type_id], references: [id])
-  fiscal_year          FiscalYear       @relation(fields: [fiscal_year_id], references: [id])
-  accounting_period    AccountingPeriod @relation(fields: [accounting_period_id], references: [id])
-  journal              Journal          @relation(fields: [journal_id], references: [id])
-  currency             Currency?      @relation(fields: [currency_id], references: [id])
-  journal_entry        JournalEntry?  @relation(fields: [journal_entry_id], references: [id])
+  voucher_type      VoucherType      @relation(fields: [voucher_type_id], references: [id])
+  fiscal_year       FiscalYear       @relation(fields: [fiscal_year_id], references: [id])
+  accounting_period AccountingPeriod @relation(fields: [accounting_period_id], references: [id])
+  journal           Journal          @relation(fields: [journal_id], references: [id])
+  currency          Currency?        @relation(fields: [currency_id], references: [id])
+  journal_entry     JournalEntry?    @relation(fields: [journal_entry_id], references: [id])
 
   store Store @relation(fields: [store_id], references: [id])
 
@@ -928,6 +937,32 @@ model Currency {
   vouchers        Voucher[]
   base_rates      ExchangeRate[]  @relation("BaseCurrency")
   target_rates    ExchangeRate[]  @relation("TargetCurrency")
+}
+
+model PostingRule {
+  id                      Int      @id @default(autoincrement())
+  store_id                Int
+  rule_code               String
+  rule_name               String
+  trigger_event           String
+  debit_account_resolver  String
+  credit_account_resolver String
+  currency_strategy       String
+  tax_strategy            String
+  cost_center_strategy    String?
+  profit_center_strategy  String?
+  auto_post               Boolean  @default(false)
+  is_active               Boolean  @default(true)
+  priority                Int      @default(0)
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+  created_by              Int?
+  updated_by              Int?
+
+  store Store @relation(fields: [store_id], references: [id])
+
+  @@unique([store_id, rule_code])
+  @@index([store_id])
 }
 
 model ExchangeRate {
@@ -994,4 +1029,144 @@ model SystemAccountMapping {
 
   @@unique([store_id, mapping_type])
   @@index([store_id])
+}
+
+model InventoryMovement {
+  id               Int      @id @default(autoincrement())
+  store_id         Int
+  warehouse_id     Int?
+  product_id       Int
+  batch_number     String?
+  movement_type    String
+  reference_module String
+  reference_id     String
+  quantity_in      Float    @default(0)
+  quantity_out     Float    @default(0)
+  balance_after    Float
+  unit_cost        Float    @default(0)
+  total_cost       Float    @default(0)
+  valuation_method String?
+  created_by       Int
+  transaction_date DateTime @default(now())
+  created_at       DateTime @default(now())
+
+  store   Store         @relation(fields: [store_id], references: [id])
+  product InventoryItem @relation(fields: [product_id], references: [id])
+}
+
+model StockCountSession {
+  id             Int       @id @default(autoincrement())
+  store_id       Int
+  warehouse_id   Int?
+  status         String    @default("DRAFT") // DRAFT, COUNTING, REVIEW, RECONCILED, CANCELLED
+  scheduled_date DateTime
+  completed_at   DateTime?
+  created_by     Int
+  approved_by    Int?
+  remarks        String?
+  created_at     DateTime  @default(now())
+
+  store Store            @relation(fields: [store_id], references: [id])
+  lines StockCountLine[]
+}
+
+model StockCountLine {
+  id                Int     @id @default(autoincrement())
+  session_id        Int
+  product_id        Int
+  system_quantity   Float
+  physical_quantity Float?
+  variance          Float?
+  unit_cost         Float   @default(0)
+  remarks           String?
+
+  session StockCountSession @relation(fields: [session_id], references: [id])
+  product InventoryItem     @relation(fields: [product_id], references: [id])
+}
+
+model WasteSession {
+  id               Int      @id @default(autoincrement())
+  store_id         Int
+  warehouse_id     Int?
+  reference_number String
+  status           String   @default("DRAFT") // DRAFT, REVIEW, APPROVED, POSTED, CANCELLED
+  created_by       Int
+  approved_by      Int?
+  remarks          String?
+  transaction_date DateTime @default(now())
+  created_at       DateTime @default(now())
+
+  store Store       @relation(fields: [store_id], references: [id])
+  lines WasteLine[]
+}
+
+model WasteLine {
+  id           Int     @id @default(autoincrement())
+  session_id   Int
+  product_id   Int
+  batch_number String?
+  waste_reason String
+  quantity     Float
+  unit_cost    Float   @default(0)
+  total_cost   Float   @default(0)
+  image_url    String?
+  remarks      String?
+
+  session WasteSession  @relation(fields: [session_id], references: [id])
+  product InventoryItem @relation(fields: [product_id], references: [id])
+}
+
+model InventoryBatch {
+  id                 Int       @id @default(autoincrement())
+  store_id           Int
+  warehouse_id       Int?
+  product_id         Int
+  batch_number       String
+  lot_number         String?
+  manufacturing_date DateTime?
+  expiry_date        DateTime?
+  received_quantity  Float     @default(0)
+  available_quantity Float     @default(0)
+  reserved_quantity  Float     @default(0)
+  consumed_quantity  Float     @default(0)
+  waste_quantity     Float     @default(0)
+  unit_cost          Float     @default(0)
+  valuation_method   String?   @default("WEIGHTED_AVERAGE")
+  status             String    @default("ACTIVE") // ACTIVE, EXPIRED, DEPLETED, QUARANTINED
+  created_by         Int
+  created_at         DateTime  @default(now())
+
+  store        Store              @relation(fields: [store_id], references: [id])
+  product      InventoryItem      @relation(fields: [product_id], references: [id])
+  movements    BatchMovement[]
+  reservations BatchReservation[]
+
+  @@unique([store_id, warehouse_id, product_id, batch_number])
+}
+
+model BatchMovement {
+  id               Int      @id @default(autoincrement())
+  batch_id         Int
+  movement_type    String // GRN, CONSUMPTION, WASTE, TRANSFER
+  reference_module String
+  reference_id     String
+  quantity_in      Float    @default(0)
+  quantity_out     Float    @default(0)
+  created_by       Int
+  transaction_date DateTime @default(now())
+
+  batch InventoryBatch @relation(fields: [batch_id], references: [id])
+}
+
+model BatchReservation {
+  id               Int      @id @default(autoincrement())
+  batch_id         Int
+  reference_module String
+  reference_id     String
+  quantity         Float
+  status           String   @default("RESERVED") // RESERVED, RELEASED, CONSUMED
+  created_by       Int
+  created_at       DateTime @default(now())
+
+  batch InventoryBatch @relation(fields: [batch_id], references: [id])
 }

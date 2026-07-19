@@ -8,6 +8,8 @@ import { PostingFailedEvent } from '../events/posting-failed.event';
 // Note: If using EventEmitter2, we would inject it here. For MVP without Event Bus, we just log.
 // The prompt specifies NO Event Bus, but requires the Event classes. We'll instantiate them to demonstrate usage.
 
+import { DomainEventBusService } from '../events/domain-event-bus.service';
+
 @Injectable()
 export class PostingEngineService {
   private readonly logger = new Logger(PostingEngineService.name);
@@ -15,6 +17,7 @@ export class PostingEngineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly validator: PostingValidatorService,
+    private readonly eventBus: DomainEventBusService,
   ) {}
 
   async postManualEntry(storeId: number, journalEntryId: number): Promise<PostingResult> {
@@ -79,7 +82,8 @@ export class PostingEngineService {
       });
 
       // Step 6: Emit PostingCompletedEvent
-      const event = new PostingCompletedEvent(storeId, journalEntryId);
+      const event = new PostingCompletedEvent(storeId, 0, 0, journalEntryId.toString(), 'postManualEntry', { success: true });
+      this.eventBus.publish(event);
       this.logger.log(`Posting Completed for JE ${journalEntryId} (Store ${storeId})`);
 
       return {
@@ -99,7 +103,8 @@ export class PostingEngineService {
          };
       }
 
-      const failedEvent = new PostingFailedEvent(storeId, journalEntryId, reason);
+      const failedEvent = new PostingFailedEvent(storeId, 0, 0, journalEntryId.toString(), 'postManualEntry', { reason });
+      this.eventBus.publish(failedEvent);
       this.logger.error(`Posting Failed for JE ${journalEntryId} (Store ${storeId}): ${reason}`);
 
       return {

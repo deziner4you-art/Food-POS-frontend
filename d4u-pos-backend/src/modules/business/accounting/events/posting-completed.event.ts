@@ -1,7 +1,19 @@
-export class PostingCompletedEvent {
+import { DomainEvent } from './domain-event.interface';
+import { EVENT_REGISTRY } from './event-registry';
+import { randomUUID } from 'crypto';
+
+export class PostingCompletedEvent implements DomainEvent {
+  event_id = randomUUID();
+  event_name = EVENT_REGISTRY.POSTING_COMPLETED;
+  occurred_at = new Date();
+
   constructor(
-    public readonly storeId: number,
-    public readonly journalEntryId: number,
-    public readonly timestamp: Date = new Date(),
+    public store_id: number,
+    public tenant_id: number,
+    public user_id: number,
+    public entity_id: string,
+    public correlation_id: string,
+    public payload: any,
   ) {}
+  entity_type = 'GENERAL_LEDGER';
 }

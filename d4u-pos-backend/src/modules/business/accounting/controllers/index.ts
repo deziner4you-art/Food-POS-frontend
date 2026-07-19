@@ -7,3 +7,5 @@ export * from './journal-entry.controller';
 export * from './general-ledger.controller';
 export * from './posting.controller';
 export * from './voucher.controller';
+export * from './accounting-rules.controller';
+export * from './event-catalog.controller';

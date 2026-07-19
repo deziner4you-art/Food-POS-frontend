@@ -8,3 +8,8 @@ export * from './journal-entry.repository';
 export * from './journal-entry-line.repository';
 export * from './general-ledger.repository';
 export * from './voucher.repository';
+export * from './posting-rule.repository';
+export * from './inventory-ledger.repository';
+export * from './stock-count.repository';
+export * from './waste.repository';
+export * from './batch.repository';
