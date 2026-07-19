@@ -16,12 +16,12 @@ import {
   RedeemPointsDto,
 } from './dto';
 
-@RequirePermissions('crm.manage')
 @Controller('customers')
 export class CustomersController {
   constructor(private readonly service: CustomersService) {}
 
   // GET /customers?brand_id=1&search=Ali
+  @RequirePermissions('crm.view')
   @Get()
   getCustomers(
     @Query('brand_id') brand_id: string,
@@ -31,6 +31,7 @@ export class CustomersController {
   }
 
   // GET /customers/phone/:phone — فون سے تلاش
+  @RequirePermissions('crm.view')
   @Get('phone/:phone')
   findByPhone(@Param('phone') phone: string) {
     console.log(`[CRM] Lookup by phone: ${phone}`);
@@ -38,18 +39,21 @@ export class CustomersController {
   }
 
   // GET /customers/:id/orders — گاہک کے آرڈرز
+  @RequirePermissions('crm.view')
   @Get(':id/orders')
   getCustomerOrders(@Param('id') id: string) {
     return this.service.getCustomerOrders(Number(id));
   }
 
   // GET /customers/:id/wallet — Loyalty Points Balance
+  @RequirePermissions('crm.view')
   @Get(':id/wallet')
   getWallet(@Param('id') id: string) {
     return this.service.getWalletBalance(Number(id));
   }
 
   // POST /customers — نیا گاہک
+  @RequirePermissions('crm.create')
   @Post()
   createCustomer(@Body() body: CreateCustomerDto) {
     console.log(`[CRM] New Customer: ${body.name} — ${body.phone}`);
@@ -57,12 +61,14 @@ export class CustomersController {
   }
 
   // PATCH /customers/:id — گاہک اپڈیٹ
+  @RequirePermissions('crm.update')
   @Patch(':id')
   updateCustomer(@Param('id') id: string, @Body() body: UpdateCustomerDto) {
     return this.service.updateCustomer(Number(id), body);
   }
 
   // POST /customers/:id/earn — پوائنٹس کمائیں
+  @RequirePermissions('crm.create')
   @Post(':id/earn')
   earnPoints(@Param('id') id: string, @Body() body: EarnPointsDto) {
     return this.service.earnPoints(
@@ -73,6 +79,7 @@ export class CustomersController {
   }
 
   // POST /customers/:id/redeem — پوائنٹس استعمال کریں
+  @RequirePermissions('crm.create')
   @Post(':id/redeem')
   redeemPoints(@Param('id') id: string, @Body() body: RedeemPointsDto) {
     return this.service.redeemPoints(Number(id), body.points);

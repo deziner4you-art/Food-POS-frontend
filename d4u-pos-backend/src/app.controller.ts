@@ -1,3 +1,4 @@
+import { Public, RequirePermissions } from './common/decorators';
 import {
   Controller,
   Get,
@@ -27,6 +28,7 @@ export class AppController {
   }
 
   // POST /rider/gps
+  @RequirePermissions('sales.manage')
   @Post('rider/gps')
   async updateRiderGps(@Body() body: any) {
     const orderId = Number(body.orderId);
@@ -58,6 +60,7 @@ export class AppController {
   }
 
   // GET /rider/gps/:orderId
+  @RequirePermissions('sales.view')
   @Get('rider/gps/:orderId')
   async getRiderGps(@Param('orderId') orderId: string) {
     const order = await this.prismaService.onlineOrder.findUnique({
@@ -71,6 +74,7 @@ export class AppController {
   }
 
   // POST /dispatch-order
+  @RequirePermissions('sales.manage')
   @Post('dispatch-order')
   async dispatchOrder(@Body() body: any) {
     const bridgeId = Number(body.bridgeOrderId);
@@ -131,6 +135,7 @@ export class AppController {
   }
 
   // GET /rider-orders
+  @RequirePermissions('sales.view')
   @Get('rider-orders')
   async getRiderOrders() {
     return this.prismaService.onlineOrder.findMany({
@@ -144,6 +149,7 @@ export class AppController {
   }
 
   // POST /settle-order/:id
+  @RequirePermissions('sales.manage')
   @Post('settle-order/:id')
   async settleOrder(@Param('id') id: string) {
     try {

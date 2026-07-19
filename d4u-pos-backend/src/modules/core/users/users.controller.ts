@@ -18,28 +18,31 @@ import { extname } from 'path';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto';
 
-@RequirePermissions('system.manage')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @RequirePermissions('system.view')
   @Get()
   getAllUsers(@Query('store_id') store_id?: string) {
     if (store_id) return this.usersService.getUsersByStore(Number(store_id));
     return this.usersService.getAllUsers();
   }
 
+  @RequirePermissions('system.view')
   @Get('roles')
   getRoles() {
     return this.usersService.getRoles();
   }
 
+  @RequirePermissions('system.create')
   @Post()
   createUser(@Body() body: CreateUserDto) {
     console.log(`[NEW USER] ${body.name} → Store #${body.store_id || 'HQ'}`);
     return this.usersService.createUser(body);
   }
 
+  @RequirePermissions('system.update')
   @Patch(':id')
   updateUser(
     @Param('id', ParseIntPipe) id: number,
@@ -49,12 +52,14 @@ export class UsersController {
     return this.usersService.updateUser(id, body);
   }
 
+  @RequirePermissions('system.delete')
   @Delete(':id')
   deleteUser(@Param('id', ParseIntPipe) id: number) {
     console.log(`[DELETE USER] #${id}`);
     return this.usersService.deleteUser(id);
   }
 
+  @RequirePermissions('system.create')
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {

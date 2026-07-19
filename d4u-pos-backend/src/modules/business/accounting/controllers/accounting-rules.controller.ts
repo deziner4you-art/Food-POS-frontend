@@ -4,11 +4,11 @@ import { AccountingRulesService } from '../services/accounting-rules.service';
 import { CreatePostingRuleDto } from '../dto/create-posting-rule.dto';
 import { UpdatePostingRuleDto } from '../dto/update-posting-rule.dto';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/rules')
 export class AccountingRulesController {
   constructor(private readonly service: AccountingRulesService) {}
 
+  @RequirePermissions('finance.accounting.create')
   @Post()
   async createRule(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -17,6 +17,7 @@ export class AccountingRulesController {
     return this.service.createRule(store_id, dto);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch(':id')
   async updateRule(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -26,6 +27,7 @@ export class AccountingRulesController {
     return this.service.updateRule(store_id, id, dto);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch(':id/activate')
   async activateRule(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -34,6 +36,7 @@ export class AccountingRulesController {
     return this.service.activateRule(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch(':id/deactivate')
   async deactivateRule(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -42,6 +45,7 @@ export class AccountingRulesController {
     return this.service.deactivateRule(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get(':id')
   async getRule(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -50,6 +54,7 @@ export class AccountingRulesController {
     return this.service.getRule(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async listRules(
     @Query('store_id', ParseIntPipe) store_id: number,

@@ -14,11 +14,11 @@ import { RequirePermissions } from '../../../common/decorators';
 import { SocialService } from './social.service';
 import { SelectFacebookPageDto, SelectInstagramAccountDto } from './dto';
 
-@RequirePermissions('crm.manage')
 @Controller('marketing/social')
 export class SocialController {
   constructor(private readonly socialService: SocialService) {}
 
+  @RequirePermissions('crm.view')
   @Get('status')
   async getStatus(@Query('branchId') branchId: string) {
     if (!branchId) return {};
@@ -26,6 +26,7 @@ export class SocialController {
   }
 
   // META OAUTH FLOW
+  @RequirePermissions('crm.view')
   @Get('facebook/connect')
   async connectFacebook(@Query('branchId') branchId: string, @Res() res: any) {
     // Ideally store branchId in state, then redirect to Meta OAuth
@@ -46,6 +47,7 @@ export class SocialController {
     return res.redirect(authUrl);
   }
 
+  @RequirePermissions('crm.view')
   @Get('instagram/connect')
   async connectInstagram(@Query('branchId') branchId: string, @Res() res: any) {
     const state = JSON.stringify({ branchId, platform: 'instagram' });
@@ -64,6 +66,7 @@ export class SocialController {
     return res.redirect(authUrl);
   }
 
+  @RequirePermissions('crm.view')
   @Get('meta/callback')
   async metaCallback(
     @Query('code') code: string,
@@ -85,11 +88,13 @@ export class SocialController {
   }
 
   // FACEBOOK SPECIFIC
+  @RequirePermissions('crm.view')
   @Get('facebook/pages')
   async getFacebookPages(@Query('token') token: string) {
     return this.socialService.getFacebookPages(token);
   }
 
+  @RequirePermissions('crm.create')
   @Post('facebook/select')
   async selectFacebookPage(@Body() body: SelectFacebookPageDto) {
     return this.socialService.saveFacebookPage(
@@ -100,17 +105,20 @@ export class SocialController {
     );
   }
 
+  @RequirePermissions('crm.delete')
   @Delete('facebook/disconnect')
   async disconnectFacebook(@Query('branchId') branchId: string) {
     return this.socialService.disconnectFacebook(parseInt(branchId, 10));
   }
 
   // INSTAGRAM SPECIFIC
+  @RequirePermissions('crm.view')
   @Get('instagram/accounts')
   async getInstagramAccounts(@Query('token') token: string) {
     return this.socialService.getInstagramAccounts(token);
   }
 
+  @RequirePermissions('crm.create')
   @Post('instagram/select')
   async selectInstagramAccount(@Body() body: SelectInstagramAccountDto) {
     return this.socialService.saveInstagramAccount(
@@ -121,6 +129,7 @@ export class SocialController {
     );
   }
 
+  @RequirePermissions('crm.delete')
   @Delete('instagram/disconnect')
   async disconnectInstagram(@Query('branchId') branchId: string) {
     return this.socialService.disconnectInstagram(parseInt(branchId, 10));

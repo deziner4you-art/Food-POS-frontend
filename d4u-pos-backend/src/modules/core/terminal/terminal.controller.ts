@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../common/decorators';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { TerminalLoginDto, GenerateTerminalDto } from './dto';
 
-@RequirePermissions('system.manage')
 @Controller('terminal')
 export class TerminalController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @RequirePermissions('system.create')
   @Post('login')
   async login(@Body() body: TerminalLoginDto) {
     const session = await this.prisma.terminalSession.findUnique({
@@ -25,6 +25,7 @@ export class TerminalController {
     };
   }
 
+  @RequirePermissions('system.create')
   @Post('generate')
   async generatePin(@Body() body: GenerateTerminalDto) {
     // Generate a random 6-digit PIN
@@ -42,6 +43,7 @@ export class TerminalController {
     return { success: true, pin };
   }
 
+  @RequirePermissions('system.delete')
   @Delete(':pin')
   async killSession(@Param('pin') pin: string) {
     await this.prisma.terminalSession

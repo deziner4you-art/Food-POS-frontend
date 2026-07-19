@@ -6,16 +6,17 @@ import { CreateAccountDto } from '../dto/create-account.dto';
 import { UpdateAccountDto } from '../dto/update-account.dto';
 import { MoveAccountDto } from '../dto/move-account.dto';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/coa')
 export class ChartOfAccountsController {
   constructor(private readonly coaService: ChartOfAccountsService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get('tree')
   async getTree(@Query('store_id', ParseIntPipe) store_id: number) {
     return this.coaService.getTree(store_id);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get('search')
   async search(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -24,6 +25,7 @@ export class ChartOfAccountsController {
     return this.coaService.search(store_id, query || '');
   }
 
+  @RequirePermissions('finance.accounting.create')
   @Post('groups')
   async createGroup(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -32,6 +34,7 @@ export class ChartOfAccountsController {
     return this.coaService.createGroup(store_id, dto);
   }
 
+  @RequirePermissions('finance.accounting.create')
   @Post('accounts')
   async createAccount(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -40,6 +43,7 @@ export class ChartOfAccountsController {
     return this.coaService.createAccount(store_id, dto);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch('accounts/:id')
   async updateAccount(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -49,6 +53,7 @@ export class ChartOfAccountsController {
     return this.coaService.updateAccount(store_id, id, dto);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch('accounts/:id/disable')
   async disableAccount(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -57,6 +62,7 @@ export class ChartOfAccountsController {
     return this.coaService.disableAccount(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch('accounts/:id/move')
   async moveAccount(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -66,6 +72,7 @@ export class ChartOfAccountsController {
     return this.coaService.moveAccount(store_id, id, dto);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch('groups/:id/move')
   async moveGroup(
     @Query('store_id', ParseIntPipe) store_id: number,

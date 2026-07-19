@@ -11,12 +11,12 @@ import { RequirePermissions } from '../../../common/decorators';
 import { KotsService } from './kots.service';
 import { UpdateKotStatusDto } from './dto';
 
-@RequirePermissions('sales.manage')
 @Controller('kots')
 export class KotsController {
   constructor(private readonly service: KotsService) {}
 
   // GET /kots?store_id=1 — KDS اسکرین (active tickets)
+  @RequirePermissions('sales.view')
   @Get()
   getActiveKots(@Query('store_id') store_id: string) {
     console.log(`[GET] Active KOTs — Store: ${store_id}`);
@@ -24,6 +24,7 @@ export class KotsController {
   }
 
   // GET /kots/history?store_id=1&business_day_id=5
+  @RequirePermissions('sales.view')
   @Get('history')
   getKotsByDay(
     @Query('store_id') store_id: string,
@@ -33,12 +34,14 @@ export class KotsController {
   }
 
   // GET /kots/:id
+  @RequirePermissions('sales.view')
   @Get(':id')
   getKot(@Param('id') id: string) {
     return this.service.getKot(Number(id));
   }
 
   // PATCH /kots/:id/status — Chef نے Accept یا Ready کیا
+  @RequirePermissions('sales.update')
   @Patch(':id/status')
   updateStatus(@Param('id') id: string, @Body() body: UpdateKotStatusDto) {
     console.log(`[KDS] KOT #${id} → ${body.status}`);
@@ -46,6 +49,7 @@ export class KotsController {
   }
 
   // POST /kots/:id/print — Print button دبایا
+  @RequirePermissions('sales.create')
   @Post(':id/print')
   incrementPrint(@Param('id') id: string) {
     return this.service.incrementPrintCount(Number(id));

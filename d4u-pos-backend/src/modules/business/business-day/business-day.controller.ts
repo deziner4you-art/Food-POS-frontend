@@ -3,12 +3,12 @@ import { RequirePermissions } from '../../../common/decorators';
 import { BusinessDayService } from './business-day.service';
 import { OpenBusinessDayDto, CloseBusinessDayDto } from './dto';
 
-@RequirePermissions('sales.manage')
 @Controller('business-day')
 export class BusinessDayController {
   constructor(private readonly service: BusinessDayService) {}
 
   // GET /business-day/current?store_id=1 — آج کا Open Day
+  @RequirePermissions('sales.view')
   @Get('current')
   getCurrentDay(@Query('store_id') store_id: string) {
     if (!store_id) return { error: 'store_id is required' };
@@ -17,6 +17,7 @@ export class BusinessDayController {
   }
 
   // GET /business-day/history?store_id=1 — پچھلے دنوں کی تاریخ
+  @RequirePermissions('sales.view')
   @Get('history')
   getDayHistory(
     @Query('store_id') store_id: string,
@@ -29,6 +30,7 @@ export class BusinessDayController {
   }
 
   // POST /business-day/start — Day Start بٹن
+  @RequirePermissions('sales.create')
   @Post('start')
   startDay(@Body() body: OpenBusinessDayDto) {
     console.log(
@@ -42,6 +44,7 @@ export class BusinessDayController {
   }
 
   // POST /business-day/close — Day Close بٹن
+  @RequirePermissions('sales.create')
   @Post('close')
   closeDay(@Body() body: CloseBusinessDayDto) {
     console.log(

@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { FinancialExportService } from '../services/financial-export.service';
 import { ExportRequest } from '../interfaces/financial-export.interface';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/export')
 export class FinancialExportController {
   constructor(private readonly exportService: FinancialExportService) {}
 
+  @RequirePermissions('finance.accounting.create')
   @Post()
   async exportReport(@Body() request: any, @Req() req: any, @Res() res: any) {
     const storeId = req.body.store_id || 1;

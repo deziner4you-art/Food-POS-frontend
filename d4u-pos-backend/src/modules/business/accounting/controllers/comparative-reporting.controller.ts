@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { ComparativeReportingService } from '../services/comparative-reporting.service';
 import { ComparativeFilter } from '../interfaces/comparative-report.interface';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/comparative')
 export class ComparativeReportingController {
   constructor(private readonly compService: ComparativeReportingService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async getComparativeReport(@Query() query: any, @Req() req: any) {
     const filter: ComparativeFilter = {

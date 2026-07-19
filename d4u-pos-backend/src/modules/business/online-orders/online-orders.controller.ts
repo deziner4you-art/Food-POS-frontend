@@ -16,11 +16,11 @@ import {
   PostFeedbackDto,
 } from './dto';
 
-@RequirePermissions('sales.manage')
 @Controller('online-orders')
 export class OnlineOrdersController {
   constructor(private readonly service: OnlineOrdersService) {}
 
+  @RequirePermissions('sales.view')
   @Get()
   getOrders(
     @Query('phone') phone?: string,
@@ -34,16 +34,19 @@ export class OnlineOrdersController {
     );
   }
 
+  @RequirePermissions('sales.view')
   @Get(':id')
   getOrder(@Param('id') id: string) {
     return this.service.getOrder(Number(id));
   }
 
+  @RequirePermissions('sales.create')
   @Post()
   createOrder(@Body() body: CreateOnlineOrderDto) {
     return this.service.createOrder(body);
   }
 
+  @RequirePermissions('sales.update')
   @Patch(':id')
   updateOrderStatus(
     @Param('id') id: string,
@@ -52,6 +55,7 @@ export class OnlineOrdersController {
     return this.service.updateOrderStatus(Number(id), body);
   }
 
+  @RequirePermissions('sales.create')
   @Post(':id/feedback')
   postFeedback(@Param('id') id: string, @Body() body: PostFeedbackDto) {
     return this.service.postFeedback(
@@ -61,6 +65,7 @@ export class OnlineOrdersController {
     );
   }
 
+  @RequirePermissions('sales.delete')
   @Delete(':id')
   acceptOnlineOrder(@Param('id') id: string) {
     return this.service.acceptOnlineOrder(Number(id));

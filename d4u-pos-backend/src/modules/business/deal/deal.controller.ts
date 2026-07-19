@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../common/decorators';
 import { DealService } from './deal.service';
 import { CalculateDealDto } from './dto';
 
-@RequirePermissions('crm.manage')
 @Controller('deal')
 export class DealController {
   constructor(private readonly dealService: DealService) {}
 
+  @RequirePermissions('crm.create')
   @Post('calculate')
   async calculateDeal(@Body() body: CalculateDealDto) {
     return this.dealService.calculateDealDiscount(

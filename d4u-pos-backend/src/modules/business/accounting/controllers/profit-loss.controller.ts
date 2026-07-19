@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { ProfitLossService } from '../services/profit-loss.service';
 import { ProfitLossFilter } from '../interfaces/profit-loss-filter.interface';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/profit-loss')
 export class ProfitLossController {
   constructor(private readonly plService: ProfitLossService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async getProfitLoss(@Query() query: any, @Req() req: any) {
     const filter: ProfitLossFilter = {
@@ -21,6 +21,7 @@ export class ProfitLossController {
     return this.plService.generateProfitLoss(filter, userId);
   }
 
+  @RequirePermissions('finance.accounting.export')
   @Get('export')
   async exportProfitLoss(@Query() query: any, @Req() req: any) {
     const filter: ProfitLossFilter = {

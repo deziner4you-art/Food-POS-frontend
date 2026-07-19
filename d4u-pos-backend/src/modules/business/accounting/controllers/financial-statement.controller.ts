@@ -5,7 +5,6 @@ import { FinancialStatementBuilderService } from '../services/financial-statemen
 import { CreateStatementSectionDto } from '../interfaces/statement-section.interface';
 import { CreateStatementMappingDto } from '../interfaces/mapping.interface';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/financial-statements')
 export class FinancialStatementController {
   constructor(
@@ -13,23 +12,27 @@ export class FinancialStatementController {
     private readonly builderService: FinancialStatementBuilderService
   ) {}
 
+  @RequirePermissions('finance.accounting.create')
   @Post()
   async createStatement(@Body() body: any, @Req() req: any) {
     const storeId = body.store_id || 1;
     return this.mappingService.createStatement(storeId, body.name, body.type, body.description);
   }
 
+  @RequirePermissions('finance.accounting.create')
   @Post('sections')
   async createSection(@Body() dto: any, @Body('store_id') storeId: number) {
     return this.mappingService.createSection(storeId || 1, dto);
   }
 
+  @RequirePermissions('finance.accounting.create')
   @Post('mappings')
   async createMapping(@Body() dto: any, @Body('store_id') storeId: number, @Req() req: any) {
     const userId = req.user?.id || 1;
     return this.mappingService.mapAccount(storeId || 1, dto, userId);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get(':id/build')
   async buildStatement(
     @Param('id', ParseIntPipe) id: number,

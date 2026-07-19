@@ -5,11 +5,11 @@ import { CreateSystemAccountMappingDto } from '../dto/create-system-account-mapp
 import { UpdateSystemAccountMappingDto } from '../dto/update-system-account-mapping.dto';
 import { SystemAccountType } from '../enums/system-account-type.enum';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/system-accounts')
 export class SystemAccountMappingController {
   constructor(private readonly mappingService: SystemAccountMappingService) {}
 
+  @RequirePermissions('finance.accounting.create')
   @Post()
   async create(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -18,11 +18,13 @@ export class SystemAccountMappingController {
     return this.mappingService.createMapping(store_id, dto);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async findAll(@Query('store_id', ParseIntPipe) store_id: number) {
     return this.mappingService.findAll(store_id);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get('type/:type')
   async findByType(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -31,6 +33,7 @@ export class SystemAccountMappingController {
     return this.mappingService.findByType(store_id, type);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch(':id')
   async update(
     @Query('store_id', ParseIntPipe) store_id: number,

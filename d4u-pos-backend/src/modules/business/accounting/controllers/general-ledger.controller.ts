@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { GeneralLedgerService } from '../services/general-ledger.service';
 import { LedgerQueryDto } from '../dto/ledger-query.dto';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/ledger')
 export class GeneralLedgerController {
   constructor(private readonly service: GeneralLedgerService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async queryLedger(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -16,6 +16,7 @@ export class GeneralLedgerController {
     return this.service.queryLedger(store_id, query);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get('account/:id/balance')
   async getAccountBalance(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -24,6 +25,7 @@ export class GeneralLedgerController {
     return this.service.getAccountBalance(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get('trial-balance')
   async getTrialBalanceData(
     @Query('store_id', ParseIntPipe) store_id: number,

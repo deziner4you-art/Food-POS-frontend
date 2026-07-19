@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { CashFlowService } from '../services/cash-flow.service';
 import { CashFlowFilter } from '../interfaces/cash-flow-filter.interface';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/cash-flow')
 export class CashFlowController {
   constructor(private readonly cfService: CashFlowService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async getCashFlow(@Query() query: any, @Req() req: any) {
     const filter: CashFlowFilter = {
@@ -21,6 +21,7 @@ export class CashFlowController {
     return this.cfService.generateCashFlow(filter, userId);
   }
 
+  @RequirePermissions('finance.accounting.export')
   @Get('export')
   async exportCashFlow(@Query() query: any, @Req() req: any) {
     const filter: CashFlowFilter = {

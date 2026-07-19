@@ -24,11 +24,11 @@ import {
   UpdateScheduledDiscountDto,
 } from './dto';
 
-@RequirePermissions('crm.manage')
 @Controller('marketing')
 export class MarketingController {
   constructor(private readonly marketingService: MarketingService) {}
 
+  @RequirePermissions('crm.create')
   @Post('sla-performance')
   calculateSla(@Body() body: CalculateSlaDto) {
     return this.marketingService.calculateSlaPerformance(
@@ -39,6 +39,7 @@ export class MarketingController {
     );
   }
 
+  @RequirePermissions('crm.create')
   @Post('generate-affiliate-link')
   generateLink(@Body() body: GenerateLinkDto) {
     return this.marketingService.generateAffiliateLink(
@@ -48,6 +49,7 @@ export class MarketingController {
     );
   }
 
+  @RequirePermissions('crm.create')
   @Post('campaign')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -68,6 +70,7 @@ export class MarketingController {
     return this.marketingService.createCampaign(body);
   }
 
+  @RequirePermissions('crm.view')
   @Get('campaign')
   getCampaigns(@Query('store_id') store_id?: string) {
     return this.marketingService.getCampaigns(
@@ -75,6 +78,7 @@ export class MarketingController {
     );
   }
 
+  @RequirePermissions('crm.update')
   @Patch('campaign/:id')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -99,12 +103,14 @@ export class MarketingController {
     return this.marketingService.updateCampaign(parseInt(id), body);
   }
 
+  @RequirePermissions('crm.delete')
   @Delete('campaign/:id')
   deleteCampaign(@Param('id') id: string) {
     return this.marketingService.deleteCampaign(parseInt(id));
   }
 
   // SCHEDULED DISCOUNTS
+  @RequirePermissions('crm.create')
   @Post('schedule')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -128,11 +134,13 @@ export class MarketingController {
     return this.marketingService.createScheduledDiscount(body);
   }
 
+  @RequirePermissions('crm.view')
   @Get('schedule')
   getScheduledDiscounts() {
     return this.marketingService.getScheduledDiscounts();
   }
 
+  @RequirePermissions('crm.update')
   @Patch('schedule/:id')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -157,6 +165,7 @@ export class MarketingController {
     return this.marketingService.updateScheduledDiscount(parseInt(id), body);
   }
 
+  @RequirePermissions('crm.delete')
   @Delete('schedule/:id')
   deleteScheduledDiscount(@Param('id') id: string) {
     return this.marketingService.deleteScheduledDiscount(parseInt(id));

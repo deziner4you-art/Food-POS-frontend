@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { BalanceSheetService } from '../services/balance-sheet.service';
 import { BalanceSheetFilter } from '../interfaces/balance-sheet-filter.interface';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/balance-sheet')
 export class BalanceSheetController {
   constructor(private readonly bsService: BalanceSheetService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async getBalanceSheet(@Query() query: any, @Req() req: any) {
     const filter: BalanceSheetFilter = {
@@ -20,6 +20,7 @@ export class BalanceSheetController {
     return this.bsService.generateBalanceSheet(filter, userId);
   }
 
+  @RequirePermissions('finance.accounting.export')
   @Get('export')
   async exportBalanceSheet(@Query() query: any, @Req() req: any) {
     const filter: BalanceSheetFilter = {

@@ -24,7 +24,6 @@ import {
   UpdateProductDto,
 } from './dto';
 
-@RequirePermissions('system.manage')
 @Controller('catalog')
 export class CatalogController {
   constructor(private readonly service: CatalogService) {}
@@ -32,12 +31,14 @@ export class CatalogController {
   // -------------------------------------------------------------
   // POS SYNC
   // -------------------------------------------------------------
+  @RequirePermissions('catalog.view')
   @Get('sync/:store_id')
   syncCatalog(@Param('store_id') store_id: string) {
     console.log(`[CATALOG SYNC] Store: ${store_id}`);
     return this.service.syncCatalogForPos(Number(store_id));
   }
 
+  @RequirePermissions('catalog.create')
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -61,29 +62,34 @@ export class CatalogController {
   // -------------------------------------------------------------
   // MENUS
   // -------------------------------------------------------------
+  @RequirePermissions('catalog.view')
   @Get('menus')
   getMenus() {
     return this.service.getMenus();
   }
 
+  @RequirePermissions('catalog.create')
   @Post('menus')
   createMenu(@Body() body: CreateMenuDto) {
     console.log(`[NEW MENU] ${body.name}`);
     return this.service.createMenu(body);
   }
 
+  @RequirePermissions('catalog.update')
   @Patch('menus/:id')
   updateMenu(@Param('id') id: string, @Body() body: UpdateMenuDto) {
     console.log(`[UPDATE MENU] #${id}`);
     return this.service.updateMenu(Number(id), body);
   }
 
+  @RequirePermissions('catalog.create')
   @Post('menus/:id/duplicate')
   duplicateMenu(@Param('id') id: string) {
     console.log(`[DUPLICATE MENU] #${id}`);
     return this.service.duplicateMenu(Number(id));
   }
 
+  @RequirePermissions('catalog.delete')
   @Delete('menus/:id')
   deleteMenu(@Param('id') id: string) {
     console.log(`[DELETE MENU] #${id}`);
@@ -93,11 +99,13 @@ export class CatalogController {
   // -------------------------------------------------------------
   // CATEGORIES
   // -------------------------------------------------------------
+  @RequirePermissions('catalog.view')
   @Get('categories')
   getCategories(@Query('store_id') store_id: string) {
     return this.service.getCategories(Number(store_id));
   }
 
+  @RequirePermissions('catalog.create')
   @Post('categories')
   createCategory(@Body() body: CreateCategoryDto) {
     console.log(`[NEW CATEGORY] ${body.name}`);
@@ -109,12 +117,14 @@ export class CatalogController {
     );
   }
 
+  @RequirePermissions('catalog.update')
   @Patch('categories/:id')
   updateCategory(@Param('id') id: string, @Body() body: UpdateCategoryDto) {
     console.log(`[UPDATE CATEGORY] #${id}`);
     return this.service.updateCategory(Number(id), body);
   }
 
+  @RequirePermissions('catalog.delete')
   @Delete('categories/:id')
   deleteCategory(@Param('id') id: string) {
     console.log(`[DELETE CATEGORY] #${id}`);
@@ -124,29 +134,34 @@ export class CatalogController {
   // -------------------------------------------------------------
   // PRODUCTS
   // -------------------------------------------------------------
+  @RequirePermissions('catalog.view')
   @Get('products')
   getProducts(@Query('store_id') store_id: string) {
     return this.service.getProducts(Number(store_id));
   }
 
+  @RequirePermissions('catalog.create')
   @Post('products')
   createProduct(@Body() body: CreateProductDto) {
     console.log(`[NEW PRODUCT] ${body.name} — Rs.${body.price}`);
     return this.service.createProduct(body);
   }
 
+  @RequirePermissions('catalog.update')
   @Patch('products/:id')
   updateProduct(@Param('id') id: string, @Body() body: UpdateProductDto) {
     console.log(`[UPDATE PRODUCT] #${id}`);
     return this.service.updateProduct(Number(id), body);
   }
 
+  @RequirePermissions('catalog.approve')
   @Patch('products/:id/approve')
   approveProduct(@Param('id') id: string) {
     console.log(`[APPROVE PRODUCT] #${id}`);
     return this.service.approveProduct(Number(id));
   }
 
+  @RequirePermissions('catalog.delete')
   @Delete('products/:id')
   deleteProduct(@Param('id') id: string) {
     console.log(`[DELETE PRODUCT] #${id}`);

@@ -3,16 +3,17 @@ import { RequirePermissions } from '../../../common/decorators';
 import { SubscriptionService } from './subscription.service';
 import { CreateSubscriptionDto, UpdateSubscriptionDto } from './dto';
 
-@RequirePermissions('system.manage')
 @Controller('subscription')
 export class SubscriptionController {
   constructor(private readonly subscriptionService: SubscriptionService) {}
 
+  @RequirePermissions('system.view')
   @Get('pricing')
   getPricing() {
     return this.subscriptionService.getPricing();
   }
 
+  @RequirePermissions('system.create')
   @Post('onboarding')
   async onboardClient(@Body() body: CreateSubscriptionDto) {
     try {
@@ -31,11 +32,13 @@ export class SubscriptionController {
     }
   }
 
+  @RequirePermissions('system.view')
   @Get(':brand_id')
   getSubscription(@Param('brand_id') brand_id: string) {
     return this.subscriptionService.getSubscription(Number(brand_id));
   }
 
+  @RequirePermissions('system.create')
   @Post()
   updateSubscription(@Body() body: UpdateSubscriptionDto) {
     return this.subscriptionService.createOrUpdateSubscription(body);

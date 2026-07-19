@@ -4,10 +4,10 @@ import { BusinessEvent } from '../enums/business-event.enum';
 import { BUSINESS_EVENT_CATALOG } from '../catalog/business-event-catalog';
 import { ACCOUNTING_EVENT_MAPPING } from '../catalog/accounting-event-mapping';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/event-catalog')
 export class EventCatalogController {
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   getCatalog() {
     return {
@@ -16,6 +16,7 @@ export class EventCatalogController {
     };
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get(':event')
   getEventMapping(@Param('event') event: string) {
     if (!Object.values(BusinessEvent).includes(event as BusinessEvent)) {

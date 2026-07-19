@@ -17,11 +17,11 @@ import {
   RecordPurchaseDto,
 } from './dto';
 
-@RequirePermissions('inventory.manage')
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
+  @RequirePermissions('inventory.create')
   @Post('sync-offline')
   async syncOffline(@Body() body: SyncOfflineDto) {
     return this.inventoryService.syncOfflineTransactions(
@@ -30,27 +30,32 @@ export class InventoryController {
     );
   }
 
+  @RequirePermissions('inventory.view')
   @Get('red-alerts/:store_id')
   async getNegativeInventory(@Param('store_id', ParseIntPipe) storeId: number) {
     return this.inventoryService.getNegativeInventory(storeId);
   }
 
   // --- CRUD for Inventory Items ---
+  @RequirePermissions('inventory.view')
   @Get('items/:store_id')
   async getInventoryItems(@Param('store_id', ParseIntPipe) storeId: number) {
     return this.inventoryService.getInventoryItems(storeId);
   }
 
+  @RequirePermissions('inventory.view')
   @Get('item/:id')
   async getInventoryItem(@Param('id', ParseIntPipe) id: number) {
     return this.inventoryService.getInventoryItem(id);
   }
 
+  @RequirePermissions('inventory.create')
   @Post('items')
   async createInventoryItem(@Body() body: CreateInventoryDto) {
     return this.inventoryService.createInventoryItem(body);
   }
 
+  @RequirePermissions('inventory.update')
   @Patch('items/:id')
   async updateInventoryItem(
     @Param('id', ParseIntPipe) id: number,
@@ -59,11 +64,13 @@ export class InventoryController {
     return this.inventoryService.updateInventoryItem(id, body);
   }
 
+  @RequirePermissions('inventory.delete')
   @Delete('items/:id')
   async deleteInventoryItem(@Param('id', ParseIntPipe) id: number) {
     return this.inventoryService.deleteInventoryItem(id);
   }
 
+  @RequirePermissions('inventory.create')
   @Post('purchase')
   async recordPurchase(@Body() body: RecordPurchaseDto) {
     return this.inventoryService.recordPurchase(
@@ -74,6 +81,7 @@ export class InventoryController {
     );
   }
 
+  @RequirePermissions('inventory.create')
   @Post('import-excel')
   async importExcel() {
     return this.inventoryService.importExcelData();

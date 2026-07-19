@@ -6,16 +6,17 @@ import { UpdateJournalEntryDto } from '../dto/update-journal-entry.dto';
 import { ReverseJournalEntryDto } from '../dto/reverse-journal-entry.dto';
 import { ApproveJournalEntryDto } from '../dto/approve-journal-entry.dto';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/journal-entries')
 export class JournalEntryController {
   constructor(private readonly service: JournalEntryService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async findAll(@Query('store_id', ParseIntPipe) store_id: number) {
     return this.service.findAll(store_id);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get(':id')
   async findById(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -24,6 +25,7 @@ export class JournalEntryController {
     return this.service.findById(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.create')
   @Post()
   async create(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -32,6 +34,7 @@ export class JournalEntryController {
     return this.service.create(store_id, dto);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch(':id/draft')
   async updateDraft(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -41,6 +44,7 @@ export class JournalEntryController {
     return this.service.updateDraft(store_id, id, dto);
   }
 
+  @RequirePermissions('finance.accounting.create')
   @Post(':id/submit')
   async submit(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -49,6 +53,7 @@ export class JournalEntryController {
     return this.service.submit(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.approve')
   @Post(':id/approve')
   async approve(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -58,6 +63,7 @@ export class JournalEntryController {
     return this.service.approve(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.create')
   @Post(':id/reverse')
   async reverse(
     @Query('store_id', ParseIntPipe) store_id: number,

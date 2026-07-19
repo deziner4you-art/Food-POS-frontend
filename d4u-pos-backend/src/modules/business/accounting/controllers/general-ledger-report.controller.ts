@@ -4,7 +4,6 @@ import { GeneralLedgerReportService } from '../services/general-ledger-report.se
 import { GeneralLedgerDrilldownService } from '../services/general-ledger-drilldown.service';
 import { GeneralLedgerFilter } from '../interfaces/general-ledger-filter.interface';
 
-@RequirePermissions('finance.reports.view')
 @Controller('accounting/general-ledger-report')
 export class GeneralLedgerReportController {
   constructor(
@@ -12,6 +11,7 @@ export class GeneralLedgerReportController {
     private readonly glDrilldownService: GeneralLedgerDrilldownService
   ) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async getGeneralLedger(@Query() query: any, @Req() req: any) {
     const filter: GeneralLedgerFilter = {
@@ -27,6 +27,7 @@ export class GeneralLedgerReportController {
     return this.glReportService.generateReport(filter, userId);
   }
 
+  @RequirePermissions('finance.accounting.export')
   @Get('export')
   async exportGeneralLedger(@Query() query: any, @Req() req: any) {
     const filter: GeneralLedgerFilter = {
@@ -47,6 +48,7 @@ export class GeneralLedgerReportController {
     return { type: 'csv', data: csv };
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get(':glLineId/drilldown')
   async drilldown(
     @Param('glLineId', ParseIntPipe) glLineId: number,

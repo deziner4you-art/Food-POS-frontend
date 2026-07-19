@@ -5,7 +5,6 @@ import { BudgetAnalysisService } from '../services/budget-analysis.service';
 import { CreateBudgetInput } from '../interfaces/budget.interface';
 import { BudgetAnalysisFilter } from '../interfaces/budget-analysis.interface';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/budget')
 export class BudgetController {
   constructor(
@@ -13,18 +12,21 @@ export class BudgetController {
     private readonly analysisService: BudgetAnalysisService
   ) {}
 
+  @RequirePermissions('finance.accounting.create')
   @Post()
   async createBudget(@Body() body: any, @Req() req: any) {
     const userId = req.user?.id || 1;
     return this.budgetService.createBudget(body, userId);
   }
 
+  @RequirePermissions('finance.accounting.approve')
   @Put(':id/approve')
   async approveBudget(@Param('id') id: string, @Req() req: any) {
     const userId = req.user?.id || 1;
     return this.budgetService.approveBudget(Number(id), userId);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get('vs-actual')
   async getBudgetVsActual(@Query() query: any, @Req() req: any) {
     const filter: BudgetAnalysisFilter = {

@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { FinancialDashboardService } from '../services/financial-dashboard.service';
 import { DashboardFilter } from '../interfaces/financial-dashboard.interface';
 
-@RequirePermissions('finance.reports.view')
 @Controller('accounting/dashboard')
 export class FinancialDashboardController {
   constructor(private readonly dashboardService: FinancialDashboardService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async getDashboard(@Query() query: any, @Req() req: any) {
     const filter: DashboardFilter = {

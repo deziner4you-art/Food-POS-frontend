@@ -4,7 +4,6 @@ import { FinancialKpiService } from '../services/financial-kpi.service';
 import { FinancialRatioService } from '../services/financial-ratio.service';
 import { KpiFilter } from '../interfaces/financial-kpi.interface';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting')
 export class FinancialKpiController {
   constructor(
@@ -12,6 +11,7 @@ export class FinancialKpiController {
     private readonly ratioService: FinancialRatioService
   ) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get('kpis')
   async getKpis(@Query() query: any, @Req() req: any) {
     const filter: KpiFilter = {
@@ -25,6 +25,7 @@ export class FinancialKpiController {
     return this.kpiService.generateKpis(filter, userId);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get('financial-ratios')
   async getRatios(@Query() query: any, @Req() req: any) {
     const filter: KpiFilter = {

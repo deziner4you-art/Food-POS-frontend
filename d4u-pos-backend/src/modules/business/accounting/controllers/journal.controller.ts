@@ -4,16 +4,17 @@ import { JournalService } from '../services/journal.service';
 import { CreateJournalDto } from '../dto/create-journal.dto';
 import { UpdateJournalDto } from '../dto/update-journal.dto';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/journals')
 export class JournalController {
   constructor(private readonly journalService: JournalService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async findAll(@Query('store_id', ParseIntPipe) store_id: number) {
     return this.journalService.findAll(store_id);
   }
 
+  @RequirePermissions('finance.accounting.view')
   @Get(':id')
   async findById(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -22,6 +23,7 @@ export class JournalController {
     return this.journalService.findById(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.create')
   @Post()
   async create(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -30,6 +32,7 @@ export class JournalController {
     return this.journalService.create(store_id, dto);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch(':id')
   async update(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -39,6 +42,7 @@ export class JournalController {
     return this.journalService.update(store_id, id, dto);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch(':id/activate')
   async activate(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -47,6 +51,7 @@ export class JournalController {
     return this.journalService.activate(store_id, id);
   }
 
+  @RequirePermissions('finance.accounting.update')
   @Patch(':id/deactivate')
   async deactivate(
     @Query('store_id', ParseIntPipe) store_id: number,

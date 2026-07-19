@@ -2,12 +2,12 @@ import { Controller, Get, Query, Param } from '@nestjs/common';
 import { RequirePermissions } from '../../../common/decorators';
 import { ReportsService } from './reports.service';
 
-@RequirePermissions('finance.reports.view')
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly service: ReportsService) {}
 
   // GET /reports/daily?store_id=1&date=2026-07-03
+  @RequirePermissions('finance.reports.view')
   @Get('daily')
   getDailyReport(
     @Query('store_id') store_id: string,
@@ -17,6 +17,7 @@ export class ReportsController {
   }
 
   // GET /reports/branch-analytics
+  @RequirePermissions('finance.reports.view')
   @Get('branch-analytics')
   getBranchAnalytics(
     @Query('store_id') store_id: string,
@@ -35,6 +36,7 @@ export class ReportsController {
   }
 
   // GET /reports/shifts?store_id=1
+  @RequirePermissions('finance.reports.view')
   @Get('shifts')
   getShifts(
     @Query('store_id') store_id: string,
@@ -44,12 +46,14 @@ export class ReportsController {
   }
 
   // GET /reports/weekly?store_id=1
+  @RequirePermissions('finance.reports.view')
   @Get('weekly')
   getWeeklyTrend(@Query('store_id') store_id: string) {
     return this.service.getWeeklyTrend(Number(store_id));
   }
 
   // GET /reports/top-products?store_id=1&limit=10
+  @RequirePermissions('finance.reports.view')
   @Get('top-products')
   getTopProducts(
     @Query('store_id') store_id: string,
@@ -62,6 +66,7 @@ export class ReportsController {
   }
 
   // GET /reports/voids?store_id=1
+  @RequirePermissions('finance.reports.view')
   @Get('voids')
   getVoids(
     @Query('store_id') store_id: string,
@@ -74,6 +79,7 @@ export class ReportsController {
   }
 
   // GET /reports/brand/:brand_id — Multi-store overview
+  @RequirePermissions('finance.reports.view')
   @Get('brand/:brand_id')
   getBrandOverview(@Param('brand_id') brand_id: string) {
     return this.service.getBrandOverview(Number(brand_id));

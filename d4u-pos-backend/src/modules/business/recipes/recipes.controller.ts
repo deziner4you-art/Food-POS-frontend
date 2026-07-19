@@ -11,21 +11,23 @@ import { RequirePermissions } from '../../../common/decorators';
 import { RecipesService } from './recipes.service';
 import { CreateRecipeDto, BulkRecipeDto } from './dto';
 
-@RequirePermissions('production.manage')
 @Controller('recipes')
 export class RecipesController {
   constructor(private readonly recipesService: RecipesService) {}
 
+  @RequirePermissions('production.view')
   @Get('product/:product_id')
   getRecipe(@Param('product_id', ParseIntPipe) productId: number) {
     return this.recipesService.getRecipeForProduct(productId);
   }
 
+  @RequirePermissions('production.create')
   @Post()
   addIngredient(@Body() body: CreateRecipeDto) {
     return this.recipesService.addIngredientToRecipe(body);
   }
 
+  @RequirePermissions('production.create')
   @Post('bulk/:product_id')
   saveBulk(
     @Param('product_id', ParseIntPipe) productId: number,
@@ -34,11 +36,13 @@ export class RecipesController {
     return this.recipesService.saveRecipeBulk(productId, body.ingredients);
   }
 
+  @RequirePermissions('production.delete')
   @Delete(':id')
   removeIngredient(@Param('id', ParseIntPipe) id: number) {
     return this.recipesService.removeIngredientFromRecipe(id);
   }
 
+  @RequirePermissions('production.create')
   @Post('recalculate/:product_id')
   recalculateCost(@Param('product_id', ParseIntPipe) productId: number) {
     return this.recipesService.recalculateProductCost(productId);

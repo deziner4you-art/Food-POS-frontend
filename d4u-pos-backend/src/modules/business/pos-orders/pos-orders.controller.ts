@@ -16,12 +16,12 @@ import {
   SyncOfflineOrdersDto,
 } from './dto';
 
-@RequirePermissions('sales.manage')
 @Controller('pos-orders')
 export class PosOrdersController {
   constructor(private readonly service: PosOrdersService) {}
 
   // GET /pos-orders?store_id=1&business_day_id=2
+  @RequirePermissions('sales.view')
   @Get()
   getOrders(
     @Query('store_id') store_id: string,
@@ -35,6 +35,7 @@ export class PosOrdersController {
   }
 
   // GET /pos-orders/summary?store_id=1
+  @RequirePermissions('sales.view')
   @Get('summary')
   getSummary(
     @Query('store_id') store_id: string,
@@ -48,6 +49,7 @@ export class PosOrdersController {
   }
 
   // GET /pos-orders/:id
+  @RequirePermissions('sales.view')
   @Get(':id')
   getOrder(@Param('id') id: string) {
     console.log(`[GET] Order #${id}`);
@@ -55,6 +57,7 @@ export class PosOrdersController {
   }
 
   // POST /pos-orders — نیا آرڈر
+  @RequirePermissions('sales.create')
   @Post()
   createOrder(@Body() body: CreatePosOrderDto) {
     console.log(
@@ -64,6 +67,7 @@ export class PosOrdersController {
   }
 
   // PATCH /pos-orders/:id/void — آرڈر کینسل (مینیجر PIN درکار)
+  @RequirePermissions('sales.update')
   @Patch(':id/void')
   voidOrder(@Param('id') id: string, @Body() body: VoidPosOrderDto) {
     console.log(`[VOID] Order #${id} — Reason: ${body.void_reason}`);
@@ -71,6 +75,7 @@ export class PosOrdersController {
   }
 
   // PATCH /pos-orders/:id/settle — پیمنٹ وصول
+  @RequirePermissions('sales.update')
   @Patch(':id/settle')
   settleOrder(@Param('id') id: string, @Body() body: SettlePosOrderDto) {
     console.log(`[SETTLE] Order #${id} — Method: ${body.payment_method}`);
@@ -78,6 +83,7 @@ export class PosOrdersController {
   }
 
   // POST /pos-orders/sync-offline — Sync locally stored Dexie KOTs
+  @RequirePermissions('sales.create')
   @Post('sync-offline')
   syncOffline(@Body() body: SyncOfflineOrdersDto) {
     console.log(

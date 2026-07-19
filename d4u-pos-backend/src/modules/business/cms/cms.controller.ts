@@ -22,22 +22,24 @@ import {
   SubscribeDto,
 } from './dto';
 
-@RequirePermissions('system.manage')
 @Controller('cms')
 export class CmsController {
   constructor(private readonly cmsService: CmsService) {}
 
   // --- Banners ---
+  @RequirePermissions('system.view')
   @Get('banners/:brand_id')
   getBannersByBrand(@Param('brand_id') brandId: string) {
     return this.cmsService.getBanners(parseInt(brandId));
   }
 
+  @RequirePermissions('system.view')
   @Get('banners')
   getBanners() {
     return this.cmsService.getBanners(1);
   }
 
+  @RequirePermissions('system.create')
   @Post('banners')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -71,6 +73,7 @@ export class CmsController {
     });
   }
 
+  @RequirePermissions('system.update')
   @Patch('banners/:id')
   updateBanner(
     @Param('id', ParseIntPipe) id: number,
@@ -79,22 +82,26 @@ export class CmsController {
     return this.cmsService.updateBanner(id, body);
   }
 
+  @RequirePermissions('system.delete')
   @Delete('banners/:id')
   deleteBanner(@Param('id', ParseIntPipe) id: number) {
     return this.cmsService.deleteBanner(id);
   }
 
   // --- Settings ---
+  @RequirePermissions('system.view')
   @Get('settings/:store_id')
   getSettingsByStore(@Param('store_id') storeId: string) {
     return this.cmsService.getSettings(parseInt(storeId));
   }
 
+  @RequirePermissions('system.view')
   @Get('settings')
   getSettings() {
     return this.cmsService.getSettings(1);
   }
 
+  @RequirePermissions('system.update')
   @Patch('settings/:storeId')
   updateSettings(
     @Param('storeId', ParseIntPipe) storeId: number,
@@ -103,6 +110,7 @@ export class CmsController {
     return this.cmsService.updateSettings(storeId, body);
   }
 
+  @RequirePermissions('system.create')
   @Post('subscribe')
   subscribe(@Body() body: SubscribeDto) {
     return this.cmsService.subscribeNewsletter(body.store_id, body.email);

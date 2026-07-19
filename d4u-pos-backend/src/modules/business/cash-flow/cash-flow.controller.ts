@@ -3,12 +3,12 @@ import { RequirePermissions } from '../../../common/decorators';
 import { CashFlowService } from './cash-flow.service';
 import { CashInDto, CashOutDto } from './dto';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('cash-flow')
 export class CashFlowController {
   constructor(private readonly service: CashFlowService) {}
 
   // GET /cash-flow?store_id=1 — آج کی cash movements
+  @RequirePermissions('finance.accounting.view')
   @Get()
   getCashFlow(
     @Query('store_id') store_id: string,
@@ -21,12 +21,14 @@ export class CashFlowController {
   }
 
   // GET /cash-flow/summary?store_id=1
+  @RequirePermissions('finance.accounting.view')
   @Get('summary')
   getSummary(@Query('store_id') store_id: string) {
     return this.service.getCashSummary(Number(store_id));
   }
 
   // POST /cash-flow/in — Cash In
+  @RequirePermissions('finance.accounting.create')
   @Post('in')
   cashIn(@Body() body: CashInDto) {
     console.log(`[POST] Cash In — Rs.${body.amount} — Store: ${body.store_id}`);
@@ -34,6 +36,7 @@ export class CashFlowController {
   }
 
   // POST /cash-flow/out — Cash Out
+  @RequirePermissions('finance.accounting.create')
   @Post('out')
   cashOut(@Body() body: CashOutDto) {
     console.log(

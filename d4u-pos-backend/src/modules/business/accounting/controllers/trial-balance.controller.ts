@@ -3,11 +3,11 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { TrialBalanceService } from '../services/trial-balance.service';
 import { TrialBalanceFilter } from '../interfaces/trial-balance-filter.interface';
 
-@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/trial-balance')
 export class TrialBalanceController {
   constructor(private readonly trialBalanceService: TrialBalanceService) {}
 
+  @RequirePermissions('finance.accounting.view')
   @Get()
   async getTrialBalance(@Query() query: any, @Req() req: any) {
     const filter: TrialBalanceFilter = {
@@ -21,6 +21,7 @@ export class TrialBalanceController {
     return this.trialBalanceService.generateTrialBalance(filter, userId);
   }
 
+  @RequirePermissions('finance.accounting.export')
   @Get('export')
   async exportTrialBalance(@Query() query: any, @Req() req: any) {
     const filter: TrialBalanceFilter = {
