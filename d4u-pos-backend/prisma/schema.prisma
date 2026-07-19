@@ -147,6 +147,7 @@ model User {
   name               String
   phone              String   @unique
   hashedPin          String // For local credential caching
+  refreshTokenHash   String? // For secure refresh token rotation
   image_url          String?
   module_permissions Json? // Per-user module access: {pos, kds, rider, admin, website, ...}
   rider_details      Json? // Additional rider specific information

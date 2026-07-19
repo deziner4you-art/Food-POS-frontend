@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { AppGateway } from './app.gateway';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard, PermissionsGuard } from './common/guards';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 // Core Modules (پہلے سے موجود)
 import { AuthModule } from './modules/core/auth/auth.module';
@@ -35,6 +36,7 @@ import { AccountingModule } from './modules/business/accounting/accounting.modul
 
 @Module({
   imports: [
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 5 }]),
     ScheduleModule.forRoot(),
     // Core
     PrismaModule,

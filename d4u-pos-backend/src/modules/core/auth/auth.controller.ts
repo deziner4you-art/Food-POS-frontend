@@ -5,8 +5,11 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  UseGuards,
+  Req,
 } from '@nestjs/common';
-import { Public, RequirePermissions } from '../../../common/decorators';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import { Public, RequirePermissions, CurrentUser } from '../../../common/decorators';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto';
 
@@ -15,9 +18,21 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Public()
+  @UseGuards(ThrottlerGuard)
   @Post('login')
   async login(@Body() body: LoginDto) {
     return this.authService.login(body.phone, body.pin);
+  }
+
+  @Public()
+  @Post('refresh')
+  async refresh(@Body() body: { userId: number; refreshToken: string }) {
+    return this.authService.refreshTokens(body.userId, body.refreshToken);
+  }
+
+  @Post('logout')
+  async logout(@CurrentUser() user: any) {
+    return this.authService.logout(user.sub);
   }
 
   @RequirePermissions('system.manage')
