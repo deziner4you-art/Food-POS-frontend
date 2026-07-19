@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { RiderService } from './rider.service';
 import { UpdateGpsDto, DispatchOrderDto } from './dto';
 
+@RequirePermissions('system.manage')
 @Controller('rider')
 export class RiderController {
   constructor(private readonly service: RiderService) {}

@@ -1,7 +1,9 @@
 import { Controller, Post, Body } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { DealService } from './deal.service';
 import { CalculateDealDto } from './dto';
 
+@RequirePermissions('crm.manage')
 @Controller('deal')
 export class DealController {
   constructor(private readonly dealService: DealService) {}

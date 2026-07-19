@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AppGateway } from './app.gateway';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard, PermissionsGuard } from './common/guards';
 
 // Core Modules (پہلے سے موجود)
 import { AuthModule } from './modules/core/auth/auth.module';
@@ -80,6 +82,17 @@ import { AccountingModule } from './modules/business/accounting/accounting.modul
     AccountingModule,
   ],
   controllers: [AppController],
-  providers: [AppService, AppGateway],
+  providers: [
+    AppService, 
+    AppGateway,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PermissionsGuard,
+    },
+  ],
 })
 export class AppModule {}

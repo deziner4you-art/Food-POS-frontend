@@ -8,9 +8,11 @@ import {
   Param,
   ParseIntPipe,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { StoresService } from './stores.service';
 import { CreateStoreDto, UpdateStoreDto } from './dto';
 
+@RequirePermissions('system.manage')
 @Controller('stores')
 export class StoresController {
   constructor(private readonly storesService: StoresService) {}

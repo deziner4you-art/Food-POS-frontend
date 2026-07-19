@@ -8,6 +8,7 @@ import {
   Patch,
   Delete,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { InventoryService } from './inventory.service';
 import {
   CreateInventoryDto,
@@ -16,6 +17,7 @@ import {
   RecordPurchaseDto,
 } from './dto';
 
+@RequirePermissions('inventory.manage')
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}

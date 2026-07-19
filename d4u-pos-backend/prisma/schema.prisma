@@ -82,6 +82,37 @@ model Store {
   StockCountSession     StockCountSession[]
   WasteSession          WasteSession[]
   InventoryBatch        InventoryBatch[]
+  outboundTransfers     WarehouseTransfer[]    @relation("SourceStore")
+  inboundTransfers      WarehouseTransfer[]    @relation("DestStore")
+  InventoryReservation  InventoryReservation[]
+  ProductionOrder       ProductionOrder[]
+  PeriodClosing         PeriodClosing[]
+  financial_statements FinancialStatement[]
+  budgets               Budget[]
+  month_end_closings    MonthEndClosing[]
+  year_end_closings     YearEndClosing[]
+  asset_locations       AssetLocation[]
+  fixed_assets          FixedAsset[]
+  customer_receivables  CustomerReceivable[]
+  customer_receipts     CustomerReceipt[]
+  customer_credit_limits CustomerCreditLimit[]
+  customer_agings       CustomerAging[]
+  vendor_payables       VendorPayable[]
+  vendor_payments       VendorPayment[]
+  vendor_credit_terms   VendorCreditTerms[]
+  vendor_agings         VendorAging[]
+  bank_statements       BankStatement[]
+  bank_reconciliations  BankReconciliation[]
+  bank_accounts         BankAccount[]
+  cash_transactions     CashTransaction[]
+  bank_transfers        BankTransfer[]
+  cash_forecasts        CashForecast[]
+  cash_positions        CashPosition[]
+  compliance_checks     ComplianceCheck[]
+  internal_controls     InternalControl[]
+  audit_findings        AuditFinding[]
+  golive_checklists     GoLiveChecklist[]
+  system_certifications SystemCertification[]
 }
 
 model TerminalSession {
@@ -149,6 +180,9 @@ model Customer {
   brand               Brand                @relation(fields: [brand_id], references: [id])
   orders              Order[]
   loyaltyTransactions LoyaltyTransaction[]
+  receivables         CustomerReceivable[]
+  credit_limits       CustomerCreditLimit[]
+  agings              CustomerAging[]
 }
 
 // -------------------------------------------------------------
@@ -256,6 +290,7 @@ model Product {
   recipeItems        RecipeIngredient[]
   marketingCampaigns MarketingCampaign[] @relation("CampaignProducts")
   variants           ProductVariant[]
+  productions        ProductionOrder[]   @relation("TargetProduct")
 }
 
 model ProductVariant {
@@ -276,15 +311,20 @@ model InventoryItem {
   reorder_level Float  @default(0)
   unit_price    Float  @default(0) // Added for Recipe Costing
 
-  store             Store                     @relation(fields: [store_id], references: [id])
-  transactions      InventoryTransactionLog[]
-  recipes           RecipeIngredient[]
-  PurchaseOrderItem PurchaseOrderItem[]
-  TransitLoss       TransitLoss[]
-  InventoryMovement InventoryMovement[]
-  StockCountLine    StockCountLine[]
-  WasteLine         WasteLine[]
-  InventoryBatch    InventoryBatch[]
+  store                    Store                      @relation(fields: [store_id], references: [id])
+  transactions             InventoryTransactionLog[]
+  recipes                  RecipeIngredient[]
+  PurchaseOrderItem        PurchaseOrderItem[]
+  TransitLoss              TransitLoss[]
+  InventoryMovement        InventoryMovement[]
+  StockCountLine           StockCountLine[]
+  WasteLine                WasteLine[]
+  InventoryBatch           InventoryBatch[]
+  WarehouseTransferLine    WarehouseTransferLine[]
+  InventoryReservationLine InventoryReservationLine[]
+  ProductionOrderLine      ProductionOrderLine[]
+  ProductionOutput         ProductionOutput[]
+  ProductionConsumption    ProductionConsumption[]
 }
 
 model InventoryTransactionLog {
@@ -485,6 +525,9 @@ model Vendor {
 
   store          Store           @relation(fields: [store_id], references: [id])
   purchaseOrders PurchaseOrder[]
+  payables       VendorPayable[]
+  credit_terms   VendorCreditTerms[]
+  agings         VendorAging[]
 }
 
 model PurchaseOrder {
@@ -673,6 +716,9 @@ model AccountGroup {
 
   @@unique([store_id, code])
   @@index([store_id])
+  financial_statement_mappings FinancialStatementMapping[]
+  budget_lines                 BudgetLine[]
+  retained_earnings_transfers_source  RetainedEarningsTransfer[] @relation("TransferSourceGroup")
 }
 
 model Account {
@@ -695,12 +741,18 @@ model Account {
   journal_lines   JournalEntryLine[]
   system_mappings SystemAccountMapping[]
   general_ledgers GeneralLedger[]
+  bank_statements BankStatement[]
+  BankAccount     BankAccount?
 
   store Store @relation(fields: [store_id], references: [id])
 
   @@unique([store_id, code])
   @@index([store_id])
   @@index([account_group_id])
+  financial_statement_mappings FinancialStatementMapping[]
+  budget_lines                 BudgetLine[]
+  retained_earnings_transfers_source  RetainedEarningsTransfer[] @relation("TransferSourceAccount")
+  retained_earnings_transfers_target  RetainedEarningsTransfer[] @relation("TransferTargetAccount")
 }
 
 model FiscalYear {
@@ -719,7 +771,10 @@ model FiscalYear {
   general_ledgers    GeneralLedger[]
   vouchers           Voucher[]
 
-  store Store @relation(fields: [store_id], references: [id])
+  store         Store           @relation(fields: [store_id], references: [id])
+  PeriodClosing PeriodClosing[]
+  budgets       Budget[]
+  YearEndClosing YearEndClosing? @relation("FiscalYearToYearEnd")
 
   @@index([store_id])
 }
@@ -743,7 +798,9 @@ model AccountingPeriod {
   general_ledgers GeneralLedger[]
   vouchers        Voucher[]
 
-  store Store @relation(fields: [store_id], references: [id])
+  store         Store          @relation(fields: [store_id], references: [id])
+  PeriodClosing PeriodClosing?
+  MonthEndClosing MonthEndClosing?
 
   @@index([store_id])
   @@index([fiscal_year_id])
@@ -805,6 +862,8 @@ model JournalEntry {
   lines             JournalEntryLine[]
   general_ledgers   GeneralLedger[]
   voucher           Voucher?
+  DepreciationPosting DepreciationPosting?
+  BankReconciliationAdjustment BankReconciliationAdjustment?
 
   store Store @relation(fields: [store_id], references: [id])
 
@@ -834,6 +893,8 @@ model JournalEntryLine {
   account       Account       @relation(fields: [account_id], references: [id])
   cost_center   CostCenter?   @relation(fields: [cost_center_id], references: [id])
   profit_center ProfitCenter? @relation(fields: [profit_center_id], references: [id])
+
+  bank_statement_lines BankStatementLine[]
 
   store          Store          @relation(fields: [store_id], references: [id])
   general_ledger GeneralLedger?
@@ -1136,10 +1197,14 @@ model InventoryBatch {
   created_by         Int
   created_at         DateTime  @default(now())
 
-  store        Store              @relation(fields: [store_id], references: [id])
-  product      InventoryItem      @relation(fields: [product_id], references: [id])
-  movements    BatchMovement[]
-  reservations BatchReservation[]
+  store                 Store                   @relation(fields: [store_id], references: [id])
+  product               InventoryItem           @relation(fields: [product_id], references: [id])
+  movements             BatchMovement[]
+  reservations          BatchReservation[]
+  WarehouseTransferLine WarehouseTransferLine[]
+  ReservationAllocation ReservationAllocation[]
+  ProductionOutput      ProductionOutput[]
+  ProductionConsumption ProductionConsumption[]
 
   @@unique([store_id, warehouse_id, product_id, batch_number])
 }
@@ -1169,4 +1234,1037 @@ model BatchReservation {
   created_at       DateTime @default(now())
 
   batch InventoryBatch @relation(fields: [batch_id], references: [id])
+}
+
+model WarehouseTransfer {
+  id                  Int       @id @default(autoincrement())
+  transfer_number     String    @unique
+  source_store_id     Int
+  source_warehouse_id Int?
+  dest_store_id       Int
+  dest_warehouse_id   Int?
+  status              String    @default("DRAFT") // DRAFT, PENDING_APPROVAL, APPROVED, IN_TRANSIT, RECEIVED, REJECTED, CANCELLED
+  created_by          Int
+  approved_by         Int?
+  transfer_date       DateTime?
+  received_date       DateTime?
+  remarks             String?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  source_store Store @relation("SourceStore", fields: [source_store_id], references: [id])
+  dest_store   Store @relation("DestStore", fields: [dest_store_id], references: [id])
+
+  lines     WarehouseTransferLine[]
+  approvals TransferApproval[]
+}
+
+model WarehouseTransferLine {
+  id                   Int     @id @default(autoincrement())
+  transfer_id          Int
+  product_id           Int
+  batch_id             Int?
+  requested_quantity   Float
+  transferred_quantity Float   @default(0)
+  received_quantity    Float   @default(0)
+  unit_cost            Float   @default(0)
+  total_cost           Float   @default(0)
+  remarks              String?
+
+  transfer WarehouseTransfer @relation(fields: [transfer_id], references: [id])
+  product  InventoryItem     @relation(fields: [product_id], references: [id])
+  batch    InventoryBatch?   @relation(fields: [batch_id], references: [id])
+}
+
+model TransferApproval {
+  id          Int      @id @default(autoincrement())
+  transfer_id Int
+  approver_id Int
+  status      String // APPROVED, REJECTED
+  remarks     String?
+  approved_at DateTime @default(now())
+
+  transfer WarehouseTransfer @relation(fields: [transfer_id], references: [id])
+}
+
+model InventoryReservation {
+  id                 Int       @id @default(autoincrement())
+  reservation_number String    @unique
+  source             String // POS_ORDER, KITCHEN_ORDER, ONLINE_ORDER, DELIVERY_ORDER, MANUAL
+  reference_module   String
+  reference_id       String
+  store_id           Int
+  warehouse_id       Int?
+  status             String    @default("DRAFT") // DRAFT, RESERVED, PARTIALLY_CONSUMED, CONSUMED, RELEASED, EXPIRED, CANCELLED
+  reservation_date   DateTime  @default(now())
+  expiry_date        DateTime?
+  remarks            String?
+  created_by         Int
+  approved_by        Int?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  store Store                      @relation(fields: [store_id], references: [id])
+  lines InventoryReservationLine[]
+}
+
+model InventoryReservationLine {
+  id                Int   @id @default(autoincrement())
+  reservation_id    Int
+  product_id        Int
+  reserved_quantity Float
+  consumed_quantity Float @default(0)
+  released_quantity Float @default(0)
+  available_balance Float @default(0)
+
+  reservation InventoryReservation    @relation(fields: [reservation_id], references: [id])
+  product     InventoryItem           @relation(fields: [product_id], references: [id])
+  allocations ReservationAllocation[]
+}
+
+model ReservationAllocation {
+  id         Int      @id @default(autoincrement())
+  line_id    Int
+  batch_id   Int
+  quantity   Float
+  status     String   @default("RESERVED") // RESERVED, RELEASED, CONSUMED
+  created_at DateTime @default(now())
+
+  line  InventoryReservationLine @relation(fields: [line_id], references: [id])
+  batch InventoryBatch           @relation(fields: [batch_id], references: [id])
+}
+
+model ProductionOrder {
+  id                Int       @id @default(autoincrement())
+  production_number String    @unique
+  production_type   String // KITCHEN_PRODUCTION, CENTRAL_KITCHEN, SEMI_FINISHED, FINISHED, REWORK
+  target_product_id Int
+  store_id          Int
+  warehouse_id      Int?
+  kitchen_id        Int?
+  planned_quantity  Float
+  produced_quantity Float     @default(0)
+  rejected_quantity Float     @default(0)
+  scrap_quantity    Float     @default(0)
+  status            String    @default("DRAFT") // DRAFT, RELEASED, IN_PRODUCTION, COMPLETED, CANCELLED
+  batch_number      String?
+  start_time        DateTime?
+  end_time          DateTime?
+  supervisor_id     Int?
+  remarks           String?
+  reservation_id    Int?
+  created_by        Int
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  store          Store   @relation(fields: [store_id], references: [id])
+  target_product Product @relation("TargetProduct", fields: [target_product_id], references: [id])
+
+  lines              ProductionOrderLine[]
+  outputs            ProductionOutput[]
+  consumptions       ProductionConsumption[]
+  stages             ProductionStage[]
+  ProductionCost     ProductionCost?
+  ProductionVariance ProductionVariance?
+  ProductionYield    ProductionYield?
+}
+
+model ProductionOrderLine {
+  id                Int   @id @default(autoincrement())
+  production_id     Int
+  product_id        Int
+  planned_quantity  Float
+  consumed_quantity Float @default(0)
+
+  production ProductionOrder @relation(fields: [production_id], references: [id])
+  product    InventoryItem   @relation(fields: [product_id], references: [id])
+}
+
+model ProductionOutput {
+  id            Int      @id @default(autoincrement())
+  production_id Int
+  product_id    Int
+  batch_id      Int?
+  quantity      Float
+  unit_cost     Float    @default(0)
+  total_cost    Float    @default(0)
+  created_at    DateTime @default(now())
+
+  production ProductionOrder @relation(fields: [production_id], references: [id])
+  product    InventoryItem   @relation(fields: [product_id], references: [id])
+  batch      InventoryBatch? @relation(fields: [batch_id], references: [id])
+}
+
+model ProductionConsumption {
+  id            Int      @id @default(autoincrement())
+  production_id Int
+  product_id    Int
+  batch_id      Int?
+  quantity      Float
+  unit_cost     Float    @default(0)
+  total_cost    Float    @default(0)
+  created_at    DateTime @default(now())
+
+  production ProductionOrder @relation(fields: [production_id], references: [id])
+  product    InventoryItem   @relation(fields: [product_id], references: [id])
+  batch      InventoryBatch? @relation(fields: [batch_id], references: [id])
+}
+
+model ProductionStage {
+  id            Int       @id @default(autoincrement())
+  production_id Int
+  stage_name    String
+  status        String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  start_time    DateTime?
+  end_time      DateTime?
+  created_at    DateTime  @default(now())
+
+  production ProductionOrder @relation(fields: [production_id], references: [id])
+}
+
+model ProductionCost {
+  id                    Int      @id @default(autoincrement())
+  production_id         Int      @unique
+  planned_material_cost Float    @default(0)
+  actual_material_cost  Float    @default(0)
+  planned_labor_cost    Float    @default(0)
+  actual_labor_cost     Float    @default(0)
+  planned_overhead_cost Float    @default(0)
+  actual_overhead_cost  Float    @default(0)
+  total_planned_cost    Float    @default(0)
+  total_actual_cost     Float    @default(0)
+  created_at            DateTime @default(now())
+
+  production ProductionOrder @relation(fields: [production_id], references: [id])
+}
+
+model ProductionVariance {
+  id                     Int      @id @default(autoincrement())
+  production_id          Int      @unique
+  material_cost_variance Float    @default(0) // (Planned - Actual)
+  quantity_variance      Float    @default(0)
+  yield_variance         Float    @default(0)
+  waste_variance         Float    @default(0)
+  total_variance         Float    @default(0)
+  variance_percentage    Float    @default(0)
+  efficiency_percentage  Float    @default(0)
+  created_at             DateTime @default(now())
+
+  production ProductionOrder @relation(fields: [production_id], references: [id])
+}
+
+model ProductionYield {
+  id                 Int      @id @default(autoincrement())
+  production_id      Int      @unique
+  planned_quantity   Float    @default(0)
+  actual_quantity    Float    @default(0)
+  expected_yield     Float    @default(0)
+  actual_yield       Float    @default(0)
+  yield_percentage   Float    @default(0)
+  loss_quantity      Float    @default(0)
+  scrap_quantity     Float    @default(0)
+  material_usage_pct Float    @default(0)
+  created_at         DateTime @default(now())
+
+  production ProductionOrder @relation(fields: [production_id], references: [id])
+}
+
+model PeriodClosing {
+  id                   Int       @id @default(autoincrement())
+  store_id             Int
+  fiscal_year_id       Int
+  accounting_period_id Int       @unique
+  status               String    @default("OPEN") // OPEN, CLOSING, CLOSED, LOCKED, REOPENED
+  opened_by            Int?
+  closed_by            Int?
+  closed_at            DateTime?
+  reopened_by          Int?
+  reason               String?
+  checklist_status     String    @default("PENDING") // PENDING, COMPLETED
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+
+  store             Store            @relation(fields: [store_id], references: [id])
+  fiscal_year       FiscalYear       @relation(fields: [fiscal_year_id], references: [id])
+  accounting_period AccountingPeriod @relation(fields: [accounting_period_id], references: [id])
+
+  checklists ClosingChecklist[]
+  logs       ClosingLog[]
+}
+
+model ClosingChecklist {
+  id                 Int       @id @default(autoincrement())
+  closing_id         Int
+  module             String // INVENTORY, PURCHASING, PRODUCTION, ACCOUNTING
+  status             String    @default("PENDING") // PENDING, PASSED, FAILED
+  validation_message String?
+  validated_at       DateTime?
+  validated_by       Int?
+
+  period_closing PeriodClosing @relation(fields: [closing_id], references: [id])
+}
+
+model ClosingLog {
+  id           Int      @id @default(autoincrement())
+  closing_id   Int
+  action       String // STATUS_CHANGE, VALIDATION_RUN, REOPEN
+  old_status   String?
+  new_status   String?
+  reason       String?
+  performed_by Int
+  performed_at DateTime @default(now())
+
+  period_closing PeriodClosing @relation(fields: [closing_id], references: [id])
+}
+
+
+model FinancialStatement {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  name                 String
+  type                 String
+  description          String?
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+  
+  sections             FinancialStatementSection[]
+  
+  store                Store    @relation(fields: [store_id], references: [id])
+  
+  @@unique([store_id, name])
+  @@index([store_id])
+}
+
+model FinancialStatementSection {
+  id                   Int      @id @default(autoincrement())
+  statement_id         Int
+  parent_section_id    Int?
+  name                 String
+  type                 String
+  sort_order           Int      @default(0)
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+  
+  statement            FinancialStatement           @relation(fields: [statement_id], references: [id])
+  parent_section       FinancialStatementSection?   @relation("SectionToSection", fields: [parent_section_id], references: [id])
+  sub_sections         FinancialStatementSection[]  @relation("SectionToSection")
+  mappings             FinancialStatementMapping[]
+
+  @@index([statement_id])
+  @@index([parent_section_id])
+}
+
+model FinancialStatementMapping {
+  id                   Int      @id @default(autoincrement())
+  section_id           Int
+  account_id           Int?
+  account_group_id     Int?
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+  
+  section              FinancialStatementSection    @relation(fields: [section_id], references: [id])
+  account              Account?                     @relation(fields: [account_id], references: [id])
+  account_group        AccountGroup?                @relation(fields: [account_group_id], references: [id])
+
+  @@index([section_id])
+  @@index([account_id])
+  @@index([account_group_id])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE BUDGETING
+// ---------------------------------------------------------
+
+model Budget {
+  id             Int      @id @default(autoincrement())
+  store_id       Int
+  fiscal_year_id Int
+  name           String
+  type           String   // ANNUAL, MONTHLY, DEPARTMENT
+  status         String   @default("DRAFT") // DRAFT, APPROVED, LOCKED
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  created_by     Int?
+  updated_by     Int?
+
+  store          Store          @relation(fields: [store_id], references: [id])
+  fiscal_year    FiscalYear     @relation(fields: [fiscal_year_id], references: [id])
+  versions       BudgetVersion[]
+
+  @@index([store_id])
+  @@index([fiscal_year_id])
+}
+
+model BudgetVersion {
+  id             Int      @id @default(autoincrement())
+  budget_id      Int
+  version_number Int
+  is_active      Boolean  @default(true)
+  created_at     DateTime @default(now())
+  created_by     Int?
+  
+  budget         Budget       @relation(fields: [budget_id], references: [id])
+  lines          BudgetLine[]
+
+  @@unique([budget_id, version_number])
+}
+
+model BudgetLine {
+  id               Int      @id @default(autoincrement())
+  budget_version_id Int
+  account_id       Int?
+  account_group_id Int?
+  amount           Decimal  @db.Decimal(15, 4)
+  notes            String?
+  
+  budget_version   BudgetVersion @relation(fields: [budget_version_id], references: [id])
+  account          Account?      @relation(fields: [account_id], references: [id])
+  account_group    AccountGroup? @relation(fields: [account_group_id], references: [id])
+
+  @@index([budget_version_id])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE MONTH-END CLOSING
+// ---------------------------------------------------------
+
+model MonthEndClosing {
+  id                   Int       @id @default(autoincrement())
+  store_id             Int
+  accounting_period_id Int       @unique
+  status               String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED, ROLLED_BACK
+  started_at           DateTime?
+  completed_at         DateTime?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+  executed_by          Int?
+  
+  store             Store            @relation(fields: [store_id], references: [id])
+  accounting_period AccountingPeriod @relation(fields: [accounting_period_id], references: [id])
+  tasks             ClosingTask[]
+  exceptions        ClosingException[]
+
+  @@index([store_id])
+}
+
+model ClosingTask {
+  id                   Int       @id @default(autoincrement())
+  month_end_closing_id Int
+  task_name            String    // Verify Journals, Reconcile Inventory
+  status               String    @default("PENDING") // PENDING, SUCCESS, FAILED
+  message              String?
+  executed_at          DateTime?
+
+  month_end_closing    MonthEndClosing @relation(fields: [month_end_closing_id], references: [id])
+}
+
+model ClosingException {
+  id                   Int       @id @default(autoincrement())
+  month_end_closing_id Int
+  entity_type          String    // e.g. JOURNAL, INVENTORY, ORDER
+  entity_id            String
+  description          String
+  severity             String    // WARNING, BLOCKER
+  created_at           DateTime  @default(now())
+
+  month_end_closing    MonthEndClosing @relation(fields: [month_end_closing_id], references: [id])
+}
+
+
+
+// ---------------------------------------------------------
+// ENTERPRISE YEAR-END CLOSING
+// ---------------------------------------------------------
+
+model YearEndClosing {
+  id                   Int       @id @default(autoincrement())
+  store_id             Int
+  fiscal_year_id       Int       @unique
+  status               String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED, ROLLED_BACK
+  started_at           DateTime?
+  completed_at         DateTime?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+  executed_by          Int?
+  
+  store             Store            @relation(fields: [store_id], references: [id])
+  fiscal_year       FiscalYear       @relation("FiscalYearToYearEnd", fields: [fiscal_year_id], references: [id])
+  logs              YearEndClosingLog[]
+  transfers         RetainedEarningsTransfer[]
+
+  @@index([store_id])
+}
+
+model YearEndClosingLog {
+  id                   Int       @id @default(autoincrement())
+  year_end_closing_id  Int
+  task_name            String
+  status               String
+  message              String?
+  executed_at          DateTime?
+
+  year_end_closing    YearEndClosing @relation(fields: [year_end_closing_id], references: [id])
+}
+
+model RetainedEarningsTransfer {
+  id                   Int       @id @default(autoincrement())
+  year_end_closing_id  Int
+  source_account_id    Int?
+  source_group_id      Int?
+  retained_earnings_account_id Int
+  amount               Decimal   @db.Decimal(15, 4)
+  transfer_type        String    // PROFIT, LOSS
+  created_at           DateTime  @default(now())
+
+  year_end_closing    YearEndClosing @relation(fields: [year_end_closing_id], references: [id])
+  source_account      Account?       @relation("TransferSourceAccount", fields: [source_account_id], references: [id])
+  target_account      Account        @relation("TransferTargetAccount", fields: [retained_earnings_account_id], references: [id])
+  source_group        AccountGroup?  @relation("TransferSourceGroup", fields: [source_group_id], references: [id])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE FIXED ASSET MANAGEMENT
+// ---------------------------------------------------------
+
+model FixedAssetCategory {
+  id                 Int      @id @default(autoincrement())
+  code               String   @unique
+  name               String
+  description        String?
+  useful_life_years  Int      @default(0)
+  is_active          Boolean  @default(true)
+  created_at         DateTime @default(now())
+
+  assets             FixedAsset[]
+}
+
+model AssetLocation {
+  id                 Int      @id @default(autoincrement())
+  store_id           Int
+  code               String
+  name               String
+  description        String?
+  is_active          Boolean  @default(true)
+  created_at         DateTime @default(now())
+
+  store              Store        @relation(fields: [store_id], references: [id])
+  assets             FixedAsset[]
+  transfers_from     AssetTransfer[] @relation("TransferFromLocation")
+  transfers_to       AssetTransfer[] @relation("TransferToLocation")
+
+  @@unique([store_id, code])
+}
+
+model FixedAsset {
+  id                 Int      @id @default(autoincrement())
+  store_id           Int
+  category_id        Int
+  location_id        Int?
+  code               String   @unique
+  name               String
+  description        String?
+  purchase_date      DateTime
+  purchase_cost      Decimal  @db.Decimal(15, 4)
+  capitalization_date DateTime?
+  residual_value     Decimal  @db.Decimal(15, 4)
+  useful_life        Int      // In months or years
+  status             String   @default("DRAFT") // DRAFT, ACTIVE, UNDER_MAINTENANCE, TRANSFERRED, DISPOSED, WRITTEN_OFF
+  department         String?
+  
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+  created_by         Int?
+
+  store              Store              @relation(fields: [store_id], references: [id])
+  category           FixedAssetCategory @relation(fields: [category_id], references: [id])
+  location           AssetLocation?     @relation(fields: [location_id], references: [id])
+  transfers          AssetTransfer[]
+  disposal           AssetDisposal?
+  depreciation       AssetDepreciation?
+
+  @@index([store_id])
+  @@index([category_id])
+}
+
+model AssetTransfer {
+  id                 Int      @id @default(autoincrement())
+  asset_id           Int
+  from_location_id   Int?
+  to_location_id     Int
+  transfer_date      DateTime @default(now())
+  reason             String?
+  executed_by        Int
+
+  asset              FixedAsset     @relation(fields: [asset_id], references: [id])
+  from_location      AssetLocation? @relation("TransferFromLocation", fields: [from_location_id], references: [id])
+  to_location        AssetLocation  @relation("TransferToLocation", fields: [to_location_id], references: [id])
+
+  @@index([asset_id])
+}
+
+model AssetDisposal {
+  id                 Int      @id @default(autoincrement())
+  asset_id           Int      @unique
+  disposal_date      DateTime @default(now())
+  disposal_type      String   // SALE, WRITE_OFF
+  sale_value         Decimal? @db.Decimal(15, 4)
+  reason             String?
+  executed_by        Int
+
+  asset              FixedAsset     @relation(fields: [asset_id], references: [id])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE DEPRECIATION ENGINE
+// ---------------------------------------------------------
+
+model AssetDepreciation {
+  id                   Int      @id @default(autoincrement())
+  asset_id             Int      @unique
+  method               String   // STRAIGHT_LINE, DECLINING_BALANCE, DOUBLE_DECLINING
+  rate                 Decimal? @db.Decimal(15, 4)
+  accumulated_amount   Decimal  @default(0.0) @db.Decimal(15, 4)
+  book_value           Decimal  @db.Decimal(15, 4)
+  last_depreciation_date DateTime?
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  asset                FixedAsset             @relation(fields: [asset_id], references: [id])
+  schedules            DepreciationSchedule[]
+  postings             DepreciationPosting[]
+}
+
+model DepreciationSchedule {
+  id                   Int      @id @default(autoincrement())
+  asset_depreciation_id Int
+  period_start         DateTime
+  period_end           DateTime
+  amount               Decimal  @db.Decimal(15, 4)
+  is_posted            Boolean  @default(false)
+  created_at           DateTime @default(now())
+
+  asset_depreciation   AssetDepreciation @relation(fields: [asset_depreciation_id], references: [id])
+  posting              DepreciationPosting?
+}
+
+model DepreciationPosting {
+  id                   Int      @id @default(autoincrement())
+  asset_depreciation_id Int
+  schedule_id          Int      @unique
+  journal_entry_id     Int      @unique
+  posting_date         DateTime @default(now())
+  amount               Decimal  @db.Decimal(15, 4)
+  executed_by          Int
+
+  asset_depreciation   AssetDepreciation    @relation(fields: [asset_depreciation_id], references: [id])
+  schedule             DepreciationSchedule @relation(fields: [schedule_id], references: [id])
+  journal_entry        JournalEntry         @relation(fields: [journal_entry_id], references: [id])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE ACCOUNTS RECEIVABLE
+// ---------------------------------------------------------
+
+model CustomerReceivable {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  customer_id          Int
+  invoice_id           String   // Reference to Sales Invoice
+  invoice_date         DateTime
+  due_date             DateTime
+  total_amount         Decimal  @db.Decimal(15, 4)
+  paid_amount          Decimal  @default(0.0) @db.Decimal(15, 4)
+  outstanding_balance  Decimal  @db.Decimal(15, 4)
+  status               String   @default("OPEN") // OPEN, PARTIAL, CLOSED
+  journal_entry_id     Int?
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  store                Store    @relation(fields: [store_id], references: [id])
+  customer             Customer @relation(fields: [customer_id], references: [id])
+  receipts             CustomerReceipt[]
+
+  @@index([store_id])
+  @@index([customer_id])
+}
+
+model CustomerReceipt {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  receivable_id        Int
+  receipt_number       String   @unique
+  receipt_date         DateTime @default(now())
+  amount               Decimal  @db.Decimal(15, 4)
+  payment_method       String
+  reference_number     String?
+  journal_entry_id     Int?
+  created_at           DateTime @default(now())
+
+  store                Store              @relation(fields: [store_id], references: [id])
+  receivable           CustomerReceivable @relation(fields: [receivable_id], references: [id])
+
+  @@index([store_id])
+  @@index([receivable_id])
+}
+
+model CustomerCreditLimit {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  customer_id          Int
+  credit_limit         Decimal  @db.Decimal(15, 4)
+  available_credit     Decimal  @db.Decimal(15, 4)
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  store                Store    @relation(fields: [store_id], references: [id])
+  customer             Customer @relation(fields: [customer_id], references: [id])
+
+  @@unique([store_id, customer_id])
+}
+
+model CustomerAging {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  customer_id          Int
+  current              Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_1_30            Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_31_60           Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_61_90           Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_91_120          Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_over_120        Decimal  @default(0.0) @db.Decimal(15, 4)
+  total_outstanding    Decimal  @default(0.0) @db.Decimal(15, 4)
+  calculated_at        DateTime @default(now())
+
+  store                Store    @relation(fields: [store_id], references: [id])
+  customer             Customer @relation(fields: [customer_id], references: [id])
+
+  @@unique([store_id, customer_id])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE ACCOUNTS PAYABLE
+// ---------------------------------------------------------
+
+model VendorPayable {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  vendor_id            Int
+  purchase_invoice_id  String   // Reference to Purchase Invoice
+  invoice_date         DateTime
+  due_date             DateTime
+  total_amount         Decimal  @db.Decimal(15, 4)
+  paid_amount          Decimal  @default(0.0) @db.Decimal(15, 4)
+  outstanding_balance  Decimal  @db.Decimal(15, 4)
+  status               String   @default("OPEN") // OPEN, PARTIAL, CLOSED
+  journal_entry_id     Int?
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  store                Store    @relation(fields: [store_id], references: [id])
+  vendor               Vendor   @relation(fields: [vendor_id], references: [id])
+  payments             VendorPayment[]
+
+  @@index([store_id])
+  @@index([vendor_id])
+}
+
+model VendorPayment {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  payable_id           Int
+  payment_number       String   @unique
+  payment_date         DateTime @default(now())
+  amount               Decimal  @db.Decimal(15, 4)
+  payment_method       String
+  reference_number     String?
+  journal_entry_id     Int?
+  created_at           DateTime @default(now())
+
+  store                Store         @relation(fields: [store_id], references: [id])
+  payable              VendorPayable @relation(fields: [payable_id], references: [id])
+
+  @@index([store_id])
+  @@index([payable_id])
+}
+
+model VendorCreditTerms {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  vendor_id            Int
+  credit_limit         Decimal  @db.Decimal(15, 4)
+  available_credit     Decimal  @db.Decimal(15, 4)
+  payment_terms_days   Int      @default(30)
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  store                Store    @relation(fields: [store_id], references: [id])
+  vendor               Vendor   @relation(fields: [vendor_id], references: [id])
+
+  @@unique([store_id, vendor_id])
+}
+
+model VendorAging {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  vendor_id            Int
+  current              Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_1_30            Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_31_60           Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_61_90           Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_91_120          Decimal  @default(0.0) @db.Decimal(15, 4)
+  days_over_120        Decimal  @default(0.0) @db.Decimal(15, 4)
+  total_outstanding    Decimal  @default(0.0) @db.Decimal(15, 4)
+  calculated_at        DateTime @default(now())
+
+  store                Store    @relation(fields: [store_id], references: [id])
+  vendor               Vendor   @relation(fields: [vendor_id], references: [id])
+
+  @@unique([store_id, vendor_id])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE BANK RECONCILIATION
+// ---------------------------------------------------------
+
+model BankStatement {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  account_id           Int      // Reference to GL Account (Cash/Bank)
+  statement_date       DateTime
+  opening_balance      Decimal  @db.Decimal(15, 4)
+  closing_balance      Decimal  @db.Decimal(15, 4)
+  status               String   @default("DRAFT") // DRAFT, IMPORTED, RECONCILED
+  created_at           DateTime @default(now())
+
+  store                Store    @relation(fields: [store_id], references: [id])
+  account              Account  @relation(fields: [account_id], references: [id])
+  lines                BankStatementLine[]
+  reconciliation       BankReconciliation?
+
+  @@index([store_id])
+  @@index([account_id])
+}
+
+model BankStatementLine {
+  id                   Int      @id @default(autoincrement())
+  statement_id         Int
+  transaction_date     DateTime
+  description          String
+  reference_number     String?
+  amount               Decimal  @db.Decimal(15, 4)
+  is_reconciled        Boolean  @default(false)
+  matched_journal_line_id Int?  // Optional reference to the GL JournalEntryLine matched
+
+  statement            BankStatement @relation(fields: [statement_id], references: [id])
+  journal_line         JournalEntryLine? @relation(fields: [matched_journal_line_id], references: [id])
+
+  @@index([statement_id])
+  @@index([matched_journal_line_id])
+}
+
+model BankReconciliation {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  statement_id         Int      @unique
+  reconciliation_date  DateTime @default(now())
+  status               String   @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
+  matched_amount       Decimal  @default(0.0) @db.Decimal(15, 4)
+  unmatched_amount     Decimal  @default(0.0) @db.Decimal(15, 4)
+  executed_by          Int
+
+  store                Store         @relation(fields: [store_id], references: [id])
+  statement            BankStatement @relation(fields: [statement_id], references: [id])
+  adjustments          BankReconciliationAdjustment[]
+
+  @@index([store_id])
+}
+
+model BankReconciliationAdjustment {
+  id                   Int      @id @default(autoincrement())
+  reconciliation_id    Int
+  journal_entry_id     Int      @unique
+  amount               Decimal  @db.Decimal(15, 4)
+  reason               String
+  created_at           DateTime @default(now())
+
+  reconciliation       BankReconciliation @relation(fields: [reconciliation_id], references: [id])
+  journal_entry        JournalEntry       @relation(fields: [journal_entry_id], references: [id])
+
+  @@index([reconciliation_id])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE TREASURY & CASH MANAGEMENT
+// ---------------------------------------------------------
+
+model BankAccount {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  account_id           Int      @unique // Reference to GL Account
+  bank_name            String
+  account_number       String
+  currency             String   @default("PKR")
+  current_balance      Decimal  @default(0.0) @db.Decimal(15, 4)
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now())
+
+  store                Store    @relation(fields: [store_id], references: [id])
+  account              Account  @relation(fields: [account_id], references: [id])
+  transfers_out        BankTransfer[] @relation("TransferSource")
+  transfers_in         BankTransfer[] @relation("TransferDestination")
+  cash_transactions    CashTransaction[]
+  cash_positions       CashPosition[]
+
+  @@index([store_id])
+}
+
+model CashTransaction {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  bank_account_id      Int
+  transaction_date     DateTime @default(now())
+  transaction_type     String   // INFLOW, OUTFLOW
+  amount               Decimal  @db.Decimal(15, 4)
+  description          String
+  reference_type       String?  // e.g., RECEIPT, PAYMENT, ADJUSTMENT
+  reference_id         String?
+  journal_entry_id     Int?
+  created_at           DateTime @default(now())
+
+  store                Store         @relation(fields: [store_id], references: [id])
+  bank_account         BankAccount   @relation(fields: [bank_account_id], references: [id])
+
+  @@index([store_id])
+  @@index([bank_account_id])
+}
+
+model BankTransfer {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  source_account_id    Int
+  destination_account_id Int
+  transfer_date        DateTime @default(now())
+  amount               Decimal  @db.Decimal(15, 4)
+  reference_number     String   @unique
+  description          String?
+  status               String   @default("COMPLETED")
+  journal_entry_id     Int?
+  created_by           Int
+
+  store                Store         @relation(fields: [store_id], references: [id])
+  source_account       BankAccount   @relation("TransferSource", fields: [source_account_id], references: [id])
+  destination_account  BankAccount   @relation("TransferDestination", fields: [destination_account_id], references: [id])
+
+  @@index([store_id])
+}
+
+model CashForecast {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  forecast_date        DateTime
+  expected_inflows     Decimal  @default(0.0) @db.Decimal(15, 4)
+  expected_outflows    Decimal  @default(0.0) @db.Decimal(15, 4)
+  net_forecast         Decimal  @default(0.0) @db.Decimal(15, 4)
+  generated_at         DateTime @default(now())
+
+  store                Store    @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model CashPosition {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  bank_account_id      Int
+  position_date        DateTime @default(now())
+  opening_balance      Decimal  @db.Decimal(15, 4)
+  net_change           Decimal  @db.Decimal(15, 4)
+  closing_balance      Decimal  @db.Decimal(15, 4)
+
+  store                Store         @relation(fields: [store_id], references: [id])
+  bank_account         BankAccount   @relation(fields: [bank_account_id], references: [id])
+
+  @@index([store_id])
+  @@index([bank_account_id])
+}
+
+// ---------------------------------------------------------
+// ENTERPRISE FINANCIAL COMPLIANCE & ERP GO-LIVE
+// ---------------------------------------------------------
+
+model ComplianceCheck {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  check_name           String
+  check_type           String   // E.g., DATA_INTEGRITY, MODULE_DEPENDENCY
+  status               String   // PASS, FAIL, WARNING
+  details              String?
+  executed_at          DateTime @default(now())
+
+  store                Store    @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model InternalControl {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  control_name         String
+  description          String
+  status               String   // PASS, FAIL
+  last_verified        DateTime @default(now())
+
+  store                Store    @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model AuditFinding {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  finding_type         String   // E.g., UNBALANCED_JOURNAL, ORPHAN_RECORD
+  severity             String   // HIGH, MEDIUM, LOW
+  description          String
+  reference_id         String?  // Optionally link to an offending entity ID
+  resolved             Boolean  @default(false)
+  created_at           DateTime @default(now())
+
+  store                Store    @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model GoLiveChecklist {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  module_name          String
+  item_name            String
+  is_completed         Boolean  @default(false)
+  verified_at          DateTime?
+
+  store                Store    @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+}
+
+model SystemCertification {
+  id                   Int      @id @default(autoincrement())
+  store_id             Int
+  certification_date   DateTime @default(now())
+  accounting_score     Decimal  @db.Decimal(5, 2)
+  module_health_score  Decimal  @db.Decimal(5, 2)
+  data_integrity_score Decimal  @db.Decimal(5, 2)
+  security_score       Decimal  @db.Decimal(5, 2)
+  performance_score    Decimal  @db.Decimal(5, 2)
+  overall_status       String   // CERTIFIED, NOT_READY
+  certified_by         Int      // User ID
+
+  store                Store    @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
 }

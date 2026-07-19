@@ -194,4 +194,28 @@ export const ACCOUNTING_EVENT_MAPPING: Record<BusinessEvent, AccountingEventCont
     auto_posting: true,
     approval_workflow_code: 'WF-INV-WST',
   },
+  [BusinessEvent.PRODUCTION_CONSUMPTION]: {
+    event: BusinessEvent.PRODUCTION_CONSUMPTION,
+    voucher_type_code: 'INV-PROD',
+    journal_type_code: 'INV',
+    required_system_accounts: ['Inventory Asset', 'WIP Inventory'],
+    auto_posting: true,
+    approval_workflow_code: 'WF-PROD',
+  },
+  [BusinessEvent.PRODUCTION_OUTPUT]: {
+    event: BusinessEvent.PRODUCTION_OUTPUT,
+    voucher_type_code: 'INV-PROD',
+    journal_type_code: 'INV',
+    required_system_accounts: ['WIP Inventory', 'Inventory Asset'],
+    auto_posting: true,
+    approval_workflow_code: 'WF-PROD',
+  },
+  [BusinessEvent.PRODUCTION_VARIANCE]: {
+    event: BusinessEvent.PRODUCTION_VARIANCE,
+    voucher_type_code: 'INV-PROD-VAR',
+    journal_type_code: 'INV',
+    required_system_accounts: ['Production Variance Expense', 'Production Gain'],
+    auto_posting: true,
+    approval_workflow_code: 'WF-PROD-VAR',
+  },
 };

@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { SubscriptionService } from './subscription.service';
 import { CreateSubscriptionDto, UpdateSubscriptionDto } from './dto';
 
+@RequirePermissions('system.manage')
 @Controller('subscription')
 export class SubscriptionController {
   constructor(private readonly subscriptionService: SubscriptionService) {}

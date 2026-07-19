@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { CashFlowService } from './cash-flow.service';
 import { CashInDto, CashOutDto } from './dto';
 
+@RequirePermissions('finance.accounting.manage')
 @Controller('cash-flow')
 export class CashFlowController {
   constructor(private readonly service: CashFlowService) {}

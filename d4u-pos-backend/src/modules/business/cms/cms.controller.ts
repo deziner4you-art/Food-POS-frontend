@@ -10,6 +10,7 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -21,6 +22,7 @@ import {
   SubscribeDto,
 } from './dto';
 
+@RequirePermissions('system.manage')
 @Controller('cms')
 export class CmsController {
   constructor(private readonly cmsService: CmsService) {}

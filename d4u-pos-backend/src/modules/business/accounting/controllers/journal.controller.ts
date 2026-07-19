@@ -1,8 +1,10 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { RequirePermissions } from '../../../../common/decorators';
 import { JournalService } from '../services/journal.service';
 import { CreateJournalDto } from '../dto/create-journal.dto';
 import { UpdateJournalDto } from '../dto/update-journal.dto';
 
+@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/journals')
 export class JournalController {
   constructor(private readonly journalService: JournalService) {}

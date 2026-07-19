@@ -7,9 +7,11 @@ import {
   Param,
   ParseIntPipe,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { RecipesService } from './recipes.service';
 import { CreateRecipeDto, BulkRecipeDto } from './dto';
 
+@RequirePermissions('production.manage')
 @Controller('recipes')
 export class RecipesController {
   constructor(private readonly recipesService: RecipesService) {}

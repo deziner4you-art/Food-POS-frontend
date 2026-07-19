@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { RequirePermissions } from '../../../../common/decorators';
 import { SystemAccountMappingService } from '../services/system-account-mapping.service';
 import { CreateSystemAccountMappingDto } from '../dto/create-system-account-mapping.dto';
 import { UpdateSystemAccountMappingDto } from '../dto/update-system-account-mapping.dto';
 import { SystemAccountType } from '../enums/system-account-type.enum';
 
+@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/system-accounts')
 export class SystemAccountMappingController {
   constructor(private readonly mappingService: SystemAccountMappingService) {}

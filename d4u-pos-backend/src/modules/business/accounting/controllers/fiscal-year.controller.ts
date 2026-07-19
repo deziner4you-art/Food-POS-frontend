@@ -1,8 +1,10 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { RequirePermissions } from '../../../../common/decorators';
 import { FiscalYearService } from '../services/fiscal-year.service';
 import { CreateFiscalYearDto } from '../dto/create-fiscal-year.dto';
 import { UpdateFiscalYearDto } from '../dto/update-fiscal-year.dto';
 
+@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/fiscal-years')
 export class FiscalYearController {
   constructor(private readonly fyService: FiscalYearService) {}

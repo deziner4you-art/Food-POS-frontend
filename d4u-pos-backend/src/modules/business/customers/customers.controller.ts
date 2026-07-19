@@ -7,6 +7,7 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { CustomersService } from './customers.service';
 import {
   CreateCustomerDto,
@@ -15,6 +16,7 @@ import {
   RedeemPointsDto,
 } from './dto';
 
+@RequirePermissions('crm.manage')
 @Controller('customers')
 export class CustomersController {
   constructor(private readonly service: CustomersService) {}

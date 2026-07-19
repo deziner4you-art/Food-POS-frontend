@@ -10,6 +10,7 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -23,6 +24,7 @@ import {
   UpdateScheduledDiscountDto,
 } from './dto';
 
+@RequirePermissions('crm.manage')
 @Controller('marketing')
 export class MarketingController {
   constructor(private readonly marketingService: MarketingService) {}

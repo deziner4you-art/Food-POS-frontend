@@ -8,6 +8,7 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { OnlineOrdersService } from './online-orders.service';
 import {
   CreateOnlineOrderDto,
@@ -15,6 +16,7 @@ import {
   PostFeedbackDto,
 } from './dto';
 
+@RequirePermissions('sales.manage')
 @Controller('online-orders')
 export class OnlineOrdersController {
   constructor(private readonly service: OnlineOrdersService) {}

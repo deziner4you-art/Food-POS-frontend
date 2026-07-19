@@ -1,6 +1,8 @@
 import { Controller, Get, Query, Param } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { ReportsService } from './reports.service';
 
+@RequirePermissions('finance.reports.view')
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly service: ReportsService) {}

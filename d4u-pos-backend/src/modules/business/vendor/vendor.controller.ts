@@ -7,9 +7,11 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { VendorService } from './vendor.service';
 import { CreatePODto, ReceivePODto } from './dto';
 
+@RequirePermissions('purchasing.manage')
 @Controller('vendor')
 export class VendorController {
   constructor(private readonly vendorService: VendorService) {}

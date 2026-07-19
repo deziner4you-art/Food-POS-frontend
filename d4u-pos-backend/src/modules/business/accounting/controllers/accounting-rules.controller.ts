@@ -1,8 +1,10 @@
 import { Controller, Get, Post, Put, Patch, Param, Body, Query, ParseIntPipe } from '@nestjs/common';
+import { RequirePermissions } from '../../../../common/decorators';
 import { AccountingRulesService } from '../services/accounting-rules.service';
 import { CreatePostingRuleDto } from '../dto/create-posting-rule.dto';
 import { UpdatePostingRuleDto } from '../dto/update-posting-rule.dto';
 
+@RequirePermissions('finance.accounting.manage')
 @Controller('accounting/rules')
 export class AccountingRulesController {
   constructor(private readonly service: AccountingRulesService) {}

@@ -7,9 +7,11 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { KotsService } from './kots.service';
 import { UpdateKotStatusDto } from './dto';
 
+@RequirePermissions('sales.manage')
 @Controller('kots')
 export class KotsController {
   constructor(private readonly service: KotsService) {}

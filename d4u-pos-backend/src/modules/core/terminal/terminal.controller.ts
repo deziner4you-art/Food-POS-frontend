@@ -1,7 +1,9 @@
 import { Controller, Post, Body, Delete, Param } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { TerminalLoginDto, GenerateTerminalDto } from './dto';
 
+@RequirePermissions('system.manage')
 @Controller('terminal')
 export class TerminalController {
   constructor(private readonly prisma: PrismaService) {}

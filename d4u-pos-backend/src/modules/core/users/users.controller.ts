@@ -11,12 +11,14 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto';
 
+@RequirePermissions('system.manage')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}

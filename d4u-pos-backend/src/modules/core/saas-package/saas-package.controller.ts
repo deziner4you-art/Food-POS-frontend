@@ -7,9 +7,11 @@ import {
   Param,
   Delete,
 } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { SaasPackageService } from './saas-package.service';
 import { CreateSaasPackageDto, UpdateSaasPackageDto } from './dto';
 
+@RequirePermissions('system.manage')
 @Controller('saas-package')
 export class SaasPackageController {
   constructor(private readonly saasPackageService: SaasPackageService) {}

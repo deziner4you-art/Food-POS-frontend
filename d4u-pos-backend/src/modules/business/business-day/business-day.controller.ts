@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { RequirePermissions } from '../../../common/decorators';
 import { BusinessDayService } from './business-day.service';
 import { OpenBusinessDayDto, CloseBusinessDayDto } from './dto';
 
+@RequirePermissions('sales.manage')
 @Controller('business-day')
 export class BusinessDayController {
   constructor(private readonly service: BusinessDayService) {}
