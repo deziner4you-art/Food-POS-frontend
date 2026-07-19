@@ -30,9 +30,9 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       // In AuthModule we set a global secret, here we verify it.
-      // We assume the secret is 'D4U_SUPER_SECRET_KEY' or loaded via process.env
+      // We assume the secret is loaded via process.env
       const payload = await this.jwtService.verifyAsync(token, {
-        secret: process.env.JWT_SECRET || 'D4U_SUPER_SECRET_KEY'
+        secret: process.env.JWT_SECRET
       });
       (request as any).user = payload;
     } catch {

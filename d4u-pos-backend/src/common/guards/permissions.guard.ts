@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SystemRoles } from '../enums/roles.enum';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -25,7 +26,7 @@ export class PermissionsGuard implements CanActivate {
 
     const hasPermission = () => {
       // SuperAdmin has access to everything
-      if (user.role === 'SuperAdmin') return true;
+      if (user.role === SystemRoles.SUPER_ADMIN) return true;
       
       const userPermissions = user.permissions;
       
