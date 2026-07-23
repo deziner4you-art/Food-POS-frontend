@@ -11,7 +11,7 @@ import TVDisplay from './TVDisplay'
 import AdminDashboard from './AdminDashboard'
 import StaffManagement from './StaffManagement'
 import TvBoard from './pages/TvBoard'
-import { PrintBill, PrintKOT } from './PrintTemplates'
+import { PrintBill, PrintKOT, PrintShiftCloseReceipt } from './PrintTemplates'
 import KitchenView from './kds/components/KitchenView'
 import type { Order, OrderStatus } from './kds/types'
 import { AlertCircle } from 'lucide-react'
@@ -51,7 +51,7 @@ const KOTTimer = ({ kot }: { kot: any }) => {
   return <span style={{ color: 'var(--accent-yellow)', fontWeight: 'bold' }}>{timeLeft}</span>;
 };
 
-const USERS = [
+const USERS = import.meta.env.DEV ? [
   { email: '03000000001',  password: '1234',  name: 'Ali Cashier (B1)',  role: 'Cashier', id: 1, store_id: 1 },
   { email: '03000000002',  password: 'manager123', name: 'Sara Manager (B1)', role: 'Manager', id: 2, store_id: 1 },
   { email: '03000000003',  password: 'admin',  name: 'Super Admin (B1)',  role: 'Admin', id: 3, store_id: 1 },
@@ -62,8 +62,7 @@ const USERS = [
 
   // Branch 3 Users
   { email: '03000000006',  password: '1234',  name: 'Bilal Cashier (B3)',  role: 'Cashier', id: 7, store_id: 3 },
-
-];
+] : [];
 
 function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
   const [phone, setPhone]       = useState('');
@@ -89,6 +88,9 @@ function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
       const data = await res.json();
 
       if (res.ok && data.user) {
+        if (data.access_token) {
+          localStorage.setItem('d4u_pos_token', data.access_token);
+        }
         onLogin({
           email: data.user.phone,
           password: password,
@@ -253,7 +255,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
   );
 }
 
-function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUser: typeof USERS[0]; dayStartTime: Date; onLogout: () => void; onCashOut: () => void }) {
+function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUser: typeof USERS[0]; dayStartTime: Date | null; onLogout: () => void; onCashOut: () => void }) {
   const isWaiterMode = currentUser?.role === 'Waiter';
 
   const [activeMenu, setActiveMenu] = useState('Home');
@@ -261,6 +263,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
   const lowStockItems = inventoryItems.filter(ing => ing.currentStock <= ing.warningThreshold);
   const [activeCategoryId, setActiveCategoryId] = useState<number | string | null>('ALL')
+  const [categoryInitialized, setCategoryInitialized] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeCampaigns, setActiveCampaigns] = useState<any[]>([])
   
@@ -271,7 +274,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   // Removed: fake WhatsApp message simulation timer
   // Real WhatsApp integration requires WhatsApp Business API webhook
 
-  const [orderType, setOrderType] = useState('Dine In')
+  const [orderType, setOrderType] = useState(isWaiterMode ? 'Dine In' : 'Dine In')
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
@@ -328,7 +331,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [splitCash, setSplitCash] = useState('');
   const [splitCard, setSplitCard] = useState('');
   const [isTillLocked, setIsTillLocked] = useState(true);
-  const [printData, setPrintData] = useState<{ type: 'NONE' | 'BILL' | 'KOT', data: any, printCount: number }>({ type: 'NONE', data: null, printCount: 1 });
+  const [printData, setPrintData] = useState<{ type: 'NONE' | 'BILL' | 'KOT' | 'SHIFT_CLOSE', data: any, printCount: number }>({ type: 'NONE', data: null, printCount: 1 });
+  const [denomCounts, setDenomCounts] = useState<{ [key: number]: number }>({
+    5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0, 10: 0, 5: 0, 2: 0, 1: 0
+  });
+  const [handoverManagerName, setHandoverManagerName] = useState('');
+  const [handoverNotes, setHandoverNotes] = useState('');
   const [managerPassword, setManagerPassword] = useState('');
   const [pendingDuplicateKot, setPendingDuplicateKot] = useState<any>(null);
   
@@ -477,11 +485,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     // Initial fetch
     const fetchInitialData = async () => {
       try {
-        const storeId = currentUser?.store_id || 1;
-        const res = await fetch(`${BACKEND_URL}/online-orders?store_id=${storeId}`);
+        const storeId = currentUser?.store_id;
+        const res = await fetch(`${BACKEND_URL}/online-orders?store_id=${storeId}`, {
+          headers: { 'Authorization': `Bearer ${currentUser?.token}` }
+        });
         if (res.ok) setBackendOnlineOrders(await res.json());
 
-        const riderRes = await fetch(`${BACKEND_URL}/rider-orders`);
+        const riderRes = await fetch(`${BACKEND_URL}/rider-orders`, {
+          headers: { 'Authorization': `Bearer ${currentUser?.token}` }
+        });
         if (riderRes.ok) {
           const riderOrders: any[] = await riderRes.json();
           setActiveDeliveries(prev => {
@@ -567,9 +579,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         });
       };
 
-      // Join the store-specific room
-      socket.emit('join_store', { store_id: currentUser?.store_id || 1 });
-  
+      const joinStore = () => {
+        socket.emit('join_store', { store_id: currentUser?.store_id });
+      };
+
+      if (socket.connected) {
+        joinStore();
+      }
+
+      socket.on('connect', joinStore);
       socket.on('new_order', handleNewOrder);
       socket.on('order_updated', handleOrderUpdated);
       socket.on('negative_inventory_alert', handleNegativeInventoryAlert);
@@ -581,6 +599,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       });
       
       return () => {
+        socket.off('connect', joinStore);
         socket.off('new_order', handleNewOrder);
         socket.off('order_updated', handleOrderUpdated);
         socket.off('negative_inventory_alert', handleNegativeInventoryAlert);
@@ -607,7 +626,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   useEffect(() => {
     const fetchCatalog = async () => {
       try {
-        const storeId = currentUser?.store_id || 1;
+        const storeId = currentUser?.store_id;
         const res = await fetch(`${BACKEND_URL}/catalog/sync/${storeId}`);
         if (res.ok) {
           const data = await res.json();
@@ -648,8 +667,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   }, [currentUser]);
 
   useEffect(() => {
-    if (categories.length > 0 && activeCategoryId === null) setActiveCategoryId(categories[0].id)
-  }, [categories, activeCategoryId])
+    if (categories.length > 0 && !categoryInitialized) {
+      setActiveCategoryId(categories[0].id)
+      setCategoryInitialized(true)
+    }
+  }, [categories, categoryInitialized])
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000)
@@ -753,7 +775,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       const hasCategoryTarget = camp.target_categories?.length > 0;
       const hasProductTarget = camp.target_products?.length > 0;
 
-      const storeId = currentUser?.store_id || 1;
+      const storeId = currentUser?.store_id;
       const storeMatches = hasStoreTarget ? camp.target_stores.some((s:any) => s.id === storeId) : true;
       const categoryMatches = hasCategoryTarget ? camp.target_categories.some((c:any) => c.id === product.category_id) : true;
       const productMatches = hasProductTarget ? camp.target_products.some((p:any) => p.id === product.id) : true;
@@ -854,7 +876,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     }
     
     const orderData = {
-      store_id: currentUser?.store_id || 1,
+      store_id: currentUser?.store_id,
       waiter_name: currentUser?.name || 'Waiter',
       terminal_pin: currentUser?.password || '',
       table_no: tableNumber || 'T1',
@@ -979,6 +1001,26 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     setToast({ message: `Order #${newKot.orderId} sent to KDS and Delivery!`, type: 'success' });
   };
 
+  const handleSendTerminalOrder = () => {
+    if (cart.length === 0) return setToast({ message: 'Cart is empty', type: 'error' });
+    if (!tableNumber) return setToast({ message: 'Please select a Table Number', type: 'error' });
+
+    const orderData = {
+      store_id: currentUser.store_id,
+      waiter_name: currentUser.name || 'Waiter Tablet',
+      terminal_pin: currentUser.terminalPin || '0000',
+      table_no: tableNumber,
+      items: cart,
+      total: grandTotal,
+      timestamp: new Date().toISOString()
+    };
+
+    socket.emit('NEW_TERMINAL_ORDER', orderData);
+    setToast({ message: 'Order sent to POS!', type: 'success' });
+    setCart([]);
+    setTableNumber('');
+  };
+
   const handleHoldOrder = () => {
     if (cart.length === 0) return;
     setHeldOrders([...heldOrders, { id: Date.now(), cart, orderType, time: new Date() }]);
@@ -1013,7 +1055,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [discountPasswordInput, setDiscountPasswordInput] = useState('');
   const [pendingDiscount, setPendingDiscount] = useState('');
   const [pendingDeliveryAction, setPendingDeliveryAction] = useState<'KOT' | 'PAY' | null>(null);
-  const [tableNumber, setTableNumber] = useState<string>('T1');
+  const [tableNumber, setTableNumber] = useState<string>(isWaiterMode ? '' : 'T1');
 
   const subTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const promoDiscountAmount = cart.reduce((sum, item) => {
@@ -1075,14 +1117,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   // Real-time GPS sync handled globally by WebSockets above
 
-  const [branchName, setBranchName] = useState(`Branch ${currentUser?.store_id || 1}`);
+  const [branchName, setBranchName] = useState(`Branch ${currentUser?.store_id}`);
   
   useEffect(() => {
     fetch(`${BACKEND_URL}/stores`)
       .then(res => res.json())
       .then(data => {
          const stores = Array.isArray(data) ? data : (data.value || data.stores || []);
-         const s = stores.find((x: any) => x.id === (currentUser?.store_id || 1));
+         const s = stores.find((x: any) => x.id === (currentUser?.store_id));
          if (s) setBranchName(s.name);
       }).catch(console.error);
   }, [currentUser?.store_id]);
@@ -1202,14 +1244,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'nowrap', flexShrink: 0, justifyItems: 'flex-end', justifyContent: 'flex-end' }}>
             
             {/* Date Time Block */}
-            {activeMenu !== 'Dashboard' && (
+            {!isWaiterMode && activeMenu !== 'Dashboard' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '10px 16px', color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
                 <Clock size={16} color="var(--accent-yellow)" />
-                {dayStartTime.toLocaleDateString()} | {dayStartTime.toLocaleTimeString()}
+                {dayStartTime ? `${dayStartTime.toLocaleDateString()} | ${dayStartTime.toLocaleTimeString()}` : 'N/A'}
               </div>
             )}
 
             {/* Cashier Login */}
+            {!isWaiterMode && (
             <div>
               {cashier ? (
                 <button
@@ -1235,6 +1278,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </button>
               )}
             </div>
+            )}
 
             {!isWaiterMode && (
               <>
@@ -1246,6 +1290,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'white'; }}
             >
               <Banknote size={14} /> Cash Out
+            </button>
+
+            {/* Shift / Day Close & Handover */}
+            <button
+              onClick={() => setModalType('DAY_CLOSE')}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(129, 140, 248, 0.15)', border: '1px solid #818cf8', color: '#a5b4fc', borderRadius: 'var(--radius-md)', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(129, 140, 248, 0.3)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(129, 140, 248, 0.15)'; }}
+              title="Close Shift & Handover Cash"
+            >
+              <Moon size={14} /> Shift / Day Close
             </button>
 
             {/* Lock Terminal */}
@@ -1303,7 +1358,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             <div className="nav-categories" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '5px' }}>
               <button 
                 className={`nav-category-btn ${activeCategoryId === null ? 'active' : ''}`}
-                onClick={() => setActiveCategoryId(null)}
+                onClick={() => { setActiveCategoryId(null); setCategoryInitialized(true); }}
               >
                 All Items
               </button>
@@ -1600,13 +1655,13 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
         {/* TERMINAL ORDERS VIEW */}
         {activeMenu === 'Terminal' && (
-          <div style={{ padding: '20px', background: 'var(--bg-panel)', borderRadius: 'var(--radius-lg)', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '20px', background: 'var(--bg-panel)', borderRadius: 'var(--radius-lg)', flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
               <h2 style={{ margin: 0, color: 'var(--accent-green)' }}><Navigation size={24} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '10px' }} />Incoming Terminal Orders</h2>
               <button 
                 onClick={() => {
                   const pin = Math.floor(1000 + Math.random() * 9000).toString();
-                  socket.emit('generate_waiter_pin', { store_id: currentUser.store_id || 1, pin });
+                  socket.emit('generate_waiter_pin', { store_id: currentUser.store_id, pin });
                   setGeneratedWaiterPin(pin);
                   setWaiterPinModalOpen(true);
                 }}
@@ -1634,7 +1689,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         <span style={{ color: 'white', fontWeight: 'bold' }}>{waiter.name}</span>
                       </div>
                       <button 
-                        onClick={() => socket.emit('kick_waiter', { name: waiter.name, store_id: currentUser.store_id || 1 })}
+                        onClick={() => socket.emit('kick_waiter', { name: waiter.name, store_id: currentUser.store_id })}
                         style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>
                         Disconnect
                       </button>
@@ -1645,7 +1700,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             </div>
 
             <h3 style={{ margin: '20px 0 10px 0', color: 'white' }}>Pending Orders</h3>
-            <div className="custom-scrollbar" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', overflowY: 'auto', paddingRight: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', paddingRight: '10px' }}>
               {terminalOrders.length === 0 && (
                 <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem', gridColumn: '1 / -1' }}>
                   No pending terminal orders
@@ -1699,7 +1754,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             </div>
 
             <h3 style={{ margin: '20px 0 10px 0', color: 'white' }}>Active Terminal Orders (In Kitchen)</h3>
-            <div className="custom-scrollbar" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', overflowY: 'auto', paddingRight: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', paddingRight: '10px' }}>
               {terminalKots.length === 0 && (
                 <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem', gridColumn: '1 / -1' }}>
                   No active terminal orders
@@ -1745,12 +1800,13 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         setToast({ message: 'Error loading order', type: 'error' });
                       }
                     }}>
-                      Pay Order
+                      <Printer size={18} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
+                      Pay & Print Bill
                     </button>
                   ) : (
-                    <div style={{ padding: '12px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: 'rgba(251, 191, 36, 0.1)', color: 'var(--accent-yellow)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-yellow)' }}>
+                    <div style={{ padding: '12px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: kot.status === 'PREPARING' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(251, 191, 36, 0.1)', color: kot.status === 'PREPARING' ? '#3b82f6' : 'var(--accent-yellow)', borderRadius: 'var(--radius-sm)', border: `1px solid ${kot.status === 'PREPARING' ? '#3b82f6' : 'var(--accent-yellow)'}` }}>
                       <Clock size={18} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
-                      In Kitchen
+                      {kot.status === 'PREPARING' ? 'Preparing in Kitchen' : 'Pending in KDS'}
                     </div>
                   )}
                 </div>
@@ -2340,6 +2396,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 onChange={(e) => setTableNumber(e.target.value)}
                 style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', padding: '8px 10px', outline: 'none', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}
               >
+                <option value="" disabled>Select Table</option>
                 {['T1','T2','T3','T4','T5','T6','T7','T8', 'T9', 'T10', 'VIP-1', 'VIP-2'].map(t => (
                   <option key={t} value={t}>Table: {t}</option>
                 ))}
@@ -2389,6 +2446,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             {promoDiscountAmount > 0 && (
               <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', color: '#ec4899' }}><span>Promotional Discounts</span><span>-Rs. {promoDiscountAmount.toFixed(2)}</span></div>
             )}
+            {!isWaiterMode && (
             <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', alignItems: 'center' }}>
               <span>Discount</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2404,11 +2462,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 <span style={{ marginLeft: '4px', color: '#fbbf24' }}>-Rs. {discountAmount.toFixed(2)}</span>
               </div>
             </div>
+            )}
             <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem' }}><span>Tax (10%)</span><span>Rs. {tax.toFixed(2)}</span></div>
             <div className="totals-row grand" style={{ padding: '2px 0', marginTop: '2px', marginBottom: '4px' }}><span style={{ fontSize: '0.85rem' }}>Grand Total</span><span className="value" style={{ fontSize: '1.1rem' }}>Rs. {grandTotal.toFixed(2)}</span></div>
             {isWaiterMode ? (
               <div className="action-buttons" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '4px' }}>
-                <button className="btn-action btn-save" style={{ fontSize: '1rem', padding: '10px 0', minHeight: '40px', fontWeight: 'bold' }} onClick={sendWaiterOrder}>Send Order</button>
+                <button className="btn-action btn-save" style={{ fontSize: '1rem', padding: '10px 0', minHeight: '40px', fontWeight: 'bold' }} onClick={handleSendTerminalOrder}>SEND TO POS</button>
                 <button className="btn-action btn-danger" style={{ fontSize: '0.75rem', padding: '2px 0', minHeight: '26px' }} onClick={() => setCart([])}>Cancel</button>
               </div>
             ) : (
@@ -2574,8 +2633,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                    try {
                      const res = await fetch(BACKEND_URL + '/cash-flow/out', {
                        method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({ store_id: Number(currentUser?.store_id) || 1, user_id: Number(currentUser?.id) || 1, amount: amt })
+                       headers: { 
+                         'Content-Type': 'application/json',
+                         'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`
+                       },
+                       body: JSON.stringify({ store_id: Number(currentUser?.store_id), user_id: Number(currentUser?.id) || 1, amount: amt })
                      });
                      if (!res.ok) throw new Error('Cash Out failed');
                      
@@ -2596,81 +2658,314 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         </div>
       )}
 
-      {/* DAY CLOSE MODAL */}
+      {/* DAY CLOSE & CASH HANDOVER MODAL */}
       {modalType === 'DAY_CLOSE' && (
         <div className="modal-overlay">
-          <div className="modal-content animate-slide-up" style={{ width: '450px', textAlign: 'center' }}>
+          <div className="modal-content animate-slide-up" style={{ width: '1300px', maxWidth: '98vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
             <div className="modal-header">
-              <h2><Moon size={24} /> Business Day Close</h2>
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Banknote size={26} color="var(--accent-yellow)" /> Shift / Day Close & Cash Handover
+              </h2>
               <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setDayClosePin(''); }} />
             </div>
-            <div style={{ padding: '20px' }}>
-              <Moon size={48} color="var(--primary)" style={{ margin: '0 auto 15px' }} />
-              
+
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
               {(() => {
                 const pendingOrders = activeDeliveries.filter(d => d.status !== 'SETTLED' && d.status !== 'CANCELLED');
                 const requiresPin = pendingOrders.length > 0;
+                const openingFloat = Number(localStorage.getItem('d4u_cashin_amt') || 0);
+                const shiftSales = activeShift === 'Shift 1' ? shift1Sales : (shift1Sales + shift2Sales);
+                const cashSales = shiftSales;
+                const expectedCash = openingFloat + cashSales;
+
+                const pakDenoms = [
+                  { value: 5000, label: 'Rs. 5,000 Note', type: 'note' },
+                  { value: 1000, label: 'Rs. 1,000 Note', type: 'note' },
+                  { value: 500,  label: 'Rs. 500 Note',   type: 'note' },
+                  { value: 100,  label: 'Rs. 100 Note',   type: 'note' },
+                  { value: 50,   label: 'Rs. 50 Note',    type: 'note' },
+                  { value: 20,   label: 'Rs. 20 Note',    type: 'note' },
+                  { value: 10,   label: 'Rs. 10 Note',    type: 'note' },
+                  { value: 5,    label: 'Rs. 5 Coin',     type: 'coin' },
+                  { value: 2,    label: 'Rs. 2 Coin',     type: 'coin' },
+                  { value: 1,    label: 'Rs. 1 Coin',     type: 'coin' },
+                ];
+
+                const totalCountedCash = pakDenoms.reduce((sum, d) => sum + (d.value * (denomCounts[d.value] || 0)), 0);
+                const variance = totalCountedCash - expectedCash;
+
+                const updateCount = (val: number, cnt: number) => {
+                  const safeCnt = Math.max(0, isNaN(cnt) ? 0 : cnt);
+                  setDenomCounts(prev => ({ ...prev, [val]: safeCnt }));
+                };
+
+                const getHandoverPayload = () => ({
+                  storeName: currentUser?.store?.name || 'D4U POS Restaurant',
+                  cashierName: cashier?.name || currentUser?.name || 'Cashier',
+                  managerName: handoverManagerName || 'Manager',
+                  time: new Date().toLocaleString(),
+                  dayId: 1,
+                  openingFloat,
+                  totalOrders: activeDeliveries.length || 1,
+                  cashSales,
+                  cardSales: 0,
+                  onlineSales: 0,
+                  totalNetSales: shiftSales,
+                  cashOutAmount: 0,
+                  expectedCash,
+                  countedCash: totalCountedCash,
+                  variance,
+                  denominations: denomCounts,
+                  notes: handoverNotes
+                });
+
+                const handlePrintSlipOnly = () => {
+                  setPrintData({
+                    type: 'SHIFT_CLOSE',
+                    data: getHandoverPayload(),
+                    printCount: 1
+                  });
+                  setToast({ message: 'Printing Handover Receipt...', type: 'success' });
+                };
+
+                const handleConfirmClose = async () => {
+                  const payload = getHandoverPayload();
+                  setPrintData({
+                    type: 'SHIFT_CLOSE',
+                    data: payload,
+                    printCount: 1
+                  });
+
+                  try {
+                    await fetch(BACKEND_URL + '/business-day/close', {
+                      method: 'POST',
+                      headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`
+                      },
+                      body: JSON.stringify({
+                        store_id: currentUser?.store_id || 1,
+                        closed_by: currentUser?.id || 1,
+                        closingCash: totalCountedCash,
+                        notes: JSON.stringify({
+                          managerName: payload.managerName,
+                          cashierName: payload.cashierName,
+                          variance: payload.variance,
+                          expectedCash: payload.expectedCash,
+                          denominations: denomCounts,
+                          userNotes: handoverNotes
+                        })
+                      })
+                    });
+                  } catch (e) {
+                    console.error('Day close failed', e);
+                  }
+
+                  setToast({ message: 'Shift Closed & Handover Recorded!', type: 'success' });
+                  setTimeout(() => {
+                    localStorage.removeItem('d4u_day_start');
+                    localStorage.removeItem('d4u_is_cashed_in');
+                    localStorage.removeItem('d4u_cashin_amt');
+                    localStorage.removeItem('d4u_cashier');
+                    localStorage.removeItem('d4u_main_user');
+                    window.location.reload();
+                  }, 1200);
+                };
 
                 return (
-                  <>
-                    <h3 style={{ marginBottom: '10px' }}>End of Business Day</h3>
-                    
-                    {requiresPin ? (
-                      <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', padding: '15px', borderRadius: '8px', marginBottom: '20px', textAlign: 'left' }}>
-                        <p style={{ color: '#fca5a5', fontWeight: 'bold', marginBottom: '5px' }}>
-                          <AlertTriangle size={16} style={{ display: 'inline', marginRight: '5px', verticalAlign: 'text-bottom' }} />
-                          Pending Settlements Exist!
+                  <div>
+                    {/* TOP METRICS SUMMARY */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                      <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Opening Float</div>
+                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white', marginTop: '4px' }}>Rs. {openingFloat.toLocaleString()}</div>
+                      </div>
+
+                      <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Expected Till Cash</div>
+                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#60a5fa', marginTop: '4px' }}>Rs. {expectedCash.toLocaleString()}</div>
+                      </div>
+
+                      <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Counted Cash</div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: '900', color: 'var(--accent-yellow)', marginTop: '4px' }}>Rs. {totalCountedCash.toLocaleString()}</div>
+                      </div>
+
+                      <div style={{ background: 'var(--bg-base)', border: `1px solid ${variance < 0 ? '#ef4444' : variance > 0 ? '#3b82f6' : '#22c55e'}`, borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Variance (Diff)</div>
+                        <div style={{ fontSize: '1.2rem', fontWeight: '900', color: variance < 0 ? '#fca5a5' : variance > 0 ? '#93c5fd' : '#86efac', marginTop: '4px' }}>
+                          {variance === 0 ? 'Rs. 0 (Balanced)' : `${variance > 0 ? '+' : ''}Rs. ${variance.toLocaleString()}`}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* DENOMINATION INPUT GRID */}
+                    <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+                        <h4 style={{ margin: 0, fontSize: '1.05rem', color: 'white', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Receipt size={18} color="var(--accent-yellow)" /> Currency Denomination Tally (Counting)
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setDenomCounts({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0, 10: 0, 5: 0, 2: 0, 1: 0 })}
+                          style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                        >
+                          Clear Counts
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        {/* LEFT COLUMN: NOTES */}
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '4px' }}>
+                            Bank Notes (Rs)
+                          </div>
+                          {pakDenoms.filter(d => d.type === 'note').map(d => {
+                            const cnt = denomCounts[d.value] || 0;
+                            const sub = d.value * cnt;
+                            return (
+                              <div key={d.value} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', background: 'var(--bg-panel)', padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                <span style={{ width: '90px', fontWeight: 'bold', fontSize: '0.85rem', color: 'white' }}>{d.label}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateCount(d.value, cnt - 1)}
+                                  style={{ width: '28px', height: '28px', borderRadius: '4px', background: '#334155', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
+                                >-</button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={cnt || ''}
+                                  onChange={e => updateCount(d.value, parseInt(e.target.value) || 0)}
+                                  style={{ flex: 1, padding: '4px 8px', background: 'black', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', textAlign: 'center', fontWeight: 'bold', fontSize: '0.95rem' }}
+                                  placeholder="0"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => updateCount(d.value, cnt + 1)}
+                                  style={{ width: '28px', height: '28px', borderRadius: '4px', background: '#334155', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
+                                >+</button>
+                                <span style={{ width: '95px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.85rem', color: sub > 0 ? 'var(--accent-yellow)' : '#64748b' }}>
+                                  Rs. {sub.toLocaleString()}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* RIGHT COLUMN: COINS & HANDOVER DETAILS */}
+                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                          <div>
+                            <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '4px' }}>
+                              Coins (Rs)
+                            </div>
+                            {pakDenoms.filter(d => d.type === 'coin').map(d => {
+                              const cnt = denomCounts[d.value] || 0;
+                              const sub = d.value * cnt;
+                              return (
+                                <div key={d.value} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', background: 'var(--bg-panel)', padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                  <span style={{ width: '90px', fontWeight: 'bold', fontSize: '0.85rem', color: 'white' }}>{d.label}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCount(d.value, cnt - 1)}
+                                    style={{ width: '28px', height: '28px', borderRadius: '4px', background: '#334155', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
+                                  >-</button>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={cnt || ''}
+                                    onChange={e => updateCount(d.value, parseInt(e.target.value) || 0)}
+                                    style={{ flex: 1, padding: '4px 8px', background: 'black', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', textAlign: 'center', fontWeight: 'bold', fontSize: '0.95rem' }}
+                                    placeholder="0"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCount(d.value, cnt + 1)}
+                                    style={{ width: '28px', height: '28px', borderRadius: '4px', background: '#334155', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
+                                  >+</button>
+                                  <span style={{ width: '95px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.85rem', color: sub > 0 ? 'var(--accent-yellow)' : '#64748b' }}>
+                                    Rs. {sub.toLocaleString()}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* HANDOVER INFO INPUTS */}
+                          <div style={{ marginTop: '12px', background: 'var(--bg-panel)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--accent-yellow)', fontWeight: 'bold', marginBottom: '8px' }}>Handover Information</div>
+                            <div style={{ marginBottom: '8px' }}>
+                              <label style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '4px' }}>Handover To (Manager Name):</label>
+                              <input
+                                type="text"
+                                value={handoverManagerName}
+                                onChange={e => setHandoverManagerName(e.target.value)}
+                                placeholder="Manager Name e.g. Mr. Admin"
+                                style={{ width: '100%', padding: '8px', background: 'black', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', fontSize: '0.85rem' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '4px' }}>Notes / Discrepancy Remarks:</label>
+                              <input
+                                type="text"
+                                value={handoverNotes}
+                                onChange={e => setHandoverNotes(e.target.value)}
+                                placeholder="Optional notes e.g. Rs. 500 shortage due to..."
+                                style={{ width: '100%', padding: '8px', background: 'black', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', fontSize: '0.85rem' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* REQUIRES PIN WARNING IF UNSETTLED DELIVERIES EXIST */}
+                    {requiresPin && (
+                      <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+                        <p style={{ color: '#fca5a5', fontWeight: 'bold', marginBottom: '4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <AlertTriangle size={16} /> Pending Settlements Exist!
                         </p>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '15px', lineHeight: '1.4' }}>
-                          There are {pendingOrders.length} unsettled deliveries. You cannot close the day without settling them or providing the Admin Override PIN.
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '10px' }}>
+                          There are {pendingOrders.length} unsettled deliveries. Enter Admin Override PIN (9999) to close.
                         </p>
                         <input 
                           type="password" 
                           placeholder="Admin Override PIN" 
                           value={dayClosePin}
                           onChange={(e) => setDayClosePin(e.target.value)}
-                          style={{ width: '100%', padding: '12px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', textAlign: 'center', fontSize: '1.1rem', letterSpacing: '2px' }} 
+                          style={{ width: '220px', padding: '8px 12px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', textAlign: 'center', fontSize: '1rem', letterSpacing: '2px' }} 
                         />
                       </div>
-                    ) : (
-                      <p style={{ color: 'var(--text-muted)', marginBottom: '20px', lineHeight: '1.5' }}>
-                        This action will finalize all shifts, log you out, and prepare the system for the next business day. You can cancel if you are not ready yet.
-                      </p>
                     )}
 
-                    <div style={{ display: 'flex', gap: '10px' }}>
+                    {/* ACTION BUTTONS */}
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                       <button 
                         className="btn-action" 
                         onClick={() => { setModalType('NONE'); setDayClosePin(''); }} 
-                        style={{ flex: 1, padding: '15px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px' }}
+                        style={{ padding: '14px 20px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '8px', fontWeight: 'bold' }}
                       >
                         Cancel
                       </button>
+
+                      <button
+                        type="button"
+                        className="btn-action"
+                        onClick={handlePrintSlipOnly}
+                        style={{ padding: '14px 20px', background: '#334155', border: '1px solid #475569', color: 'white', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}
+                      >
+                        <Printer size={18} /> Print Handover Slip
+                      </button>
+
                       <button 
                         className="btn-action" 
                         disabled={requiresPin && dayClosePin !== '9999'}
-                        onClick={async () => {
-                          try {
-                            await fetch(BACKEND_URL + '/business-day/close', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ store_id: currentUser?.store_id || 1 })
-                            });
-                          } catch (e) { console.error('Day close failed', e); }
-                    
-                          localStorage.removeItem('d4u_day_start');
-                          localStorage.removeItem('d4u_is_cashed_in');
-                          localStorage.removeItem('d4u_cashin_amt');
-                          localStorage.removeItem('d4u_cashier');
-                          localStorage.removeItem('d4u_main_user');
-                          window.location.reload();
-                        }} 
-                        style={{ flex: 1, padding: '15px', background: 'var(--primary)', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold' }}
+                        onClick={handleConfirmClose}
+                        style={{ flex: 1, padding: '14px 20px', background: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: (requiresPin && dayClosePin !== '9999') ? 'not-allowed' : 'pointer', opacity: (requiresPin && dayClosePin !== '9999') ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                       >
-                        Confirm & Close Day
+                        <CheckCircle size={18} /> Confirm Handover & Close Day
                       </button>
                     </div>
-                  </>
+                  </div>
                 );
               })()}
             </div>
@@ -2761,7 +3056,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                        const res = await fetch(BACKEND_URL + '/terminal/generate', {
                          method: 'POST',
                          headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({ store_id: currentUser?.store_id || 1, waiter_name: waiterNameInput.trim() })
+                         body: JSON.stringify({ store_id: currentUser?.store_id, waiter_name: waiterNameInput.trim() })
                        });
                        const data = await res.json();
                        if (data.success) {
@@ -2984,7 +3279,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     const custRes = await fetch(BACKEND_URL + '/customers', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ brand_id: 1, phone: customerPhone.trim(), name: customerName || 'Walk-in' })
+                      body: JSON.stringify({ brand_id: currentUser?.brand_id, phone: customerPhone.trim(), name: customerName || 'Walk-in' })
                     });
                     const custData = await custRes.json();
                     if (custData.success) customerId = custData.customer.id;
@@ -2993,7 +3288,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
                 if (cart.length > 0) {
                   const payload = {
-                    store_id: currentUser?.store_id || 1,
+                    store_id: currentUser?.store_id,
                     created_by: currentUser?.id || 1,
                     customer_id: customerId,
                     discount: totalDiscountAmount,
@@ -3137,7 +3432,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
-                        store_id: currentUser?.store_id || 1,
+                        store_id: currentUser?.store_id,
                         name: customItemName,
                         price: parseFloat(customItemPrice) || 0,
                         category_ids: [customItemCategory || (categories[0]?.id || 1)],
@@ -3221,6 +3516,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         {printData.type === 'KOT' && Array.from({ length: printData.printCount }).map((_, i) => (
           <div key={i} style={{ pageBreakAfter: 'always' }}><PrintKOT {...printData.data} /></div>
         ))}
+        {printData.type === 'SHIFT_CLOSE' && (
+          <div style={{ pageBreakAfter: 'always' }}><PrintShiftCloseReceipt {...printData.data} /></div>
+        )}
       </div>
     </div>
   )
@@ -3242,7 +3540,9 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
   const [errMsg, setErrMsg] = useState('');
 
   useEffect(() => {
-    fetch(BACKEND_URL + `/business-day/history?store_id=${currentUser.store_id || 1}`)
+    fetch(BACKEND_URL + `/business-day/history?store_id=${currentUser.store_id}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` }
+    })
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setHistory(data);
@@ -3256,7 +3556,9 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
   useEffect(() => {
     const checkOpenDay = async () => {
       try {
-        const res = await fetch(BACKEND_URL + `/business-day/current?store_id=${currentUser.store_id || 1}`);
+        const res = await fetch(BACKEND_URL + `/business-day/current?store_id=${currentUser.store_id}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` }
+        });
         if (res.ok) {
           const data = await res.json();
           if (data && data.id) {
@@ -3276,8 +3578,11 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
     try {
       const res = await fetch(BACKEND_URL + '/business-day/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: currentUser.store_id || 1, started_by: currentUser.id || 1, openingFloat: 0 })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`
+        },
+        body: JSON.stringify({ store_id: currentUser.store_id, started_by: currentUser.id || 1, openingFloat: 0 })
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -3381,7 +3686,7 @@ function CashInPage({ currentUser, onCashIn, onLogout }: { currentUser: any; onC
   const [errMsg, setErrMsg] = useState('');
 
   useEffect(() => {
-    fetch(BACKEND_URL + `/cash-flow?store_id=${currentUser.store_id || 1}`)
+    fetch(BACKEND_URL + `/cash-flow?store_id=${currentUser.store_id}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setHistory(data.reverse());
@@ -3395,8 +3700,11 @@ function CashInPage({ currentUser, onCashIn, onLogout }: { currentUser: any; onC
     try {
       const res = await fetch(BACKEND_URL + '/cash-flow/in', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: currentUser.store_id || 1, user_id: currentUser.id || 1, amount: parseFloat(amount), comment })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`
+        },
+        body: JSON.stringify({ store_id: currentUser.store_id, user_id: currentUser.id || 1, amount: parseFloat(amount), comment })
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -3526,7 +3834,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const storeId = loggedInUser?.store_id || 1;
+    const storeId = loggedInUser?.store_id;
     fetch(`${BACKEND_URL}/cms/settings?store_id=${storeId}`)
       .then(res => res.json())
       .then(data => {
@@ -3574,7 +3882,7 @@ export default function App() {
     return <LoginScreen onLogin={(user) => { setLoggedInUser(user); setForceShowLogin(false); }} />;
   }
 
-  const activeUser = loggedInUser || { id: 1, name: 'Bypass Access', store_id: 1, role: 'Admin' };
+  const activeUser = loggedInUser || (import.meta.env.DEV ? { id: 1, name: 'Bypass Access', store_id: 1, role: 'Admin' } : null);
 
 
 
@@ -3600,6 +3908,11 @@ export default function App() {
         <KitchenDisplay onLogout={() => setLoggedInUser(null)} />
       </div>
     );
+  }
+
+  // We will remove WaiterMode and just use POSApp with isWaiterMode=true
+  if (activeUser.role === 'Waiter') {
+    return <POSApp currentUser={activeUser} dayStartTime={null} onLogout={handleLogout} onCashOut={handleLogout} />;
   }
 
   if (activeUser.role !== 'Waiter') {

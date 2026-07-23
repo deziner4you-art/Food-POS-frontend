@@ -7,8 +7,9 @@ import {
   Body,
   Param,
   ParseIntPipe,
+  Req,
 } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequirePermissions, Public } from '../../../common/decorators';
 import { StoresService } from './stores.service';
 import { CreateStoreDto, UpdateStoreDto } from './dto';
 
@@ -16,16 +17,42 @@ import { CreateStoreDto, UpdateStoreDto } from './dto';
 export class StoresController {
   constructor(private readonly storesService: StoresService) {}
 
-  @RequirePermissions('system.view')
+  @Public()
   @Get()
   getAllStores() {
     return this.storesService.getAllStores();
   }
 
   @RequirePermissions('system.view')
+  @Get('recycle-bin')
+  getDeletedStores() {
+    return this.storesService.getDeletedStores();
+  }
+
+  @RequirePermissions('system.delete')
+  @Post('bulk-delete-brands')
+  bulkDeleteBrands(@Body() body: { brandIds: number[], password: string }, @Req() req: any) {
+    return this.storesService.bulkDeleteBrandsWithPassword(body.brandIds, req.user.sub, body.password);
+  }
+
+  @RequirePermissions('system.delete')
+  @Post('bulk-delete')
+  bulkDeleteStores(@Body() body: { storeIds: number[], password: string }, @Req() req: any) {
+    return this.storesService.bulkDeleteStoresWithPassword(body.storeIds, req.user.sub, body.password);
+  }
+
+  @RequirePermissions('system.update')
+  @Post('restore')
+  restoreStores(@Body() body: { storeIds: number[] }) {
+    return this.storesService.restoreStores(body.storeIds);
+  }
+
+  @Public()
+  @RequirePermissions('system.view')
   @Get('brands')
-  getAllBrands() {
-    return this.storesService.getAllBrands();
+  getAllBrands(@Req() req: any) {
+    const tenantBrandId = req.user?.brand_id === 1 ? undefined : req.user?.brand_id;
+    return this.storesService.getAllBrands(tenantBrandId);
   }
 
   @RequirePermissions('system.view')

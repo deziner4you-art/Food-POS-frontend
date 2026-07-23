@@ -10,6 +10,9 @@ export default function SuperAdmin() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   
+  const [activeTab, setActiveTab] = useState<'PACKAGES' | 'MODULES'>('PACKAGES');
+  const [pricingList, setPricingList] = useState<any[]>([]);
+
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<any>({
@@ -29,10 +32,23 @@ export default function SuperAdmin() {
     has_manager_app: false,
   });
 
+  const getAuthHeader = () => {
+    const token = localStorage.getItem('d4u_admin_token');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+  };
+
   const fetchPackages = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/saas-package`);
+      const res = await fetch(`${BACKEND_URL}/saas-package`, {
+        headers: { ...getAuthHeader(), 'Content-Type': 'application/json' }
+      });
       if (res.ok) setPackages(await res.json());
+
+      const priceRes = await fetch(`${BACKEND_URL}/subscription/pricing/all`, {
+        headers: { ...getAuthHeader(), 'Content-Type': 'application/json' }
+      });
+      if (priceRes.ok) setPricingList(await priceRes.json());
+      
       setLoading(false);
     } catch (e) {
       console.error(e);
@@ -52,7 +68,7 @@ export default function SuperAdmin() {
       const url = isEditing ? `${BACKEND_URL}/saas-package/${formData.id}` : `${BACKEND_URL}/saas-package`;
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
       if (res.ok) {
@@ -61,11 +77,12 @@ export default function SuperAdmin() {
         setShowModal(false);
         fetchPackages();
       } else {
-        customAlert('Error saving package');
+        const err = await res.json().catch(() => ({}));
+        customAlert(err.message || `Error saving package (Status: ${res.status})`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      customAlert('Error saving package');
+      customAlert(`Error saving package: ${e.message}`);
     }
     setSaving(false);
   };
@@ -79,12 +96,34 @@ export default function SuperAdmin() {
   const handleDelete = async (id: number) => {
     if (!(await customConfirm('Are you sure you want to delete this package?'))) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/saas-package/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${BACKEND_URL}/saas-package/${id}`, { 
+        method: 'DELETE',
+        headers: getAuthHeader()
+      });
       if (res.ok) {
         fetchPackages();
       }
     } catch (e) {
       console.error('Delete error', e);
+    }
+  };
+
+  const handleUpdateModulePrice = async (id: number, newPrice: number) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/subscription/pricing/${id}`, {
+        method: 'PATCH',
+        headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price_monthly: newPrice })
+      });
+      if (res.ok) {
+        customSuccess('Price updated');
+        setPricingList(prev => prev.map(p => p.id === id ? { ...p, price_monthly: newPrice } : p));
+      } else {
+        customAlert('Failed to update price');
+      }
+    } catch (e) {
+      console.error(e);
+      customAlert('Failed to update price');
     }
   };
 
@@ -100,19 +139,36 @@ export default function SuperAdmin() {
             <p className="text-gray-500">Manage client subscriptions, modules, and architecture</p>
           </div>
         </div>
+        {activeTab === 'PACKAGES' && (
+          <button 
+            onClick={() => {
+              setFormData({
+                name: '', price: 0, has_pos: true, has_website: false, has_customer_app: false, 
+                has_rider_app: false, has_kds: false, has_tv_board: false, has_warehouse: false, 
+                has_recipes: false, has_marketing: false, has_loyalty: false, has_accounts: false, has_manager_app: false
+              });
+              setIsEditing(false);
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-lg shadow-purple-200"
+          >
+            <Plus size={18} /> Add Package
+          </button>
+        )}
+      </div>
+
+      <div className="flex border-b border-gray-200 mb-6">
         <button 
-          onClick={() => {
-            setFormData({
-              name: '', price: 0, has_pos: true, has_website: false, has_customer_app: false, 
-              has_rider_app: false, has_kds: false, has_tv_board: false, has_warehouse: false, 
-              has_recipes: false, has_marketing: false, has_loyalty: false, has_accounts: false, has_manager_app: false
-            });
-            setIsEditing(false);
-            setShowModal(true);
-          }}
-          className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-lg shadow-purple-200"
+          onClick={() => setActiveTab('PACKAGES')}
+          className={`px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'PACKAGES' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
         >
-          <Plus size={18} /> Add Package
+          SaaS Packages
+        </button>
+        <button 
+          onClick={() => setActiveTab('MODULES')}
+          className={`px-6 py-3 font-bold text-sm transition-all border-b-2 ${activeTab === 'MODULES' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+        >
+          A la Carte Module Pricing
         </button>
       </div>
 
@@ -123,47 +179,92 @@ export default function SuperAdmin() {
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-        <table className="w-full text-left text-sm text-gray-700">
-          <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
-            <tr>
-              <th className="p-4 font-bold">Package Name</th>
-              <th className="p-4 font-bold">Price</th>
-              <th className="p-4 font-bold">Modules Included</th>
-              <th className="p-4 text-right font-bold">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {packages.map(pkg => {
-              const activeCount = [pkg.has_pos, pkg.has_website, pkg.has_customer_app, pkg.has_rider_app, pkg.has_kds, pkg.has_tv_board, pkg.has_warehouse, pkg.has_recipes, pkg.has_marketing, pkg.has_loyalty, pkg.has_accounts, pkg.has_manager_app].filter(Boolean).length;
-              return (
-                <tr key={pkg.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
-                  <td className="p-4 font-bold text-gray-900">{pkg.name}</td>
-                  <td className="p-4 font-mono text-purple-600 font-bold">${pkg.price}</td>
-                  <td className="p-4">
-                    <span className="bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full text-xs font-bold">
-                      {activeCount} Modules
-                    </span>
-                  </td>
-                  <td className="p-4 flex justify-end gap-3 items-center">
-                    <button onClick={() => handleEdit(pkg)} className="text-gray-400 hover:text-purple-600 transition-colors">
-                      <Edit size={18} />
-                    </button>
-                    <button onClick={() => handleDelete(pkg.id)} className="text-gray-400 hover:text-red-500 transition-colors">
-                      <Trash2 size={18} />
-                    </button>
+      {activeTab === 'PACKAGES' ? (
+        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+          <table className="w-full text-left text-sm text-gray-700">
+            <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
+              <tr>
+                <th className="p-4 font-bold">Package Name</th>
+                <th className="p-4 font-bold">Price</th>
+                <th className="p-4 font-bold">Modules Included</th>
+                <th className="p-4 text-right font-bold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {packages.map(pkg => {
+                const activeCount = [pkg.has_pos, pkg.has_website, pkg.has_customer_app, pkg.has_rider_app, pkg.has_kds, pkg.has_tv_board, pkg.has_warehouse, pkg.has_recipes, pkg.has_marketing, pkg.has_loyalty, pkg.has_accounts, pkg.has_manager_app].filter(Boolean).length;
+                return (
+                  <tr key={pkg.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                    <td className="p-4 font-bold text-gray-900">{pkg.name}</td>
+                    <td className="p-4 font-mono text-purple-600 font-bold">${pkg.price}</td>
+                    <td className="p-4">
+                      <span className="bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full text-xs font-bold">
+                        {activeCount} Modules
+                      </span>
+                    </td>
+                    <td className="p-4 flex justify-end gap-3 items-center">
+                      <button onClick={() => handleEdit(pkg)} className="text-gray-400 hover:text-purple-600 transition-colors">
+                        <Edit size={18} />
+                      </button>
+                      <button onClick={() => handleDelete(pkg.id)} className="text-gray-400 hover:text-red-500 transition-colors">
+                        <Trash2 size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {packages.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-gray-500">No SaaS packages found. Create one.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+          <table className="w-full text-left text-sm text-gray-700">
+            <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
+              <tr>
+                <th className="p-4 font-bold">Module Name</th>
+                <th className="p-4 font-bold">Module Key</th>
+                <th className="p-4 font-bold">Currency</th>
+                <th className="p-4 font-bold text-right">Monthly Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pricingList.map(item => (
+                <tr key={item.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                  <td className="p-4 font-bold text-gray-900">{item.module_name}</td>
+                  <td className="p-4"><span className="bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-mono">{item.module_key}</span></td>
+                  <td className="p-4 text-gray-500 font-bold">{item.currency}</td>
+                  <td className="p-4 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="text-gray-400 font-bold">$</span>
+                      <input 
+                        type="number"
+                        defaultValue={item.price_monthly}
+                        onBlur={(e) => {
+                          const val = Number(e.target.value);
+                          if (val !== item.price_monthly) {
+                            handleUpdateModulePrice(item.id, val);
+                          }
+                        }}
+                        className="w-24 p-2 border border-gray-200 rounded text-right font-mono font-bold outline-none focus:border-purple-500"
+                      />
+                    </div>
                   </td>
                 </tr>
-              );
-            })}
-            {packages.length === 0 && (
-              <tr>
-                <td colSpan={4} className="p-8 text-center text-gray-500">No SaaS packages found. Create one.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+              {pricingList.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-gray-500">No module pricing found in database.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

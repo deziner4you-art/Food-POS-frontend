@@ -40,7 +40,20 @@ export class CreateSubscriptionDto {
   @IsOptional()
   vat_percentage?: number | string;
 
+  // New Branch Details
+  @IsOptional() @IsString() owner_name?: string;
+  @IsOptional() @IsString() owner_phone?: string;
+  @IsOptional() @IsString() owner_email?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() map_pin?: string;
+  @IsOptional() @IsString() website?: string;
+  @IsOptional() @IsString() email?: string;
+  @IsOptional() @IsString() landline?: string;
+  @IsOptional() @IsString() whatsapp?: string;
+  @IsOptional() @IsString() order_no_prefix?: string;
+
   @IsArray()
+  @IsString({ each: true })
   @IsOptional()
   selected_modules?: string[];
 

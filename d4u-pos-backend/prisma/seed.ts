@@ -56,8 +56,8 @@ async function main() {
         store_id: store.id,
         role_id: superAdminRole.id,
         name: 'Super Admin',
-        phone: '03000000003',
-        hashedPin: 'admin',
+        phone: 'deziner4you',
+        hashedPin: '!765Bjs!',
       },
       {
         brand_id: brand.id,

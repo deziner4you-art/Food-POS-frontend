@@ -14,8 +14,7 @@ export default function Dashboard() {
   const [weeklyTrend, setWeeklyTrend] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  const { branches, selectedBranchId, setSelectedBranchId, setIsBranchEntered } = useAdminContext();
+  const { branches, brands, selectedBranchId, setSelectedBranchId, activeBrandId } = useAdminContext();
 
 
   useEffect(() => {
@@ -65,13 +64,7 @@ export default function Dashboard() {
   const totalRevenue = filteredOverview.reduce((sum, store) => sum + store.today_sales, 0);
   const totalOrders = filteredOverview.reduce((sum, store) => sum + store.today_orders, 0);
 
-  const handleEnterBranch = () => {
-    if (!selectedBranchId || selectedBranchId === 0) {
-      customAlert("Please select a valid branch first.");
-      return;
-    }
-    setIsBranchEntered(true);
-  };
+  // handleEnterBranch is no longer needed as the dropdown controls context directly
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -80,32 +73,29 @@ export default function Dashboard() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h2 className="text-3xl font-black text-white">Live Analytics</h2>
-          <p className="text-slate-400 text-sm mt-1">Real-time performance across branches</p>
+          <p className="text-slate-400 text-sm mt-1">
+            {activeBrandId 
+              ? (selectedBranchId ? `${brands.find(b => b.id === activeBrandId)?.name} > ${branches.find(b => b.id === selectedBranchId)?.name}` : `${brands.find(b => b.id === activeBrandId)?.name} > All Branches`) 
+              : 'Real-time performance across branches'}
+          </p>
         </div>
         <div className="flex items-center gap-4">
           <div className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl flex items-center gap-2">
             <span className="text-slate-400 font-bold text-sm">Filter:</span>
             <select 
-              value={selectedBranchId || ''} 
+              value={selectedBranchId || 0} 
               onChange={e => setSelectedBranchId(Number(e.target.value))}
               className="bg-transparent text-white outline-none font-bold min-w-[120px]"
             >
-              <option value={0} disabled>Select Branch</option>
-              {branches.map(b => (
+              <option value={0}>All Branches</option>
+              {(activeBrandId ? brands.find(b => b.id === activeBrandId)?.stores || [] : branches).map(b => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
           </div>
-          <button
-            onClick={handleEnterBranch}
-            className="bg-[#ec4899] hover:bg-pink-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold transition-all shadow-lg hover:translate-y-[-1px]"
-          >
-            <span>Enter Branch</span>
-            <ArrowRight size={16} />
-          </button>
-          <div className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl flex items-center gap-3">
-            <div className="w-3 h-3 rounded-full bg-[#4edea3] animate-pulse"></div>
-            <span className="text-[#4edea3] font-bold text-sm">System Live</span>
+          <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="font-bold text-sm">System Online</span>
           </div>
         </div>
       </div>
@@ -218,9 +208,9 @@ export default function Dashboard() {
                   <td className="p-4 text-white font-bold">{store.today_orders}</td>
                   <td className="p-4 text-[#4edea3] font-bold">${store.today_sales.toFixed(2)}</td>
                   <td className="p-4">
-                    <div className="w-full bg-slate-900 rounded-full h-2 mt-1 overflow-hidden">
-                      <div className="bg-[#fbbf24] h-2 rounded-full" style={{ width: `${Math.min(100, (store.today_sales / (totalRevenue || 1)) * 100)}%` }}></div>
-                    </div>
+                      <div className="w-full bg-slate-900 rounded-full h-2 mt-1 overflow-hidden">
+                        <div className="bg-[#fbbf24] h-2 rounded-full" style={{ width: `${Math.min(100, (store.today_sales / (totalRevenue || 1)) * 100)}%` }}></div>
+                      </div>
                   </td>
                 </tr>
               ))}

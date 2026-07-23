@@ -1,5 +1,5 @@
 export enum SystemRoles {
-  SUPER_ADMIN = 'SuperAdmin',
+  SUPER_ADMIN = 'Super Admin',
   HEAD_OFFICE = 'HeadOffice',
   BRANCH_MANAGER = 'BranchManager',
   CASHIER = 'Cashier',

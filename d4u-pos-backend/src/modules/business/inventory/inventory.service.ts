@@ -71,40 +71,42 @@ export class InventoryService {
 
       const storeId = order.store_id;
 
-      for (const item of order.items) {
-        if (!item.product || !item.product.recipeItems) continue;
+      await this.prisma.$transaction(async (tx) => {
+        for (const item of order.items) {
+          if (!item.product || !item.product.recipeItems) continue;
 
-        for (const recipe of item.product.recipeItems) {
-          const deductionAmount = recipe.quantity_needed * item.quantity;
+          for (const recipe of item.product.recipeItems) {
+            const deductionAmount = recipe.quantity_needed * item.quantity;
 
-          // Atomic Decrement
-          const updatedItem = await this.prisma.inventoryItem.update({
-            where: { id: recipe.inventory_id },
-            data: { quantity: { decrement: deductionAmount } },
-          });
-
-          // Log transaction
-          await this.prisma.inventoryTransactionLog.create({
-            data: {
-              inventory_id: recipe.inventory_id,
-              operation: 'SUBTRACT',
-              amount: deductionAmount,
-              reason: `Auto-deduct for Order #${order.id}`,
-              changed_by: order.created_by || 1,
-            },
-          });
-
-          // Trigger Soft Block Alert if it goes into negative
-          if (updatedItem.quantity < 0) {
-            this.gateway.server.emit('negative_inventory_alert', {
-              store_id: storeId,
-              inventory_id: updatedItem.id,
-              name: updatedItem.name,
-              balance: updatedItem.quantity,
+            // Atomic Decrement
+            const updatedItem = await tx.inventoryItem.update({
+              where: { id: recipe.inventory_id },
+              data: { quantity: { decrement: deductionAmount } },
             });
+
+            // Log transaction
+            await tx.inventoryTransactionLog.create({
+              data: {
+                inventory_id: recipe.inventory_id,
+                operation: 'SUBTRACT',
+                amount: deductionAmount,
+                reason: `Auto-deduct for Order #${order.id}`,
+                changed_by: order.created_by || 1,
+              },
+            });
+
+            // Trigger Soft Block Alert if it goes into negative
+            if (updatedItem.quantity < 0) {
+              this.gateway.server.emit('negative_inventory_alert', {
+                store_id: storeId,
+                inventory_id: updatedItem.id,
+                name: updatedItem.name,
+                balance: updatedItem.quantity,
+              });
+            }
           }
         }
-      }
+      });
     } catch (e) {
       console.error(
         `[InventoryService] Error deducting for order ${orderId}:`,

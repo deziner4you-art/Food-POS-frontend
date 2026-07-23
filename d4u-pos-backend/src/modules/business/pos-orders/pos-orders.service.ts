@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { InventoryService } from '../inventory/inventory.service';
@@ -186,18 +187,34 @@ export class PosOrdersService {
       include: { role: true },
     });
 
-    if (!manager || manager.hashedPin !== body.manager_pin) {
+    if (!manager) {
+      throw new ForbiddenException('Invalid manager');
+    }
+
+    let isMatch = false;
+    if (manager.hashedPin.startsWith('$2')) {
+      isMatch = await bcrypt.compare(body.manager_pin, manager.hashedPin);
+    } else {
+      isMatch = (manager.hashedPin === body.manager_pin);
+    }
+
+    if (!isMatch) {
       throw new ForbiddenException('Invalid manager PIN');
     }
 
-    const order = await this.prisma.order.update({
-      where: { id },
+    const { count } = await this.prisma.order.updateMany({
+      where: { id, status: { not: 'VOIDED' } },
       data: {
         status: 'VOIDED',
         void_reason: body.void_reason,
         void_approved_by: body.approved_by,
       },
     });
+
+    const order = await this.prisma.order.findUnique({ where: { id } });
+    if (count === 0) {
+      return { success: true, order };
+    }
 
     // KOT بھی CANCELLED کریں
     await this.prisma.kOT.updateMany({
@@ -218,14 +235,20 @@ export class PosOrdersService {
     id: number,
     body: { payment_method: string; amount_received?: number },
   ) {
-    const order = await this.prisma.order.update({
-      where: { id },
+    const { count } = await this.prisma.order.updateMany({
+      where: { id, status: { not: 'SETTLED' } },
       data: {
         status: 'SETTLED',
         payment_method: body.payment_method,
         payment_status: 'PAID',
       },
     });
+
+    const order = await this.prisma.order.findUnique({ where: { id } });
+    
+    if (count === 0) {
+      return { success: true, order };
+    }
 
     console.log(`[SETTLED] POS Order #${id} | Method: ${body.payment_method}`);
     this.gateway.broadcast('order_settled', { order_id: id });
@@ -274,10 +297,13 @@ export class PosOrdersService {
           console.error('Failed to parse offline itemsData', e);
         }
 
+        if (!order.store_id) throw new Error('Missing store_id in offline sync order');
+        if (!order.business_day_id) throw new Error('Missing business_day_id in offline sync order');
+
         const newOrder = await tx.order.create({
           data: {
-            store_id: 1, // Fallback, could be extracted from app context
-            business_day_id: 1, // Will map to active day normally
+            store_id: order.store_id,
+            business_day_id: order.business_day_id,
             business_date: new Date(),
             customer_id: null,
             order_source: 'OFFLINE_SYNC',
@@ -286,7 +312,7 @@ export class PosOrdersService {
             payment_status: 'PAID',
             payment_method: order.paymentMethod || 'CASH',
             is_offline: true,
-            created_by: 1, // System fallback
+            created_by: order.created_by || null,
             items: {
               create: items.map((i: any) => ({
                 product_id: i.id || 1, // Extract product_id from structured local cart

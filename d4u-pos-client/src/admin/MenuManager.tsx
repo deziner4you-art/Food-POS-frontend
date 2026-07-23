@@ -20,7 +20,7 @@ export default function MenuManager() {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/catalog/categories?store_id=1`);
+      const res = await fetch(`${BACKEND_URL}/catalog/categories?store_id=${currentUser?.store_id}`);
       if (res.ok) setCategories(await res.json());
     } catch (e) {
       console.error('Failed to fetch categories', e);
@@ -29,7 +29,7 @@ export default function MenuManager() {
 
   const fetchProducts = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/catalog/products?store_id=1`);
+      const res = await fetch(`${BACKEND_URL}/catalog/products?store_id=${currentUser?.store_id}`);
       if (res.ok) setProducts(await res.json());
     } catch (e) {
       console.error('Failed to fetch products', e);
@@ -48,7 +48,7 @@ export default function MenuManager() {
       const res = await fetch(`${BACKEND_URL}/catalog/categories`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: 1, name: categoryName })
+        body: JSON.stringify({ store_id: currentUser?.store_id, name: categoryName })
       });
       if (res.ok) {
         setShowCategoryModal(false);
@@ -69,7 +69,7 @@ export default function MenuManager() {
       
       const payload = isEditingProduct 
         ? { name: productForm.name, price: productForm.price, category_id: productForm.category_id, sku: productForm.sku, image_url: productForm.image_url }
-        : { store_id: 1, name: productForm.name, price: productForm.price, category_id: productForm.category_id, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED' };
+        : { store_id: currentUser?.store_id, name: productForm.name, price: productForm.price, category_id: productForm.category_id, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED' };
       
       const res = await fetch(url, {
         method,

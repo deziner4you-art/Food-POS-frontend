@@ -17,10 +17,11 @@ export class AuthService {
       brand_id: user.brand_id,
       role: user.role.name,
       permissions: user.role.permissions,
+      module_permissions: user.module_permissions,
     };
 
     const [access_token, refresh_token] = await Promise.all([
-      this.jwtService.signAsync(payload, { expiresIn: '15m' }),
+      this.jwtService.signAsync(payload, { expiresIn: '7d' }),
       this.jwtService.signAsync(payload, { expiresIn: '7d' }),
     ]);
 
@@ -77,6 +78,8 @@ export class AuthService {
         name: user.name,
         role: user.role.name,
         role_id: user.role_id,
+        brand_id: user.brand_id,
+        brand: { name: user.brand?.name },
         store_id: user.store_id,
         store: { name: user.store?.name },
         module_permissions: user.module_permissions,

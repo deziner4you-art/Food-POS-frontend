@@ -125,3 +125,105 @@ export const PrintKOT = ({ orderId, type, items, notes, time, isDuplicate }: any
     </div>
   </div>
 );
+
+export const PrintShiftCloseReceipt = ({
+  storeName,
+  cashierName,
+  managerName,
+  time,
+  dayId,
+  openingFloat,
+  totalOrders,
+  cashSales,
+  cardSales,
+  onlineSales,
+  totalNetSales,
+  cashOutAmount,
+  expectedCash,
+  countedCash,
+  variance,
+  denominations
+}: any) => {
+  const denList = [5000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
+  return (
+    <div style={{ padding: '10px', width: '80mm', fontFamily: 'monospace', color: 'black', background: 'white', letterSpacing: '-0.5px' }}>
+      <div style={{ textAlign: 'center', marginBottom: '10px' }}>
+        <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '900', textTransform: 'uppercase' }}>{storeName || 'D4U POS'}</h2>
+        <h3 style={{ margin: '4px 0', fontSize: '1.05rem', fontWeight: '900', border: '1px solid black', display: 'inline-block', padding: '2px 8px' }}>
+          SHIFT / DAY CLOSE & HANDOVER
+        </h3>
+        <div style={{ fontSize: '0.85rem', fontWeight: 'bold', marginTop: '4px' }}>DATE: {time || new Date().toLocaleString()}</div>
+        {dayId && <div style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>DAY SESSION #: {dayId}</div>}
+      </div>
+
+      <div style={{ borderBottom: '2px dashed black', margin: '8px 0' }}></div>
+
+      <div style={{ fontSize: '0.88rem', fontWeight: 'bold', lineHeight: '1.4' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>CASHIER:</span><span>{cashierName || 'N/A'}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>HANDOVER TO:</span><span>{managerName || 'Manager'}</span></div>
+      </div>
+
+      <div style={{ borderBottom: '2px dashed black', margin: '8px 0' }}></div>
+
+      <div style={{ fontSize: '0.88rem', fontWeight: 'bold', lineHeight: '1.4' }}>
+        <div style={{ textTransform: 'uppercase', marginBottom: '4px', textDecoration: 'underline' }}>SALES SUMMARY</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>OPENING FLOAT:</span><span>Rs. {Number(openingFloat || 0).toFixed(2)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>TOTAL ORDERS:</span><span>{totalOrders || 0}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>CASH SALES:</span><span>Rs. {Number(cashSales || 0).toFixed(2)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>CARD SALES:</span><span>Rs. {Number(cardSales || 0).toFixed(2)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>ONLINE/OTHER:</span><span>Rs. {Number(onlineSales || 0).toFixed(2)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '900', fontSize: '0.95rem', marginTop: '2px' }}>
+          <span>TOTAL NET SALES:</span><span>Rs. {Number(totalNetSales || 0).toFixed(2)}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>CASH OUT/EXPENSES:</span><span>Rs. {Number(cashOutAmount || 0).toFixed(2)}</span></div>
+      </div>
+
+      <div style={{ borderBottom: '2px dashed black', margin: '8px 0' }}></div>
+
+      <div style={{ fontSize: '0.88rem', fontWeight: 'bold' }}>
+        <div style={{ textTransform: 'uppercase', marginBottom: '4px', textDecoration: 'underline' }}>DENOMINATION TALLY</div>
+        <div style={{ display: 'flex', borderBottom: '1px solid black', paddingBottom: '2px', marginBottom: '4px', fontSize: '0.8rem' }}>
+          <span style={{ flex: 1.5 }}>DENOM</span>
+          <span style={{ flex: 1, textAlign: 'center' }}>QTY</span>
+          <span style={{ flex: 1.5, textAlign: 'right' }}>SUBTOTAL</span>
+        </div>
+        {denList.map(denom => {
+          const count = denominations?.[denom] || 0;
+          return (
+            <div key={denom} style={{ display: 'flex', fontSize: '0.85rem' }}>
+              <span style={{ flex: 1.5 }}>{denom >= 10 ? `Rs ${denom}` : `Rs ${denom} Coin`}</span>
+              <span style={{ flex: 1, textAlign: 'center' }}>x {count}</span>
+              <span style={{ flex: 1.5, textAlign: 'right' }}>Rs {(denom * count).toFixed(0)}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ borderBottom: '2px dashed black', margin: '8px 0' }}></div>
+
+      <div style={{ fontSize: '0.9rem', fontWeight: 'bold', lineHeight: '1.5' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>EXPECTED CASH:</span><span>Rs. {Number(expectedCash || 0).toFixed(2)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.05rem', fontWeight: '900' }}><span>COUNTED CASH:</span><span>Rs. {Number(countedCash || 0).toFixed(2)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: variance < 0 ? 'red' : (variance > 0 ? 'blue' : 'black') }}>
+          <span>VARIANCE:</span>
+          <span>{variance === 0 ? '0.00 (BALANCED)' : `${variance > 0 ? '+' : ''}${Number(variance || 0).toFixed(2)}`}</span>
+        </div>
+      </div>
+
+      <div style={{ borderBottom: '2px dashed black', margin: '15px 0' }}></div>
+
+      <div style={{ marginTop: '20px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+        <div style={{ marginBottom: '25px' }}>Cashier Signature: __________________</div>
+        <div style={{ marginBottom: '15px' }}>Manager Signature: __________________</div>
+      </div>
+
+      <div style={{ borderBottom: '2px dashed black', margin: '10px 0' }}></div>
+
+      <div style={{ textAlign: 'center', fontSize: '0.8rem', fontWeight: 'bold' }}>
+        <p style={{ margin: '2px 0' }}>*** END OF SHIFT REPORT ***</p>
+        <p style={{ margin: '2px 0' }}>POWERED BY D4U POS</p>
+      </div>
+    </div>
+  );
+};
+

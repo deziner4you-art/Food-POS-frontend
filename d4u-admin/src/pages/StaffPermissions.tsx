@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Users, Shield, Plus, Trash2, Edit2, Check, X, AlertCircle, CheckCircle, Upload } from 'lucide-react';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
+import { useAdminContext } from '../context/AdminContext';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function StaffPermissions() {
+  const { selectedBranchId, branches: contextBranches } = useAdminContext();
   const [users, setUsers] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
@@ -29,24 +31,55 @@ export default function StaffPermissions() {
   });
 
   const MODULES = [
-    { id: 'pos', label: 'POS Terminal' },
-    { id: 'kds', label: 'KDS (Kitchen Display)' },
-    { id: 'rider', label: 'Rider App' },
+    { id: 'pos', label: 'Base POS System' },
+    { id: 'inventory', label: 'Advanced Inventory' },
+    { id: 'recipe', label: 'Recipe Costing & Prod' },
+    { id: 'kds', label: 'Kitchen (KDS / KOT)' },
+    { id: 'vendor', label: 'Vendor Management' },
+    { id: 'rider', label: 'Delivery Rider App' },
+    { id: 'tv_board', label: 'Customer TV Board' },
+    { id: 'accounting', label: 'Accounting & Cash Flow' },
+    { id: 'marketing', label: 'Marketing Hub & Campaigns' },
+    { id: 'loyalty', label: 'Loyalty & Rewards' },
+    { id: 'website', label: 'Online Ordering Website' },
+    { id: 'cms', label: 'Website CMS Builder' },
+    { id: 'hr', label: 'Staff HR & Payroll' },
     { id: 'admin', label: 'Backend Admin' },
-    { id: 'website', label: 'Website CMS' }
+    { id: 'analytics', label: 'Advanced Analytics' }
   ];
 
   const fetchData = async () => {
     setLoading(true);
+    const token = localStorage.getItem('d4u_admin_token');
+    const headers: HeadersInit = token ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
     try {
       const [usersRes, storesRes, rolesRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/users`),
-        fetch(`${BACKEND_URL}/stores`),
-        fetch(`${BACKEND_URL}/users/roles`)
+        fetch(`${BACKEND_URL}/users`, { headers }),
+        fetch(`${BACKEND_URL}/stores`, { headers }),
+        fetch(`${BACKEND_URL}/users/roles`, { headers })
       ]);
-      if (usersRes.ok) setUsers(await usersRes.json());
-      if (storesRes.ok) setBranches(await storesRes.json());
-      if (rolesRes.ok) setRoles(await rolesRes.json());
+      
+      if (usersRes.status === 401 || storesRes.status === 401 || rolesRes.status === 401) {
+        localStorage.removeItem('d4u_admin_token');
+        localStorage.removeItem('d4u_admin_user');
+        customAlert('Session expired or unauthorized. Please log in again.');
+        setLoading(false);
+        window.location.href = '/admin/';
+        return;
+      }
+
+      if (usersRes.ok) {
+        const d = await usersRes.json();
+        setUsers(Array.isArray(d) ? d : d.data || []);
+      }
+      if (storesRes.ok) {
+        const d = await storesRes.json();
+        setBranches(Array.isArray(d) ? d : d.data || []);
+      }
+      if (rolesRes.ok) {
+        const d = await rolesRes.json();
+        setRoles(Array.isArray(d) ? d : d.data || []);
+      }
     } catch (e) {
       customAlert('Could not connect to backend. Is the server running?');
     }
@@ -80,7 +113,7 @@ export default function StaffPermissions() {
       setPin('');
       setImageUrl('');
       setRoleId(roles.find(r => r.name.toLowerCase() !== 'rider')?.id || roles[0]?.id || 0);
-      setStoreId(branches[0]?.id || null);
+      setStoreId(selectedBranchId || null);
       setPermissions({
         pos: true,
         kds: false,
@@ -145,9 +178,13 @@ export default function StaffPermissions() {
       if (imageUrl.trim()) payload.image_url = imageUrl;
       if (activeTab === 'rider') payload.rider_details = riderDetails;
 
+      const token = localStorage.getItem('d4u_admin_token');
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(payload)
       });
 
@@ -168,7 +205,11 @@ export default function StaffPermissions() {
   const handleDelete = async (user: any) => {
     if (!(await customConfirm(`Are you sure you want to remove ${user.name}?`))) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/users/${user.id}`, { method: 'DELETE' });
+      const token = localStorage.getItem('d4u_admin_token');
+      const res = await fetch(`${BACKEND_URL}/users/${user.id}`, { 
+        method: 'DELETE',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       if (!res.ok) throw new Error('Delete failed');
       customSuccess(`${user.name} removed.`);
       fetchData();
@@ -211,7 +252,7 @@ export default function StaffPermissions() {
         </button>
       </div>
 
-      {users.length === 0 ? (
+      {users.filter(user => user.store_id === selectedBranchId).length === 0 ? (
         <div className="bg-slate-800 border border-dashed border-slate-600 rounded-2xl p-16 text-center">
           <Users size={64} className="text-slate-600 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-slate-400 mb-2">No Staff Found</h3>
@@ -222,7 +263,7 @@ export default function StaffPermissions() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {users.map((user) => {
+          {users.filter(user => user.store_id === selectedBranchId).map((user) => {
             const branch = branches.find(b => b.id === user.store_id);
             const roleName = user.role?.name || 'Unknown';
             return (
@@ -289,7 +330,11 @@ export default function StaffPermissions() {
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
             <div className="p-6 border-b border-slate-700 flex justify-between items-center shrink-0">
-              <h2 className="text-2xl font-bold">{editingUser ? (activeTab === 'rider' ? 'Edit Rider' : 'Edit Staff') : 'Add New Staff'}</h2>
+              <h2 className="text-2xl font-bold">
+                {editingUser 
+                  ? (activeTab === 'rider' ? 'Edit Rider' : 'Edit Staff') 
+                  : `Add New ${activeTab === 'rider' ? 'Rider' : 'Staff'} in "${contextBranches.find(b => b.id === selectedBranchId)?.name || 'Head Office HQ'}"`}
+              </h2>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white p-2 hover:bg-slate-700 rounded-lg transition-colors"><X size={20} /></button>
             </div>
             
@@ -340,24 +385,34 @@ export default function StaffPermissions() {
               </div>
 
               {activeTab === 'staff' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2">Role *</label>
-                    <select value={roleId} onChange={e => setRoleId(Number(e.target.value))}
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 mb-2">Role *</label>
+                      <select value={roleId} onChange={e => setRoleId(Number(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500">
+                        <option value={0} disabled>Select Role...</option>
+                        {roles.filter(r => r.name.toLowerCase() !== 'rider').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 mb-2">
+                        PIN / Password {editingUser ? '(leave blank to keep)' : '*'}
+                      </label>
+                      <input type="password" value={pin} onChange={e => setPin(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500 tracking-widest"
+                        placeholder="e.g. 1234" />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className="block text-xs font-bold text-slate-400 mb-2">Branch / Store *</label>
+                    <select value={storeId || ''} onChange={e => setStoreId(Number(e.target.value))}
                       className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500">
-                      <option value={0} disabled>Select Role...</option>
-                      {roles.filter(r => r.name.toLowerCase() !== 'rider').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      {selectedBranchId === null && <option value="" disabled>Select Branch...</option>}
+                      {branches.filter(b => selectedBranchId === null || b.id === selectedBranchId).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2">
-                      PIN / Password {editingUser ? '(leave blank to keep)' : '*'}
-                    </label>
-                    <input type="password" value={pin} onChange={e => setPin(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500 tracking-widest"
-                      placeholder="e.g. 1234" />
-                  </div>
-                </div>
+                </>
               )}
 
               {activeTab === 'rider' && (
@@ -421,18 +476,8 @@ export default function StaffPermissions() {
                 </>
               )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-2">Assign to Branch *</label>
-                <select value={storeId ?? ''} onChange={e => setStoreId(e.target.value ? Number(e.target.value) : null)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500">
-                  <option value="">🏢 Head Office (All Branches)</option>
-                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-                <p className="text-xs text-slate-500 mt-1">
-                  💡 POS will only show menu items assigned to the selected branch.
-                </p>
-              </div>
-
+              {/* Assign to Branch removed as requested */}
+              
               {activeTab === 'staff' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-400 mb-3">Module Permissions (Access Control)</label>

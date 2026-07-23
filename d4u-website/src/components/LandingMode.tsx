@@ -258,7 +258,7 @@ export default function LandingMode({
       const res = await fetch(`${BACKEND_URL}/customers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brand_id: 1, name, phone, address })
+        body: JSON.stringify({ brand_id: currentUser?.brand_id, name, phone, address })
       });
       if (res.ok) {
         const data = await res.json();

@@ -1,10 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { ChefHat, Save, Plus, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
+import { useAdminContext } from '../context/AdminContext';
 import { customAlert, customSuccess } from '../utils/alerts';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function RecipeManager() {
+  const { selectedBranchId } = useAdminContext();
+  const getHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
+  });
+  const getAuthHeaderOnly = () => ({
+    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
+  });
+
   const [products, setProducts] = useState<any[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
   
@@ -14,10 +24,11 @@ export default function RecipeManager() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    if (!selectedBranchId) return;
     // Load Menu Products
     const loadProducts = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/catalog/products?store_id=1`);
+        const res = await fetch(`${BACKEND_URL}/catalog/products?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() });
         if (res.ok) setProducts(await res.json());
       } catch (e) {
         console.error('Failed to load products', e);
@@ -27,7 +38,7 @@ export default function RecipeManager() {
     // Load Inventory Items
     const loadInventory = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/inventory/items/1`);
+        const res = await fetch(`${BACKEND_URL}/inventory/items/${selectedBranchId}`, { headers: getAuthHeaderOnly() });
         if (res.ok) setInventory(await res.json());
       } catch (e) {
         console.error('Failed to load inventory', e);
@@ -36,7 +47,7 @@ export default function RecipeManager() {
 
     loadProducts();
     loadInventory();
-  }, []);
+  }, [selectedBranchId]);
 
   // When a product is selected, fetch its existing recipe
   useEffect(() => {
@@ -46,7 +57,7 @@ export default function RecipeManager() {
     }
     const loadRecipe = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/recipes/product/${selectedProductId}`);
+        const res = await fetch(`${BACKEND_URL}/recipes/product/${selectedProductId}`, { headers: getAuthHeaderOnly() });
         if (res.ok) {
           const data = await res.json();
           // Map to local state
@@ -121,9 +132,9 @@ export default function RecipeManager() {
     
     setIsSaving(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/recipes/bulk/${selectedProductId}`, {
+      const res = await fetch(`${BACKEND_URL}/catalog/products/${selectedProductId}/recipe`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify({ ingredients: validRows })
       });
       if (!res.ok) {
@@ -211,9 +222,9 @@ export default function RecipeManager() {
                  try {
                    const res = await fetch(`${BACKEND_URL}/inventory/items`, {
                      method: 'POST',
-                     headers: { 'Content-Type': 'application/json' },
+                     headers: getHeaders(),
                      body: JSON.stringify({
-                       store_id: 1, 
+                       store_id: selectedBranchId, 
                        name: itemName,
                        quantity: 0,
                        unit: unit,

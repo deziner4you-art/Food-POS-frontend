@@ -16,13 +16,12 @@ import OwnerApp from './pages/OwnerApp';
 import SetupWizard from './pages/SetupWizard';
 import StoreManager from './pages/StoreManager';
 import HQOverview from './pages/HQOverview';
-import HQOverview from './pages/HQOverview';
+import RecycleBin from './pages/RecycleBin';
 
-import { Megaphone, ShieldCheck } from 'lucide-react';
+import { Megaphone, ShieldCheck, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Toaster } from 'react-hot-toast';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
-
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, onLogout: () => void, user: any }) {
   const navigate = useNavigate();
@@ -128,7 +127,6 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
   );
 }
 
-import { Toaster } from 'react-hot-toast';
 
 function MainApp({ user, handleLogout }: { user: any, handleLogout: () => void }) {
   const { isBranchEntered } = useAdminContext();
@@ -229,8 +227,8 @@ export default function App() {
 
   if (!settings) return <div className="h-screen bg-slate-900 flex items-center justify-center text-white">Loading System...</div>;
 
-  // Enforce Login if module is enabled
-  if (settings.module_auth_enabled && !user) {
+  // Enforce Login for Admin Panel (Backend APIs always require JWT)
+  if (!user) {
     return (
       <div className="h-screen bg-slate-900 flex items-center justify-center">
         <div className="bg-slate-800 p-8 rounded-2xl border border-slate-700 w-full max-w-sm">
@@ -293,6 +291,7 @@ export default function App() {
         <Routes>
           <Route path="/owner" element={<OwnerApp />} />
           <Route path="/setup" element={<SetupWizard />} />
+          <Route path="/recycle-bin" element={<RecycleBin />} />
           <Route path="/*" element={<MainApp user={user} handleLogout={handleLogout} />} />
         </Routes>
       </AdminProvider>

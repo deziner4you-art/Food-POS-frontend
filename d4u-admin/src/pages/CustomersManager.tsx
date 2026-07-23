@@ -9,15 +9,21 @@ export default function CustomersManager() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
+  const token = localStorage.getItem('d4u_admin_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+  
   // A hypothetical brand_id = 1 for now, or fetch all if not restricted
   const brandId = 1;
 
   const fetchCustomers = () => {
     setLoading(true);
-    fetch(`${BACKEND_URL}/customers?brand_id=${brandId}`)
+    fetch(`${BACKEND_URL}/customers?brand_id=${brandId}`, { headers })
       .then(res => res.json())
       .then(data => {
-        setCustomers(data);
+        setCustomers(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(err => {

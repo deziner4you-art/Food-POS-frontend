@@ -12,6 +12,13 @@ export default function InventoryManager() {
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
 
   const { selectedBranchId } = useAdminContext();
+  const getHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
+  });
+  const getAuthHeaderOnly = () => ({
+    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
+  });
 
   // Purchase Form State
   const [purchaseForm, setPurchaseForm] = useState({ inventory_id: 0, quantity: 0, total_cost: 0 });
@@ -19,7 +26,7 @@ export default function InventoryManager() {
   const fetchItems = async () => {
     if (!selectedBranchId) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/inventory/items/${selectedBranchId}`);
+      const res = await fetch(`${BACKEND_URL}/inventory/items/${selectedBranchId}`, { headers: getAuthHeaderOnly() });
       if (res.ok) setItems(await res.json());
     } catch (e) {
       console.error('Failed to fetch inventory', e);
@@ -40,7 +47,7 @@ export default function InventoryManager() {
     try {
       await fetch(`${BACKEND_URL}/inventory/items/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify({ [field]: value })
       });
     } catch (e) {
@@ -57,7 +64,7 @@ export default function InventoryManager() {
     try {
       const res = await fetch(`${BACKEND_URL}/inventory/items`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify({ store_id: selectedBranchId, ...newBlankItem })
       });
       if (res.ok) {
@@ -71,7 +78,7 @@ export default function InventoryManager() {
   const handleDelete = async (id: number) => {
     if (!(await customConfirm('Are you sure you want to delete this raw material?'))) return;
     try {
-      await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE' });
+      await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
       setItems(items.filter(i => i.id !== id));
       setSelectedItems(selectedItems.filter(itemId => itemId !== id));
     } catch (e) {
@@ -84,7 +91,7 @@ export default function InventoryManager() {
     if (!(await customConfirm(`Are you sure you want to delete ${selectedItems.length} items?`))) return;
     try {
       for (const id of selectedItems) {
-        await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE' });
+        await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
       }
       setItems(items.filter(i => !selectedItems.includes(i.id)));
       setSelectedItems([]);
@@ -112,15 +119,16 @@ export default function InventoryManager() {
   // --- Purchase Logic ---
   const handlePurchaseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedBranchId) return customAlert('Please select a branch first');
     if (purchaseForm.inventory_id === 0) return customAlert('Please select a material');
     
     setLoading(true);
     try {
       const res = await fetch(`${BACKEND_URL}/inventory/purchase`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify({
-          store_id: 1,
+          store_id: selectedBranchId,
           inventory_id: purchaseForm.inventory_id,
           quantity: purchaseForm.quantity,
           total_cost: purchaseForm.total_cost

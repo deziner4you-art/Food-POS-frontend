@@ -16,14 +16,13 @@ export class JwtAuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    
-    if (isPublic) {
-      return true;
-    }
-
     const request = context.switchToHttp().getRequest<Request>();
     const token = this.extractTokenFromHeader(request);
     
+    if (isPublic && !token) {
+      return true;
+    }
+
     if (!token) {
       throw new UnauthorizedException('Authentication token is missing');
     }
@@ -36,7 +35,9 @@ export class JwtAuthGuard implements CanActivate {
       });
       (request as any).user = payload;
     } catch {
-      throw new UnauthorizedException('Invalid or expired authentication token');
+      if (!isPublic) {
+        throw new UnauthorizedException('Invalid or expired authentication token');
+      }
     }
     
     return true;

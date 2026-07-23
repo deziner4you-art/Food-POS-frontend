@@ -8,7 +8,8 @@ import {
   Patch,
   Delete,
 } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { validateTenantAccess } from '../../../common/utils/tenant.util';
 import { InventoryService } from './inventory.service';
 import {
   CreateInventoryDto,
@@ -23,7 +24,11 @@ export class InventoryController {
 
   @RequirePermissions('inventory.create')
   @Post('sync-offline')
-  async syncOffline(@Body() body: SyncOfflineDto) {
+  async syncOffline(
+    @CurrentUser() user: any,
+    @Body() body: SyncOfflineDto
+  ) {
+    validateTenantAccess(user, body.store_id);
     return this.inventoryService.syncOfflineTransactions(
       body.store_id,
       body.transactions,
@@ -32,47 +37,76 @@ export class InventoryController {
 
   @RequirePermissions('inventory.view')
   @Get('red-alerts/:store_id')
-  async getNegativeInventory(@Param('store_id', ParseIntPipe) storeId: number) {
+  async getNegativeInventory(
+    @CurrentUser() user: any,
+    @Param('store_id', ParseIntPipe) storeId: number
+  ) {
+    validateTenantAccess(user, storeId);
     return this.inventoryService.getNegativeInventory(storeId);
   }
 
   // --- CRUD for Inventory Items ---
   @RequirePermissions('inventory.view')
   @Get('items/:store_id')
-  async getInventoryItems(@Param('store_id', ParseIntPipe) storeId: number) {
+  async getInventoryItems(
+    @CurrentUser() user: any,
+    @Param('store_id', ParseIntPipe) storeId: number
+  ) {
+    validateTenantAccess(user, storeId);
     return this.inventoryService.getInventoryItems(storeId);
   }
 
   @RequirePermissions('inventory.view')
   @Get('item/:id')
-  async getInventoryItem(@Param('id', ParseIntPipe) id: number) {
-    return this.inventoryService.getInventoryItem(id);
+  async getInventoryItem(
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number
+  ) {
+    const item = await this.inventoryService.getInventoryItem(id);
+    if (item) validateTenantAccess(user, item.store_id);
+    return item;
   }
 
   @RequirePermissions('inventory.create')
   @Post('items')
-  async createInventoryItem(@Body() body: CreateInventoryDto) {
+  async createInventoryItem(
+    @CurrentUser() user: any,
+    @Body() body: CreateInventoryDto
+  ) {
+    validateTenantAccess(user, body.store_id);
     return this.inventoryService.createInventoryItem(body);
   }
 
   @RequirePermissions('inventory.update')
   @Patch('items/:id')
   async updateInventoryItem(
+    @CurrentUser() user: any,
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateInventoryDto,
   ) {
+    const item = await this.inventoryService.getInventoryItem(id);
+    if (item) validateTenantAccess(user, item.store_id);
     return this.inventoryService.updateInventoryItem(id, body);
   }
 
   @RequirePermissions('inventory.delete')
   @Delete('items/:id')
-  async deleteInventoryItem(@Param('id', ParseIntPipe) id: number) {
+  async deleteInventoryItem(
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number
+  ) {
+    const item = await this.inventoryService.getInventoryItem(id);
+    if (item) validateTenantAccess(user, item.store_id);
     return this.inventoryService.deleteInventoryItem(id);
   }
 
   @RequirePermissions('inventory.create')
   @Post('purchase')
-  async recordPurchase(@Body() body: RecordPurchaseDto) {
+  async recordPurchase(
+    @CurrentUser() user: any,
+    @Body() body: RecordPurchaseDto
+  ) {
+    validateTenantAccess(user, body.store_id);
     return this.inventoryService.recordPurchase(
       body.store_id,
       body.inventory_id,

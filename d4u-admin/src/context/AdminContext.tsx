@@ -21,6 +21,8 @@ interface Brand {
 interface AdminContextType {
   selectedBranchId: number | null;
   setSelectedBranchId: (id: number) => void;
+  activeBrandId: number | null;
+  setActiveBrandId: (id: number | null) => void;
   branches: Store[];
   brands: Brand[];
   isBranchEntered: boolean;
@@ -35,24 +37,30 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(() => {
     return Number(localStorage.getItem('adminSelectedBranchId')) || null;
   });
+  const [activeBrandId, setActiveBrandId] = useState<number | null>(() => {
+    return Number(localStorage.getItem('adminActiveBrandId')) || null;
+  });
   const [isBranchEntered, setIsBranchEntered] = useState<boolean>(() => {
     return localStorage.getItem('adminIsBranchEntered') === 'true';
   });
 
   useEffect(() => {
+    const token = localStorage.getItem('d4u_admin_token');
+    const headers: HeadersInit = token ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+
     // Fetch Stores
-    fetch(`${BACKEND_URL}/stores`)
+    fetch(`${BACKEND_URL}/stores`, { headers })
       .then(res => res.json())
       .then(data => {
-        setBranches(data);
+        setBranches(Array.isArray(data) ? data : []);
       })
       .catch(console.error);
 
     // Fetch Brands
-    fetch(`${BACKEND_URL}/stores/brands`)
+    fetch(`${BACKEND_URL}/stores/brands`, { headers })
       .then(res => res.json())
       .then(data => {
-        setBrands(data);
+        setBrands(Array.isArray(data) ? data : []);
       })
       .catch(console.error);
   }, []);
@@ -60,15 +68,33 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (selectedBranchId) {
       localStorage.setItem('adminSelectedBranchId', selectedBranchId.toString());
+      // Auto-update activeBrandId if a specific branch is selected
+      if (brands.length > 0) {
+        const brand = brands.find(b => b.stores?.some(s => s.id === selectedBranchId));
+        if (brand) {
+          setActiveBrandId(brand.id);
+          localStorage.setItem('adminActiveBrandId', brand.id.toString());
+        }
+      }
+    } else {
+      localStorage.removeItem('adminSelectedBranchId');
     }
-  }, [selectedBranchId]);
+  }, [selectedBranchId, brands]);
+
+  useEffect(() => {
+    if (activeBrandId) {
+      localStorage.setItem('adminActiveBrandId', activeBrandId.toString());
+    } else {
+      localStorage.removeItem('adminActiveBrandId');
+    }
+  }, [activeBrandId]);
 
   useEffect(() => {
     localStorage.setItem('adminIsBranchEntered', isBranchEntered.toString());
   }, [isBranchEntered]);
 
   return (
-    <AdminContext.Provider value={{ selectedBranchId, setSelectedBranchId, branches, brands, isBranchEntered, setIsBranchEntered }}>
+    <AdminContext.Provider value={{ selectedBranchId, setSelectedBranchId, activeBrandId, setActiveBrandId, branches, brands, isBranchEntered, setIsBranchEntered }}>
       {children}
     </AdminContext.Provider>
   );

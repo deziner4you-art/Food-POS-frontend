@@ -1,10 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ListTree, Plus, Edit, Trash2, Tag, Utensils, Store } from 'lucide-react';
+import { useAdminContext } from '../context/AdminContext';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function MenuManager() {
+  const { selectedBranchId } = useAdminContext();
+  const getHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
+  });
+  
+  const getAuthHeaderOnly = () => ({
+    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
+  });
+
   const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORIES' | 'PRODUCTS' | 'EXTRA_TOPPINGS' | 'ADD_ONS'>('MENUS');
   
   const [stores, setStores] = useState<any[]>([]);
@@ -44,10 +55,10 @@ export default function MenuManager() {
   const fetchAll = async () => {
     try {
       const [stRes, mnRes, ctRes, prRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/stores`),
-        fetch(`${BACKEND_URL}/catalog/menus`),
-        fetch(`${BACKEND_URL}/catalog/categories`),
-        fetch(`${BACKEND_URL}/catalog/products`)
+        fetch(`${BACKEND_URL}/stores`, { headers: getAuthHeaderOnly() }),
+        fetch(`${BACKEND_URL}/catalog/menus`, { headers: getAuthHeaderOnly() }),
+        fetch(`${BACKEND_URL}/catalog/categories?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() }),
+        fetch(`${BACKEND_URL}/catalog/products?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() })
       ]);
       if (stRes.ok) setStores(await stRes.json());
       if (mnRes.ok) setMenus(await mnRes.json());
@@ -68,14 +79,22 @@ export default function MenuManager() {
     try {
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify({ name: menuForm.name, store_ids: menuForm.store_ids })
       });
       if (res.ok) {
         setShowMenuModal(false);
         fetchAll();
+        customSuccess('Menu saved successfully!');
+      } else {
+        const errorData = await res.json().catch(() => null);
+        console.error('Save Menu Error:', errorData);
+        customAlert(errorData?.message || 'Failed to save menu. Check your permissions.');
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      customAlert('Network error while saving menu.');
+    }
   };
 
   // Category Handlers
@@ -83,16 +102,17 @@ export default function MenuManager() {
     e.preventDefault();
     const method = categoryForm.id ? 'PATCH' : 'POST';
     const url = categoryForm.id ? `${BACKEND_URL}/catalog/categories/${categoryForm.id}` : `${BACKEND_URL}/catalog/categories`;
+    if (!selectedBranchId) return customAlert('Please select a branch first');
     try {
       const payload = { 
-        store_id: 1, 
+        store_id: selectedBranchId, 
         name: categoryForm.name, 
         menu_id: categoryForm.menu_id > 0 ? categoryForm.menu_id : null,
         store_ids: categoryForm.store_ids 
       };
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify(payload)
       });
       if (res.ok) {
@@ -112,11 +132,11 @@ export default function MenuManager() {
       
       const payload = isEditingProduct 
         ? { name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] }
-        : { store_id: 1, name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] };
+        : { store_id: selectedBranchId, name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] };
       
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify(payload)
       });
       
@@ -131,7 +151,7 @@ export default function MenuManager() {
   const handleDeleteProduct = async (id: number) => {
     if (!(await customConfirm('Delete this product?'))) return;
     try {
-      await fetch(`${BACKEND_URL}/catalog/products/${id}`, { method: 'DELETE' });
+      await fetch(`${BACKEND_URL}/catalog/products/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
       fetchAll();
     } catch (e) { console.error(e); }
   };
@@ -155,7 +175,7 @@ export default function MenuManager() {
   const handleDeleteCategory = async (id: number) => {
     if (!(await customConfirm('Are you sure you want to delete this category?'))) return;
     try {
-      await fetch(`${BACKEND_URL}/catalog/categories/${id}`, { method: 'DELETE' });
+      await fetch(`${BACKEND_URL}/catalog/categories/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
       fetchAll();
     } catch (e) { console.error(e); }
   };
@@ -184,6 +204,9 @@ export default function MenuManager() {
     try {
       const res = await fetch(`${BACKEND_URL}/catalog/upload`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
+        },
         body: formData,
       });
       if (res.ok) {
@@ -192,6 +215,9 @@ export default function MenuManager() {
           setter(data.imageUrl);
           customSuccess('Image uploaded successfully!');
         }
+      } else {
+        const errData = await res.json().catch(() => null);
+        customAlert(errData?.message || 'Failed to upload image. Check permissions.');
       }
     } catch (err) {
       console.error('Upload failed', err);
@@ -227,8 +253,8 @@ export default function MenuManager() {
     try {
       const res = await fetch(`${BACKEND_URL}/catalog/categories`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: 1, name: name, store_ids: [1] }) // Default to store 1
+        headers: getHeaders(),
+        body: JSON.stringify({ store_id: selectedBranchId, name: name, store_ids: [selectedBranchId] })
       });
       if (res.ok) {
         const newCat = await res.json();
@@ -247,8 +273,8 @@ export default function MenuManager() {
     try {
       const res = await fetch(`${BACKEND_URL}/catalog/products`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: 1, name, price, category_ids: [catId], sku: '', image_url: '', cost: 0, margin_pct: 100, status: 'APPROVED', variants: [] })
+        headers: getHeaders(),
+        body: JSON.stringify({ store_id: selectedBranchId, name, price, category_ids: [catId], sku: '', image_url: '', cost: 0, margin_pct: 100, status: 'APPROVED', variants: [] })
       });
       if (res.ok) {
         customSuccess(`${name} added to ${categoryName}!`);

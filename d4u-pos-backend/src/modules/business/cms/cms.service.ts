@@ -70,8 +70,11 @@ export class CmsService {
 
     // Auto-create default settings if they don't exist
     if (!settings) {
+      const store = await this.prisma.store.findUnique({ where: { id: store_id } });
+      if (!store) throw new Error('Store not found for CMS settings creation');
+      
       settings = await this.prisma.cmsSettings.create({
-        data: { brand_id: 1, store_id, siteTitle: 'D4U Restaurant' },
+        data: { brand_id: store.brand_id, store_id, siteTitle: 'D4U Restaurant' },
         include: { brand: true, store: true },
       });
     }

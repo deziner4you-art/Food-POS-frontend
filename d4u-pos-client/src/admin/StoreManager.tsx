@@ -31,7 +31,7 @@ export default function StoreManager() {
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, brand_id: 1 })
+        body: JSON.stringify({ ...formData, brand_id: currentUser?.brand_id })
       });
       if (res.ok) {
         setShowModal(false);

@@ -10,7 +10,7 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequirePermissions, Public } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -31,7 +31,7 @@ export class CatalogController {
   // -------------------------------------------------------------
   // POS SYNC
   // -------------------------------------------------------------
-  @RequirePermissions('catalog.view')
+  @Public()
   @Get('sync/:store_id')
   syncCatalog(@Param('store_id') store_id: string) {
     console.log(`[CATALOG SYNC] Store: ${store_id}`);

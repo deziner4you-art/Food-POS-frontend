@@ -24,7 +24,7 @@ export default function WaiterTerminalLogin({ onAuthenticated }: Props) {
       const response = await socket.emitWithAck('auth_waiter_pin', { pin });
       if (response && response.success) {
         toast.success('Connected to POS successfully!');
-        onAuthenticated({ name: 'Waiter Tablet', role: 'Waiter', store_id: response.store_id });
+        onAuthenticated({ name: 'Waiter Tablet', role: 'Waiter', store_id: response.store_id, terminalPin: pin });
       } else {
         toast.error(response?.message || 'Invalid Waiter PIN');
       }

@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LayoutTemplate, ImagePlus, Trash2, Save, Globe, CheckCircle } from 'lucide-react';
 import { customAlert, customConfirm } from '../utils/alerts';
+import { useAdminContext } from '../context/AdminContext';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function CmsManager() {
+  const { branches, brands, selectedBranchId, setSelectedBranchId, activeBrandId } = useAdminContext();
+
   const [activeTab, setActiveTab] = useState<'BANNERS' | 'SETTINGS' | 'MODULES'>('BANNERS');
   
   // Banners State
@@ -15,8 +18,6 @@ export default function CmsManager() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Settings & Modules State
-  const [branches, setBranches] = useState<any[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<number>(Number(localStorage.getItem('cmsSelectedBranchId')) || 0);
   const [settings, setSettings] = useState<any>({ 
     siteTitle: '', contactPhone: '', contactEmail: '', address: '', googleMapUrl: '',
     facebookUrl: '', instagramUrl: '', whatsappNumber: '',
@@ -46,19 +47,7 @@ export default function CmsManager() {
     }
   };
 
-  useEffect(() => {
-    fetch(`${BACKEND_URL}/stores`)
-      .then(res => res.json())
-      .then(data => {
-        const branchList = Array.isArray(data) ? data : (data.value || data.stores || data.data || []);
-        setBranches(branchList);
-        if (branchList.length > 0 && !selectedBranchId) {
-          setSelectedBranchId(branchList[0].id);
-          localStorage.setItem('cmsSelectedBranchId', branchList[0].id.toString());
-        }
-      })
-      .catch(console.error);
-  }, []);
+  // activeBrandId is now derived in AdminContext
 
   useEffect(() => {
     if (selectedBranchId) {
@@ -70,7 +59,6 @@ export default function CmsManager() {
   const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = Number(e.target.value);
     setSelectedBranchId(id);
-    localStorage.setItem('cmsSelectedBranchId', id.toString());
   };
 
   const handleBannerSubmit = async (e: React.FormEvent) => {
@@ -165,12 +153,12 @@ export default function CmsManager() {
           <div className="bg-slate-800 px-4 py-2 rounded-xl flex items-center gap-2 border border-slate-700">
             <span className="text-slate-400 font-bold text-sm">Branch:</span>
             <select 
-              value={selectedBranchId} 
+              value={selectedBranchId || 0} 
               onChange={handleBranchChange}
               className="bg-transparent text-white outline-none font-bold"
             >
               <option value={0}>All Branches (Global)</option>
-              {branches.map(b => (
+              {(activeBrandId ? brands.find(b => b.id === activeBrandId)?.stores || [] : branches).map(b => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>

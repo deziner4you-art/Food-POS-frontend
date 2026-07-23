@@ -95,6 +95,25 @@ export class OnlineOrdersService {
     return order;
   }
 
+  async trackOrder(query: string) {
+    const num = Number(query);
+    let order = null;
+    
+    if (!isNaN(num) && query.length < 8) {
+      order = await this.prisma.onlineOrder.findUnique({ where: { id: num } });
+    }
+    
+    if (!order) {
+      order = await this.prisma.onlineOrder.findFirst({
+        where: { customerPhone: query },
+        orderBy: { id: 'desc' }
+      });
+    }
+
+    if (!order) throw new NotFoundException('Order not found');
+    return order;
+  }
+
   async updateOrderStatus(id: number, data: any) {
     const allowedKeys = [
       'orderId',

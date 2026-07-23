@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, Store, Globe, ShieldCheck, ChevronRight, PackageCheck, Monitor, Utensils, Users, Smartphone, Tv, AlertCircle, Building2 } from 'lucide-react';
+import { CheckCircle, Store, Globe, ShieldCheck, ChevronRight, PackageCheck, Monitor, Utensils, Users, Smartphone, Tv, AlertCircle, Building2, Package, ChefHat, Receipt, Megaphone, LayoutTemplate, Truck, Briefcase } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
@@ -18,6 +18,7 @@ export default function SetupWizard() {
   const [loading, setLoading] = useState(false);
   const [setupDone, setSetupDone] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [lastActionTime, setLastActionTime] = useState(0);
   
   // Pricing
   const [pricingList, setPricingList] = useState<PricingModule[]>([]);
@@ -34,16 +35,21 @@ export default function SetupWizard() {
     admin_name: '',
     admin_phone: '',
     admin_password: '',
+    owner_name: '',
+    owner_phone: '',
+    owner_email: '',
+    address: '',
   });
 
   const [selectedModules, setSelectedModules] = useState<string[]>(['BASE_POS']);
+  const [expandedCategory, setExpandedCategory] = useState<string>('🏪 Store Operations');
 
   useEffect(() => {
-    fetch(`${BACKEND_URL}/subscription/pricing`)
+    fetch(`${BACKEND_URL}/subscription/pricing?currency=${formData.currency}`)
       .then(res => res.json())
       .then(data => setPricingList(data))
       .catch(console.error);
-  }, []);
+  }, [formData.currency]);
 
   const handleToggleModule = (key: string) => {
     if (key === 'BASE_POS') return; // Mandatory
@@ -84,6 +90,23 @@ export default function SetupWizard() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (Date.now() - lastActionTime < 800) {
+      return; // Prevent double-clicks or held Enter key
+    }
+    
+    // Prevent Enter from bypassing steps
+    if (step < 2) {
+      if (setupType === 'NEW_BRANCH' && step === 1 && !formData.existing_brand_id) {
+        setErrorMsg('Please select a brand first.');
+        return;
+      }
+      setErrorMsg('');
+      setStep(step + 1);
+      setLastActionTime(Date.now());
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
@@ -95,8 +118,12 @@ export default function SetupWizard() {
         vat_percentage: Number(formData.vat_percentage),
         is_chain_store: formData.is_chain_store,
         menu_strategy: formData.menu_strategy,
-        selected_modules: selectedModules,
-        total_billing_amount: calculateTotal(),
+        owner_name: formData.owner_name,
+        owner_phone: formData.owner_phone,
+        owner_email: formData.owner_email,
+        address: formData.address,
+        selected_modules: setupType === 'NEW_BRANCH' ? selectedModules : [],
+        total_billing_amount: setupType === 'NEW_BRANCH' ? calculateTotal() : 0,
         admin_user: setupType === 'NEW_BRAND' ? {
           name: formData.admin_name,
           phone: formData.admin_phone,
@@ -126,6 +153,13 @@ export default function SetupWizard() {
 
   const icons: any = {
     'BASE_POS': <Store />,
+    'INVENTORY': <Package />,
+    'RECIPES': <ChefHat />,
+    'ACCOUNTING': <Receipt />,
+    'MARKETING': <Megaphone />,
+    'CMS': <LayoutTemplate />,
+    'VENDORS': <Truck />,
+    'HR_PAYROLL': <Briefcase />,
     'KDS': <Utensils />,
     'RIDER': <Smartphone />,
     'TV_BOARD': <Tv />,
@@ -206,10 +240,10 @@ export default function SetupWizard() {
       <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none"></div>
       <div className="absolute bottom-0 left-0 w-96 h-96 bg-purple-500/10 rounded-full blur-[100px] pointer-events-none"></div>
 
-      <div className="max-w-5xl w-full bg-slate-800/80 backdrop-blur-xl border border-slate-700/50 rounded-3xl shadow-2xl flex overflow-hidden min-h-[600px] z-10 animate-fade-in">
+      <div className="max-w-7xl w-full bg-slate-800/80 backdrop-blur-xl border border-slate-700/50 rounded-3xl shadow-2xl flex overflow-hidden min-h-[600px] h-[85vh] z-10 animate-fade-in">
         
         {/* Left Side: Summary & Billing */}
-        <div className="w-1/3 bg-slate-800/50 p-8 border-r border-slate-700/50 flex flex-col">
+        <div className="w-1/4 min-w-[320px] bg-slate-800/50 p-8 border-r border-slate-700/50 flex flex-col">
           <div className="mb-8">
             <h1 className="text-2xl font-black text-white flex items-center gap-2">
               <PackageCheck className={setupType === 'NEW_BRAND' ? 'text-blue-500' : 'text-pink-500'} /> 
@@ -222,7 +256,7 @@ export default function SetupWizard() {
             <h3 className="text-sm font-bold text-slate-500 mb-4 uppercase tracking-wider">Assigned Services</h3>
             <p className="text-xs text-slate-500 italic mb-3">Note: Updating services here updates the subscription for the entire brand.</p>
             
-            <div className="space-y-3">
+            <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
               {pricingList.filter(p => selectedModules.includes(p.module_key)).map(p => (
                 <div key={p.module_key} className="flex justify-between items-center text-slate-300 text-sm bg-slate-900/30 p-3 rounded-lg border border-slate-700/30">
                   <span className="flex items-center gap-2">{icons[p.module_key] || <CheckCircle size={14}/>} {p.module_name}</span>
@@ -245,7 +279,7 @@ export default function SetupWizard() {
         </div>
 
         {/* Right Side: Wizard Forms */}
-        <div className="w-2/3 p-10 flex flex-col relative">
+        <div className="flex-1 p-10 flex flex-col relative overflow-hidden">
           
           <button onClick={() => setStep(0)} className="absolute top-6 right-6 text-slate-500 hover:text-white text-sm font-bold">
             Cancel
@@ -260,17 +294,8 @@ export default function SetupWizard() {
             <div className="h-[2px] w-8 bg-slate-700"></div>
             <div className={`flex items-center gap-2 font-bold text-sm ${step >= 2 ? 'text-blue-400' : 'text-slate-500'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${step >= 2 ? 'border-blue-500 bg-blue-500/20' : 'border-slate-600'}`}>2</div>
-              Modules
+              {setupType === 'NEW_BRAND' ? 'Account' : 'Modules'}
             </div>
-            {setupType === 'NEW_BRAND' && (
-              <>
-                <div className="h-[2px] w-8 bg-slate-700"></div>
-                <div className={`flex items-center gap-2 font-bold text-sm ${step >= 3 ? 'text-blue-400' : 'text-slate-500'}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${step >= 3 ? 'border-blue-500 bg-blue-500/20' : 'border-slate-600'}`}>3</div>
-                  Account
-                </div>
-              </>
-            )}
           </div>
 
           {/* Form Content */}
@@ -381,39 +406,59 @@ export default function SetupWizard() {
                       </div>
                     </div>
 
-                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" checked={formData.is_chain_store} onChange={e => setFormData({...formData, is_chain_store: e.target.checked})} className="w-5 h-5 accent-emerald-500" />
-                        <div>
-                          <p className="font-bold text-emerald-400">Make this a Chain Store</p>
-                          <p className="text-xs text-emerald-400/70">Enable centralized menu syncing capabilities.</p>
-                        </div>
-                      </label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Owner Name</label>
+                        <input 
+                          type="text" 
+                          value={formData.owner_name}
+                          onChange={e => setFormData({...formData, owner_name: e.target.value})}
+                          placeholder="e.g. John Doe"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Owner Mobile</label>
+                        <input 
+                          type="text" 
+                          value={formData.owner_phone}
+                          onChange={e => setFormData({...formData, owner_phone: e.target.value})}
+                          placeholder="0300..."
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                        />
+                      </div>
                     </div>
 
-                    {formData.is_chain_store && (
-                      <div className="mt-4 p-4 border border-slate-700 rounded-xl">
-                        <p className="text-sm font-bold text-slate-300 mb-3">Menu Strategy for Chain Stores:</p>
-                        <div className="space-y-3">
-                          <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="radio" name="menu_strategy" value="UNIFIED" checked={formData.menu_strategy === 'UNIFIED'} onChange={e => setFormData({...formData, menu_strategy: e.target.value})} className="accent-blue-500" />
-                            <span className="text-sm text-slate-300">Chain store with <strong className="text-white">Same Menu</strong> everywhere</span>
-                          </label>
-                          <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="radio" name="menu_strategy" value="INDEPENDENT" checked={formData.menu_strategy === 'INDEPENDENT'} onChange={e => setFormData({...formData, menu_strategy: e.target.value})} className="accent-blue-500" />
-                            <span className="text-sm text-slate-300">Chain store with <strong className="text-white">Different Menu</strong> each store</span>
-                          </label>
-                        </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Business Email</label>
+                        <input 
+                          type="email" 
+                          value={formData.owner_email}
+                          onChange={e => setFormData({...formData, owner_email: e.target.value})}
+                          placeholder="business@example.com"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                        />
                       </div>
-                    )}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">HQ Address / City</label>
+                        <input 
+                          type="text" 
+                          value={formData.address}
+                          onChange={e => setFormData({...formData, address: e.target.value})}
+                          placeholder="e.g. DHA, Lahore"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                        />
+                      </div>
+                    </div>
 
                   </div>
                 )}
               </div>
             )}
 
-            {step === 2 && (
-              <div className="animate-fade-in flex-1">
+            {step === 2 && setupType === 'NEW_BRANCH' && (
+              <div className="animate-fade-in flex-1 flex flex-col min-h-0">
                 <h2 className="text-2xl font-black text-white mb-2">Select Services</h2>
                 <p className="text-slate-400 mb-6 text-sm">
                   {setupType === 'NEW_BRANCH' 
@@ -421,28 +466,69 @@ export default function SetupWizard() {
                     : "Pick the features you need to run your business."}
                 </p>
                 
-                <div className="grid grid-cols-2 gap-4">
-                  {pricingList.map(module => (
-                    <div 
-                      key={module.module_key}
-                      onClick={() => handleToggleModule(module.module_key)}
-                      className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedModules.includes(module.module_key) ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 hover:border-slate-500 bg-slate-800/30'} ${module.module_key === 'BASE_POS' ? 'opacity-70 pointer-events-none' : ''}`}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className={`p-2 rounded-lg ${selectedModules.includes(module.module_key) ? 'bg-blue-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
-                          {icons[module.module_key] || <Store size={20} />}
+                <div className="space-y-4 flex-1 overflow-y-auto pr-4 custom-scrollbar pb-6">
+                  {[
+                    {
+                      title: '🏪 Store Operations',
+                      keys: ['BASE_POS', 'INVENTORY', 'RECIPES', 'KDS', 'VENDORS', 'RIDER', 'TV_BOARD']
+                    },
+                    {
+                      title: '💰 Finance & Accounting',
+                      keys: ['ACCOUNTING']
+                    },
+                    {
+                      title: '📈 Sales & Marketing',
+                      keys: ['MARKETING', 'LOYALTY', 'ONLINE_WEBSITE']
+                    },
+                    {
+                      title: '🏢 Business Management',
+                      keys: ['CMS', 'HR_PAYROLL', 'ANALYTICS']
+                    }
+                  ].map(category => {
+                    const categoryModules = pricingList.filter(m => category.keys.includes(m.module_key));
+                    if (categoryModules.length === 0) return null;
+                    const isExpanded = expandedCategory === category.title;
+                    return (
+                      <div key={category.title} className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
+                        <div 
+                          className="p-4 cursor-pointer hover:bg-slate-800 transition-colors flex justify-between items-center"
+                          onClick={() => setExpandedCategory(isExpanded ? '' : category.title)}
+                        >
+                          <h3 className="text-sm font-black text-white tracking-wider uppercase">{category.title}</h3>
+                          <div className={`transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+                            <ChevronRight size={20} className="text-slate-400" />
+                          </div>
                         </div>
-                        {selectedModules.includes(module.module_key) && <CheckCircle className="text-blue-500" size={20} />}
+                        {isExpanded && (
+                          <div className="p-4 pt-0 border-t border-slate-700/50 mt-2 animate-fade-in">
+                            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
+                              {categoryModules.map(module => (
+                                <div 
+                                  key={module.module_key}
+                                  onClick={() => handleToggleModule(module.module_key)}
+                                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedModules.includes(module.module_key) ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 hover:border-slate-500 bg-slate-800/30'} ${module.module_key === 'BASE_POS' ? 'opacity-70 pointer-events-none' : ''}`}
+                                >
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className={`p-2 rounded-lg ${selectedModules.includes(module.module_key) ? 'bg-blue-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                                      {icons[module.module_key] || <Store size={20} />}
+                                    </div>
+                                    {selectedModules.includes(module.module_key) && <CheckCircle className="text-blue-500" size={20} />}
+                                  </div>
+                                  <h4 className="font-bold text-white text-sm">{module.module_name}</h4>
+                                  <p className="text-xs font-bold text-slate-400 mt-1">{module.currency} ${module.price_monthly} / mo</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <h4 className="font-bold text-white text-sm">{module.module_name}</h4>
-                      <p className="text-xs font-bold text-slate-400 mt-1">{module.currency} ${module.price_monthly} / mo</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {step === 3 && setupType === 'NEW_BRAND' && (
+            {step === 2 && setupType === 'NEW_BRAND' && (
               <div className="animate-fade-in flex-1 max-w-md">
                 <h2 className="text-2xl font-black text-white mb-2">Create Admin Account</h2>
                 <p className="text-slate-400 mb-8 text-sm">This will be your Head Office master login.</p>
@@ -500,14 +586,16 @@ export default function SetupWizard() {
                   Back
                 </button>
               )}
-              {(step < 3 && setupType === 'NEW_BRAND') || (step < 2 && setupType === 'NEW_BRANCH') ? (
+              {(step < 2) ? (
                 <button type="button" onClick={() => {
+                  if (Date.now() - lastActionTime < 800) return; // Prevent double click
                   if (setupType === 'NEW_BRANCH' && step === 1 && !formData.existing_brand_id) {
                     setErrorMsg('Please select a brand first.');
                     return;
                   }
                   setErrorMsg('');
                   setStep(step + 1);
+                  setLastActionTime(Date.now());
                 }} className="flex items-center gap-2 px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20">
                   Next <ChevronRight size={18} />
                 </button>

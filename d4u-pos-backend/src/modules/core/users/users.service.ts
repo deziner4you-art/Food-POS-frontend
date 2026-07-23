@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
@@ -58,11 +59,13 @@ export class UsersService {
         `Phone ${data.phone} is already registered`,
       );
 
+    const hashedPin = data.pin ? await bcrypt.hash(data.pin, 10) : await bcrypt.hash('1234', 10);
+
     return this.prisma.user.create({
       data: {
         name: data.name,
         phone: data.phone,
-        hashedPin: data.pin || '1234',
+        hashedPin: hashedPin,
         role_id: data.role_id,
         store_id: data.store_id || null,
         brand_id: data.brand_id || 1,
@@ -105,7 +108,7 @@ export class UsersService {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.phone !== undefined) updateData.phone = data.phone;
-    if (data.pin !== undefined) updateData.hashedPin = data.pin;
+    if (data.pin !== undefined) updateData.hashedPin = await bcrypt.hash(data.pin, 10);
     if (data.role_id !== undefined) updateData.role_id = data.role_id;
     if (data.store_id !== undefined)
       updateData.store_id = data.store_id || null;

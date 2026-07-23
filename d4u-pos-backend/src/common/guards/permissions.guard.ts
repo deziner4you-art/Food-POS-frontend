@@ -13,6 +13,15 @@ export class PermissionsGuard implements CanActivate {
       context.getClass(),
     ]);
 
+    const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      return true;
+    }
+
     if (!requiredPermissions || requiredPermissions.length === 0) {
       // If no permissions required, access is granted (assuming authentication passed)
       return true;
@@ -26,8 +35,23 @@ export class PermissionsGuard implements CanActivate {
 
     const hasPermission = () => {
       // SuperAdmin has access to everything
-      if (user.role === SystemRoles.SUPER_ADMIN) return true;
+      if (user.role === SystemRoles.SUPER_ADMIN || user.role === 'Super Admin') return true;
       
+      // POS operational roles get intrinsic access to POS-related endpoints
+      const posRoles = ['Cashier', 'Manager', 'Branch Manager', 'BranchManager', 'Business Admin', 'Business Owner', 'Branch Owner'];
+      const hasPosModule = user.module_permissions && user.module_permissions.pos === true;
+      
+      if (posRoles.includes(user.role) || hasPosModule) {
+        const posPermissions = [
+           'sales.create', 'sales.view', 'sales.update', 'sales.delete',
+           'finance.accounting.create', 'finance.accounting.view',
+           'catalog.view'
+        ];
+        if (requiredPermissions.some(p => posPermissions.includes(p))) {
+          return true;
+        }
+      }
+
       const userPermissions = user.permissions;
       
       // If user permissions is an array of strings

@@ -15,7 +15,7 @@ export default function InventoryManager() {
 
   const fetchItems = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/inventory/items/1`);
+      const res = await fetch(`${BACKEND_URL}/inventory/items/${currentUser?.store_id}`);
       if (res.ok) setItems(await res.json());
     } catch (e) {
       console.error('Failed to fetch inventory', e);
@@ -50,7 +50,7 @@ export default function InventoryManager() {
       const res = await fetch(`${BACKEND_URL}/inventory/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: 1, ...newBlankItem })
+        body: JSON.stringify({ store_id: currentUser?.store_id, ...newBlankItem })
       });
       if (res.ok) {
         fetchItems();
@@ -114,7 +114,7 @@ export default function InventoryManager() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          store_id: 1,
+          store_id: currentUser?.store_id,
           inventory_id: purchaseForm.inventory_id,
           quantity: purchaseForm.quantity,
           total_cost: purchaseForm.total_cost

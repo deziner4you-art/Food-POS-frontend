@@ -10,7 +10,7 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequirePermissions, Public } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -27,13 +27,13 @@ export class CmsController {
   constructor(private readonly cmsService: CmsService) {}
 
   // --- Banners ---
-  @RequirePermissions('system.view')
+  @Public()
   @Get('banners/:brand_id')
   getBannersByBrand(@Param('brand_id') brandId: string) {
     return this.cmsService.getBanners(parseInt(brandId));
   }
 
-  @RequirePermissions('system.view')
+  @Public()
   @Get('banners')
   getBanners() {
     return this.cmsService.getBanners(1);
@@ -89,13 +89,13 @@ export class CmsController {
   }
 
   // --- Settings ---
-  @RequirePermissions('system.view')
+  @Public()
   @Get('settings/:store_id')
   getSettingsByStore(@Param('store_id') storeId: string) {
     return this.cmsService.getSettings(parseInt(storeId));
   }
 
-  @RequirePermissions('system.view')
+  @Public()
   @Get('settings')
   getSettings() {
     return this.cmsService.getSettings(1);

@@ -1,19 +1,43 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { Controller, Get, Post, Body, Param, Query, Patch, Delete, ParseIntPipe } from '@nestjs/common';
+import { RequirePermissions, Public } from '../../../common/decorators';
 import { SubscriptionService } from './subscription.service';
-import { CreateSubscriptionDto, UpdateSubscriptionDto } from './dto';
+import { CreateSubscriptionDto, UpdateSubscriptionDto, CreateSaaSPricingDto, UpdateSaaSPricingDto } from './dto';
 
 @Controller('subscription')
 export class SubscriptionController {
   constructor(private readonly subscriptionService: SubscriptionService) {}
 
-  @RequirePermissions('system.view')
+  @Public()
   @Get('pricing')
-  getPricing() {
-    return this.subscriptionService.getPricing();
+  getPricing(@Query('currency') currency?: string) {
+    return this.subscriptionService.getPricing(currency);
+  }
+
+  @RequirePermissions('system.view')
+  @Get('pricing/all')
+  getAllPricingRows() {
+    return this.subscriptionService.getAllPricingRows();
   }
 
   @RequirePermissions('system.create')
+  @Post('pricing')
+  createPricing(@Body() body: CreateSaaSPricingDto) {
+    return this.subscriptionService.createPricing(body);
+  }
+
+  @RequirePermissions('system.update')
+  @Patch('pricing/:id')
+  updatePricing(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateSaaSPricingDto) {
+    return this.subscriptionService.updatePricing(id, body);
+  }
+
+  @RequirePermissions('system.delete')
+  @Delete('pricing/:id')
+  deletePricing(@Param('id', ParseIntPipe) id: number) {
+    return this.subscriptionService.deletePricing(id);
+  }
+
+  @Public()
   @Post('onboarding')
   async onboardClient(@Body() body: CreateSubscriptionDto) {
     try {
