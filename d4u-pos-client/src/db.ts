@@ -51,6 +51,7 @@ export interface OfflineKOT {
   paymentMethod?: string;
   itemsData?: string;
   synced?: boolean;
+  readyAt?: number;
 }
 
 export interface OfflineIngredient {

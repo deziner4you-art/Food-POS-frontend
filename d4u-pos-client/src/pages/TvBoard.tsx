@@ -8,13 +8,21 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
 export default function TvBoard() {
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
   const activeKots = useLiveQuery(
     () => db.kots.where('status').anyOf(['PREPARING', 'READY']).toArray()
   ) || [];
 
   const preparingOrders = activeKots.filter(k => k.status === 'PREPARING');
-  const readyOrders = activeKots.filter(k => k.status === 'READY');
+  const readyOrders = activeKots.filter(k => {
+    if (k.status !== 'READY') return false;
+    // If readyAt is not set, we'll use a heuristic or just show it. 
+    // Ideally, readyAt is now set. If it's missing, let's keep it visible for now, or fallback to 10 mins from now.
+    if (!k.readyAt) return true; 
+    const readyTime = new Date(k.readyAt).getTime();
+    return (currentTime - readyTime) < 10 * 60 * 1000;
+  });
 
   useEffect(() => {
     // Fetch Campaigns
@@ -25,6 +33,10 @@ export default function TvBoard() {
         setCampaigns(data.filter((c: any) => c.published_pos));
       })
       .catch(console.error);
+
+    // Refresh every minute to clean up stale READY orders
+    const timer = setInterval(() => setCurrentTime(Date.now()), 60000);
+    return () => clearInterval(timer);
   }, []);
 
   // Auto-rotate Marketing Campaigns

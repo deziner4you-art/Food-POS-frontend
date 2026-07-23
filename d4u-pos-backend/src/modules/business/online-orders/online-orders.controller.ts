@@ -8,7 +8,7 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequirePermissions, Public } from '../../../common/decorators';
 import { OnlineOrdersService } from './online-orders.service';
 import {
   CreateOnlineOrderDto,
@@ -40,7 +40,13 @@ export class OnlineOrdersController {
     return this.service.getOrder(Number(id));
   }
 
-  @RequirePermissions('sales.create')
+  @Public()
+  @Get('track/:query')
+  trackOrder(@Param('query') query: string) {
+    return this.service.trackOrder(query);
+  }
+
+  @Public()
   @Post()
   createOrder(@Body() body: CreateOnlineOrderDto) {
     return this.service.createOrder(body);

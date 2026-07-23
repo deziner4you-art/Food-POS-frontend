@@ -4,6 +4,7 @@ import {
   Plus, Minus, Send, Check, Loader2, X, Percent, Phone, Mail, Globe, 
   Share2, Shield, Sparkles, Clock, CheckCircle2, AlertCircle, ShoppingBag
 } from 'lucide-react';
+import { io } from 'socket.io-client';
 
 // Product Interface matching Prisma schema guidelines
 export interface Product {
@@ -103,9 +104,33 @@ export default function StitchLanding({
   const [modalType, setModalType] = useState<'NONE' | 'SELECT_VARIANT' | 'ADD_ONS'>('NONE');
   const [pendingVariantProduct, setPendingVariantProduct] = useState<any>(null);
   const [activeVariantTab, setActiveVariantTab] = useState<'SIZES' | 'TOPPINGS'>('SIZES');
-  const [orderTracking, setOrderTracking] = useState<{ id: string; status: string; eta: number } | null>(null);
+  const [orderTracking, setOrderTracking] = useState<any>(null);
+  const [trackInput, setTrackInput] = useState('');
+
+  // Socket listener for live tracking updates
+  useEffect(() => {
+    const socket = io(BACKEND_URL);
+    
+    socket.on('order_updated', (updatedOrder: any) => {
+      setOrderTracking((prev: any) => {
+        if (prev && (prev.id == updatedOrder.id || prev.id == updatedOrder.orderId)) {
+          return {
+            ...prev,
+            status: updatedOrder.kdsStatus !== 'PENDING' ? updatedOrder.kdsStatus : updatedOrder.status,
+            ...updatedOrder
+          };
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [BACKEND_URL]);
+
+  // Payment Selection Dialog state
   const [isTrackModalOpen, setIsTrackModalOpen] = useState<boolean>(false);
-  const [trackInput, setTrackInput] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerAddress, setCustomerAddress] = useState<string>('');
@@ -1406,9 +1431,9 @@ export default function StitchLanding({
             <div className="p-6 flex-1 flex flex-col gap-6">
               <form onSubmit={async (e) => {
                 e.preventDefault();
-                if(!trackInput) return;
+                if (!trackInput) return;
                 try {
-                  const res = await fetch(`${BACKEND_URL}/online-orders/${trackInput}`);
+                  const res = await fetch(`${BACKEND_URL}/online-orders/track/${trackInput}`);
                   if (!res.ok) throw new Error("Not found");
                   const data = await res.json();
                   setOrderTracking({
@@ -1418,7 +1443,7 @@ export default function StitchLanding({
                     ...data
                   });
                 } catch (err) {
-                  triggerToast("Order not found. Please check the ID.", "error");
+                  triggerToast("Order not found. Please check your ID or phone number.", "error");
                 }
               }}>
                 <div className="flex gap-2">
@@ -1427,7 +1452,7 @@ export default function StitchLanding({
                     value={trackInput}
                     onChange={(e) => setTrackInput(e.target.value)}
                     className="flex-1 bg-slate-900 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 outline-none focus:border-[#4edea3] transition-colors"
-                    placeholder="e.g. 1033"
+                    placeholder="e.g. 1033 or 0300..."
                   />
                   <button type="submit" className="bg-[#4edea3] hover:bg-emerald-400 text-slate-950 px-5 rounded-xl font-bold transition-colors">
                     Find

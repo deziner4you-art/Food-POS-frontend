@@ -61,7 +61,7 @@ export default function KitchenDisplay() {
       const target = new Date(kot.startTime).getTime() + (kot.prepTimeMinutes * 60 * 1000);
       if (new Date().getTime() > target) isLate = true;
     }
-    await db.kots.update(kot.id, { status: 'READY', isLate });
+    await db.kots.update(kot.id, { status: 'READY', isLate, readyAt: Date.now() });
   };
 
   // Utility to calculate remaining time

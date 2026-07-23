@@ -404,7 +404,7 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
         });
         if (!res.ok) throw new Error('Backend update failed');
       } catch (e) {
-        await db.kots.update(kotToUpdate.id, { status: 'READY' });
+        await db.kots.update(kotToUpdate.id, { status: 'READY', readyAt: Date.now() });
       }
 
       // Sync to website tracking if this is a bridge order

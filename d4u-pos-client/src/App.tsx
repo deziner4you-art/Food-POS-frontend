@@ -574,8 +574,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       const handleTerminalOrder = (order: any) => {
         if (!posSettings.terminalEngineEnabled) return; // Ignore if Engine is OFF
         setTerminalOrders(prev => {
+          if (prev.find(o => o.id === order.id)) return prev; // Prevent duplicates
           setToast({ message: `New Terminal Order from ${order.waiter_name} (Table ${order.table_no})`, type: 'success' });
-          return [...prev, { ...order, id: Date.now() }]; // Give it a unique ID
+          return [{ ...order }, ...prev]; 
         });
       };
 
@@ -1006,6 +1007,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     if (!tableNumber) return setToast({ message: 'Please select a Table Number', type: 'error' });
 
     const orderData = {
+      id: 'T' + Date.now() + Math.floor(Math.random() * 1000), // Unique ID to prevent duplicates
       store_id: currentUser.store_id,
       waiter_name: currentUser.name || 'Waiter Tablet',
       terminal_pin: currentUser.terminalPin || '0000',
@@ -1699,7 +1701,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               )}
             </div>
 
-            <h3 style={{ margin: '20px 0 10px 0', color: 'white' }}>Pending Orders</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px 0' }}>
+              <h3 style={{ margin: 0, color: 'white' }}>Pending Orders</h3>
+              {terminalOrders.length > 0 && (
+                <button 
+                  onClick={() => setTerminalOrders([])}
+                  style={{ background: '#ef4444', color: 'white', border: 'none', padding: '6px 15px', borderRadius: '5px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', paddingRight: '10px' }}>
               {terminalOrders.length === 0 && (
                 <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem', gridColumn: '1 / -1' }}>
