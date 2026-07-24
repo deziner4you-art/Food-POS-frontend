@@ -6,10 +6,12 @@ import { AppGateway } from '../../../app.gateway';
 import { InventoryModule } from '../inventory/inventory.module';
 import { CustomersModule } from '../customers/customers.module';
 
+import { PricingService } from './pricing.service';
+
 @Module({
   imports: [PrismaModule, InventoryModule, CustomersModule],
   controllers: [PosOrdersController],
-  providers: [PosOrdersService, AppGateway],
-  exports: [PosOrdersService],
+  providers: [PosOrdersService, AppGateway, PricingService],
+  exports: [PosOrdersService, PricingService],
 })
 export class PosOrdersModule {}

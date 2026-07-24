@@ -8,7 +8,7 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
-import { RequirePermissions, Public } from '../../../common/decorators';
+import { RequirePermissions, Public, CurrentUser } from '../../../common/decorators';
 import { OnlineOrdersService } from './online-orders.service';
 import {
   CreateOnlineOrderDto,
@@ -47,6 +47,61 @@ export class OnlineOrdersController {
   }
 
   @Public()
+  @Post('auth/login')
+  async webLogin(@Body() body: { phone: string }) {
+    // Basic phone login without password (for prototype)
+    const customer = await this.service['prisma'].customer.findUnique({
+      where: { phone: body.phone },
+    });
+    if (!customer) {
+      return { success: false, message: 'Customer not found' };
+    }
+    return { success: true, customer };
+  }
+
+  @Public()
+  @Post('auth/register')
+  async webRegister(@Body() body: { phone: string; name: string }) {
+    let customer = await this.service['prisma'].customer.findUnique({
+      where: { phone: body.phone },
+    });
+    if (!customer) {
+      customer = await this.service['prisma'].customer.create({
+        data: {
+          brand_id: 1,
+          phone: body.phone,
+          name: body.name,
+        },
+      });
+    }
+    return { success: true, customer };
+  }
+
+  @Public()
+  @Get('auth/history/:phone')
+  async webHistory(@Param('phone') phone: string) {
+    const customer = await this.service['prisma'].customer.findUnique({
+      where: { phone },
+      include: {
+        orders: {
+          include: { items: { include: { product: true } } },
+          orderBy: { id: 'desc' },
+          take: 50,
+        },
+      },
+    });
+    if (!customer) {
+      return { success: false, message: 'Not found' };
+    }
+    const onlineOrders = await this.service['prisma'].onlineOrder.findMany({
+      where: { customerPhone: phone },
+      orderBy: { id: 'desc' },
+      take: 50,
+    });
+    return { success: true, ...customer, onlineOrders };
+  }
+
+  @Public()
   @Post()
   createOrder(@Body() body: CreateOnlineOrderDto) {
     return this.service.createOrder(body);
@@ -57,8 +112,9 @@ export class OnlineOrdersController {
   updateOrderStatus(
     @Param('id') id: string,
     @Body() body: UpdateOnlineOrderStatusDto,
+    @CurrentUser() user?: any,
   ) {
-    return this.service.updateOrderStatus(Number(id), body);
+    return this.service.updateOrderStatus(Number(id), body, user?.store_id);
   }
 
   @RequirePermissions('sales.create')

@@ -3,6 +3,7 @@ import { DeliveryStatus, DeliveryOrder, SavedCompletedMission, RiderStats } from
 import { INITIAL_PAST_MISSIONS } from './data';
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 import { generateGridPath } from './utils';
+import { io } from 'socket.io-client';
 
 // New Components
 import ActiveRideView from './components/ActiveRideView';
@@ -106,7 +107,7 @@ export default function App() {
       fetch(`${BACKEND_URL}/rider/gps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: activeOrder.id, lat: driverCoords.y, lng: driverCoords.x })
+        body: JSON.stringify({ orderId: activeOrder.id, storeId: activeOrder.store_id || 1, lat: driverCoords.y, lng: driverCoords.x })
       }).catch(() => {});
     }
   }, [driverCoords, activeOrder]);
@@ -151,85 +152,65 @@ export default function App() {
     } catch {}
   };
 
-  // Polling for dispatched orders from Bridge
+  // --- REAL-TIME SOCKET CONNECTION ---
   useEffect(() => {
-    if (!isOnline || activeOrder || !riderStoreId) return;
-    const poll = async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}/rider-orders?store_id=${riderStoreId}`);
-        if (res.ok) {
-          const orders = await res.json();
-          console.log('[RIDER POLL] Fetched orders:', orders);
-          const dispatched = orders.find((o: any) => o.status === 'DISPATCHED');
-          if (dispatched) {
-             console.log('[RIDER] Found dispatched order!', dispatched);
-             const deliveryOrder: DeliveryOrder = {
-               id: dispatched.id,
-               source: 'ONLINE_ORDER',
-               restaurantName: 'D4U Enterprise POS',
-               restaurantX: 50, restaurantY: 50,
-               restaurantAddress: 'Main Branch',
-               customerName: dispatched.customer || 'Customer',
-               customerAddress: dispatched.customerAddress || 'Customer Address',
-               customerX: 80, customerY: 20,
-               earnings: parseFloat(dispatched.totalAmount) || 12.50,
-               distance: 3.5,
-               itemsCount: dispatched.items ? dispatched.items.split(',').length : 1,
-               itemsList: dispatched.items ? dispatched.items.split(',') : [],
-               estTimeMins: 15,
-               paymentMethod: 'COD',
-               paymentStatus: 'UNPAID',
-               estimatedReadyAt: dispatched.estimatedReadyAt,
-               bridgeStatus: dispatched.kdsStatus
-             };
-             setActiveOrder(deliveryOrder as any);
-             setStatus('OFFERED');
-             setActivePath([]);
-             setCurrentPathIndex(0);
-             setCurrentView('map');
-          }
-        }
-      } catch (err) {
-        console.error('[RIDER POLL ERROR]', err);
-      }
-    };
-    poll();
-    const interval = setInterval(poll, 3000);
-    return () => clearInterval(interval);
-  }, [isOnline, activeOrder, riderStoreId]);
+    if (!riderStoreId) return;
+    
+    const socket = io(BACKEND_URL);
+    socket.emit('join_store', `store_${riderStoreId}`);
 
-  // Polling for active order status updates and settlement
-  useEffect(() => {
-    const poll = async () => {
-      try {
-        if (activeOrder) {
-          const res = await fetch(`${BACKEND_URL}/online-orders/${activeOrder.id}`);
-          if (res.ok) {
-            const order = await res.json();
-            setActiveOrder(prev => prev ? { ...prev, estimatedReadyAt: order.estimatedReadyAt, bridgeStatus: order.kdsStatus } : null);
-          }
-        }
-        
-        // Poll for settlements in completed ledger
-        if (completedLedger.some(m => !m.settled) && riderStoreId) {
-          const res = await fetch(`${BACKEND_URL}/rider-orders?store_id=${riderStoreId}`);
-          if (res.ok) {
-            const allOrders = await res.json();
-            setCompletedLedger(prev => prev.map(m => {
-              if (m.settled) return m;
-              const remote = allOrders.find((o: any) => o.id == m.orderId);
-              if (remote && remote.status === 'SETTLED') {
-                return { ...m, settled: true };
-              }
-              return m;
-            }));
-          }
-        }
-      } catch {}
+    socket.on('order_updated', (order: any) => {
+      // 1. Alert Rider if a new order is READY
+      if (order.status === 'READY' && isOnline && !activeOrder) {
+        // Just show toast notification
+        const { toast } = require('react-hot-toast');
+        toast.success(`New Delivery Ready for Pickup: Order #${order.id}`, { duration: 6000 });
+      }
+
+      // 2. Handle dispatch when KDS/POS dispatches it to OUT_FOR_DELIVERY or READY
+      if (['READY', 'DISPATCHED', 'OUT_FOR_DELIVERY'].includes(order.status) && isOnline && !activeOrder) {
+        console.log('[RIDER] Found available order!', order);
+        const deliveryOrder: DeliveryOrder = {
+          id: order.id,
+          source: 'ONLINE_ORDER',
+          restaurantName: 'D4U Enterprise POS',
+          restaurantX: 50, restaurantY: 50,
+          restaurantAddress: 'Main Branch',
+          customerName: order.customer || 'Customer',
+          customerAddress: order.customerAddress || 'Customer Address',
+          customerX: 80, customerY: 20,
+          earnings: parseFloat(order.totalAmount) || 12.50,
+          distance: 3.5,
+          itemsCount: order.items ? order.items.split(',').length : 1,
+          itemsList: order.items ? order.items.split(',') : [],
+          estTimeMins: 15,
+          paymentMethod: 'COD',
+          paymentStatus: 'UNPAID',
+          estimatedReadyAt: order.estimatedReadyAt,
+          bridgeStatus: order.status
+        };
+        setActiveOrder(deliveryOrder as any);
+        setStatus('OFFERED');
+        setActivePath([]);
+        setCurrentPathIndex(0);
+        setCurrentView('map');
+      }
+
+      // 3. Sync active order updates
+      if (activeOrder && order.id === activeOrder.id) {
+        setActiveOrder(prev => prev ? { ...prev, estimatedReadyAt: order.estimatedReadyAt, bridgeStatus: order.status } : null);
+      }
+
+      // 4. Handle settlements
+      if (order.status === 'SETTLED') {
+        setCompletedLedger(prev => prev.map(m => m.orderId == order.id ? { ...m, settled: true } : m));
+      }
+    });
+
+    return () => {
+      socket.disconnect();
     };
-    const interval = setInterval(poll, 3000);
-    return () => clearInterval(interval);
-  }, [activeOrder, completedLedger, riderStoreId]);
+  }, [riderStoreId, isOnline, activeOrder]);
 
   // --- USER TRIGGERS & SIMULATOR HANDLERS ---
   const handleDispatchOrder = (order: DeliveryOrder) => {
@@ -253,7 +234,7 @@ export default function App() {
     setCurrentPathIndex(0);
     setDriverCoords(pickupPath[0]);
     setStatus('ACCEPTED');
-    updateBridgeStatus('RIDER_ACCEPTED');
+    // updateBridgeStatus('RIDER_ACCEPTED'); // No longer needed, managed by POS RIDER_ARRIVED
   };
 
   const handleDeclineOrder = () => {
@@ -281,15 +262,16 @@ export default function App() {
     setCurrentPathIndex(0);
     setDriverCoords(tripPath[0]);
     setStatus('PICKED_UP');
-    updateBridgeStatus('PICKED_UP');
+    // updateBridgeStatus('PICKED_UP'); // Managed by POS DISPATCHED -> OUT_FOR_DELIVERY
   };
 
-  const handleMarkDelivered = () => {
+  const handleMarkDelivered = async () => {
     setStatus('DELIVERED'); // Keep internal status as DELIVERED to show the settlement UI
     setDriverCoords({ x: activeOrder!.customerX, y: activeOrder!.customerY });
     setActivePath([]);
     setCurrentPathIndex(0);
-    updateBridgeStatus('PAID'); // Send PAID to bridge so Customer sees Feedback UI and POS sees Settle Button
+    await updateBridgeStatus('DELIVERED'); 
+    await updateBridgeStatus('WAITING_CASH_SETTLEMENT');
   };
 
   const handleCompleteRestReset = (feedback: { tip: number }) => {

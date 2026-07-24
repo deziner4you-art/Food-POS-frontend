@@ -26,6 +26,23 @@ body { font-family: 'Outfit', sans-serif; background-color: var(--bg-base); colo
 .nav-categories::-webkit-scrollbar {
   display: none;
 }
+
+@keyframes blinkRedOutline {
+  0%, 100% { 
+    outline: 3px solid rgba(239, 68, 68, 1); 
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); 
+  }
+  50% { 
+    outline: 3px solid rgba(239, 68, 68, 0); 
+    box-shadow: 0 0 0px rgba(239, 68, 68, 0); 
+  }
+}
+
+.ready-blink-outline {
+  animation: blinkRedOutline 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  outline-offset: 2px;
+}
+
 .nav-category-btn {
   background-color: var(--bg-panel);
   color: var(--text-muted);

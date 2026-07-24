@@ -8,6 +8,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { InventoryService } from '../inventory/inventory.service';
 import { CustomersService } from '../customers/customers.service';
+import { PricingService } from './pricing.service';
 
 @Injectable()
 export class PosOrdersService {
@@ -16,6 +17,7 @@ export class PosOrdersService {
     private gateway: AppGateway,
     private inventoryService: InventoryService,
     private customersService: CustomersService,
+    private pricing: PricingService,
   ) {}
 
   // تمام آرڈرز — آج کی Business Day کے
@@ -76,10 +78,14 @@ export class PosOrdersService {
       where: { store_id: body.store_id, status: 'OPEN' },
       orderBy: { id: 'desc' },
     });
+    const pricingResult = await this.pricing.calculatePricing({
+      store_id: body.store_id,
+      items: body.items,
+      couponCode: body.couponCode
+    });
 
-    const total_amount =
-      body.items.reduce((sum, i) => sum + i.price * i.quantity, 0) -
-      (body.discount || 0);
+    const total_amount = pricingResult.total;
+    const discount = pricingResult.discount;
 
     // Order + Items + KOT ایک ہی transaction میں
     const result = await this.prisma.$transaction(async (tx) => {
@@ -91,7 +97,7 @@ export class PosOrdersService {
           created_by: body.created_by,
           business_date: new Date(),
           total_amount,
-          discount: body.discount ?? 0,
+          discount: discount,
           status: 'PENDING',
           order_source: body.order_source ?? 'WALKIN',
           payment_method: body.payment_method ?? 'CASH',

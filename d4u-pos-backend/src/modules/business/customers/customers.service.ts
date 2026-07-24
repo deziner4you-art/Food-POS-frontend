@@ -46,7 +46,14 @@ export class CustomersService {
       },
     });
     if (!customer) throw new NotFoundException('Customer not found');
-    return customer;
+
+    const onlineOrders = await this.prisma.onlineOrder.findMany({
+      where: { customerPhone: customer.phone },
+      orderBy: { id: 'desc' },
+      take: 50,
+    });
+
+    return { ...customer, onlineOrders };
   }
 
   // نیا گاہک رجسٹر

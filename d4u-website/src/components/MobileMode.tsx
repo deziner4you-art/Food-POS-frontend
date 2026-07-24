@@ -4,22 +4,7 @@ import { io } from 'socket.io-client';
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 const socket = io(BACKEND_URL);
 import type { FoodItem, CartItem } from '../types';
-import { 
-  Search, 
-  ShoppingCart, 
-  User, 
-  PlusCircle, 
-  CheckCircle, 
-  ArrowRight, 
-  Home, 
-  ReceiptText, 
-  X, 
-  Plus, 
-  Minus,
-  UtensilsCrossed,
-  MapPin,
-  CheckCircle2
-} from 'lucide-react';
+import { ShoppingBag, Star, Info, LayoutGrid, Sparkles, MapPin, Search, ArrowRight, Home, CreditCard, ChevronDown, Check, ChevronUp, Plus, Minus, UserCircle, LogOut, ShoppingCart, User, PlusCircle, CheckCircle, ReceiptText, X, UtensilsCrossed, CheckCircle2 } from 'lucide-react';
 
 interface MobileModeProps {
   storeId: number;
@@ -72,6 +57,79 @@ export default function MobileMode({
   const [feedbackSubmitted, setFeedbackSubmitted] = useState<boolean>(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false);
 
+  // Auth & Profile State
+  const [loggedInUser, setLoggedInUser] = useState<any>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authPhone, setAuthPhone] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [showRegisterFields, setShowRegisterFields] = useState(false);
+  
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileHistory, setProfileHistory] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    // Check local storage for logged in user to persist session
+    const savedUser = localStorage.getItem('d4u_web_user');
+    if (savedUser) setLoggedInUser(JSON.parse(savedUser));
+  }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAuthLoading(true); setAuthError('');
+    try {
+      if (showRegisterFields) {
+        if (!authName || !authPhone) throw new Error('Please enter both name and phone');
+        const res = await fetch(`${BACKEND_URL}/online-orders/auth/register`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: authPhone, name: authName })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setLoggedInUser(data.customer);
+          localStorage.setItem('d4u_web_user', JSON.stringify(data.customer));
+          setIsAuthModalOpen(false);
+        } else throw new Error(data.message || 'Registration failed');
+      } else {
+        if (!authPhone) throw new Error('Please enter your phone number');
+        const res = await fetch(`${BACKEND_URL}/online-orders/auth/login`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: authPhone })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setLoggedInUser(data.customer);
+          localStorage.setItem('d4u_web_user', JSON.stringify(data.customer));
+          setIsAuthModalOpen(false);
+        } else {
+          setShowRegisterFields(true);
+        }
+      }
+    } catch (err: any) { setAuthError(err.message); } 
+    finally { setIsAuthLoading(false); }
+  };
+
+  const handleOpenProfile = async () => {
+    setIsProfileModalOpen(true);
+    if (!loggedInUser) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/online-orders/auth/history/${loggedInUser.phone}`);
+      const data = await res.json();
+      if (data.success) {
+        const allOrders = [...(data.orders || []), ...(data.onlineOrders || [])];
+        allOrders.sort((a, b) => b.id - a.id);
+        setProfileHistory(allOrders);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleLogout = () => {
+    setLoggedInUser(null);
+    localStorage.removeItem('d4u_web_user');
+    setIsProfileModalOpen(false);
+  };
+
   // Real-time Socket.io Sync for Guest Tracker & Sidebar
   React.useEffect(() => {
     // Initial fetch for the header badge
@@ -82,25 +140,29 @@ export default function MobileMode({
         .catch(() => {});
     }
 
-    const handleOrderUpdate = (updatedOrder: any) => {
-      // Auto-update Guest Tracker Badge
-      setTrackedOrder((prev: any) => {
-        if (prev && prev.id === updatedOrder.id) return updatedOrder;
-        return prev;
-      });
+    // Real-time tracking using Socket.IO
+    if (trackResult && isTrackOpen) {
+      // Ensure we listen for our tracked order explicitly
+      const handleOrderUpdated = (updatedOrder: any) => {
+        if (updatedOrder && (updatedOrder.id === trackResult?.id || updatedOrder.id == trackResult?.id)) {
+          setTrackResult((prev: any) => ({
+            ...prev,
+            status: updatedOrder.status,
+            ...updatedOrder
+          }));
+        }
+      };
       
-      // Auto-update Track Order Sidebar
-      setTrackResult((prev: any) => {
-        if (prev && prev.id === updatedOrder.id) return updatedOrder;
-        return prev;
-      });
-    };
-
-    socket.on('order_updated', handleOrderUpdate);
-    return () => {
-      socket.off('order_updated', handleOrderUpdate);
-    };
-  }, [trackedOrderId]);
+      if (socket) {
+        socket.on('order_updated', handleOrderUpdated);
+      }
+      return () => { 
+        if (socket) {
+          socket.off('order_updated', handleOrderUpdated); 
+        }
+      };
+    }
+  }, [trackedOrderId, isTrackOpen, trackResult?.id]);
 
   // Filter items
   const filteredFoodItems = foodItems.filter(item => {
@@ -174,36 +236,31 @@ export default function MobileMode({
 
   const handleTrackOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    const id = trackId.trim();
-    const phone = trackPhone.trim();
-    if (!id && !phone) { setTrackError('Order ID or Phone is required'); return; }
+    const input = trackId.trim();
+    if (!input) { setTrackError('Order ID or Phone is required'); return; }
     setTrackLoading(true);
     setTrackError('');
     setTrackResult(null);
     try {
-      if (id) {
-        const res = await fetch(`${BACKEND_URL}/online-orders/${id}`);
+      const isPhone = input.length > 5 || input.startsWith('03') || input.startsWith('+');
+      if (!isPhone) {
+        const res = await fetch(`${BACKEND_URL}/online-orders/${input}`);
         if (!res.ok) { setTrackError('Order not found — check ID'); setTrackLoading(false); return; }
         const data = await res.json();
-        if (phone && data.customerPhone && data.customerPhone !== phone) {
-          setTrackError('Phone number does not match');
-          setTrackLoading(false);
-          return;
-        }
         setTrackResult(data);
-      } else if (phone) {
-        const res = await fetch(`${BACKEND_URL}/online-orders?phone=${encodeURIComponent(phone)}`);
+      } else {
+        const res = await fetch(`${BACKEND_URL}/online-orders?phone=${encodeURIComponent(input)}`);
         if (!res.ok) { setTrackError('Failed to fetch orders'); setTrackLoading(false); return; }
         const data = await res.json();
-        if (!data || data.length === 0) {
-          setTrackError('No orders found for this phone'); 
-          setTrackLoading(false); 
-          return;
+        if (Array.isArray(data) && data.length > 0) {
+          const sorted = data.sort((a, b) => b.id - a.id);
+          setTrackResult(sorted[0]);
+        } else {
+          setTrackError('No orders found for this phone');
         }
-        setTrackResult(data[data.length - 1]); // the most recent one
       }
     } catch {
-      setTrackError('Bridge offline — try again later');
+      setTrackError('Failed to connect to server');
     }
     setTrackLoading(false);
   };
@@ -267,8 +324,10 @@ export default function MobileMode({
                 </span>
               )}
             </button>
-            <button className="w-10 h-10 flex items-center justify-center rounded-full bg-[#191f2f] active:scale-95 transition-transform">
-              <User className="w-4 h-4 text-[#dce2f7]" />
+            <button 
+              onClick={loggedInUser ? handleOpenProfile : () => setIsAuthModalOpen(true)}
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-[#191f2f] active:scale-95 transition-transform">
+              <User className={`w-4 h-4 ${loggedInUser ? 'text-brand-yellow' : 'text-[#dce2f7]'}`} />
             </button>
           </div>
         </div>
@@ -664,24 +723,13 @@ export default function MobileMode({
             {!trackResult ? (
               <form onSubmit={handleTrackOrder} className="space-y-4">
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Order ID</label>
                   <input
-                    type="number"
+                    type="text"
                     value={trackId}
                     onChange={e => setTrackId(e.target.value)}
-                    placeholder="e.g. 1001"
+                    placeholder="e.g. 1033 or 0300..."
                     className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors"
                     autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-[#d3c5ac] block mb-1.5">Phone</label>
-                  <input
-                    type="tel"
-                    value={trackPhone}
-                    onChange={e => setTrackPhone(e.target.value)}
-                    placeholder="e.g. 03001234567"
-                    className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors"
                   />
                 </div>
                 {trackError && <p className="text-xs text-red-400 font-bold">{trackError}</p>}
@@ -705,49 +753,44 @@ export default function MobileMode({
                   </div>
                   <p className="text-[10px] text-[#d3c5ac] leading-relaxed line-clamp-3">{trackResult.items}</p>
                   <div className="space-y-3">
-                  {[
-                    { label: 'Order Placed', sub: trackResult.timePlaced || 'Received', done: true },
-                    {
-                      label: 'Confirmed by Restaurant',
-                      sub: trackResult.kdsStatus === 'PENDING' ? 'Waiting for cashier...' : 'Accepted ✓',
-                      done: trackResult.kdsStatus !== 'PENDING',
-                    },
-                    {
-                      label: 'In Kitchen',
-                      sub: trackResult.kdsStatus === 'PREPARING'
-                        ? `~${trackResult.prepTimeMinutes} mins · Ready by ${trackResult.estimatedReadyAt}`
-                        : trackResult.kdsStatus === 'READY' ? 'Done ✓' : 'Waiting...',
-                      done: trackResult.kdsStatus === 'PREPARING' || trackResult.kdsStatus === 'READY' || trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
-                    },
-                    {
-                      label: 'Ready for Delivery',
-                      sub: trackResult.kdsStatus === 'READY' ? 'Food is packed!' : 'Pending...',
-                      done: trackResult.kdsStatus === 'READY' || trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
-                    },
-                    {
-                      label: 'Dispatched',
-                      sub: (trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED') ? 'Rider on the way' : 'Waiting for rider...',
-                      done: trackResult.status === 'DISPATCHED' || trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
-                    },
-                    {
-                      label: 'Delivered',
-                      sub: (trackResult.status === 'PAID' || trackResult.status === 'SETTLED') ? 'Cash Collected & Delivered ✓' : 'Pending...',
-                      done: trackResult.status === 'PAID' || trackResult.status === 'SETTLED',
-                    },
-                  ].map((step, i) => (
-                    <div key={i} className="flex items-start gap-3 relative">
-                      {i < 5 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
-                      <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
-                        step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
-                      }`}>
-                        {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
+                  {(() => {
+                    const STATUS_INDEX: Record<string, number> = {
+                      ONLINE_ORDER_RECEIVED: 0,
+                      CONFIRMED: 1,
+                      KITCHEN_PREPARING: 2,
+                      READY: 3,
+                      RIDER_ARRIVED: 3,
+                      PRINT_BILL: 3,
+                      DISPATCHED: 3,
+                      OUT_FOR_DELIVERY: 4,
+                      DELIVERED: 5,
+                      WAITING_CASH_SETTLEMENT: 5,
+                      SETTLED: 6,
+                    };
+                    const currentStep = STATUS_INDEX[trackResult.status] ?? 0;
+                    return [
+                      { label: 'Order Placed', sub: 'Received', done: currentStep >= 0 },
+                      { label: 'Confirmed by Restaurant', sub: currentStep >= 1 ? 'Accepted ✓' : 'Waiting for cashier...', done: currentStep >= 1 },
+                      { label: 'In Kitchen', sub: currentStep >= 2 ? 'Working on it' : 'Waiting...', done: currentStep >= 2 },
+                      { label: 'Ready for Pickup', sub: currentStep >= 3 ? 'Food is packed!' : 'Pending...', done: currentStep >= 3 },
+                      { label: 'Out For Delivery', sub: currentStep >= 4 ? 'Rider on the way' : 'Waiting for rider...', done: currentStep >= 4 },
+                      { label: 'Delivered', sub: currentStep >= 5 ? 'Arrived ✓' : 'Pending...', done: currentStep >= 5 },
+                      { label: 'Completed', sub: currentStep >= 6 ? 'Settled ✓' : 'Pending...', done: currentStep >= 6 },
+                    ].map((step, i) => (
+                      <div key={i} className="flex items-start gap-3 relative">
+                        {i < 6 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
+                        <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
+                          step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
+                        }`}>
+                          {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
+                        </div>
+                        <div>
+                          <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
+                          <p className="text-[9px] text-[#d3c5ac]">{step.sub}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
-                        <p className="text-[9px] text-[#d3c5ac]">{step.sub}</p>
-                      </div>
-                    </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
 
                 {trackResult.status === 'DISPATCHED' && trackResult.delivery && (
@@ -827,6 +870,101 @@ export default function MobileMode({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* ================= MODAL: AUTH / LOGIN ================= */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 z-[1005] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#191f2f] border border-slate-800 rounded-3xl w-full max-w-sm overflow-hidden flex flex-col relative shadow-2xl animate-fade-in">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-[#141b2b]">
+              <h3 className="text-xl font-black text-white flex items-center gap-2">
+                <User className="text-brand-yellow w-5 h-5" /> 
+                {showRegisterFields ? 'Create Account' : 'Welcome Back'}
+              </h3>
+              <button onClick={() => { setIsAuthModalOpen(false); setShowRegisterFields(false); }} className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {authError && <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg text-center">{authError}</div>}
+              
+              {!showRegisterFields ? (
+                <p className="text-sm text-slate-400 text-center mb-6">Enter your phone number to login or create an account.</p>
+              ) : (
+                <p className="text-sm text-slate-400 text-center mb-6">Looks like you are new! Enter your name to continue.</p>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-4">
+                {showRegisterFields && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Full Name</label>
+                    <input type="text" value={authName} onChange={e => setAuthName(e.target.value)} required className="w-full bg-[#0a0f18] text-white rounded-xl px-4 py-3 border border-slate-700 focus:border-brand-yellow outline-none transition" placeholder="John Doe" />
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Phone Number</label>
+                  <input type="tel" value={authPhone} onChange={e => setAuthPhone(e.target.value)} required disabled={showRegisterFields} className="w-full bg-[#0a0f18] text-white rounded-xl px-4 py-3 border border-slate-700 focus:border-brand-yellow outline-none transition disabled:opacity-50" placeholder="0300..." />
+                </div>
+
+                <button type="submit" disabled={isAuthLoading} className="w-full mt-4 bg-brand-yellow hover:bg-yellow-400 text-black font-black py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 transition disabled:opacity-50">
+                  {isAuthLoading ? 'Loading...' : (showRegisterFields ? 'Create Account' : 'Continue')}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: MY PROFILE ================= */}
+      {isProfileModalOpen && loggedInUser && (
+        <div className="fixed inset-0 z-[1005] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#191f2f] border border-slate-800 rounded-3xl w-full max-w-md h-[85vh] overflow-hidden flex flex-col relative shadow-2xl animate-fade-in">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-[#141b2b]">
+              <div>
+                <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                  <User className="text-brand-yellow w-6 h-6" /> 
+                  {loggedInUser.name}
+                </h3>
+                <p className="text-sm text-brand-yellow font-bold mt-1">{loggedInUser.loyalty_points || 0} Loyalty Points</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={handleLogout} className="text-xs font-bold text-red-400 hover:text-red-300 px-3 py-1.5 border border-red-500/30 rounded-lg hover:bg-red-500/10 transition">Logout</button>
+                <button onClick={() => setIsProfileModalOpen(false)} className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <h4 className="text-lg font-bold text-white mb-4">Past Orders</h4>
+              {profileHistory.length === 0 ? (
+                <div className="text-center p-10 text-slate-500">No orders found.</div>
+              ) : (
+                profileHistory.map((order: any, idx) => (
+                  <div key={idx} className="bg-[#141b2b] border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-black bg-slate-800 text-slate-300 px-2 py-0.5 rounded uppercase">
+                          {order.type || (order.source === 'Website' ? 'Online' : 'POS')}
+                        </span>
+                        <span className="text-white font-bold text-sm">Order #{order.id || order.orderId}</span>
+                      </div>
+                      <p className="text-xs text-slate-400">{new Date(order.createdAt).toLocaleDateString()} at {new Date(order.createdAt).toLocaleTimeString()}</p>
+                      {order.items && typeof order.items === 'string' && (
+                        <p className="text-sm text-slate-300 mt-2 line-clamp-1">{order.items}</p>
+                      )}
+                    </div>
+                    <div className="text-right flex flex-col justify-between">
+                      <span className="text-brand-yellow font-black">Rs {order.totalAmount || order.total}</span>
+                      <span className={`text-xs font-bold ${order.status === 'PAID' || order.status === 'SETTLED' || order.status === 'DELIVERED' ? 'text-green-400' : 'text-slate-400'}`}>
+                        {order.status || 'COMPLETED'}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}

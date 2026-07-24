@@ -4,6 +4,7 @@ import StitchLanding from './components/StitchLanding';
 import KioskMode from './components/KioskMode';
 import MobileMode from './components/MobileMode';
 import BranchSelectorModal from './components/BranchSelectorModal';
+import { io } from 'socket.io-client';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -49,6 +50,9 @@ export default function App() {
   useEffect(() => {
     if (!selectedStoreId) return;
     
+    // Clear cart when branch changes
+    setCart([]);
+
     // Fetch dynamic catalog for selected store
     const fetchCatalog = async () => {
       try {
@@ -99,6 +103,23 @@ export default function App() {
 
     fetchCatalog();
     fetchCMS();
+
+    const socket = io(BACKEND_URL);
+    socket.on('connect', () => {
+      if (selectedStoreId) {
+        socket.emit('join_store', { store_id: selectedStoreId });
+      }
+    });
+    
+    socket.on('marketing_update', () => {
+      console.log('Marketing Update Received! Refetching campaigns...');
+      fetch(`${BACKEND_URL}/marketing/campaign`)
+        .then(res => res.json())
+        .then(allCamps => setCampaigns(allCamps.filter((c: any) => c.published_web)))
+        .catch(console.error);
+    });
+
+    return () => { socket.disconnect(); };
   }, [selectedStoreId]);
 
   const handleSelectStore = (id: number) => {

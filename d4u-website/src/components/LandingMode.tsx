@@ -1531,53 +1531,44 @@ export default function LandingMode({
 
             {/* Live Status Timeline */}
             <div className="space-y-3 mb-6">
-              {[
-                {
-                  label: 'Order Placed',
-                  sub: trackedOrder?.timePlaced || 'Just now',
-                  done: true,
-                },
-                {
-                  label: 'Confirmed by Restaurant',
-                  sub: trackedOrder?.kdsStatus === 'PENDING' ? 'Waiting for cashier...' : 'Accepted ✓',
-                  done: trackedOrder?.kdsStatus !== 'PENDING' && trackedOrder?.kdsStatus != null,
-                },
-                {
-                  label: 'In Kitchen',
-                  sub: trackedOrder?.kdsStatus === 'PREPARING'
-                    ? `~${trackedOrder.prepTimeMinutes} mins · Ready by ${trackedOrder.estimatedReadyAt}`
-                    : trackedOrder?.kdsStatus === 'READY' ? 'Done ✓' : 'Waiting...',
-                  done: trackedOrder?.kdsStatus === 'PREPARING' || trackedOrder?.kdsStatus === 'READY' || trackedOrder?.status === 'DISPATCHED' || trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED',
-                },
-                {
-                  label: 'Ready for Delivery',
-                  sub: trackedOrder?.kdsStatus === 'READY' ? 'Food is packed!' : 'Pending...',
-                  done: trackedOrder?.kdsStatus === 'READY' || trackedOrder?.status === 'DISPATCHED' || trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED',
-                },
-                {
-                  label: 'Dispatched',
-                  sub: (trackedOrder?.status === 'DISPATCHED' || trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED') ? 'Rider on the way' : 'Waiting for rider...',
-                  done: trackedOrder?.status === 'DISPATCHED' || trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED',
-                },
-                {
-                  label: 'Delivered',
-                  sub: (trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED') ? 'Cash Collected & Delivered ✓' : 'Pending...',
-                  done: trackedOrder?.status === 'PAID' || trackedOrder?.status === 'SETTLED',
-                },
-              ].map((step, i) => (
-                <div key={i} className="flex items-start gap-3 relative">
-                  {i < 5 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
-                  <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
-                    step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
-                  }`}>
-                    {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
+              {(() => {
+                const STATUS_INDEX: Record<string, number> = {
+                  ONLINE_ORDER_RECEIVED: 0,
+                  CONFIRMED: 1,
+                  KITCHEN_PREPARING: 2,
+                  READY: 3,
+                  RIDER_ARRIVED: 3,
+                  PRINT_BILL: 3,
+                  DISPATCHED: 3,
+                  OUT_FOR_DELIVERY: 4,
+                  DELIVERED: 5,
+                  WAITING_CASH_SETTLEMENT: 5,
+                  SETTLED: 6,
+                };
+                const currentStep = STATUS_INDEX[trackedOrder?.status || 'ONLINE_ORDER_RECEIVED'] ?? 0;
+                return [
+                  { label: 'Order Placed', sub: 'Received', done: currentStep >= 0 },
+                  { label: 'Confirmed by Restaurant', sub: currentStep >= 1 ? 'Accepted ✓' : 'Waiting for cashier...', done: currentStep >= 1 },
+                  { label: 'In Kitchen', sub: currentStep >= 2 ? 'Working on it' : 'Waiting...', done: currentStep >= 2 },
+                  { label: 'Ready for Pickup', sub: currentStep >= 3 ? 'Food is packed!' : 'Pending...', done: currentStep >= 3 },
+                  { label: 'Out For Delivery', sub: currentStep >= 4 ? 'Rider on the way' : 'Waiting for rider...', done: currentStep >= 4 },
+                  { label: 'Delivered', sub: currentStep >= 5 ? 'Arrived ✓' : 'Pending...', done: currentStep >= 5 },
+                  { label: 'Completed', sub: currentStep >= 6 ? 'Settled ✓' : 'Pending...', done: currentStep >= 6 },
+                ].map((step, i) => (
+                  <div key={i} className="flex items-start gap-3 relative">
+                    {i < 6 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
+                    <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
+                      step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
+                    }`}>
+                      {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
+                    </div>
+                    <div>
+                      <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
+                      <p className="text-[9px] text-[#d3c5ac]">{step.sub}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
-                    <p className="text-[9px] text-[#d3c5ac]">{step.sub}</p>
-                  </div>
-                </div>
-              ))}
+                ));
+              })()}
             </div>
 
             {trackedOrder?.status === 'DISPATCHED' && trackedOrder?.delivery && (

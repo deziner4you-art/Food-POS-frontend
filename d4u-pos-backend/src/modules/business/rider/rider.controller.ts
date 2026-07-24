@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { RequirePermissions } from '../../../common/decorators';
 import { RiderService } from './rider.service';
-import { UpdateGpsDto, DispatchOrderDto } from './dto';
+import { UpdateGpsDto } from './dto';
 
 @Controller('rider')
 export class RiderController {
@@ -28,27 +28,5 @@ export class RiderOrdersController {
   @Get()
   getRiderOrders(@Query('store_id') storeId: string) {
     return this.service.getRiderOrders(storeId);
-  }
-}
-
-@Controller('dispatch-order')
-export class DispatchOrderController {
-  constructor(private readonly service: RiderService) {}
-
-  @RequirePermissions('system.create')
-  @Post()
-  dispatchOrder(@Body() body: DispatchOrderDto) {
-    return this.service.dispatchOrder(body);
-  }
-}
-
-@Controller('settle-order')
-export class SettleOrderController {
-  constructor(private readonly service: RiderService) {}
-
-  @RequirePermissions('system.create')
-  @Post(':id')
-  settleOrder(@Param('id') id: string) {
-    return this.service.settleOrder(id);
   }
 }

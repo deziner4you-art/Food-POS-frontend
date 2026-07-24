@@ -504,7 +504,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 let newStatus = d.status;
                 if (ro.status === 'RIDER_ACCEPTED' && d.status !== 'ON_WAY') newStatus = 'ON_WAY';
                 if (ro.status === 'PICKED_UP' && d.status !== 'ON_WAY') newStatus = 'ON_WAY';
-                if (ro.status === 'DELIVERED' && d.status !== 'DELIVERED_PENDING_SETTLEMENT') newStatus = 'DELIVERED_PENDING_SETTLEMENT';
+                if (ro.status === 'DELIVERED' && d.status !== 'DELIVERED') newStatus = 'DELIVERED';
                 if (newStatus !== d.status) { changed = true; return { ...d, status: newStatus, rider: 'Active Rider' }; }
               }
               return d;
@@ -546,7 +546,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             let newStatus = order.status;
             if (order.status === 'RIDER_ACCEPTED') newStatus = 'ON_WAY';
             if (order.status === 'PICKED_UP') newStatus = 'ON_WAY';
-            if (order.status === 'DELIVERED' || order.status === 'PAID') newStatus = 'DELIVERED_PENDING_SETTLEMENT';
+            if (order.status === 'DELIVERED' || order.status === 'PAID') newStatus = 'DELIVERED';
             if (newStatus !== updated[existIdx].status) {
               updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: 'Active Rider' };
             }
@@ -598,6 +598,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       socket.on('update_active_waiters', (waiters: any[]) => {
         setActiveWaiters(waiters);
       });
+      socket.on('marketing_update', () => {
+        if (currentUser?.store_id) {
+          fetch(`${BACKEND_URL}/marketing/campaign?store_id=${currentUser.store_id}`)
+            .then(res => res.json())
+            .then(setActiveCampaigns)
+            .catch(console.error);
+        }
+      });
       
       return () => {
         socket.off('connect', joinStore);
@@ -607,6 +615,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         socket.off('TERMINAL_ORDER_RECEIVED', handleTerminalOrder);
         socket.off('waiter_connected');
         socket.off('waiter_disconnected');
+        socket.off('marketing_update');
       };
     }, [currentUser]);
 
@@ -702,13 +711,25 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     if (kots.length > 0 && prevKotsRef.current.length > 0) {
       const newlyReady = kots.filter(k => k.status === 'READY' && prevKotsRef.current.find(p => p.id === k.id)?.status !== 'READY');
       if (newlyReady.length > 0) {
-        newlyReady.forEach(kot => {
-          setToast({ message: `KOT Order #${kot.orderId} is READY for ${kot.type}!`, type: 'success' });
-          setTimeout(() => setToast(null), 5000);
-          
+        newlyReady.forEach(async kot => {
           if (kot.type === 'Delivery') {
-            setActiveDeliveries(prev => prev.map(d => d.id === kot.orderId ? { ...d, status: 'READY_FOR_RIDER', rider: 'Waiting for Rider' } : d));
+            if (kot.bridgeOrderId) {
+              try {
+                await fetch(`${BACKEND_URL}/online-orders/${kot.bridgeOrderId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'READY', kdsStatus: 'READY' })
+                });
+              } catch (e) {
+                console.error(e);
+              }
+            }
+            setToast({ message: `Kitchen has completed Order #${kot.orderId}`, type: 'success' });
+            setActiveDeliveries(prev => prev.map(d => d.id === kot.orderId ? { ...d, status: 'READY', rider: 'Waiting for Rider' } : d));
+          } else {
+            setToast({ message: `KOT Order #${kot.orderId} is READY for ${kot.type}!`, type: 'success' });
           }
+          setTimeout(() => setToast(null), 5000);
         });
       }
 
@@ -1053,6 +1074,42 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     }
   }
 
+  const [checkoutDiscount, setCheckoutDiscount] = useState<number>(0);
+
+  // CRM History Modal State
+  const [crmHistoryModal, setCrmHistoryModal] = useState<any>(null); // holds customer data
+
+  const handleCustomerLookup = async (phone: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/customers/phone/${phone}`, {
+        headers: { 'Authorization': `Bearer ${user.token}` }
+      });
+      if (!res.ok) throw new Error('Not found');
+      const data = await res.json();
+      if (data) {
+        setCustomerName(data.name);
+        setCustomerAddress(data.address || '');
+        setToast({ message: `Customer found: ${data.name}`, type: 'success' });
+        return data.id;
+      }
+    } catch (e) {
+      setToast({ message: 'Customer not found. Please enter details manually.', type: 'info' });
+    }
+    return null;
+  };
+
+  const handleViewCustomerHistory = async (id: number | string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/customers/${id}/orders`, {
+        headers: { 'Authorization': `Bearer ${user.token}` }
+      });
+      if (!res.ok) throw new Error('History fetch failed');
+      const data = await res.json();
+      setCrmHistoryModal(data);
+    } catch (e) {
+      setToast({ message: 'Failed to load order history', type: 'error' });
+    }
+  };
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [discountPasswordInput, setDiscountPasswordInput] = useState('');
   const [pendingDiscount, setPendingDiscount] = useState('');
@@ -1357,6 +1414,23 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         {/* HOME (POS) VIEW */}
         {activeMenu === 'Home' && (
           <>
+            {activeCampaigns.some(c => c.published_pos) && (
+              <div className="mb-4 flex gap-4 overflow-x-auto pb-2 snap-x" style={{ scrollbarWidth: 'none' }}>
+                {activeCampaigns.filter(c => c.published_pos).map(camp => (
+                  <div key={camp.id} className="min-w-[300px] h-32 rounded-2xl overflow-hidden relative shadow-lg snap-start flex-shrink-0 bg-gradient-to-r from-[#ec4899] to-[#8b5cf6] flex items-center p-6 text-white cursor-pointer hover:scale-[1.02] transition-transform" onClick={() => {
+                     fetch(`${BACKEND_URL}/marketing/analytics/${camp.id}/offer_click`, { method: 'POST' }).catch(()=>{});
+                  }}>
+                    {camp.image_url && (
+                      <img src={`${BACKEND_URL}${camp.image_url}`} className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-overlay" alt={camp.title} />
+                    )}
+                    <div className="relative z-10">
+                      <div className="text-3xl font-black mb-1 drop-shadow-md">{camp.discount_pct}% OFF</div>
+                      <div className="text-sm font-bold drop-shadow opacity-90 line-clamp-1">{camp.title}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="nav-categories" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '5px' }}>
               <button 
                 className={`nav-category-btn ${activeCategoryId === null ? 'active' : ''}`}
@@ -1846,43 +1920,70 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         <div className="delivery-card-subtitle">{del.rider}</div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                        <span className={`delivery-status ${del.status === 'ON_WAY' ? 'on-way status-pulse' : del.status === 'PREPARING' ? 'preparing' : del.status === 'DISPATCHED' ? 'dispatched' : del.status === 'PENDING_CHEF' ? 'bg-slate-700 text-slate-300' : 'delivered'}`}>
-                          {del.status === 'DELIVERED_PENDING_SETTLEMENT' ? (<>Delivered<br/>Pending Settlement</>) : del.status.replace(/_/g, ' ')}
+                        <span className={`delivery-status ${del.status === 'OUT_FOR_DELIVERY' ? 'on-way status-pulse' : del.status === 'KITCHEN_PREPARING' ? 'preparing' : del.status === 'DISPATCHED' ? 'dispatched' : del.status === 'ONLINE_ORDER_RECEIVED' ? 'bg-slate-700 text-slate-300' : 'delivered'}`}>
+                          {del.status === 'WAITING_CASH_SETTLEMENT' ? 'Delivered - Settlement Pending' : del.status.replace(/_/g, ' ')}
                         </span>
-                        {(del.items && del.items.length > 0) && (
-                          <button className="btn-action" onClick={(e) => {
-                            e.stopPropagation();
-                            const subTotal = del.items.reduce((sum: number, item: any) => sum + (item.price * item.qty), 0);
-                            const tax = subTotal * 0.10;
-                            const grandTotal = subTotal + tax;
-                            setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
-                          }} style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--accent-yellow)', color: 'black' }}>
-                            <Printer size={12} /> Print Bill
-                          </button>
-                        )}
                       </div>
                     </div>
                     <div className="delivery-address"><MapPin size={14} /><span>{del.address}</span></div>
-                    {(del.status === 'READY_FOR_RIDER' || del.status === 'DELIVERED_PENDING_SETTLEMENT') && (
+                    {['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'WAITING_CASH_SETTLEMENT'].includes(del.status) && (
                       <div className="delivery-settlement-box" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-between items-center w-full">
-                          {del.status === 'READY_FOR_RIDER' ? (
+                          {del.status === 'READY' && (
+                            <button className="btn-action bg-blue-500 text-white font-bold px-4 py-2" style={{ width: '100%', borderRadius: '4px' }}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: 'RIDER_ARRIVED' })
+                                  });
+                                } catch {}
+                              }}
+                            >
+                              Rider Arrived
+                            </button>
+                          )}
+                          {del.status === 'RIDER_ARRIVED' && (
+                            <button className="btn-action bg-green-500 text-white font-bold px-4 py-2 flex justify-center items-center gap-2" style={{ width: '100%', borderRadius: '4px' }}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const subTotal = del.items.reduce((sum: number, item: any) => sum + (item.price * item.qty), 0);
+                                const tax = subTotal * 0.10;
+                                const grandTotal = subTotal + tax;
+                                setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
+                                try {
+                                  await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: 'PRINT_BILL' })
+                                  });
+                                } catch {}
+                              }}
+                            >
+                              <Printer size={18} /> Print Bill
+                            </button>
+                          )}
+                          {del.status === 'PRINT_BILL' && (
                             <button className="btn-action bg-[#fbbf24] text-slate-900 font-bold px-4 py-2" style={{ width: '100%', borderRadius: '4px' }}
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const res = await fetch(`${BACKEND_URL}/dispatch-order`, {
-                                    method: 'POST',
+
+                                  await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                    method: 'PATCH',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ bridgeOrderId: del.bridgeOrderId, order: del })
+                                    body: JSON.stringify({ status: 'DISPATCHED' }) // the backend can trigger OUT_FOR_DELIVERY later or immediately
                                   });
-                                  if (res.ok) setToast({ message: 'Order Dispatched to Delivery App!', type: 'success' });
+                                  setToast({ message: 'Order Dispatched to Delivery App!', type: 'success' });
                                 } catch {}
                               }}
                             >
                               Dispatch Order
                             </button>
-                          ) : (
+                          )}
+                          {del.status === 'WAITING_CASH_SETTLEMENT' && (
                             <>
                               <div style={{ flex: 1 }}>
                                 <span className="delivery-settlement-text block" style={{ fontSize: '0.65rem' }}>Collect COD</span>

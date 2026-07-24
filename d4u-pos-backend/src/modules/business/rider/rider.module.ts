@@ -3,8 +3,6 @@ import { RiderService } from './rider.service';
 import {
   RiderController,
   RiderOrdersController,
-  DispatchOrderController,
-  SettleOrderController,
 } from './rider.controller';
 import { PrismaModule } from '../../../database/prisma/prisma.module';
 import { AppGateway } from '../../../app.gateway';
@@ -14,8 +12,6 @@ import { AppGateway } from '../../../app.gateway';
   controllers: [
     RiderController,
     RiderOrdersController,
-    DispatchOrderController,
-    SettleOrderController,
   ],
   providers: [RiderService, AppGateway],
 })

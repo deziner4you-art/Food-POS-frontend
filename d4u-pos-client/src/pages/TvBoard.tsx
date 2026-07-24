@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Megaphone, CheckCircle2 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
+import { io } from 'socket.io-client';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -10,33 +11,60 @@ export default function TvBoard() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
+  const user = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
+  const storeName = user?.store_name || user?.store?.name || 'HQ';
+
   const activeKots = useLiveQuery(
     () => db.kots.where('status').anyOf(['PREPARING', 'READY']).toArray()
   ) || [];
 
-  const preparingOrders = activeKots.filter(k => k.status === 'PREPARING');
-  const readyOrders = activeKots.filter(k => {
-    if (k.status !== 'READY') return false;
-    // If readyAt is not set, we'll use a heuristic or just show it. 
-    // Ideally, readyAt is now set. If it's missing, let's keep it visible for now, or fallback to 10 mins from now.
-    if (!k.readyAt) return true; 
-    const readyTime = new Date(k.readyAt).getTime();
-    return (currentTime - readyTime) < 10 * 60 * 1000;
-  });
+  const preparingOrders = activeKots
+    .filter(k => k.status === 'PREPARING')
+    .sort((a, b) => b.id - a.id);
 
-  useEffect(() => {
-    // Fetch Campaigns
+  const readyOrders = activeKots
+    .filter(k => {
+      if (k.status !== 'READY') return false;
+      if (!k.readyAt) return true; 
+      const readyTime = new Date(k.readyAt).getTime();
+      return (currentTime - readyTime) < 5 * 60 * 1000; // 5 minutes
+    })
+    .sort((a, b) => b.id - a.id);
+
+  const fetchCampaigns = () => {
     fetch(`${BACKEND_URL}/marketing/campaign`)
       .then(res => res.json())
       .then(data => {
-        // Filter campaigns published to POS
-        setCampaigns(data.filter((c: any) => c.published_pos));
+        setCampaigns(data.filter((c: any) => c.published_tv || c.published_pos));
       })
       .catch(console.error);
+  };
 
-    // Refresh every minute to clean up stale READY orders
-    const timer = setInterval(() => setCurrentTime(Date.now()), 60000);
-    return () => clearInterval(timer);
+  useEffect(() => {
+    fetchCampaigns();
+
+    // Socket Setup
+    const socket = io(BACKEND_URL);
+    socket.on('connect', () => {
+      try {
+        const user = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
+        if (user && user.store_id) {
+          socket.emit('join_store', { store_id: user.store_id });
+        }
+      } catch (e) {}
+    });
+    
+    socket.on('marketing_update', () => {
+      console.log('Marketing Update Received!');
+      fetchCampaigns();
+    });
+
+    // Refresh every 10 seconds to clean up stale READY orders
+    const timer = setInterval(() => setCurrentTime(Date.now()), 10000);
+    return () => {
+      clearInterval(timer);
+      socket.disconnect();
+    };
   }, []);
 
   // Auto-rotate Marketing Campaigns
@@ -47,6 +75,24 @@ export default function TvBoard() {
     }, 5000); // Rotate every 5 seconds
     return () => clearInterval(interval);
   }, [campaigns]);
+
+  // Telemetry View Tracking
+  useEffect(() => {
+    if (campaigns.length > 0 && campaigns[currentSlide]) {
+      const campId = campaigns[currentSlide].id;
+      const lastViewKey = `camp_view_${campId}`;
+      const lastView = localStorage.getItem(lastViewKey);
+      const now = Date.now();
+      
+      // 5-minute throttle (300,000 ms)
+      if (!lastView || now - parseInt(lastView) > 300000) {
+        localStorage.setItem(lastViewKey, now.toString());
+        fetch(`${BACKEND_URL}/marketing/analytics/${campId}/view`, {
+          method: 'POST',
+        }).catch(console.error);
+      }
+    }
+  }, [currentSlide, campaigns]);
 
   // Order fetching is now handled reactively by Dexie's useLiveQuery
 
@@ -122,7 +168,6 @@ export default function TvBoard() {
       <div className="w-1/2 h-full flex flex-col bg-slate-900">
         <div className="h-20 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-8">
           <h2 className="text-2xl font-black tracking-widest text-white uppercase">Order Status</h2>
-          <div className="text-slate-400 font-medium">Store: HQ</div>
         </div>
 
         <div className="flex-1 flex overflow-hidden">
@@ -131,9 +176,9 @@ export default function TvBoard() {
             <h3 className="text-3xl font-black text-amber-400 mb-8 uppercase tracking-widest border-b border-amber-400/20 pb-4">Preparing</h3>
             <div className="grid grid-cols-2 gap-6 overflow-y-auto content-start">
               {preparingOrders.map(order => (
-                <div key={order.id} className="bg-slate-800 rounded-2xl p-6 text-center shadow-lg border border-slate-700 animate-fade-in flex flex-col items-center justify-center h-32">
-                  <span className="text-amber-400 font-bold text-lg mb-1">{order.type}</span>
-                  <span className="text-5xl font-black text-white">#{order.orderId}</span>
+                <div key={order.id} className="bg-slate-800 rounded-2xl p-3 text-center shadow-lg border border-slate-700 animate-fade-in flex flex-col items-center justify-center h-24">
+                  <span className="text-amber-400 font-bold text-sm mb-1">{order.type}</span>
+                  <span className="text-3xl font-black text-white">#{order.orderId}</span>
                 </div>
               ))}
               {preparingOrders.length === 0 && (
@@ -147,11 +192,11 @@ export default function TvBoard() {
             <h3 className="text-3xl font-black text-[#10b981] mb-8 uppercase tracking-widest border-b border-[#10b981]/20 pb-4 flex items-center gap-3">
               Ready <CheckCircle2 className="w-8 h-8" />
             </h3>
-            <div className="grid grid-cols-2 gap-6 overflow-y-auto content-start">
+            <div className="grid grid-cols-2 gap-[20px] overflow-y-auto content-start py-2">
               {readyOrders.map(order => (
-                <div key={order.id} className="bg-[#10b981] rounded-2xl p-6 text-center shadow-lg shadow-[#10b981]/20 animate-fade-in flex flex-col items-center justify-center h-32 transform hover:scale-105 transition-transform">
-                  <span className="text-white/80 font-bold text-lg mb-1">{order.type}</span>
-                  <span className="text-5xl font-black text-white">#{order.orderId}</span>
+                <div key={order.id} className="bg-[#10b981] rounded-2xl mx-[20px] text-center shadow-lg shadow-[#10b981]/20 ready-blink-outline flex flex-col items-center justify-center h-[86px]">
+                  <span className="text-white/80 font-bold text-sm mb-1">{order.type}</span>
+                  <span className="text-3xl font-black text-white">#{order.orderId}</span>
                 </div>
               ))}
               {readyOrders.length === 0 && (

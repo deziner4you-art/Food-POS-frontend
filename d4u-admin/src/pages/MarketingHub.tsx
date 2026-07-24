@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Megaphone, Globe, Share2, Tag, Percent, CheckCircle, Store, Edit2, Trash2, PauseCircle, PlayCircle, ImagePlus, ChevronDown, ChevronRight, Users, MousePointer2, Activity } from 'lucide-react';
+import { Megaphone, Globe, Share2, Tag, Percent, CheckCircle, Store, Edit2, Trash2, PauseCircle, PlayCircle, ImagePlus, ChevronDown, ChevronRight, Users, MousePointer2, Activity, Target, TrendingUp } from 'lucide-react';
 
 import { useAdminContext } from '../context/AdminContext';
 
@@ -67,6 +67,8 @@ export default function MarketingHub() {
   // Expanded state for tree
   const [expandedStores, setExpandedStores] = useState<number[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<number[]>([]);
+  
+  const [kpis, setKpis] = useState({ ctr: 0, conversionRate: 0, totalRevenue: 0, totalOrders: 0, aov: 0, roi: 0 });
 
   useEffect(() => {
     fetchCampaigns();
@@ -122,14 +124,14 @@ export default function MarketingHub() {
     if (oauthPlatform === 'facebook') {
       await fetch(`${BACKEND_URL}/marketing/social/facebook/select`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(true),
         body: JSON.stringify({ branchId: selectedBranchId, pageId: page.id, pageName: page.name, token: oauthToken })
       });
       setFbLinked(true);
     } else {
       await fetch(`${BACKEND_URL}/marketing/social/instagram/select`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(true),
         body: JSON.stringify({ branchId: selectedBranchId, accountId: page.id, username: page.username, token: oauthToken })
       });
       setIgLinked(true);
@@ -140,7 +142,7 @@ export default function MarketingHub() {
   const handleFacebookConnect = () => {
     if (!selectedBranchId) return alert('Select a branch first');
     if (fbLinked) {
-      fetch(`${BACKEND_URL}/marketing/social/facebook/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE' })
+      fetch(`${BACKEND_URL}/marketing/social/facebook/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE', headers: getHeaders() })
         .then(() => setFbLinked(false));
     } else {
       window.location.href = `${BACKEND_URL}/marketing/social/facebook/connect?branchId=${selectedBranchId}`;
@@ -150,29 +152,41 @@ export default function MarketingHub() {
   const handleInstagramConnect = () => {
     if (!selectedBranchId) return alert('Select a branch first');
     if (igLinked) {
-      fetch(`${BACKEND_URL}/marketing/social/instagram/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE' })
+      fetch(`${BACKEND_URL}/marketing/social/instagram/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE', headers: getHeaders() })
         .then(() => setIgLinked(false));
     } else {
       window.location.href = `${BACKEND_URL}/marketing/social/instagram/connect?branchId=${selectedBranchId}`;
     }
   };
 
+  const getHeaders = (json = false) => {
+    const token = localStorage.getItem('d4u_admin_token');
+    const headers: any = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (json) headers['Content-Type'] = 'application/json';
+    return headers;
+  };
+
   const fetchCampaigns = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/marketing/campaign`);
+      const hdrs = getHeaders();
+      const res = await fetch(`${BACKEND_URL}/marketing/campaign`, { headers: hdrs });
       if (res.ok) setCampaigns(await res.json());
 
-      const res2 = await fetch(`${BACKEND_URL}/marketing/schedule`);
+      const res2 = await fetch(`${BACKEND_URL}/marketing/schedule`, { headers: hdrs });
       if (res2.ok) setScheduledCampaigns(await res2.json());
 
-      const res3 = await fetch(`${BACKEND_URL}/stores`);
+      const res3 = await fetch(`${BACKEND_URL}/stores`, { headers: hdrs });
       if (res3.ok) setStores(await res3.json());
 
-      const res4 = await fetch(`${BACKEND_URL}/catalog/categories`);
+      const res4 = await fetch(`${BACKEND_URL}/catalog/categories`, { headers: hdrs });
       if (res4.ok) setCategories(await res4.json());
 
-      const res5 = await fetch(`${BACKEND_URL}/catalog/products`);
+      const res5 = await fetch(`${BACKEND_URL}/catalog/products`, { headers: hdrs });
       if (res5.ok) setProducts(await res5.json());
+
+      const res6 = await fetch(`${BACKEND_URL}/marketing/kpis`, { headers: hdrs });
+      if (res6.ok) setKpis(await res6.json());
     } catch (e) { console.error(e); }
   };
 
@@ -207,13 +221,14 @@ export default function MarketingHub() {
           formData.append('published_facebook', String(publishFacebook));
           formData.append('published_instagram', String(publishInstagram));
           formData.append('published_tv', String(publishTv));
-          targetStoreIds.forEach(id => formData.append('target_store_ids[]', String(id)));
-          targetCategoryIds.forEach(id => formData.append('target_category_ids[]', String(id)));
-          targetProductIds.forEach(id => formData.append('target_product_ids[]', String(id)));
+          targetStoreIds.forEach(id => formData.append('target_store_ids', String(id)));
+          targetCategoryIds.forEach(id => formData.append('target_category_ids', String(id)));
+          targetProductIds.forEach(id => formData.append('target_product_ids', String(id)));
         }
 
         const res = await fetch(`${BACKEND_URL}${endpoint}`, {
           method: 'PATCH',
+          headers: getHeaders(),
           body: formData
         });
         
@@ -252,12 +267,13 @@ export default function MarketingHub() {
         formData.append('published_facebook', String(publishFacebook));
         formData.append('published_instagram', String(publishInstagram));
         formData.append('published_tv', String(publishTv));
-        targetStoreIds.forEach(id => formData.append('target_store_ids[]', String(id)));
-        targetCategoryIds.forEach(id => formData.append('target_category_ids[]', String(id)));
-        targetProductIds.forEach(id => formData.append('target_product_ids[]', String(id)));
+        targetStoreIds.forEach(id => formData.append('target_store_ids', String(id)));
+        targetCategoryIds.forEach(id => formData.append('target_category_ids', String(id)));
+        targetProductIds.forEach(id => formData.append('target_product_ids', String(id)));
 
         const res = await fetch(`${BACKEND_URL}/marketing/schedule`, {
           method: 'POST',
+          headers: getHeaders(),
           body: formData
         });
         if (res.ok) {
@@ -277,12 +293,13 @@ export default function MarketingHub() {
         formData.append('published_facebook', String(publishFacebook));
         formData.append('published_instagram', String(publishInstagram));
         formData.append('published_tv', String(publishTv));
-        targetStoreIds.forEach(id => formData.append('target_store_ids[]', String(id)));
-        targetCategoryIds.forEach(id => formData.append('target_category_ids[]', String(id)));
-        targetProductIds.forEach(id => formData.append('target_product_ids[]', String(id)));
+        targetStoreIds.forEach(id => formData.append('target_store_ids', String(id)));
+        targetCategoryIds.forEach(id => formData.append('target_category_ids', String(id)));
+        targetProductIds.forEach(id => formData.append('target_product_ids', String(id)));
 
         const res = await fetch(`${BACKEND_URL}/marketing/campaign`, {
           method: 'POST',
+          headers: getHeaders(),
           body: formData
         });
         if (res.ok) {
@@ -379,8 +396,11 @@ export default function MarketingHub() {
     if (!deleteConfirmId) return;
     try {
       const isScheduled = deleteConfirmType === 'SCHEDULED';
-      const endpoint = isScheduled ? `/marketing/schedule/${deleteConfirmId}` : `/marketing/campaign/${deleteConfirmId}`;
-      const res = await fetch(`${BACKEND_URL}${endpoint}`, { method: 'DELETE' });
+      const endpoint = isScheduled ? `/marketing/schedule` : `/marketing/campaign`;
+      const res = await fetch(`${BACKEND_URL}${endpoint}/${deleteConfirmId}`, { 
+        method: 'DELETE',
+        headers: getHeaders()
+      });
       
       if (isScheduled) {
         setScheduledCampaigns(prev => prev.filter(c => c.id !== deleteConfirmId));
@@ -414,7 +434,7 @@ export default function MarketingHub() {
       const payload = isScheduledType ? { is_active: !newPausedState } : { is_paused: newPausedState };
       await fetch(`${BACKEND_URL}${endpoint}`, { 
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(true),
         body: JSON.stringify(payload)
       });
     } catch (e) { 
@@ -427,7 +447,8 @@ export default function MarketingHub() {
     }
   };
 
-
+  const totalCampaigns = campaigns.filter(c => c.status === 'RUNNING').length;
+  const { ctr, conversionRate, totalRevenue, totalOrders, aov, roi } = kpis;
   return (
     <>
     <div className="animate-fade-in max-w-7xl w-full mx-auto space-y-6">
@@ -438,9 +459,9 @@ export default function MarketingHub() {
         <p className="text-slate-400 text-sm mt-1">Create deals and push them to POS, Website, and Social Media instantly.</p>
       </div>
 
-      <div className="flex flex-col xl:flex-row gap-8">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Deal Creator / Editor Form */}
-        <div className={`flex-1 border rounded-3xl p-8 shadow-xl transition-all ${editingId ? 'bg-slate-800 border-amber-500/50 ring-2 ring-amber-500/20' : 'bg-slate-800 border-slate-700'}`}>
+        <div className={`flex flex-col border rounded-2xl p-6 transition-all ${editingId ? 'bg-slate-800 border-amber-500/50 ring-2 ring-amber-500/20' : 'bg-[#1e293b] border-slate-700/50'}`}>
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
               <Tag size={20} className={editingId ? 'text-amber-400' : 'text-[#3b82f6]'} />
@@ -457,7 +478,7 @@ export default function MarketingHub() {
             )}
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-5">
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Campaign Title</label>
               <input
@@ -465,7 +486,7 @@ export default function MarketingHub() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Summer Weekend BOGO"
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#ec4899] transition-colors"
+                className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm"
                 required
               />
             </div>
@@ -476,7 +497,7 @@ export default function MarketingHub() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Details for the customer..."
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#ec4899] transition-colors h-24 resize-none"
+                className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors h-20 resize-none text-sm"
               />
             </div>
 
@@ -492,7 +513,7 @@ export default function MarketingHub() {
                       setImageFile(e.target.files[0]);
                     }
                   }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#ec4899] file:text-white hover:file:bg-pink-600 cursor-pointer"
+                  className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg pl-10 pr-3 py-1.5 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-[#ec4899] file:text-white hover:file:bg-pink-600 cursor-pointer"
                 />
               </div>
               <p className="text-xs text-slate-500 mt-1">Recommended size: 1080x1440 (Vertical). Will be displayed on TV Board and POS.</p>
@@ -509,7 +530,7 @@ export default function MarketingHub() {
                   placeholder="20"
                   max="100"
                   min="1"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-white focus:outline-none focus:border-[#ec4899] transition-colors"
+                  className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg pl-10 pr-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm"
                   required
                 />
               </div>
@@ -517,7 +538,7 @@ export default function MarketingHub() {
 
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Target Branches, Categories & Items</label>
-              <div className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white max-h-64 overflow-y-auto flex flex-col gap-1">
+              <div className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg p-2 text-white max-h-48 overflow-y-auto flex flex-col gap-1">
                 {(() => {
                   const displayStores = isBranchEntered && selectedBranchId ? stores.filter(s => s.id === selectedBranchId) : stores;
                   return displayStores.length === 0 ? (
@@ -535,8 +556,21 @@ export default function MarketingHub() {
                           type="checkbox" 
                           checked={targetStoreIds.includes(s.id)}
                           onChange={(e) => {
-                            if (e.target.checked) setTargetStoreIds([...targetStoreIds, s.id]);
-                            else setTargetStoreIds(targetStoreIds.filter(id => id !== s.id));
+                            const validCats = categories.filter(c => !['extra toppings', 'add-ons', 'addons'].includes((c.name || '').toLowerCase()));
+                            const catIds = validCats.map(c => c.id);
+                            const pIds = products.filter(p => p.categories?.some((cat: any) => catIds.includes(cat.id))).map(p => p.id);
+                            
+                            if (e.target.checked) {
+                              setTargetStoreIds([...targetStoreIds, s.id]);
+                              if (!expandedStores.includes(s.id)) setExpandedStores([...expandedStores, s.id]);
+                              setTargetCategoryIds(prev => Array.from(new Set([...prev, ...catIds])));
+                              setExpandedCategories(prev => Array.from(new Set([...prev, ...catIds])));
+                              setTargetProductIds(prev => Array.from(new Set([...prev, ...pIds])));
+                            } else {
+                              setTargetStoreIds(targetStoreIds.filter(id => id !== s.id));
+                              setTargetCategoryIds(prev => prev.filter(id => !catIds.includes(id)));
+                              setTargetProductIds(prev => prev.filter(id => !pIds.includes(id)));
+                            }
                           }}
                           className="accent-[#ec4899]"
                         />
@@ -558,8 +592,15 @@ export default function MarketingHub() {
                                   type="checkbox" 
                                   checked={targetCategoryIds.includes(c.id)}
                                   onChange={(e) => {
-                                    if (e.target.checked) setTargetCategoryIds([...targetCategoryIds, c.id]);
-                                    else setTargetCategoryIds(targetCategoryIds.filter(id => id !== c.id));
+                                    const pIds = products.filter(p => p.categories?.some((cat: any) => cat.id === c.id)).map(p => p.id);
+                                    if (e.target.checked) {
+                                      setTargetCategoryIds([...targetCategoryIds, c.id]);
+                                      if (!expandedCategories.includes(c.id)) setExpandedCategories([...expandedCategories, c.id]);
+                                      setTargetProductIds(prev => Array.from(new Set([...prev, ...pIds])));
+                                    } else {
+                                      setTargetCategoryIds(targetCategoryIds.filter(id => id !== c.id));
+                                      setTargetProductIds(prev => prev.filter(id => !pIds.includes(id)));
+                                    }
                                   }}
                                   className="accent-amber-500"
                                 />
@@ -592,69 +633,75 @@ export default function MarketingHub() {
                   )})}
                 )()}
               </div>
-              <p className="text-xs text-slate-500 mt-1">If no branch/category/item is selected, the deal applies globally.</p>
             </div>
+          </div>
+        </div>
 
-            <div className="pt-4 border-t border-slate-700">
-              <label className="flex items-center gap-3 cursor-pointer mb-4">
-                <input type="checkbox" checked={isScheduled} onChange={e => setIsScheduled(e.target.checked)} className="w-5 h-5 accent-[#8b5cf6]" />
-                <span className="text-sm font-bold text-white">Schedule for later (Automated)</span>
+        <div className="flex flex-col p-6 bg-[#1e293b] border border-slate-700/50 rounded-2xl">
+          {/* Scheduling and Publishing Panel moved from left */}
+          <div className="p-4 border border-slate-700/50 rounded-xl mb-6">
+            <p className="text-xs text-slate-400 text-center font-medium">If no branch/category/item is selected, the deal applies globally.</p>
+          </div>
+          
+          <div className="flex-1">
+            <label className="flex items-center gap-3 cursor-pointer mb-6">
+              <input type="checkbox" checked={isScheduled} onChange={e => setIsScheduled(e.target.checked)} className="w-4 h-4 rounded-sm accent-white" />
+              <span className="text-sm font-bold text-white">Schedule for later (Automated)</span>
+            </label>
+
+            {isScheduled && (
+              <div className="grid grid-cols-2 gap-4 animate-fade-in mb-6">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-2">Start Date</label>
+                  <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#8b5cf6] text-sm" required={isScheduled} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-2">End Date</label>
+                  <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#8b5cf6] text-sm" required={isScheduled} />
+                </div>
+              </div>
+            )}
+
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Publish To</label>
+            <div className="flex flex-col gap-2.5 mb-8">
+              <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-[#4edea3] transition-colors">
+                <input type="checkbox" checked={publishWeb} onChange={(e) => setPublishWeb(e.target.checked)} className="w-4 h-4 rounded-sm accent-[#4edea3]" />
+                <div className="flex items-center gap-2"><Globe size={16} className="text-[#4edea3]" /> <span className="text-sm font-bold text-white">Website</span></div>
+              </label>
+              
+              <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-[#fbbf24] transition-colors">
+                <input type="checkbox" checked={publishPos} onChange={(e) => setPublishPos(e.target.checked)} className="w-4 h-4 rounded-sm accent-[#fbbf24]" />
+                <div className="flex items-center gap-2"><Store size={16} className="text-[#fbbf24]" /> <span className="text-sm font-bold text-white">POS System</span></div>
               </label>
 
-              {isScheduled && (
-                <div className="grid grid-cols-2 gap-4 animate-fade-in mb-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2">Start Date</label>
-                    <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#8b5cf6]" required={isScheduled} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2">End Date</label>
-                    <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#8b5cf6]" required={isScheduled} />
-                  </div>
+              <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-purple-400 transition-colors">
+                <input type="checkbox" checked={publishTv} onChange={(e) => setPublishTv(e.target.checked)} className="w-4 h-4 rounded-sm accent-purple-400" />
+                <div className="flex items-center gap-2 text-white font-bold text-sm">
+                  <Megaphone size={16} className="text-purple-400" /> TV Board
                 </div>
+              </label>
+              
+              {(igLinked || true) && (
+                <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-[#ec4899] transition-colors">
+                  <input type="checkbox" checked={publishInstagram} onChange={(e) => setPublishInstagram(e.target.checked)} className="w-4 h-4 rounded-sm accent-[#ec4899]" />
+                  <div className="flex items-center gap-2 text-white font-bold text-sm">
+                    <InstagramIcon size={16} /> Instagram
+                  </div>
+                </label>
               )}
 
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Publish To</label>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#4edea3] transition-colors">
-                  <input type="checkbox" checked={publishWeb} onChange={(e) => setPublishWeb(e.target.checked)} className="w-5 h-5 accent-[#4edea3]" />
-                  <div className="flex items-center gap-2"><Globe size={18} className="text-[#4edea3]" /> <span className="text-sm font-bold text-white">Website</span></div>
-                </label>
-                
-                <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#fbbf24] transition-colors">
-                  <input type="checkbox" checked={publishPos} onChange={(e) => setPublishPos(e.target.checked)} className="w-5 h-5 accent-[#fbbf24]" />
-                  <div className="flex items-center gap-2"><Store size={18} className="text-[#fbbf24]" /> <span className="text-sm font-bold text-white">POS System</span></div>
-                </label>
-                
-                {(fbLinked || true) && (
-                  <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#3b82f6] transition-colors">
-                    <input type="checkbox" checked={publishFacebook} onChange={(e) => setPublishFacebook(e.target.checked)} className="w-5 h-5 accent-[#3b82f6]" />
-                    <div className="flex items-center gap-2 text-white font-bold text-sm">
-                      <FacebookIcon size={18} /> Facebook
-                    </div>
-                  </label>
-                )}
-                
-                {(igLinked || true) && (
-                  <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-[#ec4899] transition-colors">
-                    <input type="checkbox" checked={publishInstagram} onChange={(e) => setPublishInstagram(e.target.checked)} className="w-5 h-5 accent-[#ec4899]" />
-                    <div className="flex items-center gap-2 text-white font-bold text-sm">
-                      <InstagramIcon size={18} /> Instagram
-                    </div>
-                  </label>
-                )}
-
-                <label className="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700 cursor-pointer hover:border-purple-400 transition-colors col-span-2 md:col-span-1">
-                  <input type="checkbox" checked={publishTv} onChange={(e) => setPublishTv(e.target.checked)} className="w-5 h-5 accent-purple-400" />
+              {(fbLinked || true) && (
+                <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-[#3b82f6] transition-colors">
+                  <input type="checkbox" checked={publishFacebook} onChange={(e) => setPublishFacebook(e.target.checked)} className="w-4 h-4 rounded-sm accent-[#3b82f6]" />
                   <div className="flex items-center gap-2 text-white font-bold text-sm">
-                    <Megaphone size={18} className="text-purple-400" /> TV Board
+                    <FacebookIcon size={16} /> Facebook
                   </div>
                 </label>
-              </div>
+              )}
             </div>
 
             {successMsg && (
-              <div className="bg-[#4edea3]/20 border border-[#4edea3]/50 text-[#4edea3] p-3 rounded-xl text-sm font-bold flex items-center gap-2">
+              <div className="bg-[#4edea3]/20 border border-[#4edea3]/50 text-[#4edea3] p-3 mb-4 rounded-xl text-sm font-bold flex items-center gap-2">
                 <CheckCircle size={18} /> {successMsg}
               </div>
             )}
@@ -662,10 +709,10 @@ export default function MarketingHub() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className={`w-full font-black py-4 rounded-xl shadow-lg transition-all text-white ${
+              className={`w-full font-bold py-3 rounded-xl shadow-lg transition-all text-white mt-auto ${
                 editingId 
                   ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:opacity-90' 
-                  : 'bg-gradient-to-r from-[#ec4899] to-[#8b5cf6] hover:opacity-90'
+                  : 'bg-gradient-to-r from-[#d946ef] to-[#8b5cf6] hover:opacity-90'
               }`}
             >
               {isSubmitting 
@@ -677,11 +724,12 @@ export default function MarketingHub() {
                     : 'Launch Campaign 🚀'
               }
             </button>
-          </form>
+          </div>
         </div>
 
-        <div className="w-full xl:w-1/3 xl:min-w-[450px] space-y-8">
-          <div className="p-6 bg-slate-800 border border-slate-700 rounded-2xl">
+        <div className="flex flex-col space-y-6">
+          {/* Scheduling and Publishing Panel moved from left */}
+          <div className="p-6 bg-[#1e293b] border border-slate-700/50 rounded-2xl">
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               <Share2 size={20} className="text-[#3b82f6]" /> Social Media Integration
             </h3>
@@ -704,7 +752,7 @@ export default function MarketingHub() {
             </div>
           </div>
 
-          <div className="p-6 bg-slate-800 border border-slate-700 rounded-2xl">
+          <div className="p-6 bg-[#1e293b] border border-slate-700/50 rounded-2xl">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Share2 size={20} className="text-[#4edea3]" /> Marketing Overview
@@ -715,54 +763,50 @@ export default function MarketingHub() {
               </select>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-start gap-2">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <Tag size={14} className="text-emerald-400" />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                  <Megaphone size={16} className="text-indigo-400" />
                 </div>
                 <div>
-                  <div className="text-xl font-black text-white">8</div>
-                  <div className="text-xs text-slate-400">Active Campaigns</div>
-                  <div className="text-[10px] text-emerald-400 mt-1">+2 from last month</div>
+                  <div className="text-2xl font-black text-white">{totalCampaigns}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Active Deals</div>
                 </div>
               </div>
-              
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-start gap-2">
-                <div className="w-8 h-8 rounded-full bg-pink-500/20 flex items-center justify-center">
-                  <Users size={14} className="text-pink-400" />
+
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-pink-500/10 border border-pink-500/20 flex items-center justify-center">
+                  <Target size={16} className="text-pink-400" />
                 </div>
                 <div>
-                  <div className="text-xl font-black text-white">24.5K</div>
-                  <div className="text-xs text-slate-400">Total Reach</div>
-                  <div className="text-[10px] text-emerald-400 mt-1">+18% from last month</div>
+                  <div className="text-2xl font-black text-white">{kpis?.conversionRate || 0}%</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Conv Rate</div>
                 </div>
               </div>
-              
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-start gap-2">
-                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
-                  <MousePointer2 size={14} className="text-amber-400" />
+
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <TrendingUp size={16} className="text-emerald-400" />
                 </div>
                 <div>
-                  <div className="text-xl font-black text-white">3.2K</div>
-                  <div className="text-xs text-slate-400">Engagement</div>
-                  <div className="text-[10px] text-emerald-400 mt-1">+12% from last month</div>
+                  <div className="text-2xl font-black text-white">Rs.{kpis?.totalRevenue || 0}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Revenue Generated</div>
                 </div>
               </div>
-              
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-start gap-2">
-                <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-                  <Activity size={14} className="text-blue-400" />
+
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                  <Users size={16} className="text-blue-400" />
                 </div>
                 <div>
-                  <div className="text-xl font-black text-white">12.7%</div>
-                  <div className="text-xs text-slate-400">Conversion Rate</div>
-                  <div className="text-[10px] text-emerald-400 mt-1">+5% from last month</div>
+                  <div className="text-2xl font-black text-white">{kpis?.ctr || 0}%</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Avg CTR</div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </form>
 
       <div className="w-full mt-8">
         <div className="flex justify-between items-end mb-6">
@@ -773,8 +817,8 @@ export default function MarketingHub() {
             View All Campaigns
           </button>
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+        <div className="max-h-[800px] overflow-y-auto pr-2 pb-4 custom-scrollbar">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {campaigns.length === 0 ? (
               <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 text-center text-slate-500">
                 <Megaphone size={48} className="mx-auto mb-4 opacity-20" />
@@ -856,8 +900,10 @@ export default function MarketingHub() {
               ))
             )}
           </div>
-
-          {scheduledCampaigns.length > 0 && (
+        </div>
+      </div>
+      
+      {scheduledCampaigns.length > 0 && (
             <div className="mt-12">
               <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
                 <Percent size={20} className="text-[#8b5cf6]" /> Upcoming Scheduled Deals
@@ -940,7 +986,6 @@ export default function MarketingHub() {
               </div>
             </div>
           )}
-        </div>
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (

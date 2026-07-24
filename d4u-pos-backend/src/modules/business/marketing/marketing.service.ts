@@ -1,10 +1,24 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { AppGateway } from '../../../app.gateway';
 
 @Injectable()
 export class MarketingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private gateway: AppGateway,
+  ) {}
+
+  private broadcastCampaignUpdate(campaign: any) {
+    if (campaign.target_stores && campaign.target_stores.length > 0) {
+      campaign.target_stores.forEach(s => {
+        this.gateway.server.to(`store_${s.id}`).emit('marketing_update', { campaignId: campaign.id, status: campaign.status });
+      });
+    } else {
+      this.gateway.server.emit('marketing_update', { campaignId: campaign.id, status: campaign.status });
+    }
+  }
 
   // 1. Digital Marketing SLA Target Logic
   calculateSlaPerformance(
@@ -85,23 +99,27 @@ export class MarketingService {
         published_instagram:
           body.published_instagram === 'true' ||
           body.published_instagram === true,
-        status: body.schedule_for_later ? 'scheduled' : 'active',
+        status: body.schedule_for_later ? 'SCHEDULED' : 'RUNNING',
         scheduled_at:
           body.schedule_for_later && body.scheduled_at
             ? new Date(body.scheduled_at)
             : null,
+        end_date:
+          body.schedule_for_later && body.end_date
+            ? new Date(body.end_date)
+            : null,
         target_stores: {
-          connect: (body.target_store_ids || []).map((id: number) => ({
+          connect: (Array.isArray(body.target_store_ids) ? body.target_store_ids : body.target_store_ids ? [body.target_store_ids] : []).map((id: any) => ({
             id: Number(id),
           })),
         },
         target_categories: {
-          connect: (body.target_category_ids || []).map((id: number) => ({
+          connect: (Array.isArray(body.target_category_ids) ? body.target_category_ids : body.target_category_ids ? [body.target_category_ids] : []).map((id: any) => ({
             id: Number(id),
           })),
         },
         target_products: {
-          connect: (body.target_product_ids || []).map((id: number) => ({
+          connect: (Array.isArray(body.target_product_ids) ? body.target_product_ids : body.target_product_ids ? [body.target_product_ids] : []).map((id: any) => ({
             id: Number(id),
           })),
         },
@@ -159,10 +177,11 @@ export class MarketingService {
       }
     }
 
+    this.broadcastCampaignUpdate(campaign);
     return {
       success: true,
       message:
-        campaign.status === 'scheduled'
+        campaign.status === 'SCHEDULED'
           ? 'Campaign scheduled successfully'
           : 'Campaign created successfully',
       campaign,
@@ -224,20 +243,24 @@ export class MarketingService {
         updateData.published_instagram === true;
     if (updateData.discount_pct !== undefined)
       updatePayload.discount_pct = Number(updateData.discount_pct);
+    if (updateData.scheduled_at)
+      updatePayload.scheduled_at = new Date(updateData.scheduled_at);
+    if (updateData.end_date)
+      updatePayload.end_date = new Date(updateData.end_date);
 
     if (target_store_ids !== undefined) {
       updatePayload.target_stores = {
-        set: target_store_ids.map((id: number) => ({ id: Number(id) })),
+        set: (Array.isArray(target_store_ids) ? target_store_ids : target_store_ids ? [target_store_ids] : []).map((id: any) => ({ id: Number(id) })),
       };
     }
     if (target_category_ids !== undefined) {
       updatePayload.target_categories = {
-        set: target_category_ids.map((id: number) => ({ id: Number(id) })),
+        set: (Array.isArray(target_category_ids) ? target_category_ids : target_category_ids ? [target_category_ids] : []).map((id: any) => ({ id: Number(id) })),
       };
     }
     if (target_product_ids !== undefined) {
       updatePayload.target_products = {
-        set: target_product_ids.map((id: number) => ({ id: Number(id) })),
+        set: (Array.isArray(target_product_ids) ? target_product_ids : target_product_ids ? [target_product_ids] : []).map((id: any) => ({ id: Number(id) })),
       };
     }
 
@@ -366,43 +389,105 @@ export class MarketingService {
     // Handle new MarketingCampaign scheduled publishes
     const scheduledCampaigns = await this.prisma.marketingCampaign.findMany({
       where: {
-        status: 'scheduled',
+        status: 'SCHEDULED',
         scheduled_at: { lte: now },
       },
+      include: { target_stores: true }
     });
 
     for (const campaign of scheduledCampaigns) {
-      console.log(
-        `[CRON] Auto-publishing Scheduled Campaign: ${campaign.title}`,
-      );
-
-      let fbSuccess = false;
-      let igSuccess = false;
-
-      if (campaign.published_social) {
-        try {
-          console.log(
-            `[SOCIAL MEDIA] Publishing "${campaign.title}" to Facebook Graph API.`,
-          );
-          fbSuccess = true;
-        } catch (e) {}
-
-        try {
-          console.log(
-            `[SOCIAL MEDIA] Publishing "${campaign.title}" to Instagram Graph API.`,
-          );
-          igSuccess = true;
-        } catch (e) {}
-      }
-
+      console.log(`[CRON] Auto-publishing Scheduled Campaign: ${campaign.title}`);
       await this.prisma.marketingCampaign.update({
         where: { id: campaign.id },
-        data: {
-          status: 'active',
-          published_facebook: fbSuccess,
-          published_instagram: igSuccess,
-        },
+        data: { status: 'RUNNING' },
       });
+      this.broadcastCampaignUpdate({ ...campaign, status: 'RUNNING' });
     }
+
+    // Auto-expire MarketingCampaigns
+    const runningCampaigns = await this.prisma.marketingCampaign.findMany({
+      where: {
+        status: 'RUNNING',
+        end_date: { lt: now },
+      },
+      include: { target_stores: true }
+    });
+
+    for (const campaign of runningCampaigns) {
+      console.log(`[CRON] Auto-expiring MarketingCampaign: ${campaign.title}`);
+      await this.prisma.marketingCampaign.update({
+        where: { id: campaign.id },
+        data: { status: 'EXPIRED', is_active: false },
+      });
+      this.broadcastCampaignUpdate({ ...campaign, status: 'EXPIRED' });
+    }
+  }
+
+  // 8. Analytics Telemetry
+  async trackAnalytics(id: number, event: string, revenue?: number) {
+    const validEvents = ['view', 'impression', 'menu_open', 'product_click', 'offer_click', 'cart_add', 'order_generated'];
+    if (!validEvents.includes(event)) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const updateData: any = {
+      [event + 's']: { increment: 1 }
+    };
+
+    if (event === 'order_generated' && revenue) {
+      updateData.revenue_generated = { increment: revenue };
+    }
+
+    const createData: any = {
+      campaign_id: id,
+      date: today
+    };
+    createData[event + 's'] = 1;
+    if (event === 'order_generated' && revenue) {
+      createData.revenue_generated = revenue;
+    }
+
+    return this.prisma.campaignAnalytics.upsert({
+      where: { 
+        campaign_date_hour_store: { 
+          campaign_id: id, 
+          date: today,
+          hour: 0, // Using 0 as default placeholder for existing non-hourly logic
+          store_id: 0, // Using 0 as default placeholder for existing non-store logic
+        } 
+      },
+      update: updateData,
+      create: { ...createData, hour: 0, store_id: 0 }
+    });
+  }
+
+  async getKPIs() {
+    const analytics = await this.prisma.campaignAnalytics.findMany();
+    
+    let totalViews = 0;
+    let totalClicks = 0;
+    let totalOrders = 0;
+    let totalRevenue = 0;
+
+    for (const row of analytics) {
+      totalViews += row.views;
+      totalClicks += row.offer_clicks;
+      totalOrders += row.orders_generated;
+      totalRevenue += row.revenue_generated;
+    }
+
+    const ctr = totalViews > 0 ? (totalClicks / totalViews) * 100 : 0;
+    const conversionRate = totalClicks > 0 ? (totalOrders / totalClicks) * 100 : 0;
+    const aov = totalOrders > 0 ? (totalRevenue / totalOrders) : 0;
+
+    return {
+      ctr: parseFloat(ctr.toFixed(2)),
+      conversionRate: parseFloat(conversionRate.toFixed(2)),
+      totalRevenue: totalRevenue,
+      totalOrders: totalOrders,
+      aov: parseFloat(aov.toFixed(2)),
+      roi: 0 // Placeholder
+    };
   }
 }

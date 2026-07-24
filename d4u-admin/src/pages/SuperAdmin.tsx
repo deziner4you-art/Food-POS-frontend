@@ -12,6 +12,17 @@ export default function SuperAdmin() {
   
   const [activeTab, setActiveTab] = useState<'PACKAGES' | 'MODULES'>('PACKAGES');
   const [pricingList, setPricingList] = useState<any[]>([]);
+  const [globalCurrency, setGlobalCurrency] = useState('USD');
+
+  const currencySymbols: Record<string, string> = {
+    USD: '$',
+    PKR: 'Rs',
+    AED: 'AED',
+    QR: 'QR',
+    SR: 'SR',
+    POUND: '£'
+  };
+  const getSymbol = () => currencySymbols[globalCurrency] || '$';
 
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -34,7 +45,7 @@ export default function SuperAdmin() {
 
   const getAuthHeader = () => {
     const token = localStorage.getItem('d4u_admin_token');
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
+    return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
   const fetchPackages = async () => {
@@ -185,7 +196,21 @@ export default function SuperAdmin() {
             <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
               <tr>
                 <th className="p-4 font-bold">Package Name</th>
-                <th className="p-4 font-bold">Price</th>
+                <th className="p-4 font-bold">
+                  Price
+                  <select 
+                    value={globalCurrency} 
+                    onChange={e => setGlobalCurrency(e.target.value)}
+                    className="ml-2 bg-transparent text-xs font-bold text-purple-600 outline-none cursor-pointer"
+                  >
+                    <option value="USD">USD</option>
+                    <option value="PKR">PKR</option>
+                    <option value="AED">AED</option>
+                    <option value="QR">QR</option>
+                    <option value="SR">SR</option>
+                    <option value="POUND">POUND</option>
+                  </select>
+                </th>
                 <th className="p-4 font-bold">Modules Included</th>
                 <th className="p-4 text-right font-bold">Actions</th>
               </tr>
@@ -196,7 +221,7 @@ export default function SuperAdmin() {
                 return (
                   <tr key={pkg.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
                     <td className="p-4 font-bold text-gray-900">{pkg.name}</td>
-                    <td className="p-4 font-mono text-purple-600 font-bold">${pkg.price}</td>
+                    <td className="p-4 font-mono text-purple-600 font-bold">{getSymbol()}{pkg.price}</td>
                     <td className="p-4">
                       <span className="bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full text-xs font-bold">
                         {activeCount} Modules
@@ -228,7 +253,20 @@ export default function SuperAdmin() {
               <tr>
                 <th className="p-4 font-bold">Module Name</th>
                 <th className="p-4 font-bold">Module Key</th>
-                <th className="p-4 font-bold">Currency</th>
+                <th className="p-4 font-bold">
+                  <select 
+                    value={globalCurrency} 
+                    onChange={e => setGlobalCurrency(e.target.value)}
+                    className="bg-transparent font-bold outline-none cursor-pointer text-gray-500 hover:text-purple-600 uppercase text-xs tracking-wider"
+                  >
+                    <option value="USD">Currency (USD)</option>
+                    <option value="PKR">Currency (PKR)</option>
+                    <option value="AED">Currency (AED)</option>
+                    <option value="QR">Currency (QR)</option>
+                    <option value="SR">Currency (SR)</option>
+                    <option value="POUND">Currency (POUND)</option>
+                  </select>
+                </th>
                 <th className="p-4 font-bold text-right">Monthly Price</th>
               </tr>
             </thead>
@@ -237,10 +275,10 @@ export default function SuperAdmin() {
                 <tr key={item.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
                   <td className="p-4 font-bold text-gray-900">{item.module_name}</td>
                   <td className="p-4"><span className="bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-mono">{item.module_key}</span></td>
-                  <td className="p-4 text-gray-500 font-bold">{item.currency}</td>
+                  <td className="p-4 text-gray-500 font-bold">{globalCurrency}</td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <span className="text-gray-400 font-bold">$</span>
+                      <span className="text-gray-400 font-bold">{getSymbol()}</span>
                       <input 
                         type="number"
                         defaultValue={item.price_monthly}
@@ -288,7 +326,7 @@ export default function SuperAdmin() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Monthly Price ($)</label>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Monthly Price ({getSymbol()})</label>
                   <input 
                     type="number" 
                     value={formData.price}

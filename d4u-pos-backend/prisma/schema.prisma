@@ -655,9 +655,62 @@ model MarketingCampaign {
   target_products     Product[]  @relation("CampaignProducts")
   status              String     @default("active")
   scheduled_at        DateTime?
+  end_date            DateTime?
   published_facebook  Boolean    @default(false)
   published_instagram Boolean    @default(false)
   published_tv        Boolean    @default(false)
+
+  // Status Lifecycle: DRAFT, SCHEDULED, RUNNING, PAUSED, COMPLETED, EXPIRED, ARCHIVED
+  analytics           CampaignAnalytics[]
+  
+  // Phase 2 Prep
+  priority            Int        @default(0)
+  allow_stacking      Boolean    @default(false)
+  published_email     Boolean    @default(false)
+  published_sms       Boolean    @default(false)
+  published_whatsapp  Boolean    @default(false)
+  published_push      Boolean    @default(false)
+  ab_test_group       String?
+  ab_test_parent_id   Int?
+
+  audit_logs          CampaignAuditLog[]
+}
+
+model CampaignAnalytics {
+  id               Int               @id @default(autoincrement())
+  campaign_id      Int
+  date             DateTime          @db.Date
+  hour             Int?              // Optional hourly granularity (0-23)
+  store_id         Int?              // Optional branch-wise slicing
+
+  campaign         MarketingCampaign @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+  views            Int               @default(0)
+  impressions      Int               @default(0)
+  menu_opens       Int               @default(0)
+  product_clicks   Int               @default(0)
+  offer_clicks     Int               @default(0)
+  cart_adds        Int               @default(0)
+  orders_generated Int               @default(0)
+  revenue_generated Float            @default(0.0)
+  discount_cost    Float             @default(0.0)
+  profit_impact    Float             @default(0.0)
+  new_customers    Int               @default(0)
+  returning_customers Int            @default(0)
+
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([campaign_id, date, hour, store_id], name: "campaign_date_hour_store")
+}
+
+model CampaignAuditLog {
+  id               Int               @id @default(autoincrement())
+  campaign_id      Int
+  user_id          Int?              // Optional: which user made the change
+  action           String            // e.g., CREATED, PAUSED, EXPIRED, EDITED
+  changes          String?           @db.Text // JSON string describing what changed
+  createdAt        DateTime          @default(now())
+
+  campaign         MarketingCampaign @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
 }
 
 model BranchSocialAccount {
@@ -2286,4 +2339,18 @@ model SystemCertification {
   store                Store    @relation(fields: [store_id], references: [id])
 
   @@index([store_id])
+}
+
+model OrderEventLog {
+  id          Int      @id @default(autoincrement())
+  orderId     String
+  storeId     Int
+  userId      Int
+  oldStatus   String?
+  newStatus   String
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+  @@index([storeId])
 }

@@ -109,6 +109,17 @@ export class MarketingController {
     return this.marketingService.deleteCampaign(parseInt(id));
   }
 
+  @Post('analytics/:id/:event')
+  trackAnalytics(@Param('id') id: string, @Param('event') event: string, @Body() body: any) {
+    return this.marketingService.trackAnalytics(parseInt(id), event, body?.revenue);
+  }
+
+  @RequirePermissions('crm.view')
+  @Get('kpis')
+  getKPIs() {
+    return this.marketingService.getKPIs();
+  }
+
   // SCHEDULED DISCOUNTS
   @RequirePermissions('crm.create')
   @Post('schedule')

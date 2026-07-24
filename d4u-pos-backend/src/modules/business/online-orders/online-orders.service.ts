@@ -1,27 +1,34 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
+import { PricingService } from '../pos-orders/pricing.service';
 
 @Injectable()
 export class OnlineOrdersService {
   constructor(
     private prisma: PrismaService,
     private gateway: AppGateway,
+    private pricing: PricingService,
   ) {}
 
   async createOrder(body: any) {
     const storeId = body.store_id ? Number(body.store_id) : 1;
+    let parsedItems = typeof body.items === 'string' ? JSON.parse(body.items) : body.items;
+
+    const pricingResult = await this.pricing.calculatePricing({
+      store_id: storeId,
+      items: parsedItems,
+      couponCode: body.couponCode
+    });
+
     const order = await this.prisma.onlineOrder.create({
       data: {
         store_id: storeId,
         customer: body.customer || 'Online Guest',
         customerPhone: body.customerPhone || '',
         customerAddress: body.customerAddress || 'No Address Provided',
-        items:
-          typeof body.items === 'string'
-            ? body.items
-            : JSON.stringify(body.items),
-        totalAmount: String(body.totalAmount || '0.00'),
+        items: JSON.stringify(parsedItems),
+        totalAmount: String(pricingResult.total.toFixed(2)),
         source: body.source || 'Website',
         notes: body.notes || '',
         status: 'PENDING',
@@ -63,6 +70,19 @@ export class OnlineOrdersService {
             `[LOYALTY] Awarded ${pointsEarned} points to ${existingCustomer.name}`,
           );
         }
+      } else {
+        // Auto-create customer
+        await this.prisma.customer.create({
+          data: {
+            brand_id: 1, // Default brand
+            phone: body.customerPhone,
+            name: body.customer || 'Online Guest',
+            address: body.customerAddress || '',
+            total_orders: 1,
+            loyalty_points: Math.floor(parseFloat(body.totalAmount || '0')),
+          }
+        });
+        console.log(`[CRM] Auto-created new customer for ${body.customerPhone}`);
       }
     }
 
@@ -114,7 +134,7 @@ export class OnlineOrdersService {
     return order;
   }
 
-  async updateOrderStatus(id: number, data: any) {
+  async updateOrderStatus(id: number, data: any, userStoreId?: number) {
     const allowedKeys = [
       'orderId',
       'status',
@@ -148,10 +168,65 @@ export class OnlineOrdersService {
       });
       if (!existingOrder) throw new NotFoundException('Order not found');
 
+      // --- SECURITY ENFORCEMENT ---
+      if (userStoreId && existingOrder.store_id !== userStoreId) {
+        throw new Error('Unauthorized: Cannot modify orders belonging to another branch.');
+      }
+
+      // --- STATE MACHINE ENFORCEMENT ---
+      const STATE_SEQUENCE = [
+        'ONLINE_ORDER_RECEIVED',
+        'CONFIRMED',
+        'KITCHEN_PREPARING',
+        'READY',
+        'RIDER_ARRIVED',
+        'PRINT_BILL',
+        'DISPATCHED',
+        'OUT_FOR_DELIVERY',
+        'DELIVERED',
+        'WAITING_CASH_SETTLEMENT',
+        'SETTLED'
+      ];
+
+      // Automatically map incoming legacy statuses to the new sequence
+      let incomingStatus = updateData.status || updateData.kdsStatus;
+      if (incomingStatus) {
+        if (incomingStatus === 'ACCEPTED' && existingOrder.status !== 'CONFIRMED') incomingStatus = 'CONFIRMED';
+        if (incomingStatus === 'NEW_KOT') incomingStatus = 'CONFIRMED';
+        if (incomingStatus === 'PREPARING') incomingStatus = 'KITCHEN_PREPARING';
+        if (incomingStatus === 'PENDING') incomingStatus = 'ONLINE_ORDER_RECEIVED';
+
+        const currentIndex = STATE_SEQUENCE.indexOf(existingOrder.status);
+        const targetIndex = STATE_SEQUENCE.indexOf(incomingStatus);
+
+        // Strict enforcement: Do not allow skipping states (except falling back or if status not in sequence)
+        if (currentIndex !== -1 && targetIndex !== -1) {
+          if (targetIndex > currentIndex + 1) {
+            throw new Error(`Invalid state transition from ${existingOrder.status} to ${incomingStatus}. States must be sequential.`);
+          }
+        }
+        updateData.status = incomingStatus;
+      }
+      // ---------------------------------
+
       const updated = await this.prisma.onlineOrder.update({
         where: { id },
         data: updateData,
       });
+
+      // Log the transition
+      if (updateData.status && updateData.status !== existingOrder.status) {
+        await this.prisma.orderEventLog.create({
+          data: {
+            orderId: updated.id.toString(),
+            storeId: updated.store_id,
+            userId: 0, // system or extract from context
+            oldStatus: existingOrder.status,
+            newStatus: updateData.status,
+            reason: data.notes || 'State transitioned'
+          }
+        });
+      }
 
       // Recipe Stock Deduction Logic
       if (
