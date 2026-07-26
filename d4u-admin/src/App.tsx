@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link } from 'react-router-dom';
-import { Store, PackageOpen, ChefHat, Globe, LayoutDashboard, LogOut, Lock, Users } from 'lucide-react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
+import { Store, PackageOpen, ChefHat, Globe, LayoutDashboard, LogOut, Lock, Users, Activity, ShoppingCart } from 'lucide-react';
 import { AdminProvider, useAdminContext } from './context/AdminContext';
+import { PackageProvider } from './context/PackageContext';
+import GlobalErrorToast from './components/GlobalErrorToast';
+import GlobalHeader from './components/workspace/GlobalHeader';
 
 import StaffPermissions from './pages/StaffPermissions';
 import InventoryManager from './pages/InventoryManager';
@@ -14,16 +17,19 @@ import CustomersManager from './pages/CustomersManager';
 import SuperAdmin from './pages/SuperAdmin';
 import OwnerApp from './pages/OwnerApp';
 import SetupWizard from './pages/SetupWizard';
+import BootstrapMode from './pages/BootstrapMode';
 import StoreManager from './pages/StoreManager';
 import HQOverview from './pages/HQOverview';
 import RecycleBin from './pages/RecycleBin';
+import HealthDashboard from './pages/HealthDashboard';
+import PurchaseManager from './pages/PurchaseManager';
 
 import { Megaphone, ShieldCheck, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
-function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, onLogout: () => void, user: any }) {
+function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: React.ReactNode, onLogout: () => void, user: any, forceBootstrap?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -31,7 +37,7 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
   const { isBranchEntered, setIsBranchEntered, branches, selectedBranchId } = useAdminContext();
   const selectedBranch = branches.find(b => b.id === selectedBranchId);
 
-  let navItems = [
+  let navItems = forceBootstrap ? [] : [
     { path: '/', label: 'Overview', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' }
   ];
 
@@ -42,15 +48,17 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
       { path: '/menu', label: 'Menu Builder', icon: ChefHat, color: 'text-[#3b82f6]', bg: 'bg-[#3b82f6]/20' },
       { path: '/inventory', label: 'Inventory', icon: PackageOpen, color: 'text-[#8b5cf6]', bg: 'bg-[#8b5cf6]/20' },
       { path: '/recipes', label: 'Recipe Costing', icon: ChefHat, color: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]/20' },
+      { path: '/purchase', label: 'Purchase & Receiving', icon: ShoppingCart, color: 'text-orange-400', bg: 'bg-orange-500/20' },
       { path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' },
       { path: '/customers', label: 'CRM & Loyalty', icon: Users, color: 'text-amber-400', bg: 'bg-amber-500/20' },
       { path: '/cms', label: 'Website CMS', icon: Globe, color: 'text-[#ec4899]', bg: 'bg-[#ec4899]/20' }
     ];
   }
 
-  if (user?.role === 'Super Admin') {
+  if (!forceBootstrap && user?.role === 'Super Admin') {
     navItems.push({ path: '/saas', label: 'SaaS Setup', icon: ShieldCheck, color: 'text-purple-400', bg: 'bg-purple-500/20' });
     navItems.push({ path: '/branches', label: 'Branches (Stores)', icon: Store, color: 'text-teal-400', bg: 'bg-teal-500/20' });
+    navItems.push({ path: '/health', label: 'System Health', icon: Activity, color: 'text-emerald-400', bg: 'bg-emerald-500/20' });
   }
 
   return (
@@ -120,8 +128,11 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 bg-slate-900 overflow-y-auto p-8 relative">
-        {children}
+      <div className="flex-1 flex flex-col bg-slate-900 overflow-hidden relative">
+        <GlobalHeader user={user} onLogout={onLogout} />
+        <div className="flex-1 overflow-y-auto p-8 relative">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -129,25 +140,41 @@ function AdminLayout({ children, onLogout, user }: { children: React.ReactNode, 
 
 
 function MainApp({ user, handleLogout }: { user: any, handleLogout: () => void }) {
-  const { isBranchEntered } = useAdminContext();
+  const { isBranchEntered, brands } = useAdminContext();
   
-  if (!isBranchEntered) {
-    return <HQOverview />;
+  if (brands.length === 0) {
+    return (
+      <Routes>
+        <Route path="/" element={<BootstrapMode user={user} handleLogout={handleLogout} />} />
+        <Route path="/saas" element={<AdminLayout onLogout={handleLogout} user={user} forceBootstrap><SuperAdmin /></AdminLayout>} />
+        <Route path="/setup" element={<AdminLayout onLogout={handleLogout} user={user} forceBootstrap><SetupWizard /></AdminLayout>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
   }
 
   return (
     <AdminLayout onLogout={handleLogout} user={user}>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={isBranchEntered ? <Dashboard /> : <HQOverview />} />
+        
+        {/* Branch Specific Routes */}
         <Route path="/staff" element={<StaffPermissions />} />
         <Route path="/menu" element={<MenuManager />} />
         <Route path="/inventory" element={<InventoryManager />} />
         <Route path="/recipes" element={<RecipeManager />} />
+        <Route path="/purchase" element={<PurchaseManager />} />
         <Route path="/marketing" element={<MarketingHub />} />
         <Route path="/customers" element={<CustomersManager />} />
         <Route path="/cms" element={<CmsManager />} />
+        
+        {/* Super Admin Routes */}
+        <Route path="/setup" element={<SetupWizard />} />
         <Route path="/saas" element={<SuperAdmin />} />
         <Route path="/branches" element={<StoreManager />} />
+        <Route path="/recycle-bin" element={<RecycleBin />} />
+        <Route path="/health" element={<HealthDashboard />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AdminLayout>
   );
@@ -286,15 +313,18 @@ export default function App() {
 
   return (
     <BrowserRouter basename="/admin">
-      <AdminProvider>
-        <Toaster position="bottom-right" />
-        <Routes>
-          <Route path="/owner" element={<OwnerApp />} />
-          <Route path="/setup" element={<SetupWizard />} />
-          <Route path="/recycle-bin" element={<RecycleBin />} />
-          <Route path="/*" element={<MainApp user={user} handleLogout={handleLogout} />} />
-        </Routes>
-      </AdminProvider>
+      <PackageProvider>
+        <AdminProvider>
+          <GlobalErrorToast />
+          <Toaster position="bottom-right" />
+          <Routes>
+            <Route path="/owner" element={<OwnerApp />} />
+            <Route path="/setup" element={<SetupWizard />} />
+            <Route path="/recycle-bin" element={<RecycleBin />} />
+            <Route path="/*" element={<MainApp user={user} handleLogout={handleLogout} />} />
+          </Routes>
+        </AdminProvider>
+      </PackageProvider>
     </BrowserRouter>
   );
 }

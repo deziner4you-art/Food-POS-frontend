@@ -10,8 +10,17 @@ export class CustomersService {
   constructor(private prisma: PrismaService) {}
 
   // تمام گاہک (CRM Grid)
-  async getCustomers(brand_id: number, search?: string) {
+  async getCustomers(brand_id: number, store_id?: number, search?: string) {
     const where: any = { brand_id };
+    
+    if (store_id) {
+      where.orders = {
+        some: {
+          store_id: store_id
+        }
+      };
+    }
+
     if (search) {
       where.OR = [
         { phone: { contains: search } },
@@ -176,5 +185,11 @@ export class CustomersService {
     });
 
     return { ...customer, transactions };
+  }
+
+  // delete customer
+  async deleteCustomer(id: number) {
+    await this.prisma.customer.delete({ where: { id } });
+    return { success: true };
   }
 }

@@ -24,8 +24,12 @@ export class UsersController {
 
   @RequirePermissions('system.view')
   @Get()
-  getAllUsers(@Query('store_id') store_id?: string) {
+  getAllUsers(
+    @Query('brand_id') brand_id?: string,
+    @Query('store_id') store_id?: string,
+  ) {
     if (store_id) return this.usersService.getUsersByStore(Number(store_id));
+    if (brand_id) return this.usersService.getUsersByBrand(Number(brand_id));
     return this.usersService.getAllUsers();
   }
 

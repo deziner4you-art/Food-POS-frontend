@@ -8,7 +8,7 @@ export class ProductionCostValidator {
   async validateCostingEligibility(productionId: number) {
     const order = await this.prisma.productionOrder.findUnique({
       where: { id: productionId },
-      include: { lines: true, consumptions: true, outputs: true, target_product: { include: { recipeItems: true } } }
+      include: { lines: true, consumptions: true, outputs: true, target_product: { include: { recipe: { include: { ingredients: true } } } } }
     });
 
     if (!order) {

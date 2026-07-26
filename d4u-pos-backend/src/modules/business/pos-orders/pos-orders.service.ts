@@ -72,6 +72,7 @@ export class PosOrdersService {
     is_offline?: boolean;
     delivery_address?: string;
     notes?: string;
+    couponCode?: string;
   }) {
     // Active Business Day تلاش کریں
     const openDay = await this.prisma.businessDay.findFirst({

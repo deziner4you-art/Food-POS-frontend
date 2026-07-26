@@ -14,9 +14,14 @@ model Brand {
   id             Int      @id @default(autoincrement())
   name           String
   createdAt      DateTime @default(now())
-  is_chain_store Boolean  @default(false)
-  is_deleted     Boolean  @default(false)
-  menu_strategy  String   @default("UNIFIED") // UNIFIED or INDEPENDENT
+  is_chain_store Boolean   @default(false)
+  status         String    @default("ACTIVE") // ACTIVE, RECYCLED
+  deleted_at     DateTime?
+  deleted_by     String?
+  deleted_reason String?
+  restored_at    DateTime?
+  restored_by    String?
+  menu_strategy  String    @default("UNIFIED") // UNIFIED or INDEPENDENT
 
   currency       String @default("PKR")
   vat_percentage Float  @default(0)
@@ -29,6 +34,9 @@ model Brand {
   CmsSettings        CmsSettings[]
   MarketingCampaigns MarketingCampaign[]
   ScheduledDiscounts ScheduledDiscount[]
+  subscription       Subscription?
+
+  userAssignments    UserAssignment[]
 }
 
 model Store {
@@ -37,7 +45,6 @@ model Store {
   name            String
   location        String?
   is_online       Boolean  @default(true)
-  saas_package_id Int?
   createdAt       DateTime @default(now())
 
   // Branch Specific Info
@@ -53,21 +60,36 @@ model Store {
   order_no_prefix String?
   vat_percentage  Float    @default(0)
 
-  is_deleted      Boolean  @default(false)
-  deletedAt       DateTime?
+  status              String    @default("ACTIVE") // ACTIVE, SUSPENDED, MAINTENANCE, RECYCLED
+  status_reason       String?
+  status_changed_by   String?
+  status_changed_at   DateTime?
+  resume_at           DateTime?
+  deleted_at          DateTime?
+  deleted_by          String?
+  deleted_reason      String?
+  restored_at         DateTime?
+  restored_by         String?
+
+  // SaaS Package (per-branch)
+  saas_package_id Int?
+  saas_package    Package?  @relation(fields: [saas_package_id], references: [id])
 
   brand         Brand           @relation(fields: [brand_id], references: [id])
-  saas_package  SaasPackage?    @relation(fields: [saas_package_id], references: [id])
-  subscription  Subscription?
   users         User[]
   products      Product[]
   orders        Order[]
-  inventory     InventoryItem[]
-  businessDays  BusinessDay[]
+  inventory        InventoryItem[]
+  recipes          Recipe[]
+  recipeCategories RecipeCategory[]
+  businessDays     BusinessDay[]
+  modifierGroups   ModifierGroup[]
+  availabilityRules AvailabilityRule[]
   cashFlows     CashFlow[]
   kots          KOT[]
   Vendor        Vendor[]
   PurchaseOrder PurchaseOrder[]
+  goodsReceipts GoodsReceipt[]
 
   menus                 Menu[]                 @relation("MenuStores")
   assignedCategories    Category[]             @relation("CategoryStores")
@@ -107,6 +129,7 @@ model Store {
   budgets               Budget[]
   month_end_closings    MonthEndClosing[]
   year_end_closings     YearEndClosing[]
+  userAssignments       UserAssignment[]
   asset_locations       AssetLocation[]
   fixed_assets          FixedAsset[]
   customer_receivables  CustomerReceivable[]
@@ -131,6 +154,17 @@ model Store {
   system_certifications SystemCertification[]
 }
 
+model SystemAuditLog {
+  id          Int      @id @default(autoincrement())
+  action      String
+  entity      String
+  entity_id   Int?
+  user_id     Int?
+  user_name   String?
+  details     Json?
+  created_at  DateTime @default(now())
+}
+
 model TerminalSession {
   id          Int      @id @default(autoincrement())
   store_id    Int
@@ -149,10 +183,15 @@ model TerminalSession {
 // RBAC & USERS
 // -------------------------------------------------------------
 model Role {
-  id          Int    @id @default(autoincrement())
-  name        String // SuperAdmin, HeadOffice, BranchManager, Cashier, Rider
-  permissions Json // Modular feature toggling JSON
-  users       User[]
+  id             Int               @id @default(autoincrement())
+  name           String // SuperAdmin, HeadOffice, BranchManager, Cashier, Rider
+  permissions    Json // Modular feature toggling JSON (Legacy)
+  users          User[]            // Legacy
+
+  rolePermissions RolePermission[]
+  assignments     UserAssignment[]
+  parentRoles     RoleInheritance[] @relation("ChildRole")
+  childRoles      RoleInheritance[] @relation("ParentRole")
 }
 
 model User {
@@ -160,9 +199,22 @@ model User {
   brand_id           Int?
   store_id           Int?
   role_id            Int
+  
+  // Enterprise Fields
+  emp_id             String?
   name               String
+  email              String?
   phone              String   @unique
+  designation        String?
+  status             String   @default("ACTIVE") // ACTIVE, SUSPENDED, TERMINATED
+  joining_date       DateTime?
+  notes              String?
+
   hashedPin          String // For local credential caching
+  must_change_password Boolean @default(false) // Force password reset on next login
+  password_changed_at DateTime?
+  password_reset_at  DateTime?
+  password_reset_by  Int?
   refreshTokenHash   String? // For secure refresh token rotation
   image_url          String?
   module_permissions Json? // Per-user module access: {pos, kds, rider, admin, website, ...}
@@ -179,6 +231,98 @@ model User {
   started_days   BusinessDay[] @relation("DayStarter")
   closed_days    BusinessDay[] @relation("DayCloser")
   cash_flows     CashFlow[]
+
+  assignments          UserAssignment[] @relation("UserAssignments")
+  managed_assignments  UserAssignment[] @relation("ReportingManager")
+  refresh_tokens       RefreshToken[]
+}
+
+// -------------------------------------------------------------
+// NEW ENTERPRISE RBAC & IDENTITY
+// -------------------------------------------------------------
+// ENTERPRISE SESSION & REFRESH TOKENS
+// -------------------------------------------------------------
+model RefreshToken {
+  id          Int       @id @default(autoincrement())
+  user_id     Int
+  token_hash  String    @unique
+  device_id   String
+  session_id  String
+  is_revoked  Boolean   @default(false)
+  expires_at  DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [user_id], references: [id])
+}
+
+// -------------------------------------------------------------
+
+model PermissionGroup {
+  id          Int          @id @default(autoincrement())
+  module_name String       @unique
+  description String?
+  permissions Permission[]
+}
+
+model Permission {
+  id          Int             @id @default(autoincrement())
+  group_id    Int
+  action      String
+  resource    String
+  description String?
+  
+  group       PermissionGroup @relation(fields: [group_id], references: [id])
+  roles       RolePermission[]
+
+  @@unique([group_id, resource, action]) // Ensures module.resource.action is unique
+}
+
+model RolePermission {
+  id            Int        @id @default(autoincrement())
+  role_id       Int
+  permission_id Int
+  
+  role          Role       @relation(fields: [role_id], references: [id])
+  permission    Permission @relation(fields: [permission_id], references: [id])
+
+  @@unique([role_id, permission_id])
+}
+
+model RoleInheritance {
+  id             Int  @id @default(autoincrement())
+  parent_role_id Int
+  child_role_id  Int
+
+  parent_role    Role @relation("ParentRole", fields: [parent_role_id], references: [id])
+  child_role     Role @relation("ChildRole", fields: [child_role_id], references: [id])
+
+  @@unique([parent_role_id, child_role_id])
+}
+
+model UserAssignment {
+  id                  Int       @id @default(autoincrement())
+  user_id             Int
+  role_id             Int
+  brand_id            Int?
+  store_id            Int?
+  
+  is_primary          Boolean   @default(false)
+  status              String    @default("ACTIVE")
+  effective_from      DateTime  @default(now())
+  effective_to        DateTime?
+  
+  reporting_manager_id Int?
+  created_by          Int?
+  updated_by          Int?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user                User      @relation("UserAssignments", fields: [user_id], references: [id])
+  role                Role      @relation(fields: [role_id], references: [id])
+  brand               Brand?    @relation(fields: [brand_id], references: [id])
+  store               Store?    @relation(fields: [store_id], references: [id])
+  manager             User?     @relation("ReportingManager", fields: [reporting_manager_id], references: [id])
 }
 
 // -------------------------------------------------------------
@@ -208,45 +352,76 @@ model Customer {
 // -------------------------------------------------------------
 // SAAS BILLING & PRICING
 // -------------------------------------------------------------
-model Subscription {
-  id                             Int      @id @default(autoincrement())
-  store_id                       Int      @unique
-  plan_name                      String   @default("FREE")
-  status                         String   @default("ACTIVE")
-  module_auth_enabled            Boolean  @default(true)
-  module_kds_enabled             Boolean  @default(false)
-  module_riders_enabled          Boolean  @default(false)
-  module_loyalty_enabled         Boolean  @default(false)
-  module_tv_board_enabled        Boolean  @default(false)
-  module_online_website_enabled  Boolean  @default(false)
-  module_waiter_terminal_enabled Boolean  @default(false)
-  module_analytics_enabled       Boolean  @default(true)
-  billing_amount                 Float    @default(0) // Dynamic total based on pricing
-  updatedAt                      DateTime @updatedAt
-  createdAt                      DateTime @default(now())
 
-  store Store @relation(fields: [store_id], references: [id])
+model Package {
+  id             Int              @id @default(autoincrement())
+  code           String           @unique // Auto Generated
+  name           String
+  description    String?
+  currency       String           @default("USD")
+  monthly_rental Float
+  billing_cycle  String           @default("MONTHLY") // MONTHLY, QUARTERLY, YEARLY
+  status         String           @default("ACTIVE") // ACTIVE, INACTIVE, ARCHIVED
+  discount_pct   Float            @default(0)
+  total_value    Float
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+  
+  modules        PackageModule[]
+  subscriptions  Subscription[]
+  stores         Store[]
 }
 
-model SaasPackage {
-  id                  Int     @id @default(autoincrement())
-  name                String
-  price               Float   @default(0)
-  has_pos             Boolean @default(true)
-  has_website         Boolean @default(false)
-  has_customer_app    Boolean @default(false)
-  has_rider_app       Boolean @default(false)
-  has_kds             Boolean @default(false)
-  has_tv_board        Boolean @default(false)
-  has_warehouse       Boolean @default(false)
-  has_recipes         Boolean @default(false)
-  has_marketing       Boolean @default(false)
-  has_loyalty         Boolean @default(false)
-  has_accounts        Boolean @default(false)
-  has_manager_app     Boolean @default(false)
-  has_waiter_terminal Boolean @default(false)
+model PackageModule {
+  id         Int     @id @default(autoincrement())
+  package_id Int
+  module_key String  // BASE_POS, INVENTORY, MARKETING, etc.
+  price      Float
+  
+  package    Package @relation(fields: [package_id], references: [id])
+}
 
-  stores Store[]
+model Subscription {
+  id                Int       @id @default(autoincrement())
+  brand_id          Int       @unique
+  package_id        Int
+  rental_amount     Float
+  currency          String
+  billing_cycle     String
+  start_date        DateTime
+  next_billing_date DateTime
+  expiry_date       DateTime
+  grace_period_days Int       @default(5)
+  status            String    @default("ACTIVE") // ACTIVE, EXPIRED, GRACE_PERIOD, SUSPENDED
+  suspend_reason    String?
+  
+  brand             Brand     @relation(fields: [brand_id], references: [id])
+  package           Package   @relation(fields: [package_id], references: [id])
+  payments          SubscriptionPayment[]
+  billing_history   BillingHistory[]
+}
+
+model SubscriptionPayment {
+  id              Int          @id @default(autoincrement())
+  subscription_id Int
+  amount_paid     Float
+  payment_method  String
+  payment_date    DateTime     @default(now())
+  recorded_by     Int          // Super Admin ID
+  reference_number String?
+  remarks         String?
+  
+  subscription    Subscription @relation(fields: [subscription_id], references: [id])
+}
+
+model BillingHistory {
+  id              Int          @id @default(autoincrement())
+  subscription_id Int
+  event_type      String       // RENEWED, UPGRADED, DOWNGRADED, PAUSED, SUSPENDED
+  description     String
+  created_at      DateTime     @default(now())
+  
+  subscription    Subscription @relation(fields: [subscription_id], references: [id])
 }
 
 model SaaSPricing {
@@ -282,6 +457,9 @@ model Category {
   store_id Int // Creator Store (Admin)
   menu_id  Int?
   name     String
+  is_active   Boolean @default(true)
+  sort_order  Int     @default(0)
+  image_url   String?
 
   menu               Menu?               @relation(fields: [menu_id], references: [id])
   assigned_stores    Store[]             @relation("CategoryStores")
@@ -297,19 +475,31 @@ model Product {
   cost       Float
   margin_pct Float // Dynamic margin calculation
   is_active  Boolean  @default(true)
-  sku        String?
-  image_url  String?
-  status     String   @default("APPROVED") // PENDING, APPROVED
-  createdAt  DateTime @default(now())
+  sku            String?
+  barcode        String?
+  image_url      String?
+  description    String?
+  internal_notes String?
+  status         String   @default("APPROVED") // PENDING, APPROVED
+  createdAt      DateTime @default(now())
 
   store              Store               @relation(fields: [store_id], references: [id])
   categories         Category[]          @relation("ProductCategories")
   assigned_stores    Store[]             @relation("ProductStores")
   orderItems         OrderItem[]
-  recipeItems        RecipeIngredient[]
+  recipe_id          Int?
+  recipe             Recipe?             @relation(fields: [recipe_id], references: [id])
   marketingCampaigns MarketingCampaign[] @relation("CampaignProducts")
   variants           ProductVariant[]
   productions        ProductionOrder[]   @relation("TargetProduct")
+  
+  tax_rate             Float    @default(0)
+  kitchen_station      String?  
+  printer_group        String?  
+  kds_group            String?  
+  availability_rule_id Int?
+  availabilityRule     AvailabilityRule? @relation(fields: [availability_rule_id], references: [id])
+  modifierGroups       ProductModifierGroup[]
 }
 
 model ProductVariant {
@@ -317,17 +507,70 @@ model ProductVariant {
   product_id Int
   name       String // e.g. "Small", "Medium"
   price      Float
+  cost       Float?      @default(0)
+  sku        String?
+  barcode    String?
+  recipe_id  Int?
+  recipe     Recipe?     @relation(fields: [recipe_id], references: [id])
   product    Product     @relation(fields: [product_id], references: [id], onDelete: Cascade)
   OrderItem  OrderItem[]
+}
+
+model AvailabilityRule {
+  id          Int       @id @default(autoincrement())
+  store_id    Int
+  name        String    
+  type        String    @default("ALWAYS") 
+  start_time  String?   
+  end_time    String?   
+  days        String?   
+  
+  store       Store     @relation(fields: [store_id], references: [id])
+  products    Product[]
+}
+
+model ModifierGroup {
+  id             Int       @id @default(autoincrement())
+  store_id       Int
+  name           String    
+  is_required    Boolean   @default(false)
+  min_selection  Int       @default(0)
+  max_selection  Int       @default(1)
+  
+  store          Store     @relation(fields: [store_id], references: [id])
+  modifiers      Modifier[]
+  productLinks   ProductModifierGroup[]
+}
+
+model Modifier {
+  id                Int       @id @default(autoincrement())
+  modifier_group_id Int
+  name              String    
+  additional_price  Float     @default(0)
+  
+  modifierGroup     ModifierGroup @relation(fields: [modifier_group_id], references: [id], onDelete: Cascade)
+}
+
+model ProductModifierGroup {
+  product_id        Int
+  modifier_group_id Int
+  
+  product           Product       @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  modifierGroup     ModifierGroup @relation(fields: [modifier_group_id], references: [id], onDelete: Cascade)
+  
+  @@id([product_id, modifier_group_id])
 }
 
 model InventoryItem {
   id            Int    @id @default(autoincrement())
   store_id      Int
   name          String
+  sku           String?
+  barcode       String?
   quantity      Float // Negative inventory soft block allowed
   unit          String // kg, liter, piece
   reorder_level Float  @default(0)
+  max_stock     Float  @default(0)
   unit_price    Float  @default(0) // Added for Recipe Costing
 
   store                    Store                      @relation(fields: [store_id], references: [id])
@@ -344,6 +587,7 @@ model InventoryItem {
   ProductionOrderLine      ProductionOrderLine[]
   ProductionOutput         ProductionOutput[]
   ProductionConsumption    ProductionConsumption[]
+  grnItems                 GoodsReceiptItem[]
 }
 
 model InventoryTransactionLog {
@@ -358,15 +602,44 @@ model InventoryTransactionLog {
   inventoryItem InventoryItem @relation(fields: [inventory_id], references: [id])
 }
 
-// Recipe: ہر product میں کون کون سا raw material لگتا ہے
+model RecipeCategory {
+  id        Int      @id @default(autoincrement())
+  store_id  Int
+  name      String
+  createdAt DateTime @default(now())
+  
+  store   Store    @relation(fields: [store_id], references: [id])
+  recipes Recipe[]
+}
+
+model Recipe {
+  id               Int      @id @default(autoincrement())
+  store_id         Int
+  category_id      Int?
+  name             String
+  yield            Float    @default(1)
+  portion_size     Float?
+  waste_percentage Float    @default(0)
+  prep_time_mins   Int      @default(0)
+  instructions     String?
+  createdAt        DateTime @default(now())
+
+  store       Store            @relation(fields: [store_id], references: [id])
+  category    RecipeCategory?  @relation(fields: [category_id], references: [id])
+  ingredients RecipeIngredient[]
+  products    Product[]
+  productVariants ProductVariant[]
+}
+
+// Recipe: ہر recipe میں کون کون سا raw material لگتا ہے
 model RecipeIngredient {
   id           Int    @id @default(autoincrement())
-  product_id   Int
+  recipe_id    Int
   inventory_id Int
-  quantity     Float // How much of this ingredient per 1 unit of product
+  quantity     Float // How much of this ingredient per 1 unit of recipe
   unit         String
 
-  product   Product       @relation(fields: [product_id], references: [id])
+  recipe    Recipe        @relation(fields: [recipe_id], references: [id], onDelete: Cascade)
   inventory InventoryItem @relation(fields: [inventory_id], references: [id])
 }
 
@@ -443,6 +716,7 @@ model Order {
   // Feedback
   customer_feedback String?
   rating            Int?
+  delivery_info     Json?
 
   store       Store        @relation(fields: [store_id], references: [id])
   customer    Customer?    @relation(fields: [customer_id], references: [id])
@@ -539,42 +813,115 @@ model Vendor {
   name           String
   phone          String?
   email          String?
+  status         String   @default("ACTIVE")
+  contact_person String?
+  address        String?
+  tax_number     String?
+  payment_terms  String?
+  credit_limit   Float    @default(0)
+  notes          String?
   ledger_balance Float    @default(0) // Negative means we owe them
   createdAt      DateTime @default(now())
 
-  store          Store           @relation(fields: [store_id], references: [id])
+  store          Store               @relation(fields: [store_id], references: [id])
   purchaseOrders PurchaseOrder[]
   payables       VendorPayable[]
   credit_terms   VendorCreditTerms[]
   agings         VendorAging[]
+  ledgerEntries  VendorLedgerEntry[]
 }
 
 model PurchaseOrder {
   id             Int       @id @default(autoincrement())
   store_id       Int
   vendor_id      Int
-  status         String    @default("PENDING") // PENDING, DISPATCHED, DELIVERED, CANCELLED
+  po_number      String?   @unique
+  status         String    @default("DRAFT") // DRAFT, PENDING, APPROVED, PARTIALLY_RECEIVED, COMPLETED, CANCELLED
   payment_status String    @default("UNPAID") // UNPAID, PAID, PARTIAL
+  subtotal       Float     @default(0)
+  discount       Float     @default(0)
+  tax            Float     @default(0)
+  shipping_cost  Float     @default(0)
+  other_charges  Float     @default(0)
+  grand_total    Float     @default(0)
   total_amount   Float     @default(0)
+  created_by     Int       @default(1)
+  approved_by    Int?
+  approvedAt     DateTime?
+  notes          String?
+  attachments    String?
   createdAt      DateTime  @default(now())
   deliveredAt    DateTime?
 
-  store  Store               @relation(fields: [store_id], references: [id])
-  vendor Vendor              @relation(fields: [vendor_id], references: [id])
-  items  PurchaseOrderItem[]
+  store         Store               @relation(fields: [store_id], references: [id])
+  vendor        Vendor              @relation(fields: [vendor_id], references: [id])
+  items         PurchaseOrderItem[]
+  goodsReceipts GoodsReceipt[]
 }
 
 model PurchaseOrderItem {
-  id           Int   @id @default(autoincrement())
-  po_id        Int
-  inventory_id Int
-  ordered_qty  Float
-  received_qty Float @default(0)
-  price_unit   Float
+  id            Int    @id @default(autoincrement())
+  po_id         Int
+  inventory_id  Int
+  ordered_qty   Float
+  received_qty  Float  @default(0)
+  remaining_qty Float  @default(0)
+  unit          String @default("pcs")
+  unit_cost     Float  @default(0)
+  price_unit    Float  @default(0)
+  discount      Float  @default(0)
+  tax           Float  @default(0)
+  line_total    Float  @default(0)
 
-  purchaseOrder PurchaseOrder @relation(fields: [po_id], references: [id])
-  inventoryItem InventoryItem @relation(fields: [inventory_id], references: [id])
+  purchaseOrder PurchaseOrder      @relation(fields: [po_id], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem      @relation(fields: [inventory_id], references: [id])
   transitLosses TransitLoss[]
+  grnItems      GoodsReceiptItem[]
+}
+
+model GoodsReceipt {
+  id             Int      @id @default(autoincrement())
+  store_id       Int
+  po_id          Int
+  receipt_number String   @unique
+  invoice_number String?
+  received_by    Int
+  receivedAt     DateTime @default(now())
+  notes          String?
+  attachments    String?
+
+  store         Store              @relation(fields: [store_id], references: [id])
+  purchaseOrder PurchaseOrder      @relation(fields: [po_id], references: [id], onDelete: Cascade)
+  items         GoodsReceiptItem[]
+}
+
+model GoodsReceiptItem {
+  id           Int       @id @default(autoincrement())
+  grn_id       Int
+  po_item_id   Int
+  inventory_id Int
+  received_qty Float
+  rejected_qty Float     @default(0)
+  damaged_qty  Float     @default(0)
+  unit_cost    Float
+  expiry_date  DateTime?
+  batch_number String?
+
+  goodsReceipt  GoodsReceipt      @relation(fields: [grn_id], references: [id], onDelete: Cascade)
+  poItem        PurchaseOrderItem @relation(fields: [po_item_id], references: [id])
+  inventoryItem InventoryItem     @relation(fields: [inventory_id], references: [id])
+}
+
+model VendorLedgerEntry {
+  id            Int      @id @default(autoincrement())
+  vendor_id     Int
+  type          String   // INVOICE, PAYMENT, ADJUSTMENT
+  reference     String?  // e.g. PO-001 or GRN-001
+  amount        Float
+  balance_after Float
+  createdAt     DateTime @default(now())
+
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
 }
 
 model TransitLoss {

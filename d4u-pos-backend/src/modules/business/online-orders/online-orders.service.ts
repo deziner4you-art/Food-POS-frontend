@@ -241,22 +241,22 @@ export class OnlineOrdersService {
             // We look up the product by name and store_id to get its recipe
             const product = await this.prisma.product.findFirst({
               where: { store_id: updated.store_id, name: item.name },
-              include: { recipeItems: true },
+              include: { recipe: { include: { ingredients: true } } },
             });
 
-            if (product && product.recipeItems.length > 0) {
-              for (const recipe of product.recipeItems) {
-                const qtyToDeduct = recipe.quantity * (item.qty || 1);
+            if (product && product.recipe && product.recipe.ingredients.length > 0) {
+              for (const recipeItem of product.recipe.ingredients) {
+                const qtyToDeduct = recipeItem.quantity * (item.qty || 1);
 
                 await this.prisma.inventoryItem.update({
-                  where: { id: recipe.inventory_id },
+                  where: { id: recipeItem.inventory_id },
                   data: { quantity: { decrement: qtyToDeduct } },
                 });
 
                 // Log the deduction
                 await this.prisma.inventoryTransactionLog.create({
                   data: {
-                    inventory_id: recipe.inventory_id,
+                    inventory_id: recipeItem.inventory_id,
                     operation: 'SUBTRACT',
                     amount: qtyToDeduct,
                     reason: `Order #${updated.id} settled`,

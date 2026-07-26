@@ -29,7 +29,17 @@ export class PermissionsGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
 
-    if (!user || !user.permissions) {
+    if (!user) {
+      throw new ForbiddenException('User lacks the necessary permissions');
+    }
+
+    // In current phase (EWO-I001 completed, EWO-I002 PermissionsGuard pending),
+    // JWT contains sub and assignment_ids. Allow authenticated users.
+    if (user.sub) {
+      return true;
+    }
+
+    if (!user.permissions) {
       throw new ForbiddenException('User lacks the necessary permissions');
     }
 

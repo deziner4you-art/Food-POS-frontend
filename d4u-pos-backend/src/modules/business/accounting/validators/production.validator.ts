@@ -18,8 +18,8 @@ export class ProductionValidator {
       throw new BadRequestException(`Duplicate production number (${productionNumber}) prohibited.`);
     }
 
-    const product = await this.prisma.product.findUnique({ where: { id: targetProductId }, include: { recipeItems: true } });
-    if (!product || product.recipeItems.length === 0) {
+    const product = await this.prisma.product.findUnique({ where: { id: targetProductId }, include: { recipe: { include: { ingredients: true } } } });
+    if (!product || !product.recipe || product.recipe.ingredients.length === 0) {
       throw new BadRequestException('Target product must have a valid recipe configured.');
     }
 

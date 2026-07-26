@@ -2,23 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { PackageOpen, Plus, Save, Trash2, ShoppingCart, List } from 'lucide-react';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 import { useAdminContext } from '../context/AdminContext';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+import { apiFetch } from '../utils/api';
 
 export default function InventoryManager() {
   const [activeTab, setActiveTab] = useState<'MATERIALS' | 'PURCHASE'>('MATERIALS');
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { selectedBranchId } = useAdminContext();
-  const getHeaders = () => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
-  });
-  const getAuthHeaderOnly = () => ({
-    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
-  });
+  // Auth headers now handled centrally by apiFetch → utils/api.ts
 
   // Purchase Form State
   const [purchaseForm, setPurchaseForm] = useState({ inventory_id: 0, quantity: 0, total_cost: 0 });
@@ -26,7 +20,7 @@ export default function InventoryManager() {
   const fetchItems = async () => {
     if (!selectedBranchId) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/inventory/items/${selectedBranchId}`, { headers: getAuthHeaderOnly() });
+      const res = await apiFetch(`/inventory/items/${selectedBranchId}`);
       if (res.ok) setItems(await res.json());
     } catch (e) {
       console.error('Failed to fetch inventory', e);
@@ -45,9 +39,8 @@ export default function InventoryManager() {
     if (id === 0) return; // Wait for full creation before syncing
 
     try {
-      await fetch(`${BACKEND_URL}/inventory/items/${id}`, {
+      await apiFetch(`/inventory/items/${id}`, {
         method: 'PATCH',
-        headers: getHeaders(),
         body: JSON.stringify({ [field]: value })
       });
     } catch (e) {
@@ -62,9 +55,8 @@ export default function InventoryManager() {
     }
     const newBlankItem = { name: 'New Material', quantity: 0, unit: 'Count', reorder_level: 0, unit_price: 0 };
     try {
-      const res = await fetch(`${BACKEND_URL}/inventory/items`, {
+      const res = await apiFetch(`/inventory/items`, {
         method: 'POST',
-        headers: getHeaders(),
         body: JSON.stringify({ store_id: selectedBranchId, ...newBlankItem })
       });
       if (res.ok) {
@@ -78,7 +70,7 @@ export default function InventoryManager() {
   const handleDelete = async (id: number) => {
     if (!(await customConfirm('Are you sure you want to delete this raw material?'))) return;
     try {
-      await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
+      await apiFetch(`/inventory/items/${id}`, { method: 'DELETE' });
       setItems(items.filter(i => i.id !== id));
       setSelectedItems(selectedItems.filter(itemId => itemId !== id));
     } catch (e) {
@@ -91,7 +83,7 @@ export default function InventoryManager() {
     if (!(await customConfirm(`Are you sure you want to delete ${selectedItems.length} items?`))) return;
     try {
       for (const id of selectedItems) {
-        await fetch(`${BACKEND_URL}/inventory/items/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
+        await apiFetch(`/inventory/items/${id}`, { method: 'DELETE' });
       }
       setItems(items.filter(i => !selectedItems.includes(i.id)));
       setSelectedItems([]);
@@ -124,9 +116,8 @@ export default function InventoryManager() {
     
     setLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/inventory/purchase`, {
+      const res = await apiFetch(`/inventory/purchase`, {
         method: 'POST',
-        headers: getHeaders(),
         body: JSON.stringify({
           store_id: selectedBranchId,
           inventory_id: purchaseForm.inventory_id,
@@ -175,6 +166,13 @@ export default function InventoryManager() {
                 <PackageOpen className="text-[#8b5cf6]" /> Raw Materials (Inline Editing)
               </h3>
               <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Search materials..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-[#8b5cf6]"
+                />
                 {selectedItems.length > 0 && (
                   <button 
                     onClick={handleBulkDelete}
@@ -212,7 +210,7 @@ export default function InventoryManager() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, index) => (
+                  {items.filter(item => item.name?.toLowerCase().includes(searchQuery.toLowerCase())).map((item, index) => (
                     <tr key={item.id} className={`border-b border-slate-700/50 hover:bg-slate-700/30 group ${selectedItems.includes(item.id) ? 'bg-slate-800' : ''}`}>
                       <td className="p-3 border-r border-slate-700/50 text-center">
                         <input 

@@ -1,29 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, Store, Globe, ShieldCheck, ChevronRight, PackageCheck, Monitor, Utensils, Users, Smartphone, Tv, AlertCircle, Building2, Package, ChefHat, Receipt, Megaphone, LayoutTemplate, Truck, Briefcase } from 'lucide-react';
+import { CheckCircle, Store, Globe, ShieldCheck, ChevronRight, PackageCheck, Monitor, Utensils, Users, Smartphone, Tv, AlertCircle, Building2, Package, ChefHat, Receipt, Megaphone, LayoutTemplate, Truck, Briefcase, Plus } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
-
-type PricingModule = {
-  module_key: string;
-  module_name: string;
-  price_monthly: number;
-  currency: string;
-};
+import { apiFetch } from '../utils/api';
+import { useNavigate } from 'react-router-dom';
 
 export default function SetupWizard() {
-  const { brands } = useAdminContext(); // Re-use the fetched brands
-  const [setupType, setSetupType] = useState<'NEW_BRAND' | 'NEW_BRANCH' | null>(null);
-  const [step, setStep] = useState(0); // Step 0 is choosing setup type
+  const { brands } = useAdminContext();
+  const navigate = useNavigate();
+  const [setupType, setSetupType] = useState<'NEW_BRAND' | 'NEW_BRANCH' | 'PACKAGE_BLOCK' | null>(null);
+  const [step, setStep] = useState(0); 
   const [loading, setLoading] = useState(false);
   const [setupDone, setSetupDone] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [lastActionTime, setLastActionTime] = useState(0);
   
-  // Pricing
-  const [pricingList, setPricingList] = useState<PricingModule[]>([]);
+  const [packages, setPackages] = useState<any[]>([]);
+  const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   
-  // Form State
   const [formData, setFormData] = useState({
     existing_brand_id: '',
     brand_name: '',
@@ -31,7 +24,7 @@ export default function SetupWizard() {
     currency: 'USD',
     vat_percentage: 0,
     is_chain_store: false,
-    menu_strategy: 'UNIFIED', // UNIFIED or INDEPENDENT
+    menu_strategy: 'UNIFIED', 
     admin_name: '',
     admin_phone: '',
     admin_password: '',
@@ -41,79 +34,55 @@ export default function SetupWizard() {
     address: '',
   });
 
-  const [selectedModules, setSelectedModules] = useState<string[]>(['BASE_POS']);
-  const [expandedCategory, setExpandedCategory] = useState<string>('🏪 Store Operations');
-
   useEffect(() => {
-    fetch(`${BACKEND_URL}/subscription/pricing?currency=${formData.currency}`)
+    apiFetch('/subscription/package')
       .then(res => res.json())
-      .then(data => setPricingList(data))
+      .then(data => setPackages(data.filter((p: any) => p.status !== 'ARCHIVED')))
       .catch(console.error);
-  }, [formData.currency]);
+  }, []);
 
-  const handleToggleModule = (key: string) => {
-    if (key === 'BASE_POS') return; // Mandatory
-    setSelectedModules(prev => 
-      prev.includes(key) ? prev.filter(m => m !== key) : [...prev, key]
-    );
-  };
-
-  const calculateTotal = () => {
-    return pricingList
-      .filter(p => selectedModules.includes(p.module_key))
-      .reduce((sum, p) => sum + p.price_monthly, 0);
-  };
-
-  const handleBrandSelect = async (brandId: string) => {
+  const handleBrandSelect = (brandId: string) => {
     setFormData(prev => ({ ...prev, existing_brand_id: brandId }));
-    
-    // Auto-fetch modules for this brand
-    if (brandId) {
-      try {
-        const res = await fetch(`${BACKEND_URL}/subscription/${brandId}`);
-        if (res.ok) {
-          const sub = await res.json();
-          let modules = ['BASE_POS'];
-          if (sub.module_analytics_enabled) modules.push('ANALYTICS');
-          if (sub.module_kds_enabled) modules.push('KDS');
-          if (sub.module_riders_enabled) modules.push('RIDER');
-          if (sub.module_tv_board_enabled) modules.push('TV_BOARD');
-          if (sub.module_online_website_enabled) modules.push('ONLINE_WEBSITE');
-          if (sub.module_loyalty_enabled) modules.push('LOYALTY');
-          setSelectedModules(modules);
-        }
-      } catch (e) {
-        console.error('Failed to fetch existing subscription');
-      }
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (Date.now() - lastActionTime < 800) {
-      return; // Prevent double-clicks or held Enter key
+      return; 
     }
     
-    // Prevent Enter from bypassing steps
-    if (step < 2) {
-      if (setupType === 'NEW_BRANCH' && step === 1 && !formData.existing_brand_id) {
+    // Validation before going to next step
+    if (setupType === 'NEW_BRANCH' && step === 1) {
+      if (!formData.existing_brand_id) {
         setErrorMsg('Please select a brand first.');
         return;
       }
-      setErrorMsg('');
-      setStep(step + 1);
-      setLastActionTime(Date.now());
-      return;
+      // NEW_BRANCH has only 1 step
+    } else if (setupType === 'NEW_BRAND') {
+      if (step === 1 && !formData.brand_name) {
+        setErrorMsg('Brand name is required.');
+        return;
+      }
+      if (step === 2 && !selectedPackageId) {
+        setErrorMsg('Please select a Subscription Package.');
+        return;
+      }
+      if (step < 3) {
+        setErrorMsg('');
+        setStep(step + 1);
+        setLastActionTime(Date.now());
+        return;
+      }
     }
 
     setLoading(true);
     try {
       const payload = {
         is_existing_brand: setupType === 'NEW_BRANCH',
-        existing_brand_id: formData.existing_brand_id,
+        existing_brand_id: Number(formData.existing_brand_id) || undefined,
         brand_name: formData.brand_name,
-        store_location: formData.store_location,
+        store_location: formData.store_location || formData.brand_name,
         currency: formData.currency,
         vat_percentage: Number(formData.vat_percentage),
         is_chain_store: formData.is_chain_store,
@@ -122,8 +91,7 @@ export default function SetupWizard() {
         owner_phone: formData.owner_phone,
         owner_email: formData.owner_email,
         address: formData.address,
-        selected_modules: setupType === 'NEW_BRANCH' ? selectedModules : [],
-        total_billing_amount: setupType === 'NEW_BRANCH' ? calculateTotal() : 0,
+        package_id: setupType === 'NEW_BRAND' ? selectedPackageId : undefined,
         admin_user: setupType === 'NEW_BRAND' ? {
           name: formData.admin_name,
           phone: formData.admin_phone,
@@ -131,482 +99,392 @@ export default function SetupWizard() {
         } : undefined
       };
 
-      const res = await fetch(`${BACKEND_URL}/subscription/onboarding`, {
+      const res = await apiFetch('/subscription/onboarding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setSetupDone(true);
       } else {
-        setErrorMsg(data.message || 'Setup failed. Please try again.');
+        setErrorMsg(data.message || 'Setup failed');
       }
-    } catch (e) {
-      console.error(e);
-      setErrorMsg('Network error. Make sure the backend is running.');
-    } finally {
-      setLoading(false);
+    } catch (e: any) {
+      setErrorMsg('Connection error: ' + e.message);
     }
+    setLoading(false);
   };
 
-  const icons: any = {
-    'BASE_POS': <Store />,
-    'INVENTORY': <Package />,
-    'RECIPES': <ChefHat />,
-    'ACCOUNTING': <Receipt />,
-    'MARKETING': <Megaphone />,
-    'CMS': <LayoutTemplate />,
-    'VENDORS': <Truck />,
-    'HR_PAYROLL': <Briefcase />,
-    'KDS': <Utensils />,
-    'RIDER': <Smartphone />,
-    'TV_BOARD': <Tv />,
-    'ONLINE_WEBSITE': <Globe />,
-    'LOYALTY': <Users />,
-    'ANALYTICS': <Monitor />
-  };
-
-  // ─── SUCCESS SCREEN ───────────────────────────────────────────
   if (setupDone) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-sans">
-        <div className="max-w-lg w-full bg-slate-800/90 backdrop-blur-xl border border-[#4edea3]/30 rounded-3xl shadow-2xl p-12 text-center">
-          <div className="w-24 h-24 rounded-full bg-[#4edea3]/20 flex items-center justify-center mx-auto mb-6 animate-bounce">
-            <CheckCircle className="text-[#4edea3]" size={52} />
-          </div>
-          <h1 className="text-3xl font-black text-white mb-3">🎉 Setup Complete!</h1>
-          <p className="text-slate-400 mb-2">The store has been successfully created.</p>
-          
-          <div className="space-y-3 mt-8">
-            <a
-              href="/admin"
-              className="flex items-center justify-center gap-2 w-full bg-[#ec4899] hover:bg-pink-600 text-white font-black py-4 rounded-xl transition-all shadow-lg shadow-pink-500/20"
-            >
-              <ShieldCheck size={20} /> Go to HQ Admin
-            </a>
-          </div>
+      <div className="p-8 max-w-2xl mx-auto mt-20 animate-fade-in text-center">
+        <div className="w-24 h-24 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-green-500/30">
+          <CheckCircle size={48} />
         </div>
-      </div>
-    );
-  }
-
-  // ─── SETUP TYPE SELECTION ───────────────────────────────────────────
-  if (step === 0) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 animate-fade-in font-sans">
-        <h1 className="text-3xl font-black text-white mb-2">Business Setup</h1>
-        <p className="text-slate-400 mb-8">What would you like to do today?</p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl w-full">
-          {/* New Brand Option */}
-          <div 
-            onClick={() => { setSetupType('NEW_BRAND'); setStep(1); }}
-            className="bg-slate-800 border border-slate-700 hover:border-blue-500 rounded-2xl p-8 cursor-pointer transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] group flex flex-col items-center text-center"
-          >
-            <div className="w-20 h-20 bg-blue-500/20 text-blue-500 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-              <Building2 size={40} />
-            </div>
-            <h2 className="text-2xl font-black text-white mb-2">Create New Brand</h2>
-            <p className="text-slate-400 text-sm">Register a completely new business, set up its first store, and configure its SaaS modules.</p>
-          </div>
-
-          {/* New Branch Option */}
-          <div 
-            onClick={() => { setSetupType('NEW_BRANCH'); setStep(1); }}
-            className="bg-slate-800 border border-slate-700 hover:border-[#ec4899] rounded-2xl p-8 cursor-pointer transition-all hover:shadow-[0_0_20px_rgba(236,72,153,0.3)] group flex flex-col items-center text-center"
-          >
-            <div className="w-20 h-20 bg-pink-500/20 text-pink-500 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-              <Store size={40} />
-            </div>
-            <h2 className="text-2xl font-black text-white mb-2">Add New Branch</h2>
-            <p className="text-slate-400 text-sm">Create a new branch/store under an existing brand and inherit its SaaS services.</p>
-          </div>
-        </div>
-
-        <button onClick={() => window.location.href = '/admin'} className="mt-10 text-slate-500 hover:text-white transition-colors">
-          Cancel and return to HQ
+        <h1 className="text-4xl font-black text-white mb-4">Setup Complete!</h1>
+        <p className="text-slate-400 mb-8">The system has been configured successfully. You can now start using the D4U platform.</p>
+        <button 
+          onClick={() => window.location.href = '/admin'}
+          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg shadow-blue-500/20"
+        >
+          Go to HQ Overview
         </button>
       </div>
     );
   }
 
-  // ─── WIZARD ───────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 relative overflow-hidden font-sans">
-      
-      {/* Background Ornaments */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none"></div>
-      <div className="absolute bottom-0 left-0 w-96 h-96 bg-purple-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+    <div className="p-8 max-w-6xl mx-auto font-sans">
+      <div className="flex items-center gap-4 mb-10 pb-6 border-b border-slate-800">
+        <ShieldCheck className="w-10 h-10 text-blue-500" />
+        <div>
+          <h1 className="text-3xl font-black text-white tracking-tight">Onboarding Wizard</h1>
+          <p className="text-slate-400 text-sm mt-1">Setup new Brands and deploy Branches instantly</p>
+        </div>
+      </div>
 
-      <div className="max-w-7xl w-full bg-slate-800/80 backdrop-blur-xl border border-slate-700/50 rounded-3xl shadow-2xl flex overflow-hidden min-h-[600px] h-[85vh] z-10 animate-fade-in">
-        
-        {/* Left Side: Summary & Billing */}
-        <div className="w-1/4 min-w-[320px] bg-slate-800/50 p-8 border-r border-slate-700/50 flex flex-col">
-          <div className="mb-8">
-            <h1 className="text-2xl font-black text-white flex items-center gap-2">
-              <PackageCheck className={setupType === 'NEW_BRAND' ? 'text-blue-500' : 'text-pink-500'} /> 
-              {setupType === 'NEW_BRAND' ? 'New Brand Setup' : 'New Branch Setup'}
-            </h1>
-            <p className="text-sm text-slate-400 mt-2">Configure your custom restaurant ecosystem.</p>
-          </div>
-
-          <div className="flex-1">
-            <h3 className="text-sm font-bold text-slate-500 mb-4 uppercase tracking-wider">Assigned Services</h3>
-            <p className="text-xs text-slate-500 italic mb-3">Note: Updating services here updates the subscription for the entire brand.</p>
-            
-            <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-              {pricingList.filter(p => selectedModules.includes(p.module_key)).map(p => (
-                <div key={p.module_key} className="flex justify-between items-center text-slate-300 text-sm bg-slate-900/30 p-3 rounded-lg border border-slate-700/30">
-                  <span className="flex items-center gap-2">{icons[p.module_key] || <CheckCircle size={14}/>} {p.module_name}</span>
-                  <span className="font-bold">{p.currency} ${p.price_monthly}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-8 pt-6 border-t border-slate-700/50">
-            <div className="flex justify-between items-end">
-              <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Brand Total Monthly</p>
-                <p className="text-3xl font-black text-white mt-1">
-                  {formData.currency} ${calculateTotal().toFixed(2)}
-                </p>
+      <div className="flex gap-8">
+        {/* Left Side: Setup Type Selection */}
+        <div className="w-80 shrink-0">
+          <div className="bg-slate-900 border border-slate-700/50 rounded-3xl p-3 shadow-xl">
+            <button
+              onClick={() => { setSetupType('NEW_BRAND'); setStep(1); setFormData({...formData, is_chain_store: true}); }}
+              className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all mb-2 ${setupType === 'NEW_BRAND' ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'hover:bg-slate-800 text-slate-300'}`}
+            >
+              <div className={`p-3 rounded-xl ${setupType === 'NEW_BRAND' ? 'bg-white/20' : 'bg-slate-800'}`}>
+                <Globe size={24} />
               </div>
-            </div>
+              <div className="text-left">
+                <h3 className="font-bold text-lg leading-tight">New Brand</h3>
+                <p className={`text-xs mt-1 ${setupType === 'NEW_BRAND' ? 'text-blue-100' : 'text-slate-500'}`}>HQ + Multiple Branches</p>
+              </div>
+            </button>
+            <button 
+              onClick={() => {
+                setSetupType('NEW_BRANCH'); 
+                setStep(1); 
+                setErrorMsg('');
+              }}
+              className={`w-full text-left p-4 rounded-2xl flex items-center gap-4 transition-all border-2 mb-3 ${setupType === 'NEW_BRANCH' ? 'bg-pink-500/10 border-pink-500' : 'border-transparent hover:bg-slate-800'}`}
+            >
+              <div className={`p-3 rounded-xl ${setupType === 'NEW_BRANCH' ? 'bg-pink-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                <Building2 size={24} />
+              </div>
+              <div className="text-left">
+                <h3 className="font-bold text-lg leading-tight">Add Branch</h3>
+                <p className={`text-xs mt-1 ${setupType === 'NEW_BRANCH' ? 'text-pink-100' : 'text-slate-500'}`}>Add store to existing Brand</p>
+              </div>
+            </button>
           </div>
+          
+          {step > 0 && (
+            <div className="mt-8 space-y-4 px-4">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Progress</h4>
+              
+              {setupType === 'NEW_BRAND' && (
+                <>
+                  <div className={`flex items-center gap-3 font-bold text-sm ${step >= 1 ? 'text-blue-500' : 'text-slate-600'}`}>
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs border-2 ${step >= 1 ? 'border-blue-500' : 'border-slate-700'}`}>1</div>
+                    Brand Info
+                  </div>
+                  <div className={`flex items-center gap-3 font-bold text-sm ${step >= 2 ? 'text-blue-500' : 'text-slate-600'}`}>
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs border-2 ${step >= 2 ? 'border-blue-500' : 'border-slate-700'}`}>2</div>
+                    Subscription Package
+                  </div>
+                  <div className={`flex items-center gap-3 font-bold text-sm ${step >= 3 ? 'text-blue-500' : 'text-slate-600'}`}>
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs border-2 ${step >= 3 ? 'border-blue-500' : 'border-slate-700'}`}>3</div>
+                    Admin Account
+                  </div>
+                </>
+              )}
+
+              {setupType === 'NEW_BRANCH' && (
+                <div className={`flex items-center gap-3 font-bold text-sm ${step >= 1 ? 'text-pink-500' : 'text-slate-600'}`}>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs border-2 ${step >= 1 ? 'border-pink-500' : 'border-slate-700'}`}>1</div>
+                  Branch Config
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Right Side: Wizard Forms */}
-        <div className="flex-1 p-10 flex flex-col relative overflow-hidden">
-          
-          <button onClick={() => setStep(0)} className="absolute top-6 right-6 text-slate-500 hover:text-white text-sm font-bold">
-            Cancel
-          </button>
-
-          {/* Stepper */}
-          <div className="flex items-center gap-4 mb-10">
-            <div className={`flex items-center gap-2 font-bold text-sm ${step >= 1 ? 'text-blue-400' : 'text-slate-500'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${step >= 1 ? 'border-blue-500 bg-blue-500/20' : 'border-slate-600'}`}>1</div>
-              Config
+        {/* Right Side: Form Content */}
+        <div className="flex-1 bg-slate-900 border border-slate-700/50 rounded-3xl p-8 shadow-2xl relative min-h-[500px] flex flex-col">
+          {!setupType && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 p-8 text-center animate-fade-in">
+              <PackageCheck className="w-20 h-20 mb-6 text-slate-800" />
+              <h2 className="text-2xl font-bold mb-2">Select an Onboarding Flow</h2>
+              <p className="max-w-xs text-sm">Choose whether you are deploying a completely new Brand or just adding another branch to an existing one.</p>
             </div>
-            <div className="h-[2px] w-8 bg-slate-700"></div>
-            <div className={`flex items-center gap-2 font-bold text-sm ${step >= 2 ? 'text-blue-400' : 'text-slate-500'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${step >= 2 ? 'border-blue-500 bg-blue-500/20' : 'border-slate-600'}`}>2</div>
-              {setupType === 'NEW_BRAND' ? 'Account' : 'Modules'}
-            </div>
-          </div>
+          )}
 
-          {/* Form Content */}
-          <form className="flex-1 flex flex-col" onSubmit={handleSubmit}>
-            
-            {step === 1 && (
-              <div className="animate-fade-in flex-1 max-w-md space-y-6">
-                <h2 className="text-2xl font-black text-white mb-2">Store Configuration</h2>
-                
-                {setupType === 'NEW_BRANCH' ? (
-                  // NEW BRANCH FIELDS
-                  <div className="space-y-5">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Select Existing Brand</label>
-                      <select 
-                        required
-                        value={formData.existing_brand_id}
-                        onChange={e => handleBrandSelect(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-pink-500 outline-none"
-                      >
-                        <option value="" disabled>-- Choose a Brand --</option>
-                        {brands.map(b => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Branch Location / Name</label>
-                      <input 
-                        required
-                        type="text" 
-                        value={formData.store_location}
-                        onChange={e => setFormData({...formData, store_location: e.target.value})}
-                        placeholder="e.g. DHA Phase 6"
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-pink-500 outline-none"
-                      />
-                    </div>
-
-                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" checked={formData.is_chain_store} onChange={e => setFormData({...formData, is_chain_store: e.target.checked})} className="w-5 h-5 accent-emerald-500" />
-                        <div>
-                          <p className="font-bold text-emerald-400">Make this a Chain Store</p>
-                          <p className="text-xs text-emerald-400/70">Enable centralized menu syncing capabilities.</p>
-                        </div>
-                      </label>
-                    </div>
-
-                    {formData.is_chain_store && (
-                      <div className="mt-4 p-4 border border-slate-700 rounded-xl">
-                        <p className="text-sm font-bold text-slate-300 mb-3">Menu Strategy for Chain Stores:</p>
-                        <div className="space-y-3">
-                          <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="radio" name="menu_strategy" value="UNIFIED" checked={formData.menu_strategy === 'UNIFIED'} onChange={e => setFormData({...formData, menu_strategy: e.target.value})} className="accent-blue-500" />
-                            <span className="text-sm text-slate-300">Chain store with <strong className="text-white">Same Menu</strong> everywhere</span>
-                          </label>
-                          <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="radio" name="menu_strategy" value="INDEPENDENT" checked={formData.menu_strategy === 'INDEPENDENT'} onChange={e => setFormData({...formData, menu_strategy: e.target.value})} className="accent-blue-500" />
-                            <span className="text-sm text-slate-300">Chain store with <strong className="text-white">Different Menu</strong> each store</span>
-                          </label>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  // NEW BRAND FIELDS
-                  <div className="space-y-5">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">New Brand Name</label>
-                      <input 
-                        required
-                        type="text" 
-                        value={formData.brand_name}
-                        onChange={e => setFormData({...formData, brand_name: e.target.value})}
-                        placeholder="e.g. Burger King"
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
-                      />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
+          {setupType && (
+            <form className="flex-1 flex flex-col" onSubmit={handleSubmit}>
+              
+              {/* BRAND / BRANCH INFO STEP */}
+              {step === 1 && setupType !== 'PACKAGE_BLOCK' && (
+                <div className="animate-fade-in flex-1 max-w-md space-y-6">
+                  <h2 className="text-2xl font-black text-white mb-2">{setupType === 'NEW_BRANCH' ? 'Branch Configuration' : 'Brand Information'}</h2>
+                  
+                  {setupType === 'NEW_BRANCH' ? (
+                    <div className="space-y-5">
                       <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Currency</label>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Select Existing Brand</label>
                         <select 
-                          value={formData.currency}
-                          onChange={e => setFormData({...formData, currency: e.target.value})}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                          required
+                          value={formData.existing_brand_id}
+                          onChange={e => handleBrandSelect(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-pink-500 outline-none"
                         >
-                          <option value="USD">USD ($)</option>
-                          <option value="PKR">PKR (Rs.)</option>
-                          <option value="AED">AED (د.إ)</option>
-                          <option value="GBP">GBP (£)</option>
-                          <option value="EUR">EUR (€)</option>
+                          <option value="" disabled>-- Choose a Brand --</option>
+                          {brands.map(b => (
+                            <option key={b.id} value={b.id}>{b.name}</option>
+                          ))}
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">VAT / Tax %</label>
-                        <div className="relative">
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Branch Location / Name</label>
+                        <input 
+                          required
+                          type="text" 
+                          value={formData.store_location}
+                          onChange={e => setFormData({...formData, store_location: e.target.value})}
+                          placeholder="e.g. DHA Phase 6"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-pink-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">New Brand Name</label>
+                        <input 
+                          required
+                          type="text" 
+                          value={formData.brand_name}
+                          onChange={e => setFormData({...formData, brand_name: e.target.value})}
+                          placeholder="e.g. Burger King"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Currency</label>
+                          <select 
+                            value={formData.currency}
+                            onChange={e => setFormData({...formData, currency: e.target.value})}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                          >
+                            <option value="USD">USD ($)</option>
+                            <option value="PKR">PKR (Rs.)</option>
+                            <option value="AED">AED (د.إ)</option>
+                            <option value="GBP">GBP (£)</option>
+                            <option value="EUR">EUR (€)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">VAT / Tax %</label>
+                          <div className="relative">
+                            <input 
+                              required
+                              type="number" 
+                              min="0" max="100"
+                              value={formData.vat_percentage}
+                              onChange={e => setFormData({...formData, vat_percentage: Number(e.target.value)})}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                            />
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">%</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Owner Name</label>
                           <input 
-                            required
-                            type="number" 
-                            min="0" max="100"
-                            value={formData.vat_percentage}
-                            onChange={e => setFormData({...formData, vat_percentage: Number(e.target.value)})}
+                            type="text" 
+                            value={formData.owner_name}
+                            onChange={e => setFormData({...formData, owner_name: e.target.value})}
+                            placeholder="e.g. John Doe"
                             className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
                           />
-                          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">%</span>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Owner Mobile</label>
+                          <input 
+                            type="text" 
+                            value={formData.owner_phone}
+                            onChange={e => setFormData({...formData, owner_phone: e.target.value})}
+                            placeholder="0300..."
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Business Email</label>
+                          <input 
+                            type="email" 
+                            value={formData.owner_email}
+                            onChange={e => setFormData({...formData, owner_email: e.target.value})}
+                            placeholder="business@example.com"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">HQ Address / City</label>
+                          <input 
+                            type="text" 
+                            value={formData.address}
+                            onChange={e => setFormData({...formData, address: e.target.value})}
+                            placeholder="e.g. DHA, Lahore"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                          />
                         </div>
                       </div>
                     </div>
+                  )}
+                </div>
+              )}
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Owner Name</label>
-                        <input 
-                          type="text" 
-                          value={formData.owner_name}
-                          onChange={e => setFormData({...formData, owner_name: e.target.value})}
-                          placeholder="e.g. John Doe"
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
-                        />
+              {/* PACKAGE SELECTION STEP */}
+              {step === 2 && setupType === 'NEW_BRAND' && (
+                <div className="animate-fade-in flex-1 flex flex-col min-h-0">
+                  <h2 className="text-2xl font-black text-white mb-2">Select Subscription Package</h2>
+                  <p className="text-slate-400 mb-6 text-sm">Choose the SaaS plan to assign to this brand.</p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 flex-1 overflow-y-auto pr-4 custom-scrollbar pb-6">
+                    {packages.length === 0 && <p className="text-slate-500">No packages available. Please create one in SuperAdmin.</p>}
+                    
+                    {packages.map(pkg => (
+                      <div 
+                        key={pkg.id}
+                        onClick={() => setSelectedPackageId(pkg.id)}
+                        className={`p-5 rounded-2xl border-2 cursor-pointer transition-all ${selectedPackageId === pkg.id ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 hover:border-slate-500 bg-slate-800/30'}`}
+                      >
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h4 className="font-bold text-white text-lg">{pkg.name}</h4>
+                            <p className="text-xs text-slate-400 mt-1">{pkg.description || 'Standard Plan'}</p>
+                          </div>
+                          {selectedPackageId === pkg.id && <CheckCircle className="text-blue-500" size={24} />}
+                        </div>
+                        <div className="mb-4">
+                          <span className="text-2xl font-black text-white">{pkg.currency} {pkg.monthly_rental}</span>
+                          <span className="text-slate-400 text-xs ml-1">/ {pkg.billing_cycle.toLowerCase()}</span>
+                        </div>
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-700 pb-1">Included Modules</div>
+                        <ul className="space-y-2">
+                          {pkg.modules?.map((m: any) => (
+                            <li key={m.module_key} className="flex items-center gap-2 text-sm text-slate-300">
+                              <CheckCircle size={14} className="text-emerald-500" />
+                              {m.module_key}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Owner Mobile</label>
-                        <input 
-                          type="text" 
-                          value={formData.owner_phone}
-                          onChange={e => setFormData({...formData, owner_phone: e.target.value})}
-                          placeholder="0300..."
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Business Email</label>
-                        <input 
-                          type="email" 
-                          value={formData.owner_email}
-                          onChange={e => setFormData({...formData, owner_email: e.target.value})}
-                          placeholder="business@example.com"
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">HQ Address / City</label>
-                        <input 
-                          type="text" 
-                          value={formData.address}
-                          onChange={e => setFormData({...formData, address: e.target.value})}
-                          placeholder="e.g. DHA, Lahore"
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
-                        />
-                      </div>
-                    </div>
-
+                    ))}
                   </div>
+                </div>
+              )}
+
+              {/* ADMIN ACCOUNT STEP */}
+              {step === 3 && setupType === 'NEW_BRAND' && (
+                <div className="animate-fade-in flex-1 max-w-md">
+                  <h2 className="text-2xl font-black text-white mb-2">Create Admin Account</h2>
+                  <p className="text-slate-400 mb-8 text-sm">This will be your Head Office master login.</p>
+                  
+                  <div className="space-y-5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Full Name</label>
+                      <input 
+                        required
+                        type="text" 
+                        value={formData.admin_name}
+                        onChange={e => setFormData({...formData, admin_name: e.target.value})}
+                        placeholder="John Doe"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Phone Number</label>
+                      <input 
+                        required
+                        type="text" 
+                        value={formData.admin_phone}
+                        onChange={e => setFormData({...formData, admin_phone: e.target.value})}
+                        placeholder="03000000000"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Secure PIN / Password</label>
+                      <input 
+                        required
+                        type="password" 
+                        value={formData.admin_password}
+                        onChange={e => setFormData({...formData, admin_password: e.target.value})}
+                        placeholder="****"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {setupType === 'PACKAGE_BLOCK' && (
+                <div className="animate-fade-in flex-1 flex flex-col items-center justify-center text-center">
+                  <AlertCircle size={64} className="text-amber-500 mb-6" />
+                  <h2 className="text-2xl font-black text-white mb-4">No Subscription Package Available</h2>
+                  <p className="text-slate-400 mb-8 max-w-sm">You must create at least one SaaS Subscription Package before creating a brand.</p>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      sessionStorage.setItem('d4u_return_to_setup', 'true');
+                      navigate('/saas');
+                    }}
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-900 px-8 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 shadow-lg shadow-amber-500/20"
+                  >
+                    <Plus size={20} /> Create Package Now
+                  </button>
+                </div>
+              )}
+
+              {errorMsg && (
+                <div className="mt-4 flex items-center gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+                  <AlertCircle className="text-red-400 shrink-0" size={18} />
+                  <p className="text-red-400 text-sm font-medium">{errorMsg}</p>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center bg-slate-900 border-t border-slate-700/50 p-6 rounded-b-3xl shrink-0 mt-6">
+                {setupType === 'PACKAGE_BLOCK' ? (
+                  <div className="w-full flex justify-end"></div>
+                ) : (
+                  <>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        if (step > 1) { setStep(step - 1); setErrorMsg(''); }
+                        else setSetupType(null);
+                      }}
+                      className="text-slate-400 font-bold hover:text-white px-4 py-2 transition-colors"
+                    >
+                      Back
+                    </button>
+                    <button type="submit" disabled={loading} className={`flex items-center gap-2 px-8 py-3 bg-[#4edea3] hover:bg-[#4edea3]/90 text-slate-900 rounded-xl font-black transition-all shadow-lg shadow-[#4edea3]/20 disabled:opacity-50 ${setupType === 'NEW_BRANCH' ? 'mt-4' : ''}`}>
+                      {loading ? 'Processing...' : 'Complete Setup & Deploy'} <ShieldCheck size={18} />
+                    </button>
+                  </>
                 )}
               </div>
-            )}
 
-            {step === 2 && setupType === 'NEW_BRANCH' && (
-              <div className="animate-fade-in flex-1 flex flex-col min-h-0">
-                <h2 className="text-2xl font-black text-white mb-2">Select Services</h2>
-                <p className="text-slate-400 mb-6 text-sm">
-                  {setupType === 'NEW_BRANCH' 
-                    ? "These services will apply to the entire Brand. Unchecking a service will remove it from all stores."
-                    : "Pick the features you need to run your business."}
-                </p>
-                
-                <div className="space-y-4 flex-1 overflow-y-auto pr-4 custom-scrollbar pb-6">
-                  {[
-                    {
-                      title: '🏪 Store Operations',
-                      keys: ['BASE_POS', 'INVENTORY', 'RECIPES', 'KDS', 'VENDORS', 'RIDER', 'TV_BOARD']
-                    },
-                    {
-                      title: '💰 Finance & Accounting',
-                      keys: ['ACCOUNTING']
-                    },
-                    {
-                      title: '📈 Sales & Marketing',
-                      keys: ['MARKETING', 'LOYALTY', 'ONLINE_WEBSITE']
-                    },
-                    {
-                      title: '🏢 Business Management',
-                      keys: ['CMS', 'HR_PAYROLL', 'ANALYTICS']
-                    }
-                  ].map(category => {
-                    const categoryModules = pricingList.filter(m => category.keys.includes(m.module_key));
-                    if (categoryModules.length === 0) return null;
-                    const isExpanded = expandedCategory === category.title;
-                    return (
-                      <div key={category.title} className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
-                        <div 
-                          className="p-4 cursor-pointer hover:bg-slate-800 transition-colors flex justify-between items-center"
-                          onClick={() => setExpandedCategory(isExpanded ? '' : category.title)}
-                        >
-                          <h3 className="text-sm font-black text-white tracking-wider uppercase">{category.title}</h3>
-                          <div className={`transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
-                            <ChevronRight size={20} className="text-slate-400" />
-                          </div>
-                        </div>
-                        {isExpanded && (
-                          <div className="p-4 pt-0 border-t border-slate-700/50 mt-2 animate-fade-in">
-                            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
-                              {categoryModules.map(module => (
-                                <div 
-                                  key={module.module_key}
-                                  onClick={() => handleToggleModule(module.module_key)}
-                                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedModules.includes(module.module_key) ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 hover:border-slate-500 bg-slate-800/30'} ${module.module_key === 'BASE_POS' ? 'opacity-70 pointer-events-none' : ''}`}
-                                >
-                                  <div className="flex justify-between items-start mb-2">
-                                    <div className={`p-2 rounded-lg ${selectedModules.includes(module.module_key) ? 'bg-blue-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
-                                      {icons[module.module_key] || <Store size={20} />}
-                                    </div>
-                                    {selectedModules.includes(module.module_key) && <CheckCircle className="text-blue-500" size={20} />}
-                                  </div>
-                                  <h4 className="font-bold text-white text-sm">{module.module_name}</h4>
-                                  <p className="text-xs font-bold text-slate-400 mt-1">{module.currency} ${module.price_monthly} / mo</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {step === 2 && setupType === 'NEW_BRAND' && (
-              <div className="animate-fade-in flex-1 max-w-md">
-                <h2 className="text-2xl font-black text-white mb-2">Create Admin Account</h2>
-                <p className="text-slate-400 mb-8 text-sm">This will be your Head Office master login.</p>
-                
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Full Name</label>
-                    <input 
-                      required
-                      type="text" 
-                      value={formData.admin_name}
-                      onChange={e => setFormData({...formData, admin_name: e.target.value})}
-                      placeholder="John Doe"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Phone Number</label>
-                    <input 
-                      required
-                      type="text" 
-                      value={formData.admin_phone}
-                      onChange={e => setFormData({...formData, admin_phone: e.target.value})}
-                      placeholder="03000000000"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Secure PIN / Password</label>
-                    <input 
-                      required
-                      type="password" 
-                      value={formData.admin_password}
-                      onChange={e => setFormData({...formData, admin_password: e.target.value})}
-                      placeholder="****"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-blue-500 outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Error Message */}
-            {errorMsg && (
-              <div className="mt-4 flex items-center gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
-                <AlertCircle className="text-red-400 shrink-0" size={18} />
-                <p className="text-red-400 text-sm font-medium">{errorMsg}</p>
-              </div>
-            )}
-
-            {/* Navigation Buttons */}
-            <div className="mt-6 flex justify-end gap-3 pt-6 border-t border-slate-700/50">
-              {step > 1 && (
-                <button type="button" onClick={() => setStep(step - 1)} className="px-6 py-3 rounded-xl font-bold text-slate-300 hover:bg-slate-800 transition-colors">
-                  Back
-                </button>
-              )}
-              {(step < 2) ? (
-                <button type="button" onClick={() => {
-                  if (Date.now() - lastActionTime < 800) return; // Prevent double click
-                  if (setupType === 'NEW_BRANCH' && step === 1 && !formData.existing_brand_id) {
-                    setErrorMsg('Please select a brand first.');
-                    return;
-                  }
-                  setErrorMsg('');
-                  setStep(step + 1);
-                  setLastActionTime(Date.now());
-                }} className="flex items-center gap-2 px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20">
-                  Next <ChevronRight size={18} />
-                </button>
-              ) : (
-                <button type="submit" disabled={loading} className="flex items-center gap-2 px-8 py-3 bg-[#4edea3] hover:bg-[#4edea3]/90 text-slate-900 rounded-xl font-black transition-all shadow-lg shadow-[#4edea3]/20 disabled:opacity-50">
-                  {loading ? 'Processing...' : 'Complete Setup & Deploy'} <ShieldCheck size={18} />
-                </button>
-              )}
-            </div>
-
-          </form>
+            </form>
+          )}
         </div>
       </div>
     </div>

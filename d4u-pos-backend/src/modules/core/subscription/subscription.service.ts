@@ -1,334 +1,300 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { CreatePackageDto, OnboardClientDto } from './dto';
+import { SystemRoles } from '../../../common/enums/roles.enum';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class SubscriptionService {
   constructor(private prisma: PrismaService) {}
 
-  async getPricing(currency: string = 'USD') {
-    const pricing = await this.prisma.saaSPricing.findMany({
-      where: { currency },
-    });
-    // Default mock pricing if empty
-    if (pricing.length === 0) {
-      return [
-        {
-          module_key: 'BASE_POS',
-          module_name: 'Base POS System',
-          price_monthly: currency === 'PKR' ? 14000 : currency === 'AED' ? 180 : currency === 'GBP' ? 40 : currency === 'SAR' ? 185 : 50,
-          currency: currency,
-        },
-        {
-          module_key: 'INVENTORY',
-          module_name: 'Advanced Inventory',
-          price_monthly: currency === 'PKR' ? 5600 : currency === 'AED' ? 75 : currency === 'GBP' ? 16 : currency === 'SAR' ? 75 : 20,
-          currency: currency,
-        },
-        {
-          module_key: 'RECIPES',
-          module_name: 'Recipe Costing & Production',
-          price_monthly: currency === 'PKR' ? 4200 : currency === 'AED' ? 55 : currency === 'GBP' ? 12 : currency === 'SAR' ? 55 : 15,
-          currency: currency,
-        },
-        {
-          module_key: 'ACCOUNTING',
-          module_name: 'Accounting & Cash Flow',
-          price_monthly: currency === 'PKR' ? 7000 : currency === 'AED' ? 90 : currency === 'GBP' ? 20 : currency === 'SAR' ? 95 : 25,
-          currency: currency,
-        },
-        {
-          module_key: 'MARKETING',
-          module_name: 'Marketing Hub & Campaigns',
-          price_monthly: currency === 'PKR' ? 4200 : currency === 'AED' ? 55 : currency === 'GBP' ? 12 : currency === 'SAR' ? 55 : 15,
-          currency: currency,
-        },
-        {
-          module_key: 'CMS',
-          module_name: 'Website CMS Builder',
-          price_monthly: currency === 'PKR' ? 2800 : currency === 'AED' ? 35 : currency === 'GBP' ? 8 : currency === 'SAR' ? 35 : 10,
-          currency: currency,
-        },
-        {
-          module_key: 'VENDORS',
-          module_name: 'Vendor Management',
-          price_monthly: currency === 'PKR' ? 2800 : currency === 'AED' ? 35 : currency === 'GBP' ? 8 : currency === 'SAR' ? 35 : 10,
-          currency: currency,
-        },
-        {
-          module_key: 'HR_PAYROLL',
-          module_name: 'Staff HR & Payroll',
-          price_monthly: currency === 'PKR' ? 5600 : currency === 'AED' ? 75 : currency === 'GBP' ? 16 : currency === 'SAR' ? 75 : 20,
-          currency: currency,
-        },
-        {
-          module_key: 'KDS',
-          module_name: 'Kitchen Display System',
-          price_monthly: currency === 'PKR' ? 4200 : currency === 'AED' ? 55 : currency === 'GBP' ? 12 : currency === 'SAR' ? 55 : 15,
-          currency: currency,
-        },
-        {
-          module_key: 'RIDER',
-          module_name: 'Delivery Rider App',
-          price_monthly: currency === 'PKR' ? 2800 : currency === 'AED' ? 35 : currency === 'GBP' ? 8 : currency === 'SAR' ? 35 : 10,
-          currency: currency,
-        },
-        {
-          module_key: 'TV_BOARD',
-          module_name: 'Customer TV Board',
-          price_monthly: currency === 'PKR' ? 2800 : currency === 'AED' ? 35 : currency === 'GBP' ? 8 : currency === 'SAR' ? 35 : 10,
-          currency: currency,
-        },
-        {
-          module_key: 'ONLINE_WEBSITE',
-          module_name: 'Online Ordering Website',
-          price_monthly: currency === 'PKR' ? 7000 : currency === 'AED' ? 90 : currency === 'GBP' ? 20 : currency === 'SAR' ? 95 : 25,
-          currency: currency,
-        },
-        {
-          module_key: 'LOYALTY',
-          module_name: 'Loyalty & Rewards',
-          price_monthly: currency === 'PKR' ? 1400 : currency === 'AED' ? 20 : currency === 'GBP' ? 4 : currency === 'SAR' ? 20 : 5,
-          currency: currency,
-        },
-        {
-          module_key: 'ANALYTICS',
-          module_name: 'Advanced Analytics (Owner App)',
-          price_monthly: currency === 'PKR' ? 5600 : currency === 'AED' ? 75 : currency === 'GBP' ? 16 : currency === 'SAR' ? 75 : 20,
-          currency: currency,
-        }
-      ];
-    }
-    return pricing;
-  }
-
-  async getAllPricingRows() {
-    return this.prisma.saaSPricing.findMany({
-      orderBy: { module_key: 'asc' }
+  // -------------------------------------------------------------
+  // PACKAGES
+  // -------------------------------------------------------------
+  async getPackages() {
+    return this.prisma.package.findMany({
+      include: { modules: true },
+      orderBy: { created_at: 'desc' }
     });
   }
 
-  async createPricing(data: any) {
-    return this.prisma.saaSPricing.create({
+  async createPackage(data: CreatePackageDto) {
+    const total_value = data.modules.reduce((sum, mod) => sum + mod.price, 0);
+    const discount_pct = total_value > 0 ? ((total_value - data.monthly_rental) / total_value) * 100 : 0;
+
+    return this.prisma.package.create({
       data: {
-        module_key: data.module_key,
-        module_name: data.module_name,
-        price_monthly: Number(data.price_monthly),
-        currency: data.currency || 'USD'
-      }
+        code: `PKG-${Date.now()}`,
+        name: data.name,
+        description: data.description,
+        currency: data.currency,
+        monthly_rental: data.monthly_rental,
+        billing_cycle: data.billing_cycle,
+        total_value,
+        discount_pct,
+        modules: {
+          create: data.modules.map(m => ({ module_key: m.module_key, price: m.price }))
+        }
+      },
+      include: { modules: true }
     });
   }
 
-  async updatePricing(id: number, data: any) {
-    return this.prisma.saaSPricing.update({
+  async updatePackage(id: number, data: CreatePackageDto) {
+    const total_value = data.modules.reduce((sum, mod) => sum + mod.price, 0);
+    const discount_pct = total_value > 0 ? ((total_value - data.monthly_rental) / total_value) * 100 : 0;
+
+    // Delete old modules
+    await this.prisma.packageModule.deleteMany({ where: { package_id: id } });
+
+    return this.prisma.package.update({
       where: { id },
       data: {
-        ...(data.module_name && { module_name: data.module_name }),
-        ...(data.price_monthly !== undefined && { price_monthly: Number(data.price_monthly) })
-      }
+        name: data.name,
+        description: data.description,
+        currency: data.currency,
+        monthly_rental: data.monthly_rental,
+        billing_cycle: data.billing_cycle,
+        total_value,
+        discount_pct,
+        modules: {
+          create: data.modules.map(m => ({ module_key: m.module_key, price: m.price }))
+        }
+      },
+      include: { modules: true }
     });
   }
 
-  async deletePricing(id: number) {
-    return this.prisma.saaSPricing.delete({
-      where: { id }
+  async archivePackage(id: number) {
+    const subs = await this.prisma.subscription.count({ where: { package_id: id, status: 'ACTIVE' } });
+    if (subs > 0) throw new BadRequestException('Cannot archive package assigned to active subscriptions');
+
+    return this.prisma.package.update({
+      where: { id },
+      data: { status: 'ARCHIVED' }
     });
   }
 
-  async onboardClient(body: any) {
-    const {
-      is_existing_brand,
-      existing_brand_id,
-      brand_name,
-      currency,
-      vat_percentage,
-      selected_modules,
-      total_billing_amount,
-      admin_user,
-      is_chain_store,
-      menu_strategy,
-      store_location,
-      owner_name,
-      owner_phone,
-      owner_email,
-      address,
-      map_pin,
-      website,
-      email,
-      landline,
-      whatsapp,
-      order_no_prefix,
-    } = body;
+  // -------------------------------------------------------------
+  // SAAS PRICING (A LA CARTE)
+  // -------------------------------------------------------------
+  async getPricing(currency: string) {
+    const prices = await this.prisma.saaSPricing.findMany({
+      where: { currency }
+    });
+    if (prices.length > 0) return prices;
 
-    let brand;
-    if (is_existing_brand && existing_brand_id) {
-      const parsedBrandId = Number(existing_brand_id);
-      if (isNaN(parsedBrandId)) throw new Error('Invalid Brand ID provided');
-      
-      brand = await this.prisma.brand.findUnique({
-        where: { id: parsedBrandId },
-      });
-      if (!brand) throw new Error('Brand not found');
+    const defaultModules = [
+      { name: 'Vendor Management', key: 'VENDORS' },
+      { name: 'Loyalty & Rewards', key: 'LOYALTY' },
+      { name: 'Base POS System', key: 'BASE_POS' },
+      { name: 'Accounting & Cash Flow', key: 'ACCOUNTING' },
+      { name: 'Advanced Analytics (Owner App)', key: 'ANALYTICS' },
+      { name: 'Website CMS Builder', key: 'CMS' },
+      { name: 'Staff HR & Payroll', key: 'HR_PAYROLL' },
+      { name: 'Advanced Inventory', key: 'INVENTORY' },
+      { name: 'Kitchen Display System', key: 'KDS' },
+      { name: 'Marketing Hub & Campaigns', key: 'MARKETING' },
+      { name: 'Online Ordering Website', key: 'ONLINE_WEBSITE' },
+      { name: 'Recipe Costing & Production', key: 'RECIPES' },
+      { name: 'Delivery Rider App', key: 'RIDER' },
+      { name: 'Customer TV Board', key: 'TV_BOARD' }
+    ];
 
-      // Update chain store settings if adding a branch makes it a chain
-      if (is_chain_store) {
-        await this.prisma.brand.update({
-          where: { id: brand.id },
-          data: { is_chain_store, menu_strategy: menu_strategy || 'UNIFIED' },
+    await this.prisma.saaSPricing.createMany({
+      data: defaultModules.map(m => ({
+        module_key: m.key,
+        module_name: m.name,
+        currency: currency,
+        price_monthly: 0,
+        price_yearly: 0
+      }))
+    });
+
+    return this.prisma.saaSPricing.findMany({
+      where: { currency }
+    });
+  }
+
+  // -------------------------------------------------------------
+  // ONBOARDING
+  // -------------------------------------------------------------
+  async onboardClient(data: OnboardClientDto) {
+    try {
+      if (data.admin_user?.phone) {
+        const existingUser = await this.prisma.user.findUnique({
+          where: { phone: data.admin_user.phone }
         });
+        if (existingUser) {
+          throw new BadRequestException('An account with this phone number already exists. Please use a different phone number.');
+        }
       }
-    } else {
-      // 1. Create the Brand
-      brand = await this.prisma.brand.create({
+
+      if (data.is_existing_brand) {
+      if (!data.existing_brand_id) throw new BadRequestException('Brand ID required');
+      const store = await this.prisma.store.create({
         data: {
-          name: brand_name,
-          currency: currency || 'PKR',
-          vat_percentage: Number(vat_percentage) || 0,
-          is_chain_store: is_chain_store || false,
-          menu_strategy: menu_strategy || 'UNIFIED',
-        },
+          brand_id: data.existing_brand_id,
+          name: data.store_location,
+          location: data.store_location,
+          owner_name: data.owner_name,
+          owner_phone: data.owner_phone,
+          owner_email: data.owner_email,
+          address: data.address,
+        }
       });
+      return { success: true, store_id: store.id, brand_id: store.brand_id };
     }
 
-    // 2. Create the store (either first or additional branch)
-    const storeName = is_existing_brand
-      ? (store_location || `${brand.name} - Branch`)
-      : (store_location || `${brand_name} - HQ`);
+    if (!data.package_id) throw new BadRequestException('Package selection is required for a new brand');
+
+    const pkg = await this.prisma.package.findUnique({ where: { id: data.package_id } });
+    if (!pkg) throw new BadRequestException('Package not found');
+
+    // 1. Create Brand
+    const brand = await this.prisma.brand.create({
+      data: {
+        name: data.brand_name,
+        is_chain_store: data.is_chain_store || false,
+        menu_strategy: data.menu_strategy || 'UNIFIED',
+        currency: pkg.currency,
+        vat_percentage: data.vat_percentage || 0,
+      }
+    });
+
+    // 2. Create Store
     const store = await this.prisma.store.create({
       data: {
         brand_id: brand.id,
-        name: storeName,
-        location: store_location || 'Main Branch',
-        owner_name,
-        owner_phone,
-        owner_email,
-        address,
-        map_pin,
-        website,
-        email,
-        landline,
-        whatsapp,
-        order_no_prefix,
-        vat_percentage: Number(vat_percentage) || 0,
-      },
+        name: data.store_location,
+        location: data.store_location,
+        owner_name: data.owner_name,
+        owner_phone: data.owner_phone,
+        owner_email: data.owner_email,
+        address: data.address,
+        saas_package_id: pkg.id,
+      }
     });
 
-    // 3. Create the Subscription for the store
+    // 3. Create Subscription
+    const start_date = new Date();
+    const expiry_date = new Date();
+    if (pkg.billing_cycle === 'YEARLY') expiry_date.setFullYear(expiry_date.getFullYear() + 1);
+    else if (pkg.billing_cycle === 'QUARTERLY') expiry_date.setMonth(expiry_date.getMonth() + 3);
+    else expiry_date.setMonth(expiry_date.getMonth() + 1);
+
     await this.prisma.subscription.create({
       data: {
-        store_id: store.id,
-        plan_name: 'CUSTOM_SAAS',
-        module_auth_enabled: true, // Always true
-        module_analytics_enabled: selected_modules?.includes('ANALYTICS') || false,
-        module_kds_enabled: selected_modules?.includes('KDS') || false,
-        module_riders_enabled: selected_modules?.includes('RIDER') || false,
-        module_tv_board_enabled: selected_modules?.includes('TV_BOARD') || false,
-        module_online_website_enabled:
-          selected_modules?.includes('ONLINE_WEBSITE') || false,
-        module_loyalty_enabled: selected_modules?.includes('LOYALTY') || false,
-        billing_amount: total_billing_amount || 0,
-        status: 'ACTIVE',
-      },
+        brand_id: brand.id,
+        package_id: pkg.id,
+        rental_amount: pkg.monthly_rental,
+        currency: pkg.currency,
+        billing_cycle: pkg.billing_cycle,
+        start_date,
+        next_billing_date: expiry_date,
+        expiry_date,
+        grace_period_days: 5,
+        status: 'ACTIVE'
+      }
     });
 
-    // 4. Create HeadOffice User (if provided and new brand)
-    if (!is_existing_brand && admin_user) {
+    // 4. Create Admin User
+    if (data.admin_user?.password) {
+      const hashedPassword = await bcrypt.hash(data.admin_user.password, 10);
       await this.prisma.user.create({
         data: {
           brand_id: brand.id,
           store_id: store.id,
-          role_id: 3, // 3 is Super Admin
-          name: admin_user.name || 'Admin',
-          phone: admin_user.phone,
-          hashedPin: admin_user.password || '1234',
-        },
+          name: data.admin_user.name,
+          phone: data.admin_user.phone,
+          hashedPin: hashedPassword,
+          role_id: 2 // Business Owner (assuming 2)
+        }
       });
     }
 
-    return { success: true, brand, store };
-  }
-
-  async createOrUpdateSubscription(body: any) {
-    const {
-      brand_id,
-      plan_name,
-      modules,
-      is_chain_store,
-      menu_strategy,
-      currency,
-      vat_percentage,
-    } = body;
-
-    await this.prisma.brand.update({
-      where: { id: Number(brand_id) },
-      data: {
-        is_chain_store: is_chain_store ?? false,
-        menu_strategy: menu_strategy || 'UNIFIED',
-        ...(currency && { currency }),
-        ...(vat_percentage !== undefined && { vat_percentage }),
-      },
-    });
-
-    const stores = await this.prisma.store.findMany({
-      where: { brand_id: Number(brand_id) }
-    });
-
-    for (const st of stores) {
-      const existing = await this.prisma.subscription.findUnique({
-        where: { store_id: st.id }
-      });
-
-      if (existing) {
-        await this.prisma.subscription.update({
-          where: { id: existing.id },
-          data: {
-            plan_name,
-            ...modules,
-          },
-        });
-      } else {
-        await this.prisma.subscription.create({
-          data: {
-            store_id: st.id,
-            plan_name,
-            ...modules,
-          },
-        });
-      }
+    return { success: true, store_id: store.id, brand_id: brand.id };
+    } catch (e: any) {
+      console.error("ONBOARDING CRASH:", e);
+      throw new BadRequestException(e.message || "Failed to onboard");
     }
-    return { success: true };
   }
 
+  // -------------------------------------------------------------
+  // SUBSCRIPTION MANAGEMENT
+  // -------------------------------------------------------------
   async getSubscription(brand_id: number) {
-    const store = await this.prisma.store.findFirst({
+    const sub = await this.prisma.subscription.findUnique({
       where: { brand_id },
-      include: { subscription: true, brand: true },
-      orderBy: { id: 'asc' }
+      include: { package: { include: { modules: true } }, brand: true }
     });
+    return sub;
+  }
 
-    const sub = store?.subscription;
-    const brand = store?.brand;
+  async renewSubscription(id: number, data: { amount_paid: number; payment_method: string; reference_number?: string; remarks?: string; recorded_by: number }) {
+    const sub = await this.prisma.subscription.findUnique({ where: { id }, include: { package: true } });
+    if (!sub) throw new BadRequestException('Subscription not found');
 
-    if (!sub || !brand) {
-      return {
-        brand_id,
-        plan_name: 'Free Trial',
-        module_auth_enabled: true,
-        module_kds_enabled: false,
-        module_riders_enabled: false,
-        module_loyalty_enabled: false,
-        module_tv_board_enabled: false,
-        module_online_website_enabled: false,
-        module_analytics_enabled: true,
-        billing_amount: 0,
-        brand: {
-          is_chain_store: false,
-          menu_strategy: 'UNIFIED',
-          currency: 'PKR',
-          vat_percentage: 0,
-        },
-      };
+    // Calculate new expiry date based on billing cycle
+    const expiry_date = new Date(sub.expiry_date);
+    if (expiry_date < new Date()) {
+      // If expired, start from today
+      expiry_date.setTime(Date.now());
     }
 
-    return { ...sub, brand };
+    if (sub.package.billing_cycle === 'YEARLY') expiry_date.setFullYear(expiry_date.getFullYear() + 1);
+    else if (sub.package.billing_cycle === 'QUARTERLY') expiry_date.setMonth(expiry_date.getMonth() + 3);
+    else expiry_date.setMonth(expiry_date.getMonth() + 1);
+
+    await this.prisma.$transaction([
+      this.prisma.subscriptionPayment.create({
+        data: {
+          subscription_id: id,
+          amount_paid: data.amount_paid,
+          payment_method: data.payment_method,
+          reference_number: data.reference_number,
+          recorded_by: data.recorded_by,
+          remarks: data.remarks
+        }
+      }),
+      this.prisma.billingHistory.create({
+        data: {
+          subscription_id: id,
+          event_type: 'RENEWED',
+          description: `Subscription renewed via ${data.payment_method}. Amount: ${data.amount_paid}`
+        }
+      }),
+      this.prisma.subscription.update({
+        where: { id },
+        data: {
+          status: 'ACTIVE',
+          expiry_date,
+          next_billing_date: expiry_date,
+          suspend_reason: null
+        }
+      })
+    ]);
+
+    return { success: true, new_expiry_date: expiry_date };
+  }
+
+  async suspendSubscription(id: number, data: { reason: string }) {
+    await this.prisma.$transaction([
+      this.prisma.billingHistory.create({
+        data: {
+          subscription_id: id,
+          event_type: 'SUSPENDED',
+          description: `Subscription suspended. Reason: ${data.reason}`
+        }
+      }),
+      this.prisma.subscription.update({
+        where: { id },
+        data: {
+          status: 'SUSPENDED',
+          suspend_reason: data.reason
+        }
+      })
+    ]);
+    return { success: true };
   }
 }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Megaphone, Globe, Share2, Tag, Percent, CheckCircle, Store, Edit2, Trash2, PauseCircle, PlayCircle, ImagePlus, ChevronDown, ChevronRight, Users, MousePointer2, Activity, Target, TrendingUp } from 'lucide-react';
 
 import { useAdminContext } from '../context/AdminContext';
+import { apiFetch } from '../utils/api';
 
 // Inline SVG icons for social platforms not in lucide-react
 const FacebookIcon = ({ size = 20 }: { size?: number }) => (
@@ -18,7 +19,7 @@ const InstagramIcon = ({ size = 20 }: { size?: number }) => (
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function MarketingHub() {
-  const { selectedBranchId, isBranchEntered } = useAdminContext();
+  const { selectedBranchId, isBranchEntered, branches } = useAdminContext();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -55,8 +56,7 @@ export default function MarketingHub() {
   const [scheduledCampaigns, setScheduledCampaigns] = useState<any[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
 
-  // Stores and Targeting
-  const [stores, setStores] = useState<any[]>([]);
+  // Targeting (stores come from AdminContext.branches)
   const [categories, setCategories] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   
@@ -111,7 +111,7 @@ export default function MarketingHub() {
 
   const fetchSocialStatus = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/marketing/social/status?branchId=${selectedBranchId}`);
+      const res = await apiFetch(`/marketing/social/status?branchId=${selectedBranchId}`);
       if (res.ok) {
         const data = await res.json();
         setFbLinked(data.is_facebook_connected || false);
@@ -122,16 +122,16 @@ export default function MarketingHub() {
 
   const handleSelectPage = async (page: any) => {
     if (oauthPlatform === 'facebook') {
-      await fetch(`${BACKEND_URL}/marketing/social/facebook/select`, {
+      await apiFetch('/marketing/social/facebook/select', {
         method: 'POST',
-        headers: getHeaders(true),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ branchId: selectedBranchId, pageId: page.id, pageName: page.name, token: oauthToken })
       });
       setFbLinked(true);
     } else {
-      await fetch(`${BACKEND_URL}/marketing/social/instagram/select`, {
+      await apiFetch('/marketing/social/instagram/select', {
         method: 'POST',
-        headers: getHeaders(true),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ branchId: selectedBranchId, accountId: page.id, username: page.username, token: oauthToken })
       });
       setIgLinked(true);
@@ -142,7 +142,7 @@ export default function MarketingHub() {
   const handleFacebookConnect = () => {
     if (!selectedBranchId) return alert('Select a branch first');
     if (fbLinked) {
-      fetch(`${BACKEND_URL}/marketing/social/facebook/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE', headers: getHeaders() })
+      apiFetch(`/marketing/social/facebook/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE' })
         .then(() => setFbLinked(false));
     } else {
       window.location.href = `${BACKEND_URL}/marketing/social/facebook/connect?branchId=${selectedBranchId}`;
@@ -152,40 +152,26 @@ export default function MarketingHub() {
   const handleInstagramConnect = () => {
     if (!selectedBranchId) return alert('Select a branch first');
     if (igLinked) {
-      fetch(`${BACKEND_URL}/marketing/social/instagram/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE', headers: getHeaders() })
+      apiFetch(`/marketing/social/instagram/disconnect?branchId=${selectedBranchId}`, { method: 'DELETE' })
         .then(() => setIgLinked(false));
     } else {
       window.location.href = `${BACKEND_URL}/marketing/social/instagram/connect?branchId=${selectedBranchId}`;
     }
   };
 
-  const getHeaders = (json = false) => {
-    const token = localStorage.getItem('d4u_admin_token');
-    const headers: any = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (json) headers['Content-Type'] = 'application/json';
-    return headers;
-  };
-
   const fetchCampaigns = async () => {
     try {
-      const hdrs = getHeaders();
-      const res = await fetch(`${BACKEND_URL}/marketing/campaign`, { headers: hdrs });
+      const [res, res2, res4, res5, res6] = await Promise.all([
+        apiFetch('/marketing/campaign'),
+        apiFetch('/marketing/schedule'),
+        apiFetch('/catalog/categories'),
+        apiFetch('/catalog/products'),
+        apiFetch('/marketing/kpis'),
+      ]);
       if (res.ok) setCampaigns(await res.json());
-
-      const res2 = await fetch(`${BACKEND_URL}/marketing/schedule`, { headers: hdrs });
       if (res2.ok) setScheduledCampaigns(await res2.json());
-
-      const res3 = await fetch(`${BACKEND_URL}/stores`, { headers: hdrs });
-      if (res3.ok) setStores(await res3.json());
-
-      const res4 = await fetch(`${BACKEND_URL}/catalog/categories`, { headers: hdrs });
       if (res4.ok) setCategories(await res4.json());
-
-      const res5 = await fetch(`${BACKEND_URL}/catalog/products`, { headers: hdrs });
       if (res5.ok) setProducts(await res5.json());
-
-      const res6 = await fetch(`${BACKEND_URL}/marketing/kpis`, { headers: hdrs });
       if (res6.ok) setKpis(await res6.json());
     } catch (e) { console.error(e); }
   };
@@ -226,9 +212,8 @@ export default function MarketingHub() {
           targetProductIds.forEach(id => formData.append('target_product_ids', String(id)));
         }
 
-        const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+        const res = await apiFetch(endpoint, {
           method: 'PATCH',
-          headers: getHeaders(),
           body: formData
         });
         
@@ -271,9 +256,8 @@ export default function MarketingHub() {
         targetCategoryIds.forEach(id => formData.append('target_category_ids', String(id)));
         targetProductIds.forEach(id => formData.append('target_product_ids', String(id)));
 
-        const res = await fetch(`${BACKEND_URL}/marketing/schedule`, {
+        const res = await apiFetch(`/marketing/schedule`, {
           method: 'POST',
-          headers: getHeaders(),
           body: formData
         });
         if (res.ok) {
@@ -297,9 +281,8 @@ export default function MarketingHub() {
         targetCategoryIds.forEach(id => formData.append('target_category_ids', String(id)));
         targetProductIds.forEach(id => formData.append('target_product_ids', String(id)));
 
-        const res = await fetch(`${BACKEND_URL}/marketing/campaign`, {
+        const res = await apiFetch(`/marketing/campaign`, {
           method: 'POST',
-          headers: getHeaders(),
           body: formData
         });
         if (res.ok) {
@@ -397,9 +380,8 @@ export default function MarketingHub() {
     try {
       const isScheduled = deleteConfirmType === 'SCHEDULED';
       const endpoint = isScheduled ? `/marketing/schedule` : `/marketing/campaign`;
-      const res = await fetch(`${BACKEND_URL}${endpoint}/${deleteConfirmId}`, { 
-        method: 'DELETE',
-        headers: getHeaders()
+      const res = await apiFetch(`${endpoint}/${deleteConfirmId}`, { 
+        method: 'DELETE'
       });
       
       if (isScheduled) {
@@ -432,9 +414,9 @@ export default function MarketingHub() {
     try {
       const endpoint = isScheduledType ? `/marketing/schedule/${camp.id}` : `/marketing/campaign/${camp.id}`;
       const payload = isScheduledType ? { is_active: !newPausedState } : { is_paused: newPausedState };
-      await fetch(`${BACKEND_URL}${endpoint}`, { 
+      await apiFetch(endpoint, { 
         method: 'PATCH',
-        headers: getHeaders(true),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
     } catch (e) { 
@@ -540,7 +522,7 @@ export default function MarketingHub() {
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Target Branches, Categories & Items</label>
               <div className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg p-2 text-white max-h-48 overflow-y-auto flex flex-col gap-1">
                 {(() => {
-                  const displayStores = isBranchEntered && selectedBranchId ? stores.filter(s => s.id === selectedBranchId) : stores;
+                  const displayStores = isBranchEntered && selectedBranchId ? branches.filter(s => s.id === Number(selectedBranchId)) : branches;
                   return displayStores.length === 0 ? (
                     <span className="text-sm text-slate-500">No branches found.</span>
                   ) : displayStores.map(s => {
@@ -633,16 +615,12 @@ export default function MarketingHub() {
                   )})}
                 )()}
               </div>
+              <p className="text-[11px] text-slate-500 mt-2 font-medium">If no branch/category/item is selected, the deal applies globally.</p>
             </div>
           </div>
         </div>
 
         <div className="flex flex-col p-6 bg-[#1e293b] border border-slate-700/50 rounded-2xl">
-          {/* Scheduling and Publishing Panel moved from left */}
-          <div className="p-4 border border-slate-700/50 rounded-xl mb-6">
-            <p className="text-xs text-slate-400 text-center font-medium">If no branch/category/item is selected, the deal applies globally.</p>
-          </div>
-          
           <div className="flex-1">
             <label className="flex items-center gap-3 cursor-pointer mb-6">
               <input type="checkbox" checked={isScheduled} onChange={e => setIsScheduled(e.target.checked)} className="w-4 h-4 rounded-sm accent-white" />

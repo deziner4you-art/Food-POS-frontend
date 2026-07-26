@@ -24,6 +24,14 @@ export class UsersService {
     });
   }
 
+  async getUsersByBrand(brand_id: number) {
+    return this.prisma.user.findMany({
+      where: { brand_id },
+      include: { role: true, store: true },
+      orderBy: { id: 'asc' },
+    });
+  }
+
   async getRoles() {
     return this.prisma.role.findMany({ orderBy: { id: 'asc' } });
   }
@@ -38,6 +46,12 @@ export class UsersService {
     image_url?: string;
     module_permissions?: Record<string, boolean>;
     rider_details?: any;
+    emp_id?: string;
+    email?: string;
+    designation?: string;
+    status?: string;
+    joining_date?: Date;
+    notes?: string;
   }) {
     if (data.role_id === 0) {
       let riderRole = await this.prisma.role.findFirst({
@@ -72,6 +86,12 @@ export class UsersService {
         image_url: data.image_url || null,
         module_permissions: data.module_permissions || {},
         rider_details: data.rider_details || null,
+        emp_id: data.emp_id || null,
+        email: data.email || null,
+        designation: data.designation || null,
+        status: data.status || 'ACTIVE',
+        joining_date: data.joining_date ? new Date(data.joining_date) : null,
+        notes: data.notes || null,
       },
       include: { role: true, store: true },
     });
@@ -88,6 +108,12 @@ export class UsersService {
       image_url?: string;
       module_permissions?: Record<string, boolean>;
       rider_details?: any;
+      emp_id?: string;
+      email?: string;
+      designation?: string;
+      status?: string;
+      joining_date?: Date;
+      notes?: string;
     },
   ) {
     const user = await this.prisma.user.findUnique({ where: { id } });
@@ -117,6 +143,12 @@ export class UsersService {
       updateData.module_permissions = data.module_permissions;
     if (data.rider_details !== undefined)
       updateData.rider_details = data.rider_details;
+    if (data.emp_id !== undefined) updateData.emp_id = data.emp_id;
+    if (data.email !== undefined) updateData.email = data.email;
+    if (data.designation !== undefined) updateData.designation = data.designation;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.joining_date !== undefined) updateData.joining_date = data.joining_date ? new Date(data.joining_date) : null;
+    if (data.notes !== undefined) updateData.notes = data.notes;
 
     return this.prisma.user.update({
       where: { id },

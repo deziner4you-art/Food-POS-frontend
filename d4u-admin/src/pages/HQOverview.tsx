@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAdminContext } from '../context/AdminContext';
 import { Building2, Store, Plus, ChevronRight, CheckCircle2, Trash2, X, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { apiFetch } from '../utils/api';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -11,8 +12,9 @@ export default function HQOverview() {
   const [expandedBrandId, setExpandedBrandId] = useState<number | null>(null);
 
   // Delete states
-  const [deleteModal, setDeleteModal] = useState<{isOpen: boolean, type: 'brand'|'store', id: number, name: string} | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{isOpen: boolean, type: 'brand'|'store', id: number, name: string, storeCount?: number} | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
+  const [deleteReason, setDeleteReason] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -20,6 +22,13 @@ export default function HQOverview() {
   const [recycleAuthOpen, setRecycleAuthOpen] = useState(false);
   const [recyclePin, setRecyclePin] = useState('');
   const [recycleError, setRecycleError] = useState('');
+
+  // Subscription Modal State
+  const [subModal, setSubModal] = useState<{isOpen: boolean, type: 'RENEW', brandId: number, subId: number, brandName: string, monthlyRental: number, currency: string} | null>(null);
+  const [subAmount, setSubAmount] = useState<number>(0);
+  const [subMethod, setSubMethod] = useState('BANK_TRANSFER');
+  const [subRef, setSubRef] = useState('');
+  const [subLoading, setSubLoading] = useState(false);
 
   const storedUser = localStorage.getItem('d4u_admin_user');
   const user = storedUser ? JSON.parse(storedUser) : null;
@@ -30,13 +39,8 @@ export default function HQOverview() {
     setIsBranchEntered(true);
   };
 
-  const toggleBrand = (brandId: number, storeCount: number, firstStoreId: number) => {
-    if (storeCount === 1) {
-      // Auto-enter if only 1 store
-      handleEnterStore(firstStoreId);
-    } else {
-      setExpandedBrandId(prev => prev === brandId ? null : brandId);
-    }
+  const toggleBrand = (brandId: number) => {
+    setExpandedBrandId(prev => prev === brandId ? null : brandId);
   };
 
   const handleDeleteConfirm = async () => {
@@ -44,19 +48,15 @@ export default function HQOverview() {
     setIsDeleting(true);
     setDeleteError('');
 
-    const token = localStorage.getItem('d4u_admin_token');
+    
     const endpoint = deleteModal.type === 'brand' ? '/stores/bulk-delete-brands' : '/stores/bulk-delete';
     const payload = deleteModal.type === 'brand' 
-      ? { brandIds: [deleteModal.id], password: deletePassword }
-      : { storeIds: [deleteModal.id], password: deletePassword };
+      ? { brandIds: [deleteModal.id], password: deletePassword, reason: deleteReason }
+      : { storeIds: [deleteModal.id], password: deletePassword, reason: deleteReason };
 
     try {
-      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+      const res = await apiFetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -73,11 +73,31 @@ export default function HQOverview() {
   };
 
   const handleRecycleBinAccess = () => {
-    if (recyclePin === '1234') {
+    if (recyclePin === 'MASTER_2026') {
+      sessionStorage.setItem('d4u_master_key', recyclePin);
       navigate('/recycle-bin');
     } else {
       setRecycleError('Invalid Master PIN');
     }
+  };
+
+  const handleSubAction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!subModal) return;
+    setSubLoading(true);
+    
+    try {
+      if (subModal.type === 'RENEW') {
+        const res = await apiFetch(`/subscription/${subModal.subId}/renew`, {
+          method: 'POST',
+          body: JSON.stringify({ amount_paid: subAmount, payment_method: subMethod, reference_number: subRef })
+        });
+        if (res.ok) window.location.reload();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setSubLoading(false);
   };
 
   return (
@@ -144,28 +164,28 @@ export default function HQOverview() {
                             Chain Store
                           </span>
                         )}
+                        {(brand as any).subscription && (
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold border ${(brand as any).subscription.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                            {(brand as any).subscription.package?.name || 'SaaS'} • {(brand as any).subscription.status}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
                   
                   <div className="flex items-center gap-4">
-                    {hasMultipleStores && (
+                    {brand.stores.length > 0 && (
                       <div className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
                         <ChevronRight size={24} />
                       </div>
-                    )}
-                    {!hasMultipleStores && brand.stores.length === 1 && (
-                      <button className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-lg pointer-events-none">
-                        Enter Dashboard
-                      </button>
                     )}
                     {brand.stores.length === 0 && (
                       <span className="text-slate-500 text-sm italic">No stores yet</span>
                     )}
                     {isSuperAdmin && (
                       <button 
-                        onClick={(e) => { e.stopPropagation(); setDeleteModal({ isOpen: true, type: 'brand', id: brand.id, name: brand.name || 'Unknown Brand' }); }}
-                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                      onClick={(e) => { e.stopPropagation(); setDeleteModal({ isOpen: true, type: 'brand', id: brand.id, name: brand.name, storeCount: brand.stores.length }); }}
+                      className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
                         title="Delete Brand"
                       >
                         <Trash2 size={18} />
@@ -175,7 +195,7 @@ export default function HQOverview() {
                 </div>
 
                 {/* Stores List (Expanded) */}
-                {isExpanded && hasMultipleStores && (
+                {isExpanded && brand.stores.length > 0 && (
                   <div className="bg-slate-900/50 p-4">
                     <div className="flex flex-col gap-2">
                       {brand.stores.map(store => (
@@ -188,26 +208,88 @@ export default function HQOverview() {
                               <Store size={20} />
                             </div>
                             <div>
-                              <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">{store.name}</h3>
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">{store.name}</h3>
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold border ${
+                                  store.status === 'SUSPENDED' 
+                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                                    : store.status === 'MAINTENANCE' 
+                                    ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                    : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                }`}>
+                                  {store.status || (store.is_online ? 'ACTIVE' : 'SUSPENDED')}
+                                </span>
+                              </div>
                               <p className="text-sm text-slate-400">{store.location || 'No location set'}</p>
                             </div>
                           </div>
                           
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             <button 
                               onClick={(e) => { e.stopPropagation(); handleEnterStore(store.id); }}
-                              className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-lg"
+                              className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-lg ${
+                                store.status === 'SUSPENDED'
+                                  ? 'bg-slate-700 text-amber-300 hover:bg-slate-600'
+                                  : store.status === 'MAINTENANCE'
+                                  ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                                  : 'bg-indigo-500 hover:bg-indigo-600 text-white'
+                              }`}
                             >
-                              Enter Dashboard
+                              {store.status === 'SUSPENDED' ? 'Read-Only Dashboard' : store.status === 'MAINTENANCE' ? 'Maintenance Mode' : 'Enter Dashboard'}
                             </button>
+
                             {isSuperAdmin && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); setDeleteModal({ isOpen: true, type: 'store', id: store.id, name: store.name }); }}
-                                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
-                                title="Delete Branch"
-                              >
-                                <Trash2 size={18} />
-                              </button>
+                              <>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const nextStatus = store.status === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED';
+                                    await apiFetch(`/stores/${store.id}/lifecycle`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ status: nextStatus, reason: `Admin toggled to ${nextStatus}` })
+                                    });
+                                    window.location.reload();
+                                  }}
+                                  className={`px-3 py-2 rounded-lg font-bold text-xs transition-all ${
+                                    store.status === 'SUSPENDED'
+                                      ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30'
+                                      : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30'
+                                  }`}
+                                  title={store.status === 'SUSPENDED' ? 'Resume Branch Operations' : 'Suspend Branch Operations'}
+                                >
+                                  {store.status === 'SUSPENDED' ? 'Resume' : 'Suspend'}
+                                </button>
+
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const nextStatus = store.status === 'MAINTENANCE' ? 'ACTIVE' : 'MAINTENANCE';
+                                    await apiFetch(`/stores/${store.id}/lifecycle`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ status: nextStatus, reason: `Admin toggled maintenance` })
+                                    });
+                                    window.location.reload();
+                                  }}
+                                  className={`px-3 py-2 rounded-lg font-bold text-xs transition-all ${
+                                    store.status === 'MAINTENANCE'
+                                      ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                                      : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30'
+                                  }`}
+                                  title="Toggle Maintenance Mode"
+                                >
+                                  {store.status === 'MAINTENANCE' ? 'Exit Maint' : 'Maintenance'}
+                                </button>
+
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setDeleteModal({ isOpen: true, type: 'store', id: store.id, name: store.name }); }}
+                                  className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                                  title="Recycle Branch"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -234,16 +316,40 @@ export default function HQOverview() {
               </button>
             </div>
             
-            <p className="text-slate-300 mb-6 text-sm">
+            <p className="text-slate-300 mb-4 text-sm">
               Are you sure you want to delete <strong className="text-white text-base">{deleteModal.name}</strong>? 
             </p>
 
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-6">
+              <h4 className="text-amber-400 font-bold text-sm mb-2">Dependency Check</h4>
+              <ul className="text-slate-300 text-sm space-y-1 mb-3">
+                {deleteModal.type === 'brand' && <li>Contains <strong>{deleteModal.storeCount} Stores</strong></li>}
+                <li>Contains <strong>{deleteModal.type === 'brand' ? '235' : '15'} Employees</strong> (Mock)</li>
+                <li>Contains <strong>{deleteModal.type === 'brand' ? '15,200' : '1,200'} Orders</strong> (Mock)</li>
+                <li>Contains <strong>{deleteModal.type === 'brand' ? '87' : '45'} Products</strong> (Mock)</li>
+              </ul>
+              <p className="text-amber-400/80 text-xs italic">
+                This {deleteModal.type === 'brand' ? 'Brand' : 'Branch'} will be moved to the Recycle Bin. Nothing will be permanently deleted.
+              </p>
+            </div>
+
             <form onSubmit={e => { e.preventDefault(); handleDeleteConfirm(); }} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Reason for Deletion</label>
+                <input 
+                  type="text" 
+                  required
+                  value={deleteReason}
+                  onChange={e => setDeleteReason(e.target.value)}
+                  placeholder="e.g. Duplicate Company"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-red-500 outline-none"
+                />
+              </div>
+              
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Super Admin Password / PIN</label>
                 <input 
                   type="password" 
-                  autoFocus
                   required
                   value={deletePassword}
                   onChange={e => setDeletePassword(e.target.value)}
@@ -261,7 +367,7 @@ export default function HQOverview() {
               <div className="flex gap-3 pt-2">
                 <button 
                   type="button"
-                  onClick={() => { setDeleteModal(null); setDeleteError(''); setDeletePassword(''); }}
+                  onClick={() => { setDeleteModal(null); setDeleteError(''); setDeletePassword(''); setDeleteReason(''); }}
                   className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl transition-colors"
                 >
                   Cancel
@@ -332,6 +438,63 @@ export default function HQOverview() {
                   Verify
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Subscription Modal */}
+      {subModal?.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-up">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-white flex items-center gap-2">
+                Renew Subscription
+              </h3>
+              <button onClick={() => setSubModal(null)} className="text-slate-400 hover:text-white">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleSubAction}>
+                  <div className="mb-4">
+                    <label className="block text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Amount Paid ({subModal.currency})</label>
+                    <input 
+                      type="number" 
+                      value={subAmount}
+                      onChange={(e) => setSubAmount(Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none"
+                      required
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Payment Method</label>
+                    <select 
+                      value={subMethod}
+                      onChange={(e) => setSubMethod(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none"
+                    >
+                      <option value="BANK_TRANSFER">Bank Transfer</option>
+                      <option value="CASH">Cash</option>
+                      <option value="CREDIT_CARD">Credit Card</option>
+                    </select>
+                  </div>
+                  <div className="mb-6">
+                    <label className="block text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Reference Number (Optional)</label>
+                    <input 
+                      type="text" 
+                      value={subRef}
+                      onChange={(e) => setSubRef(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-green-500 outline-none"
+                      placeholder="e.g. TXN12345"
+                    />
+                  </div>
+                  <button 
+                    type="submit" 
+                    disabled={subLoading}
+                    className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-colors disabled:opacity-50"
+                  >
+                    {subLoading ? 'Processing...' : 'Confirm Payment & Renew'}
+                  </button>
             </form>
           </div>
         </div>

@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsArray,
+  IsBoolean,
 } from 'class-validator';
 
 export class CreateCategoryDto {
@@ -23,4 +24,16 @@ export class CreateCategoryDto {
   @IsInt({ each: true })
   @IsOptional()
   store_ids?: number[];
+
+  @IsBoolean()
+  @IsOptional()
+  is_active?: boolean;
+
+  @IsInt()
+  @IsOptional()
+  sort_order?: number;
+
+  @IsString()
+  @IsOptional()
+  image_url?: string;
 }

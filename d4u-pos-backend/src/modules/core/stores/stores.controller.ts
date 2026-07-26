@@ -18,53 +18,81 @@ export class StoresController {
   constructor(private readonly storesService: StoresService) {}
 
   @Public()
+  @RequirePermissions('system.view')
   @Get()
-  getAllStores() {
-    return this.storesService.getAllStores();
+  getAllStores(@Req() req: any) {
+    return this.storesService.getAllStores(req.user);
   }
 
   @RequirePermissions('system.view')
-  @Get('recycle-bin')
+  @Get('recycle-bin/stores')
   getDeletedStores() {
     return this.storesService.getDeletedStores();
   }
 
+  @RequirePermissions('system.view')
+  @Get('recycle-bin/brands')
+  getDeletedBrands() {
+    return this.storesService.getDeletedBrands();
+  }
+
   @RequirePermissions('system.delete')
   @Post('bulk-delete-brands')
-  bulkDeleteBrands(@Body() body: { brandIds: number[], password: string }, @Req() req: any) {
-    return this.storesService.bulkDeleteBrandsWithPassword(body.brandIds, req.user.sub, body.password);
+  bulkDeleteBrands(@Body() body: { brandIds: number[], password: string, reason: string }, @Req() req: any) {
+    return this.storesService.bulkDeleteBrandsWithPassword(body.brandIds, req.user.sub, body.password, body.reason || 'User requested deletion');
   }
 
   @RequirePermissions('system.delete')
   @Post('bulk-delete')
-  bulkDeleteStores(@Body() body: { storeIds: number[], password: string }, @Req() req: any) {
-    return this.storesService.bulkDeleteStoresWithPassword(body.storeIds, req.user.sub, body.password);
+  bulkDeleteStores(@Body() body: { storeIds: number[], password: string, reason: string }, @Req() req: any) {
+    return this.storesService.bulkDeleteStoresWithPassword(body.storeIds, req.user.sub, body.password, body.reason || 'User requested deletion');
   }
 
   @RequirePermissions('system.update')
-  @Post('restore')
-  restoreStores(@Body() body: { storeIds: number[] }) {
-    return this.storesService.restoreStores(body.storeIds);
+  @Post('recycle-bin/restore-stores')
+  restoreStores(@Body() body: { storeIds: number[] }, @Req() req: any) {
+    const masterKey = req.headers['x-master-key'] as string;
+    return this.storesService.restoreStores(body.storeIds, masterKey);
+  }
+
+  @RequirePermissions('system.update')
+  @Post('recycle-bin/restore-brands')
+  restoreBrands(@Body() body: { brandIds: number[] }, @Req() req: any) {
+    const masterKey = req.headers['x-master-key'] as string;
+    return this.storesService.restoreBrands(body.brandIds, masterKey);
   }
 
   @Public()
   @RequirePermissions('system.view')
   @Get('brands')
   getAllBrands(@Req() req: any) {
-    const tenantBrandId = req.user?.brand_id === 1 ? undefined : req.user?.brand_id;
+    const tenantBrandId = req.user?.role === 'Super Admin' ? undefined : req.user?.brand_id;
     return this.storesService.getAllBrands(tenantBrandId);
   }
 
   @RequirePermissions('system.view')
   @Get(':id')
-  getStore(@Param('id', ParseIntPipe) id: number) {
-    return this.storesService.getStore(id);
+  getStore(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    return this.storesService.getStore(id, req.user);
   }
 
   @RequirePermissions('system.create')
   @Post()
   createStore(@Body() body: CreateStoreDto) {
     return this.storesService.createStore(body);
+  }
+
+  @RequirePermissions('system.update')
+  @Patch(':id/lifecycle')
+  updateStoreLifecycle(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { status: 'ACTIVE' | 'SUSPENDED' | 'MAINTENANCE' | 'RECYCLED'; reason?: string; resume_at?: Date },
+    @Req() req: any,
+  ) {
+    return this.storesService.updateStoreLifecycle(id, {
+      ...body,
+      changed_by: req.user?.name || 'Super Admin',
+    });
   }
 
   @RequirePermissions('system.update')

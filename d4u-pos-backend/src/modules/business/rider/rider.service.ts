@@ -10,19 +10,65 @@ export class RiderService {
   ) {}
 
   async getRiderOrders(storeId?: string) {
-    const whereClause: any = {
-      status: {
-        in: ['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID'],
-      },
+    const validStatuses = ['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID', 'SETTLED'];
+    
+    const onlineWhere: any = {
+      status: { in: validStatuses },
     };
+    const posWhere: any = {
+      status: { in: validStatuses },
+      order_source: 'DELIVERY'
+    };
+
     if (storeId) {
-      whereClause.store_id = Number(storeId);
+      onlineWhere.store_id = Number(storeId);
+      posWhere.store_id = Number(storeId);
     }
 
-    return this.prisma.onlineOrder.findMany({
-      where: whereClause,
+    const onlineOrders = await this.prisma.onlineOrder.findMany({
+      where: onlineWhere,
       orderBy: { id: 'desc' },
     });
+
+    const posOrders = await this.prisma.order.findMany({
+      where: posWhere,
+      orderBy: { id: 'desc' },
+      include: {
+        customer: true,
+        items: { include: { product: true } }
+      }
+    });
+
+    // Format POS Orders to look exactly like OnlineOrders for the Rider App UI
+    const formattedPosOrders = posOrders.map(order => ({
+      id: order.id,
+      store_id: order.store_id,
+      orderId: order.id,
+      status: order.status,
+      kdsStatus: order.status,
+      type: 'Delivery',
+      source: 'POS',
+      customer: order.customer ? order.customer.name : 'Guest',
+      customerPhone: order.customer ? order.customer.phone : '',
+      customerAddress: order.delivery_address || 'No Address Provided',
+      items: order.items.map(i => `${i.quantity}x ${i.product.name}`).join(', '),
+      totalAmount: String(order.total_amount),
+      notes: order.customer_feedback || '',
+      prepTimeMinutes: 0,
+      estimatedReadyAt: '',
+      timePlaced: order.createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      riderAssigned: !!order.rider_id,
+      feedback: null,
+      delivery: order.delivery_info,
+      createdAt: order.createdAt,
+      isPos: true
+    }));
+
+    const allOrders = [...onlineOrders, ...formattedPosOrders].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+    );
+
+    return allOrders;
   }
 
   async updateRiderGps(body: any) {
@@ -38,10 +84,20 @@ export class RiderService {
     };
 
     try {
-      await this.prisma.onlineOrder.update({
-        where: { id: orderId },
-        data: { delivery: deliveryInfo },
-      });
+      // Try finding it in OnlineOrder first
+      const onlineOrder = await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
+      if (onlineOrder) {
+        await this.prisma.onlineOrder.update({
+          where: { id: orderId },
+          data: { delivery: deliveryInfo },
+        });
+      } else {
+        // Otherwise it's a POS Order
+        await this.prisma.order.update({
+          where: { id: orderId },
+          data: { delivery_info: deliveryInfo },
+        });
+      }
       console.log(`[GPS UPDATE] Order #${orderId} -> lat: ${lat}, lng: ${lng}`);
     } catch (error) {
       console.log(
@@ -58,14 +114,23 @@ export class RiderService {
   }
 
   async getRiderGps(orderId: string) {
-    const order = await this.prisma.onlineOrder.findUnique({
-      where: { id: Number(orderId) },
+    const id = Number(orderId);
+    const onlineOrder = await this.prisma.onlineOrder.findUnique({
+      where: { id },
     });
 
-    if (order && order.delivery) {
-      return order.delivery;
+    if (onlineOrder && onlineOrder.delivery) {
+      return onlineOrder.delivery;
     }
+
+    const posOrder = await this.prisma.order.findUnique({
+      where: { id }
+    });
+
+    if (posOrder && posOrder.delivery_info) {
+      return posOrder.delivery_info;
+    }
+
     throw new NotFoundException('Location not found');
   }
-
 }

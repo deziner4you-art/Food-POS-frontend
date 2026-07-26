@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
+import { SubscriptionGuard } from './common/guards/subscription.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AppGateway } from './app.gateway';
-import { APP_GUARD } from '@nestjs/core';
-import { JwtAuthGuard, PermissionsGuard } from './common/guards';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 // Core Modules (پہلے سے موجود)
@@ -27,61 +29,38 @@ import { VendorModule } from './modules/business/vendor/vendor.module';
 import { CmsModule } from './modules/business/cms/cms.module';
 import { StoresModule } from './modules/core/stores/stores.module';
 import { RecipesModule } from './modules/business/recipes/recipes.module';
-import { SubscriptionModule } from './modules/core/subscription/subscription.module';
 import { UsersModule } from './modules/core/users/users.module';
-import { SaasPackageModule } from './modules/core/saas-package/saas-package.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TerminalModule } from './modules/core/terminal/terminal.module';
 import { AccountingModule } from './modules/business/accounting/accounting.module';
+import { SubscriptionModule } from './modules/core/subscription/subscription.module';
 
 @Module({
   imports: [
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 5 }]),
     ScheduleModule.forRoot(),
-    // Core
     PrismaModule,
     AuthModule,
-
-    // Product Catalog
     CatalogModule,
-
-    // Order Management
     PosOrdersModule,
     KotsModule,
-
-    // Business Day & Cash
     BusinessDayModule,
     CashFlowModule,
-
-    // CRM
     CustomersModule,
-
-    // Inventory & Deals
     InventoryModule,
     DealModule,
     MarketingModule,
-
-    // Reports
     ReportsModule,
-
     OnlineOrdersModule,
-
     RiderModule,
-
     VendorModule,
-
     CmsModule,
-
     StoresModule,
-
     RecipesModule,
-
-    SubscriptionModule,
-
     UsersModule,
-    SaasPackageModule,
     TerminalModule,
     AccountingModule,
+    SubscriptionModule,
   ],
   controllers: [AppController],
   providers: [
@@ -94,6 +73,10 @@ import { AccountingModule } from './modules/business/accounting/accounting.modul
     {
       provide: APP_GUARD,
       useClass: PermissionsGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: SubscriptionGuard,
     },
   ],
 })

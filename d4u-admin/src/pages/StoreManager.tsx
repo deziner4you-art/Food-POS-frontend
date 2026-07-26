@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Store, Plus, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { Store, Plus, Edit, Trash2, CheckCircle, XCircle, Package } from 'lucide-react';
 import { customConfirm } from '../utils/alerts';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+import { useAdminContext } from '../context/AdminContext';
+import { apiFetch } from '../utils/api';
 
 export default function StoreManager() {
+  const { activeBrandId } = useAdminContext();
   const [stores, setStores] = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -13,7 +14,7 @@ export default function StoreManager() {
 
   const fetchStores = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/stores`);
+      const res = await apiFetch('/stores');
       if (res.ok) setStores(await res.json());
     } catch (e) {
       console.error('Failed to fetch stores', e);
@@ -22,8 +23,12 @@ export default function StoreManager() {
 
   const fetchPackages = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/saas-package`);
-      if (res.ok) setPackages(await res.json());
+      const res = await apiFetch('/subscription/package');
+      if (res.ok) {
+        const data = await res.json();
+        // Only show ACTIVE packages in the dropdown
+        setPackages(Array.isArray(data) ? data.filter((p: any) => p.status === 'ACTIVE') : []);
+      }
     } catch (e) {
       console.error('Failed to fetch packages', e);
     }
@@ -38,11 +43,15 @@ export default function StoreManager() {
     e.preventDefault();
     try {
       const method = isEditing ? 'PATCH' : 'POST';
-      const url = isEditing ? `${BACKEND_URL}/stores/${formData.id}` : `${BACKEND_URL}/stores`;
-      const res = await fetch(url, {
+      const url = isEditing ? `/stores/${formData.id}` : `/stores`;
+      const res = await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, brand_id: 1 }) // TODO: Fetch from actual selected brand
+        body: JSON.stringify({ 
+          ...formData, 
+          brand_id: activeBrandId || 1,
+          saas_package_id: formData.saas_package_id || null,
+        })
       });
       if (res.ok) {
         setShowModal(false);
@@ -62,7 +71,7 @@ export default function StoreManager() {
   const handleDelete = async (id: number) => {
     if (!(await customConfirm('Are you sure you want to delete this store?'))) return;
     try {
-      await fetch(`${BACKEND_URL}/stores/${id}`, { method: 'DELETE' });
+      await apiFetch(`/stores/${id}`, { method: 'DELETE' });
       fetchStores();
     } catch (e) {
       console.error('Delete error', e);
@@ -71,7 +80,7 @@ export default function StoreManager() {
 
   const toggleStatus = async (store: any) => {
     try {
-      await fetch(`${BACKEND_URL}/stores/${store.id}`, {
+      await apiFetch(`/stores/${store.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_online: !store.is_online })
@@ -114,7 +123,14 @@ export default function StoreManager() {
                 <td className="p-4 font-mono">{store.id}</td>
                 <td className="p-4 font-bold text-white">{store.name}</td>
                 <td className="p-4">{store.location || 'N/A'}</td>
-                <td className="p-4">{store.saas_package?.name || <span className="text-slate-500 italic">None</span>}</td>
+                <td className="p-4">
+                  {store.saas_package 
+                    ? <span className="inline-flex items-center gap-1.5 bg-blue-500/15 text-blue-300 border border-blue-500/30 px-2.5 py-1 rounded-full text-xs font-bold">
+                        <Package size={11} /> {store.saas_package.name}
+                      </span>
+                    : <span className="text-slate-500 italic text-xs">None</span>
+                  }
+                </td>
                 <td className="p-4">
                   <button 
                     onClick={() => toggleStatus(store)}
@@ -170,7 +186,9 @@ export default function StoreManager() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">Assigned SaaS Package</label>
+                <label className="block text-xs font-bold text-slate-400 mb-1 flex items-center gap-1.5">
+                  <Package size={12} /> SaaS Package <span className="text-blue-400">(Per Branch)</span>
+                </label>
                 <select
                   value={formData.saas_package_id || ''}
                   onChange={e => setFormData({...formData, saas_package_id: e.target.value ? Number(e.target.value) : null})}
@@ -178,9 +196,10 @@ export default function StoreManager() {
                 >
                   <option value="">-- No Package --</option>
                   {packages.map(pkg => (
-                    <option key={pkg.id} value={pkg.id}>{pkg.name} (${pkg.price})</option>
+                    <option key={pkg.id} value={pkg.id}>{pkg.name} — {pkg.currency} {pkg.monthly_rental}/mo</option>
                   ))}
                 </select>
+                <p className="text-xs text-slate-500 mt-1">Each branch can have a different package based on its services.</p>
               </div>
               <div className="flex items-center gap-3">
                 <input 

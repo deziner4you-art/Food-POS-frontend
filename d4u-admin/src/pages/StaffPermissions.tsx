@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Users, Shield, Plus, Trash2, Edit2, Check, X, AlertCircle, CheckCircle, Upload } from 'lucide-react';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 import { useAdminContext } from '../context/AdminContext';
+import { apiFetch } from '../utils/api';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function StaffPermissions() {
-  const { selectedBranchId, branches: contextBranches } = useAdminContext();
+  const { activeBrandId, selectedBranchId, branches: contextBranches } = useAdminContext();
   const [users, setUsers] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
@@ -24,6 +25,14 @@ export default function StaffPermissions() {
   const [roleId, setRoleId] = useState<number>(0);
   const [storeId, setStoreId] = useState<number | null>(null);
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  
+  // Enterprise Fields
+  const [empId, setEmpId] = useState('');
+  const [email, setEmail] = useState('');
+  const [designation, setDesignation] = useState('');
+  const [status, setStatus] = useState('ACTIVE');
+  const [joiningDate, setJoiningDate] = useState('');
+  const [notes, setNotes] = useState('');
   
   const [activeTab, setActiveTab] = useState<'staff' | 'rider'>('staff');
   const [riderDetails, setRiderDetails] = useState<any>({
@@ -50,11 +59,19 @@ export default function StaffPermissions() {
 
   const fetchData = async () => {
     setLoading(true);
-    const token = localStorage.getItem('d4u_admin_token');
-    const headers: HeadersInit = token ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+    
+    
     try {
+      const headers = {
+        'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
+      };
+      
+      let usersUrl = `${BACKEND_URL}/users`;
+      if (activeBrandId) usersUrl += `?brand_id=${activeBrandId}`;
+      if (selectedBranchId) usersUrl += (activeBrandId ? '&' : '?') + `store_id=${selectedBranchId}`;
+
       const [usersRes, storesRes, rolesRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/users`, { headers }),
+        fetch(usersUrl, { headers }),
         fetch(`${BACKEND_URL}/stores`, { headers }),
         fetch(`${BACKEND_URL}/users/roles`, { headers })
       ]);
@@ -86,7 +103,7 @@ export default function StaffPermissions() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [activeBrandId, selectedBranchId]);
 
   const openModal = (user: any = null) => {
     if (user) {
@@ -98,6 +115,12 @@ export default function StaffPermissions() {
       setRoleId(user.role_id || user.role?.id || 0);
       setStoreId(user.store_id ?? null);
       setPermissions(user.module_permissions || {});
+      setEmpId(user.emp_id || '');
+      setEmail(user.email || '');
+      setDesignation(user.designation || '');
+      setStatus(user.status || 'ACTIVE');
+      setJoiningDate(user.joining_date ? new Date(user.joining_date).toISOString().split('T')[0] : '');
+      setNotes(user.notes || '');
       setRiderDetails(user.rider_details || {
         vehicle_type: '', model: '', color: '', cc: '', license_plate: '', registration_no: '', dob: '', city: ''
       });
@@ -121,6 +144,12 @@ export default function StaffPermissions() {
         admin: false,
         website: false
       });
+      setEmpId('');
+      setEmail('');
+      setDesignation('');
+      setStatus('ACTIVE');
+      setJoiningDate('');
+      setNotes('');
       setRiderDetails({
         vehicle_type: '', model: '', color: '', cc: '', license_plate: '', registration_no: '', dob: '', city: ''
       });
@@ -173,18 +202,26 @@ export default function StaffPermissions() {
         finalPermissions = { pos: false, kds: false, admin: false, website: false, rider: true };
       }
 
-      const payload: any = { name, phone, role_id: finalRoleId, store_id: storeId, module_permissions: finalPermissions };
+      const payload: any = { 
+        name, 
+        phone, 
+        role_id: finalRoleId, 
+        store_id: storeId, 
+        brand_id: activeBrandId,
+        module_permissions: finalPermissions,
+        emp_id: empId,
+        email,
+        designation,
+        status,
+        joining_date: joiningDate || null,
+        notes
+      };
       if (pin.trim()) payload.pin = pin;
       if (imageUrl.trim()) payload.image_url = imageUrl;
       if (activeTab === 'rider') payload.rider_details = riderDetails;
 
-      const token = localStorage.getItem('d4u_admin_token');
-      const res = await fetch(url, {
+      const res = await apiFetch(url.replace(BACKEND_URL, ''), {
         method,
-        headers: { 
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
         body: JSON.stringify(payload)
       });
 
@@ -205,10 +242,8 @@ export default function StaffPermissions() {
   const handleDelete = async (user: any) => {
     if (!(await customConfirm(`Are you sure you want to remove ${user.name}?`))) return;
     try {
-      const token = localStorage.getItem('d4u_admin_token');
-      const res = await fetch(`${BACKEND_URL}/users/${user.id}`, { 
-        method: 'DELETE',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      const res = await apiFetch(`/users/${user.id}`, { 
+        method: 'DELETE'
       });
       if (!res.ok) throw new Error('Delete failed');
       customSuccess(`${user.name} removed.`);
@@ -252,7 +287,7 @@ export default function StaffPermissions() {
         </button>
       </div>
 
-      {users.filter(user => user.store_id === selectedBranchId).length === 0 ? (
+      {users.length === 0 ? (
         <div className="bg-slate-800 border border-dashed border-slate-600 rounded-2xl p-16 text-center">
           <Users size={64} className="text-slate-600 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-slate-400 mb-2">No Staff Found</h3>
@@ -263,7 +298,7 @@ export default function StaffPermissions() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {users.filter(user => user.store_id === selectedBranchId).map((user) => {
+          {users.map((user) => {
             const branch = branches.find(b => b.id === user.store_id);
             const roleName = user.role?.name || 'Unknown';
             return (
@@ -277,6 +312,7 @@ export default function StaffPermissions() {
                       <h3 className="font-bold text-lg text-white">{user.name}</h3>
                       <div className="flex gap-2 text-sm mt-1 items-center">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${getRoleBadgeColor(roleName)}`}>{roleName}</span>
+                        {user.status === 'SUSPENDED' && <span className="px-2 py-0.5 rounded-full text-xs font-bold border bg-red-500/20 text-red-400 border-red-500/30">Suspended</span>}
                       </div>
                     </div>
                   </div>
@@ -291,6 +327,10 @@ export default function StaffPermissions() {
                 </div>
 
                 <div className="space-y-2 p-3 bg-slate-900/60 rounded-xl border border-slate-700/50 mb-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-slate-500 w-20">Emp ID:</span>
+                    <span className="font-bold text-slate-200">{user.emp_id || '-'}</span>
+                  </div>
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-slate-500 w-20">Phone:</span>
                     <span className="font-mono text-slate-200">{user.phone}</span>
@@ -369,7 +409,44 @@ export default function StaffPermissions() {
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500"
                     placeholder="e.g. 03000000001" />
                 </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-2">Email Address</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500"
+                    placeholder="e.g. ali@example.com" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-2">Employee ID</label>
+                  <input type="text" value={empId} onChange={e => setEmpId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500"
+                    placeholder="e.g. EMP-1002" />
+                </div>
               </div>
+
+              {activeTab === 'staff' && (
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-2">Status</label>
+                    <select value={status} onChange={e => setStatus(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500">
+                      <option value="ACTIVE">Active</option>
+                      <option value="SUSPENDED">Suspended</option>
+                      <option value="TERMINATED">Terminated</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-2">Designation</label>
+                    <input type="text" value={designation} onChange={e => setDesignation(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500"
+                      placeholder="e.g. Senior Cook" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-2">Joining Date</label>
+                    <input type="date" value={joiningDate} onChange={e => setJoiningDate(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-2">Photo URL (Optional for Our Staff section)</label>

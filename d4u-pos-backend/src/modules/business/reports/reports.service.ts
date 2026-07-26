@@ -1,12 +1,25 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { SystemRoles } from '../../../common/enums/roles.enum';
 
 @Injectable()
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
+  private async validateStoreAccess(store_id: number, user?: any) {
+    if (!user || !user.brand_id || user.role === SystemRoles.SUPER_ADMIN) return;
+    const store = await this.prisma.store.findUnique({ where: { id: store_id } });
+    if (!store || store.brand_id !== user.brand_id) {
+      throw new ForbiddenException(`Access to store #${store_id} denied`);
+    }
+    if (user.store_id && user.store_id !== store_id) {
+      throw new ForbiddenException(`Access to store #${store_id} denied`);
+    }
+  }
+
   // روزانہ کی رپورٹ
-  async getDailyReport(store_id: number, date?: string) {
+  async getDailyReport(store_id: number, date?: string, user?: any) {
+    await this.validateStoreAccess(store_id, user);
     const targetDate = date ? new Date(date) : new Date();
     const start = new Date(targetDate);
     start.setHours(0, 0, 0, 0);
@@ -62,7 +75,9 @@ export class ReportsService {
     end_date?: string,
     business_day_id?: number,
     cashier_id?: number,
+    user?: any
   ) {
+    await this.validateStoreAccess(store_id, user);
     const where: any = {
       store_id,
       status: { not: 'VOIDED' },
@@ -163,7 +178,8 @@ export class ReportsService {
   }
 
   // Get Shifts (Business Days)
-  async getShifts(store_id: number, limit = 10) {
+  async getShifts(store_id: number, limit = 10, user?: any) {
+    await this.validateStoreAccess(store_id, user);
     return this.prisma.businessDay.findMany({
       where: { store_id },
       orderBy: { id: 'desc' },
@@ -176,7 +192,8 @@ export class ReportsService {
   }
 
   // سب سے زیادہ بکنے والی چیزیں
-  async getTopProducts(store_id: number, limit = 10) {
+  async getTopProducts(store_id: number, limit = 10, user?: any) {
+    await this.validateStoreAccess(store_id, user);
     const items = await this.prisma.orderItem.groupBy({
       by: ['product_id'],
       where: { order: { store_id, status: { not: 'VOIDED' } } },
@@ -203,7 +220,8 @@ export class ReportsService {
   }
 
   // Void آرڈرز کی Audit List
-  async getVoidedOrders(store_id: number, business_day_id?: number) {
+  async getVoidedOrders(store_id: number, business_day_id?: number, user?: any) {
+    await this.validateStoreAccess(store_id, user);
     const where: any = { store_id, status: 'VOIDED' };
     if (business_day_id) where.business_day_id = business_day_id;
 
@@ -218,7 +236,10 @@ export class ReportsService {
   }
 
   // Multi-Store موازنہ (Brand Owner کے لیے)
-  async getBrandOverview(brand_id: number) {
+  async getBrandOverview(brand_id: number, user?: any) {
+    if (user && user.brand_id && user.role !== SystemRoles.SUPER_ADMIN && user.brand_id !== brand_id) {
+      throw new ForbiddenException(`Access to brand #${brand_id} denied`);
+    }
     const stores = await this.prisma.store.findMany({ where: { brand_id } });
 
     const overview = await Promise.all(
@@ -253,7 +274,8 @@ export class ReportsService {
   }
 
   // ہفتہ واری Sales Trend
-  async getWeeklyTrend(store_id: number) {
+  async getWeeklyTrend(store_id: number, user?: any) {
+    await this.validateStoreAccess(store_id, user);
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();

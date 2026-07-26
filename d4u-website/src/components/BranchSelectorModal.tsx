@@ -9,6 +9,15 @@ interface BranchSelectorModalProps {
 export default function BranchSelectorModal({ stores, onSelect }: BranchSelectorModalProps) {
   const [selectedCity, setSelectedCity] = useState<string>('');
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Set loading to false once the component receives the stores array
+  // (Assuming stores is fetched once and passed down. Even if empty, loading should stop after a short delay)
+  React.useEffect(() => {
+    // Assume fetching is done if we got an array, wait a small tick
+    const timer = setTimeout(() => setIsLoading(false), 500);
+    return () => clearTimeout(timer);
+  }, [stores]);
 
   // Extract unique cities from store locations (e.g. "Harbanspura, Lahore" → "Lahore")
   const cities = useMemo(() => {
@@ -74,10 +83,17 @@ export default function BranchSelectorModal({ stores, onSelect }: BranchSelector
         </div>
 
         {/* Loading state */}
-        {stores.length === 0 && (
+        {isLoading && (
           <div className="text-center py-6">
             <div className="w-8 h-8 border-2 border-[#ffe1a7] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
             <p className="text-slate-400 text-sm">Loading branches...</p>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isLoading && stores.length === 0 && (
+          <div className="text-center py-6">
+            <p className="text-slate-400 text-sm">No branches available at the moment.</p>
           </div>
         )}
 

@@ -12,8 +12,4 @@ export class UpdateStoreDto {
   @IsBoolean()
   @IsOptional()
   is_online?: boolean;
-
-  @IsInt()
-  @IsOptional()
-  saas_package_id?: number;
 }

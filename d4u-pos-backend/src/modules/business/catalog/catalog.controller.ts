@@ -114,6 +114,9 @@ export class CatalogController {
       body.name,
       body.menu_id,
       body.store_ids,
+      body.is_active,
+      body.sort_order,
+      body.image_url,
     );
   }
 

@@ -1,435 +1,509 @@
 import React, { useState, useEffect } from 'react';
-import { ChefHat, Save, Plus, Trash2, CheckCircle2, Download, Upload } from 'lucide-react';
+import { ChefHat, Save, Plus, Trash2, CheckCircle2, Download, Upload, List, Edit2 } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { customAlert, customSuccess } from '../utils/alerts';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+import { apiFetch } from '../utils/api';
 
 export default function RecipeManager() {
   const { selectedBranchId } = useAdminContext();
-  const getHeaders = () => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
-  });
-  const getAuthHeaderOnly = () => ({
-    'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
-  });
+  // Auth headers handled centrally by apiFetch → utils/api.ts
 
-  const [products, setProducts] = useState<any[]>([]);
+  // Data state
+  const [categories, setCategories] = useState<any[]>([]);
+  const [recipes, setRecipes] = useState<any[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
-  
-  const [selectedProductId, setSelectedProductId] = useState<number>(0);
-  const [recipeRows, setRecipeRows] = useState<any[]>([]);
-  
+  const [products, setProducts] = useState<any[]>([]);
+
+  // UI state
+  const [activeTab, setActiveTab] = useState<'RECIPES' | 'MAPPING'>('RECIPES');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedRecipe, setSelectedRecipe] = useState<any | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // New Category / Recipe Modals
+  const [showNewCat, setShowNewCat] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  
+  const [showNewRecipe, setShowNewRecipe] = useState(false);
+  const [newRecipeData, setNewRecipeData] = useState({ name: '', category_id: 0 });
 
   useEffect(() => {
     if (!selectedBranchId) return;
-    // Load Menu Products
-    const loadProducts = async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}/catalog/products?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() });
-        if (res.ok) setProducts(await res.json());
-      } catch (e) {
-        console.error('Failed to load products', e);
-      }
-    };
-    
-    // Load Inventory Items
-    const loadInventory = async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}/inventory/items/${selectedBranchId}`, { headers: getAuthHeaderOnly() });
-        if (res.ok) setInventory(await res.json());
-      } catch (e) {
-        console.error('Failed to load inventory', e);
-      }
-    };
-
-    loadProducts();
-    loadInventory();
+    loadAllData();
   }, [selectedBranchId]);
 
-  // When a product is selected, fetch its existing recipe
-  useEffect(() => {
-    if (!selectedProductId) {
-      setRecipeRows([]);
-      return;
+  const loadAllData = async () => {
+    try {
+      const [catRes, recRes, invRes, prodRes] = await Promise.all([
+        apiFetch(`/recipes/categories/${selectedBranchId}`),
+        apiFetch(`/recipes/store/${selectedBranchId}`),
+        apiFetch(`/inventory/items/${selectedBranchId}`),
+        apiFetch(`/catalog/products?store_id=${selectedBranchId}`)
+      ]);
+
+      if (catRes.ok) setCategories(await catRes.json());
+      if (recRes.ok) setRecipes(await recRes.json());
+      if (invRes.ok) setInventory(await invRes.json());
+      if (prodRes.ok) setProducts(await prodRes.json());
+    } catch (e) {
+      console.error('Failed to load data', e);
     }
-    const loadRecipe = async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}/recipes/product/${selectedProductId}`, { headers: getAuthHeaderOnly() });
-        if (res.ok) {
-          const data = await res.json();
-          // Map to local state
-          const formatted = data.map((r: any) => ({
-            id: Math.random().toString(), // unique row id for UI
-            inventory_id: r.inventory_id,
-            quantity: r.quantity,
-            unit: r.unit,
-            price: r.inventory?.unit_price || 0,
-            total: (r.inventory?.unit_price || 0) * r.quantity
-          }));
-          setRecipeRows(formatted.length > 0 ? formatted : [{ id: Math.random().toString(), inventory_id: 0, quantity: 0, unit: '', price: 0, total: 0 }]);
-        }
-      } catch (e) {
-        console.error('Failed to load recipe', e);
+  };
+
+  const handleCreateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await apiFetch(`/recipes/categories`, {
+        method: 'POST',
+        body: JSON.stringify({ store_id: selectedBranchId, name: newCatName })
+      });
+      if (res.ok) {
+        setShowNewCat(false);
+        setNewCatName('');
+        loadAllData();
       }
-    };
-    loadRecipe();
-  }, [selectedProductId]);
-
-  const addRow = () => {
-    setRecipeRows([{ id: Math.random().toString(), inventory_id: 0, quantity: 0, unit: '', price: 0, total: 0 }, ...recipeRows]);
-  };
-
-  const removeRow = (id: string) => {
-    setRecipeRows(recipeRows.filter(r => r.id !== id));
-  };
-
-  const updateRow = (id: string, field: string, value: any) => {
-    setRecipeRows(recipeRows.map(row => {
-      if (row.id === id) {
-        const newRow = { ...row, [field]: value };
-        
-        // If inventory item changes, fetch its unit and price
-        if (field === 'inventory_id') {
-          const invItem = inventory.find(i => i.id === parseInt(value));
-          if (invItem) {
-            newRow.unit = invItem.unit;
-            newRow.price = invItem.unit_price || 0;
-          } else {
-            newRow.unit = '';
-            newRow.price = 0;
-          }
-        }
-        
-        // Recalculate total
-        if (field === 'quantity' || field === 'inventory_id') {
-          newRow.total = parseFloat((newRow.quantity * newRow.price).toFixed(2));
-        }
-        
-        return newRow;
-      }
-      return row;
-    }));
-  };
-
-  const handleSaveRecipe = async () => {
-    if (!selectedProductId) return customAlert('Please select a product first.');
-    
-    // Filter out incomplete rows and ensure integers
-    const validRows = recipeRows
-      .filter(r => parseInt(r.inventory_id) > 0 && parseFloat(r.quantity) > 0)
-      .map(r => ({
-        inventory_id: parseInt(r.inventory_id),
-        quantity: parseFloat(r.quantity),
-        unit: r.unit
-      }));
-      
-    if (validRows.length === 0 && recipeRows.length > 0) {
-      return customAlert("No valid rows to save. Make sure all items have a selected material and a quantity greater than 0.");
+    } catch (e) {
+      customAlert("Failed to create category");
     }
-    
+  };
+
+  const handleCreateRecipe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await apiFetch(`/recipes`, {
+        method: 'POST',
+        body: JSON.stringify({ 
+          store_id: selectedBranchId, 
+          name: newRecipeData.name, 
+          category_id: newRecipeData.category_id || null 
+        })
+      });
+      if (res.ok) {
+        setShowNewRecipe(false);
+        setNewRecipeData({ name: '', category_id: 0 });
+        loadAllData();
+      }
+    } catch (e) {
+      customAlert("Failed to create recipe");
+    }
+  };
+
+  const handleUpdateRecipeMeta = async () => {
+    if (!selectedRecipe) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/catalog/products/${selectedProductId}/recipe`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ ingredients: validRows })
+      await apiFetch(`/recipes/${selectedRecipe.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          yield: selectedRecipe.yield,
+          portion_size: selectedRecipe.portion_size,
+          waste_percentage: selectedRecipe.waste_percentage,
+          prep_time_mins: selectedRecipe.prep_time_mins,
+          instructions: selectedRecipe.instructions
+        })
       });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || 'Failed to save recipe');
-      }
-      const result = await res.json();
-      customSuccess(`Recipe Saved Successfully!\nNew Total Cost: Rs. ${result.totalCost?.toFixed(2) || grandTotal.toFixed(2)}`);
-    } catch (e: any) {
-      console.error('Failed to save recipe', e);
-      customAlert(`Error saving recipe: ${e.message}`);
+      customSuccess("Recipe details saved");
+      loadAllData();
+    } catch (e) {
+      customAlert("Failed to save recipe details");
     }
     setIsSaving(false);
   };
 
-  const grandTotal = recipeRows.reduce((sum, row) => sum + (row.total || 0), 0);
-  const selectedProduct = products.find(p => p.id === selectedProductId);
+  const handleSaveIngredients = async () => {
+    if (!selectedRecipe) return;
+    setIsSaving(true);
+    try {
+      const validIngredients = selectedRecipe.ingredients
+        .filter((i: any) => parseInt(i.inventory_id) > 0 && parseFloat(i.quantity) > 0)
+        .map((i: any) => ({
+          inventory_id: parseInt(i.inventory_id),
+          quantity: parseFloat(i.quantity),
+          unit: i.unit
+        }));
 
-  const exportCSV = () => {
-    if (!selectedProductId || recipeRows.length === 0) return;
-    const header = "Inventory ID,Item Name,Quantity,Unit,Unit Price,Total Cost\n";
-    const rows = recipeRows.filter(r => parseInt(r.inventory_id) > 0).map(row => {
-      const invName = inventory.find(i => i.id === parseInt(row.inventory_id))?.name || '';
-      return `${row.inventory_id},"${invName}",${row.quantity},${row.unit},${row.price},${row.total}`;
-    }).join("\n");
-    const csvData = header + rows;
-    const blob = new Blob([csvData], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `recipe_${selectedProduct?.name?.replace(/\s+/g, '_') || 'product'}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+      await apiFetch(`/recipes/${selectedRecipe.id}/ingredients`, {
+        method: 'POST',
+        body: JSON.stringify({ ingredients: validIngredients })
+      });
+      customSuccess("Ingredients saved successfully!");
+      loadAllData();
+    } catch (e) {
+      customAlert("Failed to save ingredients");
+    }
+    setIsSaving(false);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    const target = e.target;
-    const reader = new FileReader();
-    
-    reader.onload = async (evt) => {
-      try {
-        const text = evt.target?.result as string;
-        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
-        if (lines.length <= 1) {
-          target.value = '';
-          return customAlert("Empty or invalid CSV file.");
-        }
-        
-        const newRows: any[] = [];
-        const localInventory = [...inventory];
-        
-        for (let i = 1; i < lines.length; i++) {
-          let line = lines[i];
-          let cols = [];
-          let inQuotes = false;
-          let currentPart = '';
-          for (let j = 0; j < line.length; j++) {
-              if (line[j] === '"') {
-                  inQuotes = !inQuotes;
-              } else if (line[j] === ',' && !inQuotes) {
-                  cols.push(currentPart);
-                  currentPart = '';
-              } else {
-                  currentPart += line[j];
-              }
-          }
-          cols.push(currentPart);
-          cols = cols.map(c => c.trim().replace(/^"|"$/g, '')); // Strip any remaining quotes just in case
-
-          if (cols.length >= 3) {
-            let inv_id = parseInt(cols[0]);
-            const itemName = cols[1];
-            const qty = parseFloat(cols[2]);
-            const unit = cols[3] || 'Count';
-            let price = parseFloat(cols[4] || '0');
-            
-            let existingItem = !isNaN(inv_id) ? localInventory.find(inv => inv.id === inv_id) : undefined;
-
-            if (!existingItem && itemName) {
-              existingItem = localInventory.find(inv => inv.name.toLowerCase() === itemName.toLowerCase());
-              if (!existingItem) {
-                 try {
-                   const res = await fetch(`${BACKEND_URL}/inventory/items`, {
-                     method: 'POST',
-                     headers: getHeaders(),
-                     body: JSON.stringify({
-                       store_id: selectedBranchId, 
-                       name: itemName,
-                       quantity: 0,
-                       unit: unit,
-                       unit_price: isNaN(price) ? 0 : price,
-                       min_threshold: 10
-                     })
-                   });
-                   if (res.ok) {
-                     existingItem = await res.json();
-                     localInventory.push(existingItem);
-                   }
-                 } catch (err) {
-                   console.error("Failed to create inventory item", err);
-                 }
-              }
-            }
-
-            if (existingItem) {
-              inv_id = existingItem.id;
-              if (isNaN(price) || price === 0) price = existingItem.unit_price || 0;
-            }
-
-            if (existingItem && !isNaN(qty) && qty > 0) {
-              const finalPrice = !isNaN(price) ? price : 0;
-              newRows.push({
-                id: Math.random().toString(),
-                inventory_id: inv_id,
-                quantity: qty,
-                unit: unit || existingItem.unit || 'Count',
-                price: finalPrice,
-                total: parseFloat((qty * finalPrice).toFixed(2))
-              });
-            }
-          }
-        }
-        
-        setInventory(localInventory);
-        if (newRows.length > 0) {
-          setRecipeRows(newRows);
-          customSuccess("CSV imported successfully! Don't forget to click Save Recipe.");
-        } else {
-          customAlert("No valid rows found in CSV.");
-        }
-      } catch (err) {
-        console.error("CSV Parsing error:", err);
-        customAlert("Failed to parse CSV file.");
-      } finally {
-        target.value = ''; 
+  const handleMapRecipeToProduct = async (product_id: number, recipe_id: number | null) => {
+    try {
+      const res = await apiFetch(`/catalog/products/${product_id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ recipe_id })
+      });
+      if (res.ok) {
+        customSuccess("Product mapped to recipe");
+        loadAllData();
       }
-    };
-    reader.readAsText(file);
+    } catch (e) {
+      customAlert("Failed to map recipe");
+    }
   };
+
+  const addIngredientRow = () => {
+    if (!selectedRecipe) return;
+    setSelectedRecipe({
+      ...selectedRecipe,
+      ingredients: [...selectedRecipe.ingredients, { id: Math.random(), inventory_id: 0, quantity: 0, unit: '', price: 0 }]
+    });
+  };
+
+  const updateIngredientRow = (id: number, field: string, value: any) => {
+    if (!selectedRecipe) return;
+    const newIngredients = selectedRecipe.ingredients.map((row: any) => {
+      if (row.id === id) {
+        const newRow = { ...row, [field]: value };
+        if (field === 'inventory_id') {
+          const inv = inventory.find(i => i.id === parseInt(value));
+          if (inv) {
+            newRow.unit = inv.unit;
+            newRow.price = inv.unit_price;
+          }
+        }
+        return newRow;
+      }
+      return row;
+    });
+    setSelectedRecipe({ ...selectedRecipe, ingredients: newIngredients });
+  };
+
+  const removeIngredientRow = (id: number) => {
+    if (!selectedRecipe) return;
+    setSelectedRecipe({
+      ...selectedRecipe,
+      ingredients: selectedRecipe.ingredients.filter((row: any) => row.id !== id)
+    });
+  };
+
+  const calculateTotalCost = () => {
+    if (!selectedRecipe) return 0;
+    return selectedRecipe.ingredients.reduce((sum: number, row: any) => {
+      const price = row.inventory?.unit_price || row.price || 0;
+      return sum + (price * row.quantity);
+    }, 0);
+  };
+
+  const filteredRecipes = selectedCategoryId
+    ? recipes.filter(r => r.category_id === selectedCategoryId)
+    : recipes;
 
   return (
-    <div className="animate-fade-in flex flex-col h-[calc(100vh-160px)] gap-6">
-      
-      {/* Top Bar - Product Selection */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 flex flex-wrap gap-6 items-center justify-between shadow-lg">
-        <div className="flex-1 min-w-[300px]">
-          <label className="block text-sm font-bold text-slate-400 mb-2 uppercase tracking-wide">Select Menu Product for Costing</label>
-          <select 
-            className="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-3 text-white text-lg font-bold focus:outline-none focus:border-[#fbbf24] transition-colors"
-            value={selectedProductId}
-            onChange={(e) => setSelectedProductId(parseInt(e.target.value))}
-          >
-            <option value={0}>-- Select a Product --</option>
-            {products.map(p => (
-              <option key={p.id} value={p.id}>{p.name} (Rs. {p.price})</option>
-            ))}
-          </select>
+    <div className="p-8 animate-fade-in">
+      <div className="flex justify-between items-end mb-8">
+        <div>
+          <h1 className="text-4xl font-black text-slate-800 flex items-center gap-3">
+            <ChefHat size={36} className="text-amber-500" />
+            Recipe Engine
+          </h1>
+          <p className="text-slate-500 mt-2 text-lg">Manage standardized recipes and link them to menu products.</p>
         </div>
-        
-        {selectedProduct && (
-          <div className="flex gap-8 items-center bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
-            <div>
-              <p className="text-xs text-slate-400 font-bold mb-1 uppercase tracking-wider">Selling Price</p>
-              <p className="text-xl font-mono text-white">Rs. {selectedProduct.price}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400 font-bold mb-1 uppercase tracking-wider">Total Cost</p>
-              <p className="text-xl font-mono text-[#fbbf24]">Rs. {grandTotal.toFixed(2)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400 font-bold mb-1 uppercase tracking-wider">Profit Margin</p>
-              <p className={`text-xl font-mono font-bold ${selectedProduct.price - grandTotal > 0 ? 'text-[#4edea3]' : 'text-red-400'}`}>
-                {selectedProduct.price > 0 ? (((selectedProduct.price - grandTotal) / selectedProduct.price) * 100).toFixed(1) : 0}%
-              </p>
-            </div>
-          </div>
-        )}
+        <div className="flex gap-4">
+          <button 
+            onClick={() => setActiveTab('RECIPES')}
+            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'RECIPES' ? 'bg-amber-500 text-white shadow-lg' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}
+          >
+            Manage Recipes
+          </button>
+          <button 
+            onClick={() => setActiveTab('MAPPING')}
+            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'MAPPING' ? 'bg-indigo-500 text-white shadow-lg' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}
+          >
+            Map to Menu
+          </button>
+        </div>
       </div>
 
-      {/* Grid Interface */}
-      <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl flex flex-col overflow-hidden relative shadow-lg">
-        
-        {!selectedProductId ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
-            <ChefHat size={64} className="mb-4 opacity-30" />
-            <h3 className="text-xl font-bold mb-2">No Product Selected</h3>
-            <p>Select a product from the dropdown above to build its recipe.</p>
-          </div>
-        ) : (
-          <>
-            <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-left text-sm text-slate-300">
-                <thead className="bg-slate-900/80 text-slate-400 sticky top-0 z-10 backdrop-blur-sm">
-                  <tr>
-                    <th className="p-4 w-1/3">Raw Material (Item)</th>
-                    <th className="p-4 w-1/6">Qty Needed</th>
-                    <th className="p-4 w-1/6">Unit</th>
-                    <th className="p-4 w-1/6">Unit Price</th>
-                    <th className="p-4 w-1/6">Total Cost</th>
-                    <th className="p-4 w-16 text-center"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/50">
-                  {recipeRows.map((row, index) => (
-                    <tr key={row.id} className="hover:bg-slate-700/20 transition-colors">
-                      <td className="p-3">
-                        <select 
-                          className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-[#fbbf24]"
-                          value={row.inventory_id}
-                          onChange={(e) => updateRow(row.id, 'inventory_id', e.target.value)}
-                        >
-                          <option value={0}>Select Item...</option>
-                          {inventory.map(inv => (
-                            <option key={inv.id} value={inv.id}>{inv.name}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-3">
-                        <input 
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white font-mono focus:outline-none focus:border-[#fbbf24]"
-                          value={row.quantity || ''}
-                          onChange={(e) => updateRow(row.id, 'quantity', parseFloat(e.target.value) || 0)}
-                        />
-                      </td>
-                      <td className="p-3 text-slate-400 font-mono">
-                        <select 
-                          className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white focus:outline-none focus:border-[#fbbf24]"
-                          value={row.unit || ''}
-                          onChange={(e) => updateRow(row.id, 'unit', e.target.value)}
-                        >
-                          <option value="">Select Unit...</option>
-                          {['Count', 'kg', 'gram', 'ml', 'Liter', 'piece', 'box', 'bottle', 'packet', 'slice'].map(u => (
-                            <option key={u} value={u}>{u}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-3 text-slate-400 font-mono">Rs. {row.price.toFixed(2)}</td>
-                      <td className="p-3 font-mono font-bold text-[#fbbf24]">Rs. {row.total.toFixed(2)}</td>
-                      <td className="p-3 text-center">
-                        <button onClick={() => removeRow(row.id)} className="text-slate-500 hover:text-red-400 transition-colors p-1">
-                          <Trash2 size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            
-            {/* Action Footer */}
-            <div className="bg-slate-900/50 border-t border-slate-700 p-4 flex justify-between items-center">
-              <div className="flex gap-3">
-                <button 
-                  onClick={addRow}
-                  className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
-                >
-                  <Plus size={18} /> Add Row
-                </button>
-                <button 
-                  onClick={exportCSV}
-                  className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-indigo-400 hover:text-indigo-300 px-4 py-2 rounded-lg font-bold transition-colors"
-                  title="Export to CSV"
-                >
-                  <Download size={18} /> Export CSV
-                </button>
-                <label className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-emerald-400 hover:text-emerald-300 px-4 py-2 rounded-lg font-bold transition-colors cursor-pointer">
-                  <Upload size={18} /> Import CSV
-                  <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
-                </label>
+      {activeTab === 'RECIPES' && (
+        <div className="flex gap-6">
+          {/* Left Panel: Categories & Recipes */}
+          <div className="w-1/3 flex flex-col gap-6">
+            <div className="bg-white rounded-2xl shadow-xl p-6 border border-slate-100">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2"><List size={18} /> Categories</h3>
+                <button onClick={() => setShowNewCat(true)} className="text-amber-500 hover:text-amber-600 font-bold text-sm flex items-center"><Plus size={16} /> Add</button>
               </div>
-              
-              <div className="flex items-center gap-6">
-                <div className="text-right">
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Recipe Total Cost</p>
-                  <p className="text-2xl font-black text-[#fbbf24]">Rs. {grandTotal.toFixed(2)}</p>
+              <div className="space-y-2">
+                <button 
+                  onClick={() => setSelectedCategoryId(null)}
+                  className={`w-full text-left px-4 py-2 rounded-lg font-bold transition-all ${selectedCategoryId === null ? 'bg-amber-50 text-amber-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                  All Recipes
+                </button>
+                {categories.map(cat => (
+                  <button 
+                    key={cat.id}
+                    onClick={() => setSelectedCategoryId(cat.id)}
+                    className={`w-full text-left px-4 py-2 rounded-lg font-bold transition-all ${selectedCategoryId === cat.id ? 'bg-amber-50 text-amber-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-xl p-6 border border-slate-100 flex-1">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-slate-800">Recipes</h3>
+                <button onClick={() => setShowNewRecipe(true)} className="text-amber-500 hover:text-amber-600 font-bold text-sm flex items-center"><Plus size={16} /> New</button>
+              </div>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {filteredRecipes.map(recipe => (
+                  <button 
+                    key={recipe.id}
+                    onClick={() => {
+                      const rec = recipes.find(r => r.id === recipe.id);
+                      // Add random ID to ingredients for local state rendering
+                      const formattedRec = {
+                        ...rec,
+                        ingredients: rec.ingredients.map((i: any) => ({ ...i, id: Math.random(), price: i.inventory?.unit_price || 0 }))
+                      };
+                      setSelectedRecipe(formattedRec);
+                    }}
+                    className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${selectedRecipe?.id === recipe.id ? 'border-amber-500 bg-amber-50 text-amber-700 font-bold shadow-md' : 'border-slate-100 hover:border-amber-200 text-slate-700 hover:shadow-sm'}`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <span>{recipe.name}</span>
+                      <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500">{recipe.ingredients?.length || 0} items</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Panel: Recipe Editor */}
+          <div className="w-2/3">
+            {selectedRecipe ? (
+              <div className="bg-white rounded-2xl shadow-xl p-8 border border-slate-100 animate-fade-in">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-800">{selectedRecipe.name}</h2>
+                    <p className="text-slate-500">Edit recipe details and raw materials</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-bold text-slate-400">Total Recipe Cost</div>
+                    <div className="text-3xl font-black text-emerald-500">Rs. {calculateTotalCost().toFixed(2)}</div>
+                  </div>
                 </div>
-                <button 
-                  onClick={handleSaveRecipe}
-                  disabled={isSaving}
-                  className="flex items-center gap-2 bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 px-8 py-3 rounded-lg font-black transition-all disabled:opacity-50"
-                >
-                  {isSaving ? <span className="animate-pulse">Saving...</span> : <><CheckCircle2 size={20} /> Save Recipe</>}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
 
+                <div className="grid grid-cols-4 gap-4 mb-8 bg-slate-50 p-6 rounded-xl border border-slate-100">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Yield (Total Output)</label>
+                    <input type="number" value={selectedRecipe.yield} onChange={e => setSelectedRecipe({...selectedRecipe, yield: parseFloat(e.target.value)})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Portion Size</label>
+                    <input type="number" value={selectedRecipe.portion_size || ''} onChange={e => setSelectedRecipe({...selectedRecipe, portion_size: parseFloat(e.target.value)})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 font-bold" placeholder="e.g. 250g" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Waste %</label>
+                    <input type="number" value={selectedRecipe.waste_percentage} onChange={e => setSelectedRecipe({...selectedRecipe, waste_percentage: parseFloat(e.target.value)})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Prep Time (Mins)</label>
+                    <input type="number" value={selectedRecipe.prep_time_mins} onChange={e => setSelectedRecipe({...selectedRecipe, prep_time_mins: parseInt(e.target.value)})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 font-bold" />
+                  </div>
+                  <div className="col-span-4 mt-2">
+                    <button onClick={handleUpdateRecipeMeta} disabled={isSaving} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-bold text-sm">Save Recipe Details</button>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-black text-lg text-slate-800">Ingredients</h3>
+                  <button onClick={addIngredientRow} className="bg-amber-100 hover:bg-amber-200 text-amber-700 px-3 py-1.5 rounded-lg font-bold text-sm flex items-center gap-1 transition-colors">
+                    <Plus size={16} /> Add Ingredient
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200 mb-6">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="p-3 text-xs font-bold text-slate-500 uppercase">Material</th>
+                        <th className="p-3 text-xs font-bold text-slate-500 uppercase">Quantity</th>
+                        <th className="p-3 text-xs font-bold text-slate-500 uppercase">Unit</th>
+                        <th className="p-3 text-xs font-bold text-slate-500 uppercase">Cost</th>
+                        <th className="p-3 text-xs font-bold text-slate-500 uppercase">Total</th>
+                        <th className="p-3 w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedRecipe.ingredients?.length === 0 && (
+                        <tr><td colSpan={6} className="p-4 text-center text-slate-400 italic">No ingredients added yet.</td></tr>
+                      )}
+                      {selectedRecipe.ingredients?.map((row: any) => {
+                        const rowCost = row.inventory?.unit_price || row.price || 0;
+                        const total = rowCost * row.quantity;
+                        return (
+                          <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="p-2">
+                              <select 
+                                value={row.inventory_id || ''} 
+                                onChange={(e) => updateIngredientRow(row.id, 'inventory_id', e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded p-2 text-sm outline-none focus:border-amber-500"
+                              >
+                                <option value="">Select Material...</option>
+                                {inventory.map(inv => (
+                                  <option key={inv.id} value={inv.id}>{inv.name} (Rs. {inv.unit_price}/{inv.unit})</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="p-2">
+                              <input 
+                                type="number" 
+                                value={row.quantity || ''}
+                                onChange={(e) => updateIngredientRow(row.id, 'quantity', e.target.value)}
+                                className="w-24 bg-white border border-slate-200 rounded p-2 text-sm outline-none focus:border-amber-500" 
+                                placeholder="Qty"
+                              />
+                            </td>
+                            <td className="p-2 text-sm text-slate-600 font-bold">{row.unit || '-'}</td>
+                            <td className="p-2 text-sm text-slate-600">Rs. {rowCost.toFixed(2)}</td>
+                            <td className="p-2 text-sm font-bold text-slate-800">Rs. {total.toFixed(2)}</td>
+                            <td className="p-2 text-right">
+                              <button onClick={() => removeIngredientRow(row.id)} className="text-red-400 hover:text-red-600 p-1 bg-red-50 hover:bg-red-100 rounded">
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex justify-end">
+                  <button 
+                    onClick={handleSaveIngredients}
+                    disabled={isSaving}
+                    className="bg-amber-500 hover:bg-amber-600 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all disabled:opacity-50 hover:scale-105"
+                  >
+                    <Save size={20} />
+                    {isSaving ? 'Saving...' : 'Save Ingredients & Recalculate'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center h-full min-h-[400px] text-slate-400">
+                <ChefHat size={64} className="mb-4 text-slate-300" />
+                <h3 className="text-xl font-bold mb-2">No Recipe Selected</h3>
+                <p>Select a recipe from the left panel to edit its details and ingredients.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'MAPPING' && (
+        <div className="bg-white rounded-2xl shadow-xl p-8 border border-slate-100 animate-fade-in">
+          <h2 className="text-2xl font-black text-slate-800 mb-2">Menu to Recipe Mapping</h2>
+          <p className="text-slate-500 mb-8">Link your menu products to standard recipes to enable accurate costing and inventory deduction.</p>
+          
+          <div className="overflow-hidden rounded-xl border border-slate-200">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-indigo-50 border-b border-indigo-100 text-indigo-800">
+                  <th className="p-4 font-black">Menu Product</th>
+                  <th className="p-4 font-black">Current Recipe Assigned</th>
+                  <th className="p-4 font-black w-64">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map(product => (
+                  <tr key={product.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                    <td className="p-4">
+                      <div className="font-bold text-slate-800">{product.name}</div>
+                      <div className="text-xs text-slate-500">SKU: {product.sku || 'N/A'} • Price: Rs. {product.price}</div>
+                    </td>
+                    <td className="p-4">
+                      <select 
+                        value={product.recipe_id || ''} 
+                        onChange={(e) => handleMapRecipeToProduct(product.id, e.target.value ? parseInt(e.target.value) : null)}
+                        className={`w-full border rounded-lg p-2 text-sm outline-none font-bold ${product.recipe_id ? 'bg-emerald-50 border-emerald-200 text-emerald-700 focus:border-emerald-500' : 'bg-slate-50 border-slate-200 text-slate-600 focus:border-indigo-500'}`}
+                      >
+                        <option value="">-- No Recipe Assigned --</option>
+                        {recipes.map(r => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="p-4 text-center">
+                      {product.recipe_id ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full text-xs font-bold">
+                          <CheckCircle2 size={14} /> Mapped
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-amber-600 bg-amber-100 px-3 py-1 rounded-full text-xs font-bold">
+                          <AlertCircle size={14} /> Unmapped
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showNewCat && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-up">
+            <h3 className="text-xl font-black text-slate-800 mb-4">New Category</h3>
+            <form onSubmit={handleCreateCategory}>
+              <input type="text" autoFocus required value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="e.g. Sauces, Pizza Dough" className="w-full border rounded-xl p-3 mb-4 outline-none focus:border-amber-500" />
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setShowNewCat(false)} className="px-4 py-2 font-bold text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg shadow-md">Create</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showNewRecipe && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-up">
+            <h3 className="text-xl font-black text-slate-800 mb-4">New Recipe</h3>
+            <form onSubmit={handleCreateRecipe}>
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-500 mb-1">Recipe Name</label>
+                <input type="text" autoFocus required value={newRecipeData.name} onChange={e => setNewRecipeData({...newRecipeData, name: e.target.value})} placeholder="e.g. Standard Pizza Sauce" className="w-full border rounded-xl p-3 outline-none focus:border-amber-500" />
+              </div>
+              <div className="mb-6">
+                <label className="block text-xs font-bold text-slate-500 mb-1">Category (Optional)</label>
+                <select value={newRecipeData.category_id} onChange={e => setNewRecipeData({...newRecipeData, category_id: parseInt(e.target.value)})} className="w-full border rounded-xl p-3 outline-none focus:border-amber-500">
+                  <option value={0}>None</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setShowNewRecipe(false)} className="px-4 py-2 font-bold text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg shadow-md">Create</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+// Simple AlertCircle icon since we didn't import it at the top
+const AlertCircle = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="12" y1="8" x2="12" y2="12"></line>
+    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+  </svg>
+);

@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsOptional, IsArray } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsArray, IsBoolean } from 'class-validator';
 
 export class UpdateCategoryDto {
   @IsString()
@@ -13,4 +13,16 @@ export class UpdateCategoryDto {
   @IsInt({ each: true })
   @IsOptional()
   store_ids?: number[];
+
+  @IsBoolean()
+  @IsOptional()
+  is_active?: boolean;
+
+  @IsInt()
+  @IsOptional()
+  sort_order?: number;
+
+  @IsString()
+  @IsOptional()
+  image_url?: string;
 }

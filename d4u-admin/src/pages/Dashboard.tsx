@@ -14,8 +14,7 @@ export default function Dashboard() {
   const [weeklyTrend, setWeeklyTrend] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { branches, brands, selectedBranchId, setSelectedBranchId, activeBrandId } = useAdminContext();
-
+  const { brands, selectedBranchId, activeBrandId } = useAdminContext();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -64,8 +63,6 @@ export default function Dashboard() {
   const totalRevenue = filteredOverview.reduce((sum, store) => sum + store.today_sales, 0);
   const totalOrders = filteredOverview.reduce((sum, store) => sum + store.today_orders, 0);
 
-  // handleEnterBranch is no longer needed as the dropdown controls context directly
-
   return (
     <div className="animate-fade-in space-y-6">
       
@@ -73,30 +70,7 @@ export default function Dashboard() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h2 className="text-3xl font-black text-white">Live Analytics</h2>
-          <p className="text-slate-400 text-sm mt-1">
-            {activeBrandId 
-              ? (selectedBranchId ? `${brands.find(b => b.id === activeBrandId)?.name} > ${branches.find(b => b.id === selectedBranchId)?.name}` : `${brands.find(b => b.id === activeBrandId)?.name} > All Branches`) 
-              : 'Real-time performance across branches'}
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl flex items-center gap-2">
-            <span className="text-slate-400 font-bold text-sm">Filter:</span>
-            <select 
-              value={selectedBranchId || 0} 
-              onChange={e => setSelectedBranchId(Number(e.target.value))}
-              className="bg-transparent text-white outline-none font-bold min-w-[120px]"
-            >
-              <option value={0}>All Branches</option>
-              {(activeBrandId ? brands.find(b => b.id === activeBrandId)?.stores || [] : branches).map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="font-bold text-sm">System Online</span>
-          </div>
+          <p className="text-slate-400 text-sm mt-1">Real-time performance metrics</p>
         </div>
       </div>
 

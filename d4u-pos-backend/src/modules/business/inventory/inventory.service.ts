@@ -57,13 +57,24 @@ export class InventoryService {
     });
   }
 
+  // Low Stock Items (quantity <= reorder_level)
+  async getLowStockItems(store_id: number) {
+    return this.prisma.inventoryItem.findMany({
+      where: {
+        store_id,
+        quantity: { lte: this.prisma.inventoryItem.fields.reorder_level },
+      },
+      orderBy: { quantity: 'asc' },
+    });
+  }
+
   // 3. Deduct Inventory for Order & Emit Soft Block Alert
   async deductForOrder(orderId: number) {
     try {
       const order = (await this.prisma.order.findUnique({
         where: { id: orderId },
         include: {
-          items: { include: { product: { include: { recipeItems: true } } } },
+          items: { include: { product: { include: { recipe: { include: { ingredients: true } } } } } },
         },
       })) as any; // Cast as any to bypass strict Prisma relation typings temporarily
 
@@ -73,21 +84,21 @@ export class InventoryService {
 
       await this.prisma.$transaction(async (tx) => {
         for (const item of order.items) {
-          if (!item.product || !item.product.recipeItems) continue;
+          if (!item.product || !item.product.recipe || !item.product.recipe.ingredients) continue;
 
-          for (const recipe of item.product.recipeItems) {
-            const deductionAmount = recipe.quantity_needed * item.quantity;
+          for (const recipeItem of item.product.recipe.ingredients) {
+            const deductionAmount = recipeItem.quantity * item.quantity;
 
             // Atomic Decrement
             const updatedItem = await tx.inventoryItem.update({
-              where: { id: recipe.inventory_id },
+              where: { id: recipeItem.inventory_id },
               data: { quantity: { decrement: deductionAmount } },
             });
 
             // Log transaction
             await tx.inventoryTransactionLog.create({
               data: {
-                inventory_id: recipe.inventory_id,
+                inventory_id: recipeItem.inventory_id,
                 operation: 'SUBTRACT',
                 amount: deductionAmount,
                 reason: `Auto-deduct for Order #${order.id}`,
@@ -194,6 +205,52 @@ export class InventoryService {
       });
 
       return { success: true, updatedItem };
+    });
+  }
+
+  // --- STOCK ADJUSTMENT (+/-) ---
+  async adjustStock(data: {
+    inventory_id: number;
+    operation: 'ADD' | 'SUBTRACT';
+    amount: number;
+    reason: string;
+    changed_by?: number;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.inventoryItem.findUnique({
+        where: { id: data.inventory_id },
+      });
+      if (!item) throw new NotFoundException('Inventory item not found');
+
+      const modifier = data.operation === 'SUBTRACT' ? -data.amount : data.amount;
+
+      const updatedItem = await tx.inventoryItem.update({
+        where: { id: data.inventory_id },
+        data: {
+          quantity: { increment: modifier },
+        },
+      });
+
+      await tx.inventoryTransactionLog.create({
+        data: {
+          inventory_id: data.inventory_id,
+          operation: data.operation,
+          amount: data.amount,
+          reason: data.reason || 'Manual Adjustment',
+          changed_by: data.changed_by || 1,
+        },
+      });
+
+      return { success: true, item: updatedItem };
+    });
+  }
+
+  // --- ITEM TRANSACTION HISTORY ---
+  async getItemHistory(inventory_id: number) {
+    return this.prisma.inventoryTransactionLog.findMany({
+      where: { inventory_id },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
     });
   }
 
@@ -315,8 +372,13 @@ export class InventoryService {
   }
 
   async deleteInventoryItem(id: number) {
-    return this.prisma.inventoryItem.delete({
-      where: { id },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.inventoryTransactionLog.deleteMany({
+        where: { inventory_id: id },
+      });
+      return tx.inventoryItem.delete({
+        where: { id },
+      });
     });
   }
 }

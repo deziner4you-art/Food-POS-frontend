@@ -12,7 +12,7 @@ export class MarketingService {
 
   private broadcastCampaignUpdate(campaign: any) {
     if (campaign.target_stores && campaign.target_stores.length > 0) {
-      campaign.target_stores.forEach(s => {
+      campaign.target_stores.forEach((s: any) => {
         this.gateway.server.to(`store_${s.id}`).emit('marketing_update', { campaignId: campaign.id, status: campaign.status });
       });
     } else {

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Param } from '@nestjs/common';
+import { Controller, Get, Query, Param, Req } from '@nestjs/common';
 import { RequirePermissions } from '../../../common/decorators';
 import { ReportsService } from './reports.service';
 
@@ -12,8 +12,9 @@ export class ReportsController {
   getDailyReport(
     @Query('store_id') store_id: string,
     @Query('date') date?: string,
+    @Req() req?: any,
   ) {
-    return this.service.getDailyReport(Number(store_id), date);
+    return this.service.getDailyReport(Number(store_id), date, req?.user);
   }
 
   // GET /reports/branch-analytics
@@ -25,6 +26,7 @@ export class ReportsController {
     @Query('end_date') end_date?: string,
     @Query('business_day_id') business_day_id?: string,
     @Query('cashier_id') cashier_id?: string,
+    @Req() req?: any,
   ) {
     return this.service.getBranchAnalytics(
       Number(store_id),
@@ -32,6 +34,7 @@ export class ReportsController {
       end_date,
       business_day_id ? Number(business_day_id) : undefined,
       cashier_id ? Number(cashier_id) : undefined,
+      req?.user,
     );
   }
 
@@ -41,15 +44,16 @@ export class ReportsController {
   getShifts(
     @Query('store_id') store_id: string,
     @Query('limit') limit?: string,
+    @Req() req?: any,
   ) {
-    return this.service.getShifts(Number(store_id), limit ? Number(limit) : 10);
+    return this.service.getShifts(Number(store_id), limit ? Number(limit) : 10, req?.user);
   }
 
   // GET /reports/weekly?store_id=1
   @RequirePermissions('finance.reports.view')
   @Get('weekly')
-  getWeeklyTrend(@Query('store_id') store_id: string) {
-    return this.service.getWeeklyTrend(Number(store_id));
+  getWeeklyTrend(@Query('store_id') store_id: string, @Req() req?: any) {
+    return this.service.getWeeklyTrend(Number(store_id), req?.user);
   }
 
   // GET /reports/top-products?store_id=1&limit=10
@@ -58,10 +62,12 @@ export class ReportsController {
   getTopProducts(
     @Query('store_id') store_id: string,
     @Query('limit') limit?: string,
+    @Req() req?: any,
   ) {
     return this.service.getTopProducts(
       Number(store_id),
       limit ? Number(limit) : 10,
+      req?.user,
     );
   }
 
@@ -71,17 +77,19 @@ export class ReportsController {
   getVoids(
     @Query('store_id') store_id: string,
     @Query('business_day_id') business_day_id?: string,
+    @Req() req?: any,
   ) {
     return this.service.getVoidedOrders(
       Number(store_id),
       business_day_id ? Number(business_day_id) : undefined,
+      req?.user,
     );
   }
 
   // GET /reports/brand/:brand_id — Multi-store overview
   @RequirePermissions('finance.reports.view')
   @Get('brand/:brand_id')
-  getBrandOverview(@Param('brand_id') brand_id: string) {
-    return this.service.getBrandOverview(Number(brand_id));
+  getBrandOverview(@Param('brand_id') brand_id: string, @Req() req?: any) {
+    return this.service.getBrandOverview(Number(brand_id), req?.user);
   }
 }

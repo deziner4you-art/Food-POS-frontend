@@ -45,6 +45,16 @@ export class InventoryController {
     return this.inventoryService.getNegativeInventory(storeId);
   }
 
+  @RequirePermissions('inventory.view')
+  @Get('low-stock/:store_id')
+  async getLowStockItems(
+    @CurrentUser() user: any,
+    @Param('store_id', ParseIntPipe) storeId: number
+  ) {
+    validateTenantAccess(user, storeId);
+    return this.inventoryService.getLowStockItems(storeId);
+  }
+
   // --- CRUD for Inventory Items ---
   @RequirePermissions('inventory.view')
   @Get('items/:store_id')
@@ -119,5 +129,26 @@ export class InventoryController {
   @Post('import-excel')
   async importExcel() {
     return this.inventoryService.importExcelData();
+  }
+
+  @RequirePermissions('inventory.update')
+  @Post('adjust')
+  async adjustStock(
+    @CurrentUser() user: any,
+    @Body() body: { inventory_id: number; operation: 'ADD' | 'SUBTRACT'; amount: number; reason: string },
+  ) {
+    return this.inventoryService.adjustStock({
+      ...body,
+      changed_by: user?.sub,
+    });
+  }
+
+  @RequirePermissions('inventory.view')
+  @Get('items/:id/history')
+  async getItemHistory(
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.inventoryService.getItemHistory(id);
   }
 }

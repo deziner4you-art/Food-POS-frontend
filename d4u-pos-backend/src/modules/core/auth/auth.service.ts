@@ -1,7 +1,12 @@
-import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class AuthService {
@@ -10,120 +15,285 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  private async generateTokens(user: any) {
-    const payload = {
-      sub: user.id,
-      store_id: user.store_id,
-      brand_id: user.brand_id,
-      role: user.role.name,
-      permissions: user.role.permissions,
-      module_permissions: user.module_permissions,
-    };
+  // ---------------------------------------------------------------
+  // PRIVATE: Build JWT payload from user + active assignment
+  // Authentication proves WHO. No permissions or roles in the token.
+  // ---------------------------------------------------------------
+  private async buildTokenPayload(user: any, activeAssignmentId?: number) {
+    const assignments = await this.prisma.userAssignment.findMany({
+      where: { user_id: user.id, status: 'ACTIVE' },
+      select: { id: true, brand_id: true, store_id: true, role_id: true },
+    });
 
-    const [access_token, refresh_token] = await Promise.all([
-      this.jwtService.signAsync(payload, { expiresIn: '7d' }),
-      this.jwtService.signAsync(payload, { expiresIn: '7d' }),
-    ]);
+    const assignmentIds = assignments.map((a) => a.id);
+
+    // Resolve active assignment: param -> primary -> first
+    let activeAssignment = assignments.find((a) => a.id === activeAssignmentId);
+    if (!activeAssignment) {
+      // Try to find a primary assignment (is_primary = true via direct query)
+      const primaryAssignment = await this.prisma.userAssignment.findFirst({
+        where: { user_id: user.id, status: 'ACTIVE', is_primary: true },
+      });
+      activeAssignment = primaryAssignment ?? assignments[0];
+    }
+
+    return {
+      sub: user.id,
+      name: user.name,
+      assignment_ids: assignmentIds,
+      active_assignment_id: activeAssignment?.id ?? null,
+      active_brand_id: activeAssignment?.brand_id ?? user.brand_id,
+      active_store_id: activeAssignment?.store_id ?? user.store_id,
+      // Workspace selection required if multiple assignments and none is primary
+      workspace_selection_required: assignmentIds.length > 1 && !activeAssignment?.id,
+    };
+  }
+
+  // ---------------------------------------------------------------
+  // PRIVATE: Issue access token + refresh token pair
+  // ---------------------------------------------------------------
+  private async issueTokenPair(
+    payload: Record<string, any>,
+    deviceId: string,
+    userId: number,
+  ): Promise<{ access_token: string; refresh_token: string }> {
+    const sessionId = uuidv4();
+    const fullPayload = { ...payload, session_id: sessionId, device_id: deviceId };
+
+    const access_token = await this.jwtService.signAsync(fullPayload, {
+      expiresIn: '1h',
+    });
+    const refresh_token = await this.jwtService.signAsync(
+      { sub: userId, session_id: sessionId, device_id: deviceId },
+      { expiresIn: '7d' },
+    );
+
+    const tokenHash = await bcrypt.hash(refresh_token, 10);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // Upsert: one refresh token per device per user
+    await this.prisma.refreshToken.upsert({
+      where: {
+        token_hash: tokenHash,
+      },
+      update: {},
+      create: {
+        user_id: userId,
+        token_hash: tokenHash,
+        device_id: deviceId,
+        session_id: sessionId,
+        is_revoked: false,
+        expires_at: expiresAt,
+      },
+    });
 
     return { access_token, refresh_token };
   }
 
-  private async updateRefreshToken(userId: number, refreshToken: string) {
-    const hash = await bcrypt.hash(refreshToken, 10);
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshTokenHash: hash },
-    });
-  }
-
-  async login(phone: string, pin: string) {
+  // ---------------------------------------------------------------
+  // LOGIN
+  // ---------------------------------------------------------------
+  async login(phone: string, pin: string, deviceId?: string) {
     const user = await this.prisma.user.findUnique({
       where: { phone },
       include: { role: true, store: true, brand: true },
     });
 
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    const isMatch = await bcrypt.compare(pin, user.hashedPin);
+    if (!isMatch) throw new UnauthorizedException('Invalid credentials');
+
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Account is suspended or terminated.');
     }
 
-    // Lazy Migration for Plaintext Passwords
-    let isMatch = false;
-    // Check if it's already a bcrypt hash (bcrypt hashes usually start with $2a$, $2b$ etc.)
-    if (user.hashedPin.startsWith('$2')) {
-      isMatch = await bcrypt.compare(pin, user.hashedPin);
-    } else {
-      // It's a plaintext PIN
-      if (user.hashedPin === pin) {
-        isMatch = true;
-        // Lazy migrate to bcrypt
-        const hashedPin = await bcrypt.hash(pin, 10);
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: { hashedPin },
-        });
-      }
+    // Legacy workspace check (backward compatibility for non-SuperAdmin)
+    if (
+      user.role_id !== 3 &&
+      (user.brand?.status === 'RECYCLED' || user.store?.status === 'RECYCLED')
+    ) {
+      throw new UnauthorizedException('Your workspace is currently inactive or recycled.');
     }
 
-    if (!isMatch) {
-      throw new UnauthorizedException('Invalid credentials');
+    if (user.must_change_password) {
+      return {
+        require_password_change: true,
+        user_id: user.id,
+        phone: user.phone,
+        message: 'You must change your password before continuing.',
+      };
     }
 
-    const tokens = await this.generateTokens(user);
-    await this.updateRefreshToken(user.id, tokens.refresh_token);
+    const resolvedDeviceId = deviceId ?? uuidv4();
+    const payload = await this.buildTokenPayload(user);
+    const tokens = await this.issueTokenPair(payload, resolvedDeviceId, user.id);
+
+    // Determine workspace_selection_required
+    const assignmentCount = await this.prisma.userAssignment.count({
+      where: { user_id: user.id, status: 'ACTIVE' },
+    });
+    const primaryExists = await this.prisma.userAssignment.count({
+      where: { user_id: user.id, status: 'ACTIVE', is_primary: true },
+    });
 
     return {
       ...tokens,
+      device_id: resolvedDeviceId,
+      workspace_selection_required: assignmentCount > 1 && primaryExists === 0,
       user: {
         id: user.id,
         name: user.name,
+        phone: user.phone,
+        // Legacy fields preserved for backward compatibility
         role: user.role.name,
         role_id: user.role_id,
-        brand_id: user.brand_id,
-        brand: { name: user.brand?.name },
-        store_id: user.store_id,
-        store: { name: user.store?.name },
+        brand_id: payload.active_brand_id,
+        store_id: payload.active_store_id,
         module_permissions: user.module_permissions,
       },
     };
   }
 
-  async logout(userId: number) {
-    await this.prisma.user.updateMany({
-      where: { id: userId, refreshTokenHash: { not: null } },
-      data: { refreshTokenHash: null },
+  // ---------------------------------------------------------------
+  // SELECT WORKSPACE (Runtime workspace switch without re-login)
+  // ---------------------------------------------------------------
+  async selectWorkspace(userId: number, assignmentId: number, deviceId: string) {
+    const assignment = await this.prisma.userAssignment.findFirst({
+      where: { id: assignmentId, user_id: userId, status: 'ACTIVE' },
+    });
+
+    if (!assignment) {
+      throw new ForbiddenException('Assignment not found or inactive.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const payload = await this.buildTokenPayload(user, assignmentId);
+    return this.issueTokenPair(payload, deviceId, userId);
+  }
+
+  // ---------------------------------------------------------------
+  // REFRESH TOKEN ROTATION
+  // ---------------------------------------------------------------
+  async refreshTokens(refreshToken: string, deviceId: string) {
+    // Decode without verify first to get sub
+    let decoded: any;
+    try {
+      decoded = this.jwtService.decode(refreshToken);
+    } catch {
+      throw new ForbiddenException('Access Denied');
+    }
+
+    if (!decoded?.sub) throw new ForbiddenException('Access Denied');
+
+    // Find all non-revoked tokens for this user+device
+    const storedTokens = await this.prisma.refreshToken.findMany({
+      where: { user_id: decoded.sub, device_id: deviceId, is_revoked: false },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Attempt to match against stored hashes
+    let matchedToken: (typeof storedTokens)[0] | null = null;
+    for (const stored of storedTokens) {
+      const isMatch = await bcrypt.compare(refreshToken, stored.token_hash);
+      if (isMatch) {
+        matchedToken = stored;
+        break;
+      }
+    }
+
+    if (!matchedToken) {
+      // Check if this token was already revoked — possible token theft
+      const revokedTokens = await this.prisma.refreshToken.findMany({
+        where: { user_id: decoded.sub, is_revoked: true },
+      });
+      let wasRevoked = false;
+      for (const stored of revokedTokens) {
+        const isMatch = await bcrypt.compare(refreshToken, stored.token_hash);
+        if (isMatch) {
+          wasRevoked = true;
+          break;
+        }
+      }
+
+      if (wasRevoked) {
+        // Token theft detected — revoke ALL sessions for this user
+        await this.prisma.refreshToken.updateMany({
+          where: { user_id: decoded.sub },
+          data: { is_revoked: true },
+        });
+        throw new ForbiddenException(
+          'Security Alert: Refresh token reuse detected. All sessions revoked.',
+        );
+      }
+
+      throw new ForbiddenException('Access Denied');
+    }
+
+    if (new Date() > matchedToken.expires_at) {
+      await this.prisma.refreshToken.update({
+        where: { id: matchedToken.id },
+        data: { is_revoked: true },
+      });
+      throw new ForbiddenException('Refresh token expired. Please log in again.');
+    }
+
+    // Rotate: revoke the used token
+    await this.prisma.refreshToken.update({
+      where: { id: matchedToken.id },
+      data: { is_revoked: true },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: decoded.sub },
+      include: { role: true, store: true, brand: true },
+    });
+
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Account is inactive.');
+    }
+
+    const payload = await this.buildTokenPayload(user);
+    return this.issueTokenPair(payload, deviceId, user.id);
+  }
+
+  // ---------------------------------------------------------------
+  // LOGOUT (Revoke tokens for this device)
+  // ---------------------------------------------------------------
+  async logout(userId: number, deviceId?: string) {
+    const where: any = { user_id: userId };
+    if (deviceId) where.device_id = deviceId;
+
+    await this.prisma.refreshToken.updateMany({
+      where,
+      data: { is_revoked: true },
+    });
+
+    return { success: true };
+  }
+
+  // ---------------------------------------------------------------
+  // REVOKE ALL SESSIONS (Admin forced logout)
+  // ---------------------------------------------------------------
+  async revokeAllSessions(userId: number) {
+    await this.prisma.refreshToken.updateMany({
+      where: { user_id: userId },
+      data: { is_revoked: true },
     });
     return { success: true };
   }
 
-  async refreshTokens(userId: number, refreshToken: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { role: true, store: true, brand: true },
-    });
-
-    if (!user || !user.refreshTokenHash) {
-      throw new ForbiddenException('Access Denied');
-    }
-
-    const refreshTokenMatches = await bcrypt.compare(refreshToken, user.refreshTokenHash);
-    if (!refreshTokenMatches) {
-      throw new ForbiddenException('Access Denied');
-    }
-
-    const tokens = await this.generateTokens(user);
-    await this.updateRefreshToken(user.id, tokens.refresh_token);
-
-    return tokens;
-  }
-
+  // ---------------------------------------------------------------
+  // OFFLINE CREDENTIALS (Local POS PIN Sync)
+  // No auth changes — endpoint remains for POS backward compatibility
+  // ---------------------------------------------------------------
   async getOfflineCredentials(store_id: number) {
-    // D4U Core Requirement: Used by Local POS to securely cache credentials for offline handover
     const users = await this.prisma.user.findMany({
       where: { store_id },
       select: {
         id: true,
         phone: true,
-        hashedPin: true, // Synced to secure local IndexedDB (Will now sync bcrypt hashes after migration)
+        hashedPin: true,
         role: {
           select: { name: true, permissions: true },
         },

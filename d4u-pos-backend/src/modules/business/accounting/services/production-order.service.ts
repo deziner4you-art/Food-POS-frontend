@@ -50,7 +50,8 @@ export class ProductionOrderService {
     });
 
     // Extract recipe and reserve
-    for (const recipeItem of product.recipeItems) {
+    const ingredients = product.recipe?.ingredients || [];
+    for (const recipeItem of ingredients) {
       const requiredQty = recipeItem.quantity * dto.planned_quantity;
       await this.repository.addLine({
         production_id: order.id,

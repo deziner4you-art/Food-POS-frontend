@@ -1,70 +1,63 @@
-import { Controller, Get, Post, Body, Param, Query, Patch, Delete, ParseIntPipe } from '@nestjs/common';
-import { RequirePermissions, Public } from '../../../common/decorators';
+import { Controller, Get, Post, Put, Body, Param, Query, Patch, Req } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
-import { CreateSubscriptionDto, UpdateSubscriptionDto, CreateSaaSPricingDto, UpdateSaaSPricingDto } from './dto';
+import { CreatePackageDto, OnboardClientDto } from './dto';
+import { Public } from '../../../common/decorators';
 
 @Controller('subscription')
 export class SubscriptionController {
   constructor(private readonly subscriptionService: SubscriptionService) {}
 
+  // PACKAGES
   @Public()
+  @Get('package')
+  getPackages() {
+    return this.subscriptionService.getPackages();
+  }
+
+  @Post('package')
+  createPackage(@Body() body: CreatePackageDto) {
+    return this.subscriptionService.createPackage(body);
+  }
+
+  @Put('package/:id')
+  updatePackage(@Param('id') id: string, @Body() body: CreatePackageDto) {
+    return this.subscriptionService.updatePackage(+id, body);
+  }
+
+  @Patch('package/:id/archive')
+  archivePackage(@Param('id') id: string) {
+    return this.subscriptionService.archivePackage(+id);
+  }
+
+  // PRICING (A LA CARTE MODULES)
   @Get('pricing')
-  getPricing(@Query('currency') currency?: string) {
-    return this.subscriptionService.getPricing(currency);
+  getPricing(@Query('currency') currency: string) {
+    return this.subscriptionService.getPricing(currency || 'USD');
   }
 
-  @RequirePermissions('system.view')
-  @Get('pricing/all')
-  getAllPricingRows() {
-    return this.subscriptionService.getAllPricingRows();
-  }
-
-  @RequirePermissions('system.create')
-  @Post('pricing')
-  createPricing(@Body() body: CreateSaaSPricingDto) {
-    return this.subscriptionService.createPricing(body);
-  }
-
-  @RequirePermissions('system.update')
-  @Patch('pricing/:id')
-  updatePricing(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateSaaSPricingDto) {
-    return this.subscriptionService.updatePricing(id, body);
-  }
-
-  @RequirePermissions('system.delete')
-  @Delete('pricing/:id')
-  deletePricing(@Param('id', ParseIntPipe) id: number) {
-    return this.subscriptionService.deletePricing(id);
-  }
-
+  // ONBOARDING
   @Public()
   @Post('onboarding')
-  async onboardClient(@Body() body: CreateSubscriptionDto) {
-    try {
-      return await this.subscriptionService.onboardClient(body);
-    } catch (error: any) {
-      if (error.code === 'P2002') {
-        return {
-          success: false,
-          message: 'An account with this phone number already exists.',
-        };
-      }
-      return {
-        success: false,
-        message: error.message || 'Server error during setup.',
-      };
-    }
+  onboardClient(@Body() body: OnboardClientDto) {
+    return this.subscriptionService.onboardClient(body);
   }
 
-  @RequirePermissions('system.view')
+  // SUBSCRIPTION INFO
   @Get(':brand_id')
   getSubscription(@Param('brand_id') brand_id: string) {
-    return this.subscriptionService.getSubscription(Number(brand_id));
+    return this.subscriptionService.getSubscription(+brand_id);
   }
 
-  @RequirePermissions('system.create')
-  @Post()
-  updateSubscription(@Body() body: UpdateSubscriptionDto) {
-    return this.subscriptionService.createOrUpdateSubscription(body);
+  @Post(':id/renew')
+  renewSubscription(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+    return this.subscriptionService.renewSubscription(+id, {
+      ...body,
+      recorded_by: req.user?.sub || 1 // fallback to 1 for super admin
+    });
+  }
+
+  @Patch(':id/suspend')
+  suspendSubscription(@Param('id') id: string, @Body() body: { reason: string }) {
+    return this.subscriptionService.suspendSubscription(+id, body);
   }
 }

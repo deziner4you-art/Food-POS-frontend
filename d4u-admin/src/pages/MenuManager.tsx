@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ListTree, Plus, Edit, Trash2, Tag, Utensils, Store } from 'lucide-react';
+import { ListTree, Plus, Edit, Trash2, Tag, Utensils, Store, Clock, Sliders, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 
@@ -16,7 +16,7 @@ export default function MenuManager() {
     'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
   });
 
-  const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORIES' | 'PRODUCTS' | 'EXTRA_TOPPINGS' | 'ADD_ONS'>('MENUS');
+  const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORIES' | 'PRODUCTS' | 'MODIFIERS' | 'AVAILABILITY'>('MENUS');
   
   const [stores, setStores] = useState<any[]>([]);
 
@@ -28,22 +28,64 @@ export default function MenuManager() {
   // Categories State
   const [categories, setCategories] = useState<any[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [categoryForm, setCategoryForm] = useState({ id: 0, name: '', menu_id: 0, store_ids: [] as number[], image_url: '' });
+  const [categoryForm, setCategoryForm] = useState({ id: 0, name: '', menu_id: 0, store_ids: [] as number[], image_url: '', is_active: true, sort_order: 0 });
 
   // Products State
   const [products, setProducts] = useState<any[]>([]);
-  const [productForm, setProductForm] = useState({ id: 0, name: '', price: 0, category_ids: [] as number[], sku: '', image_url: '', assigned_store_ids: [] as number[], hasVariants: false, variants: [] as {name: string, price: number}[] });
+  const [recipes, setRecipes] = useState<any[]>([]);
+  const [availabilityRules, setAvailabilityRules] = useState<any[]>([]);
+  const [modifierGroups, setModifierGroups] = useState<any[]>([]);
+
+  const initialProductForm = {
+    id: 0,
+    name: '',
+    price: 0,
+    cost: 0,
+    description: '',
+    category_ids: [] as number[],
+    sku: '',
+    barcode: '',
+    image_url: '',
+    tax_rate: 0,
+    is_active: true,
+    recipe_id: 0,
+    availability_rule_id: 0,
+    kitchen_station: 'Kitchen Main',
+    printer_group: 'Hot Printer',
+    kds_group: 'KDS Display 1',
+    modifier_group_ids: [] as number[],
+    assigned_store_ids: [] as number[],
+    hasVariants: false,
+    variants: [] as { name: string; price: number; cost: number; sku: string; barcode: string; recipe_id: number }[],
+  };
+
+  const [productForm, setProductForm] = useState(initialProductForm);
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [productFilterCategoryId, setProductFilterCategoryId] = useState<number>(0);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [isModifierDropdownOpen, setIsModifierDropdownOpen] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const modifierDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Modifiers State
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [groupForm, setGroupForm] = useState({ id: 0, name: '', is_required: false, min_selection: 0, max_selection: 1 });
+  const [showModifierModal, setShowModifierModal] = useState(false);
+  const [modifierForm, setModifierForm] = useState({ id: 0, modifier_group_id: 0, name: '', additional_price: 0 });
+
+  // Availability Rules State
+  const [showRuleModal, setShowRuleModal] = useState(false);
+  const [ruleForm, setRuleForm] = useState({ id: 0, name: 'ALWAYS', type: 'ALWAYS', start_time: '09:00', end_time: '23:00', days: 'Mon,Tue,Wed,Thu,Fri,Sat,Sun' });
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
         setIsCategoryDropdownOpen(false);
+      }
+      if (modifierDropdownRef.current && !modifierDropdownRef.current.contains(event.target as Node)) {
+        setIsModifierDropdownOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -54,22 +96,28 @@ export default function MenuManager() {
 
   const fetchAll = async () => {
     try {
-      const [stRes, mnRes, ctRes, prRes] = await Promise.all([
+      const [stRes, mnRes, ctRes, prRes, rcRes, avRes, mgRes] = await Promise.all([
         fetch(`${BACKEND_URL}/stores`, { headers: getAuthHeaderOnly() }),
         fetch(`${BACKEND_URL}/catalog/menus`, { headers: getAuthHeaderOnly() }),
         fetch(`${BACKEND_URL}/catalog/categories?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() }),
-        fetch(`${BACKEND_URL}/catalog/products?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() })
+        fetch(`${BACKEND_URL}/catalog/products?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() }),
+        fetch(`${BACKEND_URL}/recipes/store/${selectedBranchId}`, { headers: getAuthHeaderOnly() }),
+        fetch(`${BACKEND_URL}/catalog/availability-rules?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() }),
+        fetch(`${BACKEND_URL}/catalog/modifiers/groups?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() })
       ]);
       if (stRes.ok) setStores(await stRes.json());
       if (mnRes.ok) setMenus(await mnRes.json());
       if (ctRes.ok) setCategories(await ctRes.json());
       if (prRes.ok) setProducts(await prRes.json());
+      if (rcRes.ok) setRecipes(await rcRes.json());
+      if (avRes.ok) setAvailabilityRules(await avRes.json());
+      if (mgRes.ok) setModifierGroups(await mgRes.json());
     } catch (e) {
       console.error('Fetch error:', e);
     }
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, [selectedBranchId]);
 
   // Menu Handlers
   const handleMenuSubmit = async (e: React.FormEvent) => {
@@ -88,13 +136,28 @@ export default function MenuManager() {
         customSuccess('Menu saved successfully!');
       } else {
         const errorData = await res.json().catch(() => null);
-        console.error('Save Menu Error:', errorData);
-        customAlert(errorData?.message || 'Failed to save menu. Check your permissions.');
+        customAlert(errorData?.message || 'Failed to save menu.');
       }
     } catch (e) {
-      console.error(e);
       customAlert('Network error while saving menu.');
     }
+  };
+
+  const handleDeleteMenu = async (id: number) => {
+    if (!(await customConfirm('Delete this menu collection?'))) return;
+    try {
+      await fetch(`${BACKEND_URL}/catalog/menus/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
+      fetchAll();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDuplicateMenu = async (id: number) => {
+    if (!(await customConfirm('Create a duplicate copy of this menu collection?'))) return;
+    try {
+      await fetch(`${BACKEND_URL}/catalog/menus/${id}/duplicate`, { method: 'POST', headers: getAuthHeaderOnly() });
+      fetchAll();
+      customSuccess('Menu duplicated successfully');
+    } catch (e) { console.error(e); }
   };
 
   // Category Handlers
@@ -108,7 +171,10 @@ export default function MenuManager() {
         store_id: selectedBranchId, 
         name: categoryForm.name, 
         menu_id: categoryForm.menu_id > 0 ? categoryForm.menu_id : null,
-        store_ids: categoryForm.store_ids 
+        store_ids: categoryForm.store_ids,
+        is_active: categoryForm.is_active,
+        sort_order: Number(categoryForm.sort_order),
+        image_url: categoryForm.image_url
       };
       const res = await fetch(url, {
         method,
@@ -118,8 +184,27 @@ export default function MenuManager() {
       if (res.ok) {
         setShowCategoryModal(false);
         fetchAll();
+        customSuccess('Category saved!');
       }
     } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteCategory = async (id: number) => {
+    if (!(await customConfirm('Delete this category?'))) return;
+    try {
+      await fetch(`${BACKEND_URL}/catalog/categories/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
+      fetchAll();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleBulkDeleteCategories = async () => {
+    if (selectedCategories.length === 0) return;
+    if (!(await customConfirm(`Delete ${selectedCategories.length} selected categories?`))) return;
+    for (const id of selectedCategories) {
+      await fetch(`${BACKEND_URL}/catalog/categories/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
+    }
+    setSelectedCategories([]);
+    fetchAll();
   };
 
   // Product Handlers
@@ -130,9 +215,38 @@ export default function MenuManager() {
       const method = isEditingProduct ? 'PATCH' : 'POST';
       const url = isEditingProduct ? `${BACKEND_URL}/catalog/products/${productForm.id}` : `${BACKEND_URL}/catalog/products`;
       
-      const payload = isEditingProduct 
-        ? { name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] }
-        : { store_id: selectedBranchId, name: productForm.name, price: parseFloat(productForm.price as any) || 0, category_ids: productForm.category_ids, sku: productForm.sku, image_url: productForm.image_url, cost: 0, margin_pct: 100, status: 'APPROVED', variants: productForm.hasVariants ? productForm.variants : [] };
+      const payload: any = {
+        name: productForm.name,
+        price: parseFloat(productForm.price as any) || 0,
+        cost: parseFloat(productForm.cost as any) || 0,
+        margin_pct: productForm.price > 0 ? (((productForm.price - productForm.cost) / productForm.price) * 100) : 100,
+        description: productForm.description,
+        category_ids: productForm.category_ids,
+        sku: productForm.sku,
+        barcode: productForm.barcode,
+        image_url: productForm.image_url,
+        tax_rate: parseFloat(productForm.tax_rate as any) || 0,
+        is_active: productForm.is_active,
+        status: 'APPROVED',
+        recipe_id: productForm.recipe_id > 0 ? productForm.recipe_id : null,
+        availability_rule_id: productForm.availability_rule_id > 0 ? productForm.availability_rule_id : null,
+        kitchen_station: productForm.kitchen_station,
+        printer_group: productForm.printer_group,
+        kds_group: productForm.kds_group,
+        modifier_group_ids: productForm.modifier_group_ids,
+        variants: productForm.hasVariants ? productForm.variants.map(v => ({
+          name: v.name,
+          price: parseFloat(v.price as any) || 0,
+          cost: parseFloat(v.cost as any) || 0,
+          sku: v.sku || '',
+          barcode: v.barcode || '',
+          recipe_id: v.recipe_id > 0 ? v.recipe_id : undefined,
+        })) : []
+      };
+
+      if (!isEditingProduct) {
+        payload.store_id = selectedBranchId;
+      }
       
       const res = await fetch(url, {
         method,
@@ -141,9 +255,13 @@ export default function MenuManager() {
       });
       
       if (res.ok) {
-        setProductForm({ id: 0, name: '', price: 0, category_ids: [], sku: '', image_url: '', assigned_store_ids: [], hasVariants: false, variants: [] });
+        setProductForm(initialProductForm);
         setIsEditingProduct(false);
         fetchAll();
+        customSuccess(isEditingProduct ? 'Product updated successfully!' : 'Product added successfully!');
+      } else {
+        const err = await res.json().catch(() => null);
+        customAlert(err?.message || 'Failed to save product');
       }
     } catch (e) { console.error(e); }
   };
@@ -157,43 +275,96 @@ export default function MenuManager() {
   };
 
   const handleBulkDeleteProducts = async () => {
-    if (selectedProducts.length === 0) return customAlert('Please select items to delete');
-    if (!(await customConfirm(`Delete ${selectedProducts.length} selected items?`))) return;
-    try {
-      await Promise.all(selectedProducts.map(id => 
-        fetch(`${BACKEND_URL}/catalog/products/${id}`, { method: 'DELETE' })
-      ));
-      setSelectedProducts([]);
-      fetchAll();
-      customSuccess('Selected items deleted');
-    } catch (e) {
-      console.error(e);
-      customAlert('Error deleting some items');
+    if (selectedProducts.length === 0) return;
+    if (!(await customConfirm(`Delete ${selectedProducts.length} selected products?`))) return;
+    for (const id of selectedProducts) {
+      await fetch(`${BACKEND_URL}/catalog/products/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
     }
+    setSelectedProducts([]);
+    fetchAll();
   };
 
-  const handleDeleteCategory = async (id: number) => {
-    if (!(await customConfirm('Are you sure you want to delete this category?'))) return;
+  // Modifier Group Handlers
+  const handleGroupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const method = groupForm.id ? 'PATCH' : 'POST';
+    const url = groupForm.id ? `${BACKEND_URL}/catalog/modifiers/groups/${groupForm.id}` : `${BACKEND_URL}/catalog/modifiers/groups`;
     try {
-      await fetch(`${BACKEND_URL}/catalog/categories/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
+      const res = await fetch(url, {
+        method,
+        headers: getHeaders(),
+        body: JSON.stringify({ ...groupForm, store_id: selectedBranchId })
+      });
+      if (res.ok) {
+        setShowGroupModal(false);
+        setGroupForm({ id: 0, name: '', is_required: false, min_selection: 0, max_selection: 1 });
+        fetchAll();
+        customSuccess('Modifier group saved!');
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteGroup = async (id: number) => {
+    if (!(await customConfirm('Delete this modifier group?'))) return;
+    try {
+      await fetch(`${BACKEND_URL}/catalog/modifiers/groups/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
       fetchAll();
     } catch (e) { console.error(e); }
   };
 
-  const handleBulkDeleteCategories = async () => {
-    if (selectedCategories.length === 0) return customAlert('Please select items to delete');
-    if (!(await customConfirm(`Delete ${selectedCategories.length} selected categories?`))) return;
+  const handleModifierSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const method = modifierForm.id ? 'PATCH' : 'POST';
+    const url = modifierForm.id ? `${BACKEND_URL}/catalog/modifiers/${modifierForm.id}` : `${BACKEND_URL}/catalog/modifiers`;
     try {
-      await Promise.all(selectedCategories.map(id => 
-        fetch(`${BACKEND_URL}/catalog/categories/${id}`, { method: 'DELETE' })
-      ));
-      setSelectedCategories([]);
+      const res = await fetch(url, {
+        method,
+        headers: getHeaders(),
+        body: JSON.stringify(modifierForm)
+      });
+      if (res.ok) {
+        setShowModifierModal(false);
+        setModifierForm({ id: 0, modifier_group_id: 0, name: '', additional_price: 0 });
+        fetchAll();
+        customSuccess('Modifier saved!');
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteModifier = async (id: number) => {
+    if (!(await customConfirm('Delete this modifier item?'))) return;
+    try {
+      await fetch(`${BACKEND_URL}/catalog/modifiers/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
       fetchAll();
-      customSuccess('Selected categories deleted');
-    } catch (e) {
-      console.error(e);
-      customAlert('Error deleting some categories');
-    }
+    } catch (e) { console.error(e); }
+  };
+
+  // Availability Rule Handlers
+  const handleRuleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const method = ruleForm.id ? 'PATCH' : 'POST';
+    const url = ruleForm.id ? `${BACKEND_URL}/catalog/availability-rules/${ruleForm.id}` : `${BACKEND_URL}/catalog/availability-rules`;
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: getHeaders(),
+        body: JSON.stringify({ ...ruleForm, store_id: selectedBranchId })
+      });
+      if (res.ok) {
+        setShowRuleModal(false);
+        setRuleForm({ id: 0, name: 'ALWAYS', type: 'ALWAYS', start_time: '09:00', end_time: '23:00', days: 'Mon,Tue,Wed,Thu,Fri,Sat,Sun' });
+        fetchAll();
+        customSuccess('Availability rule saved!');
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteRule = async (id: number) => {
+    if (!(await customConfirm('Delete this availability rule?'))) return;
+    try {
+      await fetch(`${BACKEND_URL}/catalog/availability-rules/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() });
+      fetchAll();
+    } catch (e) { console.error(e); }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
@@ -215,31 +386,10 @@ export default function MenuManager() {
           setter(data.imageUrl);
           customSuccess('Image uploaded successfully!');
         }
-      } else {
-        const errData = await res.json().catch(() => null);
-        customAlert(errData?.message || 'Failed to upload image. Check permissions.');
       }
     } catch (err) {
       console.error('Upload failed', err);
-      customAlert('Failed to upload image.');
     }
-  };
-
-  const handleDeleteMenu = async (id: number) => {
-    if (!(await customConfirm('Delete this menu collection? Menu k sath is ki jitni cheezein (categories, products, toppings, add-ons) thi wo bhi remove hoo gi.'))) return;
-    try {
-      await fetch(`${BACKEND_URL}/catalog/menus/${id}`, { method: 'DELETE' });
-      fetchAll();
-    } catch (e) { console.error(e); }
-  };
-
-  const handleDuplicateMenu = async (id: number) => {
-    if (!(await customConfirm('Create a duplicate copy of this menu collection?'))) return;
-    try {
-      await fetch(`${BACKEND_URL}/catalog/menus/${id}/duplicate`, { method: 'POST' });
-      fetchAll();
-      customSuccess('Menu duplicated successfully');
-    } catch (e) { console.error(e); }
   };
 
   const handleStoreToggle = (storeId: number, currentList: number[], setter: (val: number[]) => void) => {
@@ -247,75 +397,40 @@ export default function MenuManager() {
     else setter([...currentList, storeId]);
   };
 
-  const ensureCategoryExists = async (name: string) => {
-    let cat = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
-    if (cat) return cat.id;
-    try {
-      const res = await fetch(`${BACKEND_URL}/catalog/categories`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ store_id: selectedBranchId, name: name, store_ids: [selectedBranchId] })
-      });
-      if (res.ok) {
-        const newCat = await res.json();
-        await fetchAll();
-        return newCat.id;
-      }
-    } catch (e) { console.error(e); }
-    return null;
-  };
-
-  const handleQuickAdd = async (name: string, price: number, categoryName: string) => {
-    if (!name || price < 0) return customAlert('Please enter valid name and price');
-    const catId = await ensureCategoryExists(categoryName);
-    if (!catId) return customAlert(`Failed to find or create ${categoryName} category`);
-    
-    try {
-      const res = await fetch(`${BACKEND_URL}/catalog/products`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ store_id: selectedBranchId, name, price, category_ids: [catId], sku: '', image_url: '', cost: 0, margin_pct: 100, status: 'APPROVED', variants: [] })
-      });
-      if (res.ok) {
-        customSuccess(`${name} added to ${categoryName}!`);
-        fetchAll();
-      }
-    } catch (e) { console.error(e); }
-  };
-
   return (
     <div className="animate-fade-in flex flex-col h-[calc(100vh-160px)]">
       
-      <div className="flex gap-4 mb-6">
+      {/* Top Bar Tabs */}
+      <div className="flex gap-3 mb-6 overflow-x-auto pb-1">
         <button 
           onClick={() => setActiveTab('MENUS')}
-          className={`px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${activeTab === 'MENUS' ? 'bg-[#3b82f6] text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm ${activeTab === 'MENUS' ? 'bg-[#3b82f6] text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
         >
-          <Store size={18} /> Menu Collections
+          <Store size={16} /> Menu Collections
         </button>
         <button 
           onClick={() => setActiveTab('CATEGORIES')}
-          className={`px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${activeTab === 'CATEGORIES' ? 'bg-[#3b82f6] text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm ${activeTab === 'CATEGORIES' ? 'bg-[#3b82f6] text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
         >
-          <Tag size={18} /> Categories
+          <Tag size={16} /> Categories
         </button>
         <button 
           onClick={() => setActiveTab('PRODUCTS')}
-          className={`px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${activeTab === 'PRODUCTS' ? 'bg-[#3b82f6] text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm ${activeTab === 'PRODUCTS' ? 'bg-[#3b82f6] text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
         >
-          <Utensils size={18} /> Products
+          <Utensils size={16} /> Menu Products
         </button>
         <button 
-          onClick={() => setActiveTab('EXTRA_TOPPINGS')}
-          className={`px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${activeTab === 'EXTRA_TOPPINGS' ? 'bg-[#3b82f6] text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          onClick={() => setActiveTab('MODIFIERS')}
+          className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm ${activeTab === 'MODIFIERS' ? 'bg-[#3b82f6] text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
         >
-          <Plus size={18} /> Extra Toppings
+          <Sliders size={16} /> Modifier Groups
         </button>
         <button 
-          onClick={() => setActiveTab('ADD_ONS')}
-          className={`px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${activeTab === 'ADD_ONS' ? 'bg-[#3b82f6] text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          onClick={() => setActiveTab('AVAILABILITY')}
+          className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm ${activeTab === 'AVAILABILITY' ? 'bg-[#3b82f6] text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
         >
-          <Plus size={18} /> Add-ons
+          <Clock size={16} /> Availability Rules
         </button>
       </div>
 
@@ -351,7 +466,7 @@ export default function MenuManager() {
                     </div>
                     <div className="text-sm text-slate-400">
                       <strong>Assigned Branches:</strong><br/>
-                      {m.stores.length > 0 ? m.stores.map((s:any) => s.name).join(', ') : <span className="text-slate-500 italic">None</span>}
+                      {m.stores?.length > 0 ? m.stores.map((s:any) => s.name).join(', ') : <span className="text-slate-500 italic">None</span>}
                     </div>
                     <div className="text-sm text-slate-400">
                       <strong>Categories:</strong> {m.categories?.length || 0}
@@ -372,7 +487,7 @@ export default function MenuManager() {
                 <ListTree className="text-[#3b82f6]" /> Menu Categories
               </h3>
               <button 
-                onClick={() => { setCategoryForm({ id: 0, name: '', menu_id: 0, store_ids: [], image_url: '' }); setShowCategoryModal(true); }}
+                onClick={() => { setCategoryForm({ id: 0, name: '', menu_id: 0, store_ids: [], image_url: '', is_active: true, sort_order: categories.length + 1 }); setShowCategoryModal(true); }}
                 className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
               >
                 <Plus size={18} /> Add Category
@@ -408,7 +523,9 @@ export default function MenuManager() {
                         checked={selectedCategories.length > 0 && selectedCategories.length === categories.length}
                       />
                     </th>
+                    <th className="p-4">Sort</th>
                     <th className="p-4">Category Name</th>
+                    <th className="p-4">Status</th>
                     <th className="p-4">Menu</th>
                     <th className="p-4">Assigned Branches</th>
                     <th className="p-4 text-right">Actions</th>
@@ -428,18 +545,42 @@ export default function MenuManager() {
                           }}
                         />
                       </td>
-                      <td className="p-4 font-bold text-white">{c.name}</td>
+                      <td className="p-4 font-mono text-slate-400">{c.sort_order ?? 0}</td>
+                      <td className="p-4 font-bold text-white flex items-center gap-3">
+                        {c.image_url ? (
+                          <img src={`${BACKEND_URL}${c.image_url}`} alt={c.name} className="w-8 h-8 rounded object-cover border border-slate-600" />
+                        ) : (
+                          <div className="w-8 h-8 rounded bg-slate-700 flex items-center justify-center text-[10px] text-slate-400">No Img</div>
+                        )}
+                        {c.name}
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${c.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                          {c.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
                       <td className="p-4 text-slate-400 text-sm">{c.menu?.name || 'Unassigned'}</td>
                       <td className="p-4">
                         <div className="flex flex-wrap gap-1">
                           {c.assigned_stores?.map((s:any) => (
-                            <span key={s.id} className="bg-slate-700 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-wider">{s.name}</span>
+                            <span key={s.id} className="bg-slate-700 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-wider text-slate-300">{s.name}</span>
                           ))}
                         </div>
                       </td>
                       <td className="p-4 flex justify-end gap-3 items-center">
                         <button 
-                          onClick={() => { setCategoryForm({ id: c.id, name: c.name, menu_id: c.menu_id || 0, store_ids: c.assigned_stores.map((s:any)=>s.id), image_url: c.image_url || '' }); setShowCategoryModal(true); }}
+                          onClick={() => { 
+                            setCategoryForm({ 
+                              id: c.id, 
+                              name: c.name, 
+                              menu_id: c.menu_id || 0, 
+                              store_ids: c.assigned_stores?.map((s:any)=>s.id) || [], 
+                              image_url: c.image_url || '',
+                              is_active: c.is_active ?? true,
+                              sort_order: c.sort_order ?? 0
+                            }); 
+                            setShowCategoryModal(true); 
+                          }}
                           className="text-slate-400 hover:text-white transition-colors"
                         >
                           <Edit size={18} />
@@ -451,7 +592,7 @@ export default function MenuManager() {
                     </tr>
                   ))}
                   {categories.length === 0 && (
-                    <tr><td colSpan={5} className="p-8 text-center text-slate-500">No categories found.</td></tr>
+                    <tr><td colSpan={7} className="p-8 text-center text-slate-500">No categories found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -464,34 +605,52 @@ export default function MenuManager() {
           <div className="flex flex-col h-full">
             <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Utensils className="text-[#3b82f6]" /> Products (Menu Items)
+                <Utensils className="text-[#3b82f6]" /> Menu Products Engine
               </h3>
             </div>
 
-            {/* Horizontal Add Custom Product Form */}
-            <div className="bg-slate-900 border-b border-slate-700 p-4 flex flex-col gap-4">
-              <form onSubmit={handleProductSubmit} className="flex flex-col gap-3 w-full">
-                <div className="flex items-end gap-3">
-                  <div className="flex-1">
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Product Name</label>
+            {/* Form */}
+            <div className="bg-slate-900 border-b border-slate-700 p-4 max-h-[360px] overflow-y-auto">
+              <form onSubmit={handleProductSubmit} className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Product Name *</label>
                     <input 
-                      required type="text" placeholder="Enter Product Name"
+                      required type="text" placeholder="e.g. Zinger Burger"
                       value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})}
                       className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm focus:outline-none focus:border-[#fbbf24]"
                     />
                   </div>
-                  
-                  <div className="flex-1">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Selling Price (Rs.) *</label>
+                    <input 
+                      required={!productForm.hasVariants} type="number" placeholder="500"
+                      value={productForm.price || ''} onChange={e => setProductForm({...productForm, price: parseFloat(e.target.value) || 0})}
+                      disabled={productForm.hasVariants}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono font-bold text-sm focus:outline-none focus:border-[#fbbf24] disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-xs font-bold text-slate-400 mb-1">SKU</label>
                     <input 
-                      type="text" placeholder="e.g. B-102"
+                      type="text" placeholder="e.g. ZNG-01"
                       value={productForm.sku} onChange={e => setProductForm({...productForm, sku: e.target.value})}
                       className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm focus:outline-none focus:border-[#fbbf24]"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Barcode</label>
+                    <input 
+                      type="text" placeholder="e.g. 890123456789"
+                      value={productForm.barcode} onChange={e => setProductForm({...productForm, barcode: e.target.value})}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm focus:outline-none focus:border-[#fbbf24]"
+                    />
+                  </div>
+                </div>
 
-                  <div className="flex-[1.5] relative" ref={categoryDropdownRef}>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Categories (Select Multiple)</label>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="relative" ref={categoryDropdownRef}>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Categories *</label>
                     <div 
                       onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
                       className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm cursor-pointer flex justify-between items-center h-[38px]"
@@ -523,73 +682,171 @@ export default function MenuManager() {
                     )}
                   </div>
 
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Price (Rs.)</label>
-                  <input 
-                    required={!productForm.hasVariants} type="number" placeholder="e.g. 500"
-                    value={productForm.price || ''} onChange={e => setProductForm({...productForm, price: parseFloat(e.target.value) || 0})}
-                    disabled={productForm.hasVariants}
-                    className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono font-bold text-sm focus:outline-none focus:border-[#fbbf24] h-[38px] disabled:opacity-50"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Image</label>
-                  <div className="flex gap-2 items-center">
-                    <label className="bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm cursor-pointer hover:bg-slate-700 h-[38px] flex items-center justify-center flex-1 whitespace-nowrap">
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, (url) => setProductForm({...productForm, image_url: url}))} />
-                      <span className="truncate">{productForm.image_url ? 'Change Image' : 'Browse'}</span>
-                    </label>
-                    {productForm.image_url && <img src={`${BACKEND_URL}${productForm.image_url}`} alt="Preview" className="w-9 h-9 rounded-md object-cover border border-[#334155]" />}
-                  </div>
-                </div>
-                    <div className="flex-1 flex flex-col justify-end">
-                      <button type="submit" className="w-full bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 rounded-md p-2 font-bold text-sm transition-colors flex items-center justify-center gap-2 h-[38px]">
-                        <Plus size={16} /> {isEditingProduct ? 'Update' : 'Add'}
-                      </button>
-                      {isEditingProduct && (
-                        <button type="button" onClick={() => { setProductForm({ id: 0, name: '', price: 0, category_ids: [], sku: '', image_url: '', assigned_store_ids: [], hasVariants: false, variants: [] }); setIsEditingProduct(false); }} className="w-full mt-1 text-xs text-slate-400 hover:text-white">Cancel Edit</button>
-                      )}
-                    </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Recipe Mapping</label>
+                    <select 
+                      value={productForm.recipe_id} onChange={e => setProductForm({...productForm, recipe_id: parseInt(e.target.value)})}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm focus:outline-none focus:border-[#fbbf24] h-[38px]"
+                    >
+                      <option value={0}>-- No Standard Recipe --</option>
+                      {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
                   </div>
 
-                  {/* Variants Section */}
-                  <div className="mt-4 p-4 bg-slate-900 border border-slate-700 rounded-xl">
-                    <div className="flex items-center gap-2 mb-3">
-                      <input 
-                        type="checkbox" 
-                        checked={productForm.hasVariants}
-                        onChange={e => setProductForm({...productForm, hasVariants: e.target.checked, variants: e.target.checked && productForm.variants.length === 0 ? [{name: 'Small', price: 0}] : productForm.variants})}
-                        className="w-4 h-4 accent-[#fbbf24] cursor-pointer"
-                        id="hasVariantsToggle"
-                      />
-                      <label htmlFor="hasVariantsToggle" className="text-sm font-bold text-white cursor-pointer">Has Variants (e.g., Pizza Sizes)</label>
-                    </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Availability Rule</label>
+                    <select 
+                      value={productForm.availability_rule_id} onChange={e => setProductForm({...productForm, availability_rule_id: parseInt(e.target.value)})}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm focus:outline-none focus:border-[#fbbf24] h-[38px]"
+                    >
+                      <option value={0}>-- Always Available --</option>
+                      {availabilityRules.map(ar => <option key={ar.id} value={ar.id}>{ar.name} ({ar.type})</option>)}
+                    </select>
+                  </div>
 
-                    {productForm.hasVariants && (
-                      <div className="flex flex-col gap-2">
-                        {productForm.variants.map((v: any, idx: number) => (
-                          <div key={idx} className="flex gap-2 items-center">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Tax Rate (%)</label>
+                    <input 
+                      type="number" placeholder="0"
+                      value={productForm.tax_rate || ''} onChange={e => setProductForm({...productForm, tax_rate: parseFloat(e.target.value) || 0})}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm focus:outline-none focus:border-[#fbbf24]"
+                    />
+                  </div>
+                </div>
+
+                {/* Kitchen Routing & Modifiers */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Kitchen Station</label>
+                    <input 
+                      type="text" placeholder="e.g. Grill Station"
+                      value={productForm.kitchen_station} onChange={e => setProductForm({...productForm, kitchen_station: e.target.value})}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Printer Group</label>
+                    <input 
+                      type="text" placeholder="e.g. Kitchen Hot Printer"
+                      value={productForm.printer_group} onChange={e => setProductForm({...productForm, printer_group: e.target.value})}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">KDS Display Group</label>
+                    <input 
+                      type="text" placeholder="e.g. Main Kitchen KDS"
+                      value={productForm.kds_group} onChange={e => setProductForm({...productForm, kds_group: e.target.value})}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm"
+                    />
+                  </div>
+
+                  <div className="relative" ref={modifierDropdownRef}>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Modifier Groups</label>
+                    <div 
+                      onClick={() => setIsModifierDropdownOpen(!isModifierDropdownOpen)}
+                      className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm cursor-pointer flex justify-between items-center h-[38px]"
+                    >
+                      <span className="truncate pr-2">
+                        {productForm.modifier_group_ids.length > 0 
+                          ? `${productForm.modifier_group_ids.length} Groups Linked` 
+                          : 'Link Modifiers...'}
+                      </span>
+                      <span className="text-slate-400 text-xs">▼</span>
+                    </div>
+                    {isModifierDropdownOpen && (
+                      <div className="absolute top-[60px] left-0 w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm max-h-48 overflow-y-auto flex flex-col gap-1 z-50 shadow-xl">
+                        {modifierGroups.map(mg => (
+                          <label key={mg.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-800 p-1.5 rounded">
                             <input 
-                              type="text" placeholder="Size (e.g. Medium)" 
-                              value={v.name} onChange={e => { const nv = [...productForm.variants]; nv[idx].name = e.target.value; setProductForm({...productForm, variants: nv}) }}
-                              className="bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm focus:border-[#fbbf24] flex-1"
+                              type="checkbox" 
+                              checked={productForm.modifier_group_ids.includes(mg.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) setProductForm({...productForm, modifier_group_ids: [...productForm.modifier_group_ids, mg.id]});
+                                else setProductForm({...productForm, modifier_group_ids: productForm.modifier_group_ids.filter(id => id !== mg.id)});
+                              }}
+                              className="accent-[#fbbf24] w-4 h-4 cursor-pointer"
                             />
-                            <input 
-                              type="number" placeholder="Price" 
-                              value={v.price || ''} onChange={e => { const nv = [...productForm.variants]; nv[idx].price = parseFloat(e.target.value) || 0; setProductForm({...productForm, variants: nv}) }}
-                              className="bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono font-bold text-sm focus:border-[#fbbf24] w-24"
-                            />
-                            <button type="button" onClick={() => { const nv = productForm.variants.filter((_: any, i: number) => i !== idx); setProductForm({...productForm, variants: nv}); }} className="text-red-400 p-2 hover:bg-red-400/10 rounded-md">
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
+                            <span className="text-xs">{mg.name}</span>
+                          </label>
                         ))}
-                        <button type="button" onClick={() => setProductForm({...productForm, variants: [...productForm.variants, {name: '', price: 0}]})} className="text-xs text-[#fbbf24] flex items-center gap-1 mt-1 font-bold w-max hover:underline">
-                          <Plus size={14} /> Add Size Variant
-                        </button>
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Variants Section */}
+                <div className="p-3 bg-slate-800/50 border border-slate-700 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="checkbox" 
+                        checked={productForm.hasVariants}
+                        onChange={e => setProductForm({...productForm, hasVariants: e.target.checked, variants: e.target.checked && productForm.variants.length === 0 ? [{name: 'Small', price: 0, cost: 0, sku: '', barcode: '', recipe_id: 0}] : productForm.variants})}
+                        className="w-4 h-4 accent-[#fbbf24] cursor-pointer"
+                        id="hasVariantsToggle"
+                      />
+                      <label htmlFor="hasVariantsToggle" className="text-sm font-bold text-white cursor-pointer">Product Variants (e.g. Small, Medium, Large)</label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                        <input 
+                          type="checkbox" 
+                          checked={productForm.is_active} 
+                          onChange={e => setProductForm({...productForm, is_active: e.target.checked})}
+                          className="accent-emerald-500 w-4 h-4" 
+                        />
+                        Active Product
+                      </label>
+                    </div>
+                  </div>
+
+                  {productForm.hasVariants && (
+                    <div className="flex flex-col gap-2 mt-3">
+                      {productForm.variants.map((v: any, idx: number) => (
+                        <div key={idx} className="flex gap-2 items-center">
+                          <input 
+                            type="text" placeholder="Size / Variant Name" 
+                            value={v.name} onChange={e => { const nv = [...productForm.variants]; nv[idx].name = e.target.value; setProductForm({...productForm, variants: nv}) }}
+                            className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-xs flex-1"
+                          />
+                          <input 
+                            type="number" placeholder="Price" 
+                            value={v.price || ''} onChange={e => { const nv = [...productForm.variants]; nv[idx].price = parseFloat(e.target.value) || 0; setProductForm({...productForm, variants: nv}) }}
+                            className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-[#4edea3] font-mono font-bold text-xs w-24"
+                          />
+                          <input 
+                            type="text" placeholder="SKU" 
+                            value={v.sku || ''} onChange={e => { const nv = [...productForm.variants]; nv[idx].sku = e.target.value; setProductForm({...productForm, variants: nv}) }}
+                            className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-xs w-24"
+                          />
+                          <select 
+                            value={v.recipe_id || 0} onChange={e => { const nv = [...productForm.variants]; nv[idx].recipe_id = parseInt(e.target.value); setProductForm({...productForm, variants: nv}) }}
+                            className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-xs w-36"
+                          >
+                            <option value={0}>Standard Recipe</option>
+                            {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                          </select>
+                          <button type="button" onClick={() => { const nv = productForm.variants.filter((_: any, i: number) => i !== idx); setProductForm({...productForm, variants: nv}); }} className="text-red-400 p-1.5 hover:bg-red-400/10 rounded-md">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      <button type="button" onClick={() => setProductForm({...productForm, variants: [...productForm.variants, {name: '', price: 0, cost: 0, sku: '', barcode: '', recipe_id: 0}]})} className="text-xs text-[#fbbf24] flex items-center gap-1 mt-1 font-bold w-max hover:underline">
+                        <Plus size={14} /> Add Variant Size
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-3 items-center">
+                  {isEditingProduct && (
+                    <button type="button" onClick={() => { setProductForm(initialProductForm); setIsEditingProduct(false); }} className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white">Cancel</button>
+                  )}
+                  <button type="submit" className="bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 rounded-md px-6 py-2 font-bold text-sm transition-colors flex items-center gap-2">
+                    <Plus size={16} /> {isEditingProduct ? 'Update Product' : 'Create Product'}
+                  </button>
+                </div>
               </form>
             </div>
 
@@ -618,7 +875,7 @@ export default function MenuManager() {
 
             <div className="flex-1 overflow-y-auto">
               <table className="w-full text-left text-sm text-slate-300">
-                <thead className="bg-slate-900/50 text-slate-400">
+                <thead className="bg-slate-900/50 text-slate-400 font-bold uppercase text-xs">
                   <tr>
                     <th className="p-4 w-12">
                       <input 
@@ -626,66 +883,22 @@ export default function MenuManager() {
                         className="accent-[#fbbf24] cursor-pointer"
                         onChange={(e) => {
                           const filtered = products.filter(p => productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId));
-                          if (e.target.checked) {
-                            setSelectedProducts(filtered.map(p => p.id));
-                          } else {
-                            setSelectedProducts([]);
-                          }
+                          if (e.target.checked) setSelectedProducts(filtered.map(p => p.id));
+                          else setSelectedProducts([]);
                         }}
                         checked={selectedProducts.length > 0 && selectedProducts.length === products.filter(p => productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId)).length}
                       />
                     </th>
                     <th className="p-4">Product Name</th>
-                    <th className="p-4">SKU</th>
-                    <th className="p-4">Categories</th>
+                    <th className="p-4">Recipe</th>
+                    <th className="p-4">Routing</th>
                     <th className="p-4">Selling Price</th>
+                    <th className="p-4">Status</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {products.filter(p => p.status === 'PENDING').length > 0 && (
-                    <>
-                      <tr>
-                        <td colSpan={6} className="bg-amber-500/20 text-amber-400 font-bold p-3 text-xs uppercase tracking-wider">
-                          Pending Approvals (From POS)
-                        </td>
-                      </tr>
-                      {products.filter(p => p.status === 'PENDING').map(p => (
-                        <tr key={p.id} className="border-t border-slate-700/50 bg-amber-500/5">
-                          <td className="p-4">
-                            <input type="checkbox" className="accent-[#fbbf24] cursor-pointer" checked={selectedProducts.includes(p.id)} onChange={(e) => { if (e.target.checked) setSelectedProducts([...selectedProducts, p.id]); else setSelectedProducts(selectedProducts.filter(id => id !== p.id)); }} />
-                          </td>
-                          <td className="p-4 font-bold text-white flex items-center gap-3">
-                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                            {p.name}
-                          </td>
-                          <td className="p-4 font-mono text-slate-400">{p.sku || '-'}</td>
-                          <td className="p-4">
-                            <span className="text-amber-400 text-xs italic">Needs Category Assignment</span>
-                          </td>
-                          <td className="p-4 font-mono font-bold text-[#4edea3]">Rs. {p.price}</td>
-                          <td className="p-4 flex justify-end gap-3 items-center">
-                            <button 
-                              onClick={() => { setProductForm({ id: p.id, name: p.name, price: p.price, category_ids: [], sku: p.sku || '', image_url: p.image_url || '', assigned_store_ids: p.assigned_stores?.map((s:any) => s.id) || [], hasVariants: false, variants: [] }); setIsEditingProduct(true); customAlert('Please assign a category and verify details, then click Update to Approve.'); }} 
-                              className="bg-amber-500 hover:bg-amber-600 text-slate-900 px-3 py-1 rounded text-xs font-bold transition-colors"
-                            >
-                              Review & Approve
-                            </button>
-                            <button onClick={() => handleDeleteProduct(p.id)} className="text-red-400 hover:text-red-300 transition-colors">
-                              <Trash2 size={18} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      <tr>
-                        <td colSpan={6} className="bg-slate-800 text-slate-400 font-bold p-3 text-xs uppercase tracking-wider">
-                          Approved Products
-                        </td>
-                      </tr>
-                    </>
-                  )}
-
-                  {products.filter(p => p.status !== 'PENDING' && (productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId))).map(p => (
+                  {products.filter(p => productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId)).map(p => (
                     <tr key={p.id} className={`border-t border-slate-700/50 hover:bg-slate-700/20 ${selectedProducts.includes(p.id) ? 'bg-[#fbbf24]/10' : ''}`}>
                       <td className="p-4">
                         <input 
@@ -700,24 +913,70 @@ export default function MenuManager() {
                       </td>
                       <td className="p-4 font-bold text-white flex items-center gap-3">
                         {p.image_url ? (
-                          <img src={`${BACKEND_URL}${p.image_url}`} alt={p.name} className="w-8 h-8 rounded object-cover border border-slate-600" />
+                          <img src={`${BACKEND_URL}${p.image_url}`} alt={p.name} className="w-9 h-9 rounded object-cover border border-slate-600" />
                         ) : (
-                          <div className="w-8 h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500">No Img</div>
+                          <div className="w-9 h-9 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500">No Img</div>
                         )}
-                        {p.name}
-                      </td>
-                      <td className="p-4 font-mono text-slate-400">{p.sku || '-'}</td>
-                      <td className="p-4">
-                        <div className="flex flex-wrap gap-1">
-                          {p.categories?.map((c:any) => (
-                            <span key={c.id} className="bg-slate-700 px-2 py-1 rounded text-xs">{c.name}</span>
-                          ))}
+                        <div>
+                          <div>{p.name}</div>
+                          <div className="text-xs font-mono text-slate-400 font-normal">SKU: {p.sku || 'N/A'} • Tax: {p.tax_rate}%</div>
                         </div>
                       </td>
-                      <td className="p-4 font-mono font-bold text-[#4edea3]">{p.variants?.length > 0 ? `${p.variants.length} Variants` : `Rs. ${p.price}`}</td>
+                      <td className="p-4">
+                        {p.recipe ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-400 text-xs font-bold bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                            <CheckCircle2 size={12} /> {p.recipe.name}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 text-xs italic">No Recipe</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-xs text-slate-400">
+                        <div>Station: <span className="text-slate-200">{p.kitchen_station || 'Default'}</span></div>
+                        <div>KDS: <span className="text-slate-200">{p.kds_group || 'Default'}</span></div>
+                      </td>
+                      <td className="p-4 font-mono font-bold text-[#4edea3]">
+                        {p.variants?.length > 0 ? `${p.variants.length} Sizes/Variants` : `Rs. ${p.price}`}
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${p.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                          {p.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
                       <td className="p-4 flex justify-end gap-3 items-center">
                         <button 
-                          onClick={() => { setProductForm({ id: p.id, name: p.name, price: p.price, category_ids: p.categories?.map((c:any) => c.id) || [], sku: p.sku || '', image_url: p.image_url || '', assigned_store_ids: p.assigned_stores?.map((s:any) => s.id) || [], hasVariants: p.variants && p.variants.length > 0, variants: p.variants ? p.variants.map((v:any) => ({name: v.name, price: v.price})) : [] }); setIsEditingProduct(true); }} 
+                          onClick={() => { 
+                            setProductForm({ 
+                              id: p.id, 
+                              name: p.name, 
+                              price: p.price, 
+                              cost: p.cost || 0,
+                              description: p.description || '',
+                              category_ids: p.categories?.map((c:any) => c.id) || [], 
+                              sku: p.sku || '', 
+                              barcode: p.barcode || '',
+                              image_url: p.image_url || '', 
+                              tax_rate: p.tax_rate || 0,
+                              is_active: p.is_active ?? true,
+                              recipe_id: p.recipe_id || 0,
+                              availability_rule_id: p.availability_rule_id || 0,
+                              kitchen_station: p.kitchen_station || 'Kitchen Main',
+                              printer_group: p.printer_group || 'Hot Printer',
+                              kds_group: p.kds_group || 'KDS Display 1',
+                              modifier_group_ids: p.modifierGroups?.map((mg:any) => mg.modifier_group_id) || [],
+                              assigned_store_ids: p.assigned_stores?.map((s:any) => s.id) || [], 
+                              hasVariants: p.variants && p.variants.length > 0, 
+                              variants: p.variants ? p.variants.map((v:any) => ({
+                                name: v.name, 
+                                price: v.price,
+                                cost: v.cost || 0,
+                                sku: v.sku || '',
+                                barcode: v.barcode || '',
+                                recipe_id: v.recipe_id || 0
+                              })) : [] 
+                            }); 
+                            setIsEditingProduct(true); 
+                          }} 
                           className="text-slate-400 hover:text-white transition-colors"
                         >
                           <Edit size={18} />
@@ -729,7 +988,7 @@ export default function MenuManager() {
                     </tr>
                   ))}
                   {products.length === 0 && (
-                    <tr><td colSpan={6} className="p-8 text-center text-slate-500">No products found.</td></tr>
+                    <tr><td colSpan={7} className="p-8 text-center text-slate-500">No products found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -737,93 +996,124 @@ export default function MenuManager() {
           </div>
         )}
 
-        {/* EXTRA TOPPINGS TAB */}
-        {activeTab === 'EXTRA_TOPPINGS' && (
+        {/* MODIFIERS TAB */}
+        {activeTab === 'MODIFIERS' && (
           <div className="flex flex-col h-full">
             <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Plus className="text-[#3b82f6]" /> Extra Toppings
+                <Sliders className="text-[#3b82f6]" /> Modifier Groups & Options
               </h3>
+              <button 
+                onClick={() => { setGroupForm({ id: 0, name: '', is_required: false, min_selection: 0, max_selection: 1 }); setShowGroupModal(true); }}
+                className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
+              >
+                <Plus size={18} /> Add Modifier Group
+              </button>
             </div>
-            <div className="bg-slate-900 border-b border-slate-700 p-4">
-              <form onSubmit={(e) => { 
-                e.preventDefault(); 
-                const form = e.currentTarget;
-                const fd = new FormData(form);
-                handleQuickAdd(fd.get('tname') as string, parseFloat(fd.get('tprice') as string), 'Extra Toppings').then(() => form.reset()); 
-              }} className="flex gap-4 items-end max-w-lg">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Topping Name</label>
-                  <input name="tname" required type="text" placeholder="e.g. Extra Cheese" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm" />
-                </div>
-                <div className="w-32">
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Price (Rs.)</label>
-                  <input name="tprice" required type="number" placeholder="50" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono text-sm" />
-                </div>
-                <button type="submit" className="bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 rounded-md px-4 py-2 font-bold text-sm h-[38px] flex items-center gap-2">
-                  <Plus size={16} /> Add
-                </button>
-              </form>
-            </div>
+
             <div className="flex-1 p-6 overflow-y-auto">
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'extra toppings')).map(p => (
-                  <div key={p.id} className="bg-slate-900 p-3 rounded-lg border border-slate-700 flex flex-col justify-between group relative">
-                    <span className="font-bold text-white text-sm">{p.name}</span>
-                    <span className="text-[#4edea3] font-mono text-xs">Rs. {p.price}</span>
-                    <button onClick={() => handleDeleteProduct(p.id)} className="absolute top-2 right-2 text-red-400 opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {modifierGroups.map(group => (
+                  <div key={group.id} className="bg-slate-900 p-5 rounded-xl border border-slate-700 flex flex-col justify-between gap-4">
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-bold text-white text-lg">{group.name}</h4>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setGroupForm({ id: group.id, name: group.name, is_required: group.is_required, min_selection: group.min_selection, max_selection: group.max_selection }); setShowGroupModal(true); }} className="text-slate-400 hover:text-white"><Edit size={16}/></button>
+                          <button onClick={() => handleDeleteGroup(group.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button>
+                        </div>
+                      </div>
+                      <div className="text-xs text-slate-400 flex gap-2 mb-3">
+                        <span className={`px-2 py-0.5 rounded font-bold ${group.is_required ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>
+                          {group.is_required ? 'Required' : 'Optional'}
+                        </span>
+                        <span className="bg-slate-800 px-2 py-0.5 rounded">Min: {group.min_selection} • Max: {group.max_selection}</span>
+                      </div>
+
+                      <div className="space-y-1.5 border-t border-slate-800 pt-3">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-bold text-slate-400 uppercase">Modifiers</span>
+                          <button 
+                            onClick={() => { setModifierForm({ id: 0, modifier_group_id: group.id, name: '', additional_price: 0 }); setShowModifierModal(true); }}
+                            className="text-xs text-[#3b82f6] hover:underline font-bold flex items-center gap-1"
+                          >
+                            <Plus size={12} /> Add Item
+                          </button>
+                        </div>
+                        {group.modifiers?.map((m: any) => (
+                          <div key={m.id} className="flex justify-between items-center text-sm bg-slate-800/60 px-3 py-1.5 rounded border border-slate-700/50">
+                            <span className="text-white font-medium">{m.name}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[#4edea3] font-mono text-xs">+Rs. {m.additional_price}</span>
+                              <button onClick={() => handleDeleteModifier(m.id)} className="text-red-400 hover:text-red-300"><Trash2 size={14}/></button>
+                            </div>
+                          </div>
+                        ))}
+                        {(!group.modifiers || group.modifiers.length === 0) && (
+                          <p className="text-xs text-slate-500 italic">No modifier choices added yet.</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
-                {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'extra toppings')).length === 0 && <p className="text-slate-500 col-span-full">No Extra Toppings found. Add one above.</p>}
+                {modifierGroups.length === 0 && (
+                  <p className="text-slate-500 col-span-full text-center p-8">No modifier groups found. Create one (e.g., Extra Cheese, Sauces).</p>
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* ADD_ONS TAB */}
-        {activeTab === 'ADD_ONS' && (
+        {/* AVAILABILITY TAB */}
+        {activeTab === 'AVAILABILITY' && (
           <div className="flex flex-col h-full">
             <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Plus className="text-[#3b82f6]" /> Add-ons
+                <Clock className="text-[#3b82f6]" /> Menu Availability Rules
               </h3>
+              <button 
+                onClick={() => { setRuleForm({ id: 0, name: 'Breakfast', type: 'TIME_BASED', start_time: '07:00', end_time: '11:00', days: 'Mon,Tue,Wed,Thu,Fri,Sat,Sun' }); setShowRuleModal(true); }}
+                className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
+              >
+                <Plus size={18} /> Add Rule
+              </button>
             </div>
-            <div className="bg-slate-900 border-b border-slate-700 p-4">
-              <form onSubmit={(e) => { 
-                e.preventDefault(); 
-                const form = e.currentTarget;
-                const fd = new FormData(form);
-                handleQuickAdd(fd.get('aname') as string, parseFloat(fd.get('aprice') as string), 'Add-ons').then(() => form.reset()); 
-              }} className="flex gap-4 items-end max-w-lg">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Add-on Name</label>
-                  <input name="aname" required type="text" placeholder="e.g. Dip Sauce" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm" />
-                </div>
-                <div className="w-32">
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Price (Rs.)</label>
-                  <input name="aprice" required type="number" placeholder="50" className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-[#4edea3] font-mono text-sm" />
-                </div>
-                <button type="submit" className="bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 rounded-md px-4 py-2 font-bold text-sm h-[38px] flex items-center gap-2">
-                  <Plus size={16} /> Add
-                </button>
-              </form>
-            </div>
+
             <div className="flex-1 p-6 overflow-y-auto">
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).map(p => (
-                  <div key={p.id} className="bg-slate-900 p-3 rounded-lg border border-slate-700 flex flex-col justify-between group relative">
-                    <span className="font-bold text-white text-sm">{p.name}</span>
-                    <span className="text-[#4edea3] font-mono text-xs">Rs. {p.price}</span>
-                    <button onClick={() => handleDeleteProduct(p.id)} className="absolute top-2 right-2 text-red-400 opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {availabilityRules.map(rule => (
+                  <div key={rule.id} className="bg-slate-900 p-5 rounded-xl border border-slate-700 flex flex-col justify-between gap-3">
+                    <div>
+                      <div className="flex justify-between items-start">
+                        <h4 className="font-bold text-white text-lg">{rule.name}</h4>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setRuleForm({ id: rule.id, name: rule.name, type: rule.type, start_time: rule.start_time || '09:00', end_time: rule.end_time || '23:00', days: rule.days || 'Mon,Tue,Wed,Thu,Fri,Sat,Sun' }); setShowRuleModal(true); }} className="text-slate-400 hover:text-white"><Edit size={16}/></button>
+                          <button onClick={() => handleDeleteRule(rule.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button>
+                        </div>
+                      </div>
+                      <div className="text-sm text-slate-400 mt-2">
+                        <div><strong>Rule Type:</strong> <span className="text-amber-400 font-bold">{rule.type}</span></div>
+                        {rule.type !== 'ALWAYS' && (
+                          <>
+                            <div><strong>Hours:</strong> {rule.start_time} - {rule.end_time}</div>
+                            <div><strong>Days:</strong> {rule.days}</div>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
-                {products.filter(p => p.categories?.some((c:any) => c.name.toLowerCase() === 'add-ons' || c.name.toLowerCase() === 'addons')).length === 0 && <p className="text-slate-500 col-span-full">No Add-ons found. Add one above.</p>}
+                {availabilityRules.length === 0 && (
+                  <p className="text-slate-500 col-span-full text-center p-8">No custom rules found. Default rule is Always Available.</p>
+                )}
               </div>
             </div>
           </div>
         )}
+
       </div>
 
+      {/* Modals */}
       {/* Menu Modal */}
       {showMenuModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
@@ -862,15 +1152,33 @@ export default function MenuManager() {
       {/* Category Modal */}
       {showCategoryModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-scale-up">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md animate-scale-up">
             <h3 className="text-xl font-bold text-white mb-4">{categoryForm.id ? 'Edit Category' : 'Add Category'}</h3>
             <form onSubmit={handleCategorySubmit}>
-              <label className="block text-xs font-bold text-slate-400 mb-1">Category Name</label>
+              <label className="block text-xs font-bold text-slate-400 mb-1">Category Name *</label>
               <input 
                 required type="text" value={categoryForm.name} onChange={e => setCategoryForm({...categoryForm, name: e.target.value})}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#3b82f6] mb-4"
               />
-              <label className="block text-xs font-bold text-slate-400 mb-1">Category Image (Optional)</label>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Sort Order</label>
+                  <input 
+                    type="number" value={categoryForm.sort_order} onChange={e => setCategoryForm({...categoryForm, sort_order: parseInt(e.target.value) || 0})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  />
+                </div>
+                <div className="flex items-end pb-2">
+                  <label className="flex items-center gap-2 text-sm font-bold text-white cursor-pointer">
+                    <input 
+                      type="checkbox" checked={categoryForm.is_active} onChange={e => setCategoryForm({...categoryForm, is_active: e.target.checked})}
+                      className="accent-emerald-500 w-4 h-4"
+                    />
+                    Active Category
+                  </label>
+                </div>
+              </div>
+              <label className="block text-xs font-bold text-slate-400 mb-1">Category Image</label>
               <div className="flex gap-3 items-center mb-4">
                 <label className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-white text-sm cursor-pointer hover:bg-slate-800 flex-1 text-center whitespace-nowrap">
                   <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, (url) => setCategoryForm({...categoryForm, image_url: url}))} />
@@ -878,14 +1186,6 @@ export default function MenuManager() {
                 </label>
                 {categoryForm.image_url && <img src={`${BACKEND_URL}${categoryForm.image_url}`} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-slate-700" />}
               </div>
-              <label className="block text-xs font-bold text-slate-400 mb-1">Belongs to Menu Collection (Optional)</label>
-              <select 
-                value={categoryForm.menu_id} onChange={e => setCategoryForm({...categoryForm, menu_id: parseInt(e.target.value)})}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#3b82f6] mb-4"
-              >
-                <option value={0}>None</option>
-                {menus.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowCategoryModal(false)} className="flex-1 py-3 rounded-lg font-bold text-slate-400 bg-slate-900 hover:bg-slate-700">Cancel</button>
                 <button type="submit" className="flex-1 py-3 rounded-lg font-bold text-white bg-[#3b82f6] hover:bg-blue-600">Save</button>
@@ -895,7 +1195,116 @@ export default function MenuManager() {
         </div>
       )}
 
-      {/* Modals End Here */}
+      {/* Group Modal */}
+      {showGroupModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-scale-up">
+            <h3 className="text-xl font-bold text-white mb-4">{groupForm.id ? 'Edit Modifier Group' : 'Add Modifier Group'}</h3>
+            <form onSubmit={handleGroupSubmit}>
+              <label className="block text-xs font-bold text-slate-400 mb-1">Group Name *</label>
+              <input 
+                required type="text" value={groupForm.name} onChange={e => setGroupForm({...groupForm, name: e.target.value})}
+                placeholder="e.g. Choose Sauce"
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#3b82f6] mb-4"
+              />
+              <div className="flex items-center gap-2 mb-4">
+                <input 
+                  type="checkbox" checked={groupForm.is_required} onChange={e => setGroupForm({...groupForm, is_required: e.target.checked})}
+                  className="accent-[#3b82f6] w-4 h-4 cursor-pointer" id="reqCheck"
+                />
+                <label htmlFor="reqCheck" className="text-sm font-bold text-white cursor-pointer">Required Selection</label>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Min Selection</label>
+                  <input 
+                    type="number" value={groupForm.min_selection} onChange={e => setGroupForm({...groupForm, min_selection: parseInt(e.target.value) || 0})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Max Selection</label>
+                  <input 
+                    type="number" value={groupForm.max_selection} onChange={e => setGroupForm({...groupForm, max_selection: parseInt(e.target.value) || 1})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowGroupModal(false)} className="flex-1 py-3 rounded-lg font-bold text-slate-400 bg-slate-900 hover:bg-slate-700">Cancel</button>
+                <button type="submit" className="flex-1 py-3 rounded-lg font-bold text-white bg-[#3b82f6] hover:bg-blue-600">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modifier Modal */}
+      {showModifierModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-scale-up">
+            <h3 className="text-xl font-bold text-white mb-4">Add Modifier Choice</h3>
+            <form onSubmit={handleModifierSubmit}>
+              <label className="block text-xs font-bold text-slate-400 mb-1">Modifier Name *</label>
+              <input 
+                required type="text" value={modifierForm.name} onChange={e => setModifierForm({...modifierForm, name: e.target.value})}
+                placeholder="e.g. Extra Cheese"
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#3b82f6] mb-4"
+              />
+              <label className="block text-xs font-bold text-slate-400 mb-1">Additional Price (Rs.)</label>
+              <input 
+                type="number" value={modifierForm.additional_price || ''} onChange={e => setModifierForm({...modifierForm, additional_price: parseFloat(e.target.value) || 0})}
+                placeholder="50"
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-[#4edea3] font-mono font-bold focus:outline-none focus:border-[#3b82f6] mb-6"
+              />
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowModifierModal(false)} className="flex-1 py-3 rounded-lg font-bold text-slate-400 bg-slate-900 hover:bg-slate-700">Cancel</button>
+                <button type="submit" className="flex-1 py-3 rounded-lg font-bold text-white bg-[#3b82f6] hover:bg-blue-600">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rule Modal */}
+      {showRuleModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-scale-up">
+            <h3 className="text-xl font-bold text-white mb-4">{ruleForm.id ? 'Edit Rule' : 'Add Availability Rule'}</h3>
+            <form onSubmit={handleRuleSubmit}>
+              <label className="block text-xs font-bold text-slate-400 mb-1">Rule Name</label>
+              <input 
+                required type="text" value={ruleForm.name} onChange={e => setRuleForm({...ruleForm, name: e.target.value})}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#3b82f6] mb-4"
+              />
+              <label className="block text-xs font-bold text-slate-400 mb-1">Type</label>
+              <select 
+                value={ruleForm.type} onChange={e => setRuleForm({...ruleForm, type: e.target.value})}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white mb-4"
+              >
+                <option value="ALWAYS">ALWAYS</option>
+                <option value="TIME_BASED">TIME_BASED</option>
+              </select>
+              {ruleForm.type === 'TIME_BASED' && (
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">Start Time</label>
+                    <input type="time" value={ruleForm.start_time} onChange={e => setRuleForm({...ruleForm, start_time: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">End Time</label>
+                    <input type="time" value={ruleForm.end_time} onChange={e => setRuleForm({...ruleForm, end_time: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" />
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowRuleModal(false)} className="flex-1 py-3 rounded-lg font-bold text-slate-400 bg-slate-900 hover:bg-slate-700">Cancel</button>
+                <button type="submit" className="flex-1 py-3 rounded-lg font-bold text-white bg-[#3b82f6] hover:bg-blue-600">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -47,7 +47,13 @@ export class CatalogService {
           },
         ],
       },
-      include: { categories: true, variants: true },
+      include: {
+        categories: true,
+        variants: { include: { recipe: true } },
+        recipe: { include: { ingredients: { include: { inventory: true } } } },
+        availabilityRule: true,
+        modifierGroups: { include: { modifierGroup: { include: { modifiers: true } } } },
+      },
       orderBy: { id: 'asc' },
     });
 
@@ -196,12 +202,18 @@ export class CatalogService {
     name: string,
     menu_id?: number,
     store_ids?: number[],
+    is_active?: boolean,
+    sort_order?: number,
+    image_url?: string,
   ) {
     return this.prisma.category.create({
       data: {
         store_id,
         name,
         menu_id,
+        is_active: is_active ?? true,
+        sort_order: sort_order ?? 0,
+        image_url,
         assigned_stores: {
           connect: (store_ids || []).map((id) => ({ id })),
         },
@@ -212,11 +224,21 @@ export class CatalogService {
 
   async updateCategory(
     id: number,
-    data: { name?: string; menu_id?: number; store_ids?: number[] },
+    data: {
+      name?: string;
+      menu_id?: number;
+      store_ids?: number[];
+      is_active?: boolean;
+      sort_order?: number;
+      image_url?: string;
+    },
   ) {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.menu_id !== undefined) updateData.menu_id = data.menu_id;
+    if (data.is_active !== undefined) updateData.is_active = data.is_active;
+    if (data.sort_order !== undefined) updateData.sort_order = data.sort_order;
+    if (data.image_url !== undefined) updateData.image_url = data.image_url;
     if (data.store_ids !== undefined) {
       updateData.assigned_stores = {
         set: data.store_ids.map((sid) => ({ id: sid })),
@@ -240,7 +262,14 @@ export class CatalogService {
     // Admin needs to see all products
     return this.prisma.product.findMany({
       where: { is_active: true },
-      include: { categories: true, assigned_stores: true, variants: true },
+      include: {
+        categories: true,
+        assigned_stores: true,
+        variants: { include: { recipe: true } },
+        recipe: true,
+        availabilityRule: true,
+        modifierGroups: { include: { modifierGroup: { include: { modifiers: true } } } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -253,12 +282,22 @@ export class CatalogService {
     cost: number;
     margin_pct: number;
     sku?: string;
+    barcode?: string;
     image_url?: string;
+    description?: string;
     status?: string;
+    is_active?: boolean;
     assigned_store_ids?: number[];
-    variants?: { name: string; price: number }[];
+    variants?: { name: string; price: number; cost?: number; sku?: string; barcode?: string; recipe_id?: number }[];
+    recipe_id?: number;
+    tax_rate?: number;
+    kitchen_station?: string;
+    printer_group?: string;
+    kds_group?: string;
+    availability_rule_id?: number;
+    modifier_group_ids?: number[];
   }) {
-    const { assigned_store_ids, category_ids, variants, ...productData } = data;
+    const { assigned_store_ids, category_ids, variants, modifier_group_ids, ...productData } = data;
     return this.prisma.product.create({
       data: {
         ...productData,
@@ -272,11 +311,33 @@ export class CatalogService {
         variants:
           variants && variants.length > 0
             ? {
-                create: variants.map((v) => ({ name: v.name, price: v.price })),
+                create: variants.map((v) => ({
+                  name: v.name,
+                  price: v.price,
+                  cost: v.cost || 0,
+                  sku: v.sku,
+                  barcode: v.barcode,
+                  recipe_id: v.recipe_id,
+                })),
+              }
+            : undefined,
+        modifierGroups:
+          modifier_group_ids && modifier_group_ids.length > 0
+            ? {
+                create: modifier_group_ids.map((mgId) => ({
+                  modifier_group_id: mgId,
+                })),
               }
             : undefined,
       },
-      include: { assigned_stores: true, categories: true, variants: true },
+      include: {
+        assigned_stores: true,
+        categories: true,
+        variants: { include: { recipe: true } },
+        recipe: true,
+        availabilityRule: true,
+        modifierGroups: { include: { modifierGroup: { include: { modifiers: true } } } },
+      },
     });
   }
 
@@ -289,17 +350,26 @@ export class CatalogService {
       margin_pct?: number;
       is_active?: boolean;
       sku?: string;
+      barcode?: string;
       image_url?: string;
+      description?: string;
       status?: string;
       assigned_store_ids?: number[];
       category_ids?: number[];
-      variants?: { name: string; price: number }[];
+      variants?: { name: string; price: number; cost?: number; sku?: string; barcode?: string; recipe_id?: number }[];
+      recipe_id?: number;
+      tax_rate?: number;
+      kitchen_station?: string;
+      printer_group?: string;
+      kds_group?: string;
+      availability_rule_id?: number;
+      modifier_group_ids?: number[];
     },
   ) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException(`Product #${id} not found`);
 
-    const { assigned_store_ids, category_ids, variants, ...updateData } = data;
+    const { assigned_store_ids, category_ids, variants, modifier_group_ids, ...updateData } = data;
     const updatePayload: any = { ...updateData };
 
     if (assigned_store_ids !== undefined) {
@@ -315,13 +385,32 @@ export class CatalogService {
     }
 
     if (variants !== undefined) {
-      // For updates, we delete existing variants and create new ones (simplest approach)
       await this.prisma.productVariant.deleteMany({
         where: { product_id: id },
       });
       if (variants.length > 0) {
         updatePayload.variants = {
-          create: variants.map((v) => ({ name: v.name, price: v.price })),
+          create: variants.map((v) => ({
+            name: v.name,
+            price: v.price,
+            cost: v.cost || 0,
+            sku: v.sku,
+            barcode: v.barcode,
+            recipe_id: v.recipe_id,
+          })),
+        };
+      }
+    }
+
+    if (modifier_group_ids !== undefined) {
+      await this.prisma.productModifierGroup.deleteMany({
+        where: { product_id: id },
+      });
+      if (modifier_group_ids.length > 0) {
+        updatePayload.modifierGroups = {
+          create: modifier_group_ids.map((mgId) => ({
+            modifier_group_id: mgId,
+          })),
         };
       }
     }
@@ -329,7 +418,14 @@ export class CatalogService {
     return this.prisma.product.update({
       where: { id },
       data: updatePayload,
-      include: { assigned_stores: true, categories: true, variants: true },
+      include: {
+        assigned_stores: true,
+        categories: true,
+        variants: { include: { recipe: true } },
+        recipe: true,
+        availabilityRule: true,
+        modifierGroups: { include: { modifierGroup: { include: { modifiers: true } } } },
+      },
     });
   }
 

@@ -3923,6 +3923,13 @@ export default function App() {
     try { return parseFloat(localStorage.getItem('d4u_cashin_amt') || '0'); } catch { return 0; }
   });
   const [forceShowLogin, setForceShowLogin] = useState(false);
+  const [isSuspended, setIsSuspended] = useState<{suspended: boolean, reason: string}>({suspended: false, reason: ''});
+
+  useEffect(() => {
+    const handleSuspend = (e: any) => setIsSuspended({suspended: true, reason: e.detail});
+    window.addEventListener('subscription_suspended', handleSuspend);
+    return () => window.removeEventListener('subscription_suspended', handleSuspend);
+  }, []);
 
   const handleLogout = () => {
     if (loggedInUser?.role === 'Waiter') {
@@ -3978,6 +3985,32 @@ export default function App() {
   }, [isCashedIn, cashInAmount]);
 
   if (!settings) return <div style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center'}}>Loading POS System...</div>;
+
+  if (isSuspended.suspended) {
+    return (
+      <div style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', backgroundColor:'#0f172a', color:'white', fontFamily:'sans-serif'}}>
+        <div style={{maxWidth:'400px', width:'100%', backgroundColor:'#1e293b', padding:'30px', borderRadius:'24px', textAlign:'center', border:'1px solid rgba(239,68,68,0.3)'}}>
+          <h1 style={{fontSize:'1.8rem', fontWeight:'bold', marginBottom:'10px', color:'#ef4444'}}>POS Suspended</h1>
+          <p style={{color:'#94a3b8', marginBottom:'20px', lineHeight:'1.5'}}>
+            Your restaurant's POS system has been suspended by the administrator. Contact your Head Office.
+          </p>
+          <div style={{backgroundColor:'rgba(239,68,68,0.1)', padding:'15px', borderRadius:'12px', border:'1px solid rgba(239,68,68,0.2)', marginBottom:'20px', fontSize:'0.9rem', color:'#f87171', fontWeight:'bold'}}>
+            Reason: {isSuspended.reason || 'Account disabled'}
+          </div>
+          <button 
+            onClick={() => {
+              localStorage.removeItem('d4u_main_user');
+              localStorage.removeItem('d4u_waiter_user');
+              window.location.reload();
+            }}
+            style={{width:'100%', backgroundColor:'#334155', color:'white', fontWeight:'bold', padding:'12px 16px', borderRadius:'12px', border:'none', cursor:'pointer'}}
+          >
+            Switch User / Refresh
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isWaiterModeURL && (!loggedInUser || loggedInUser.role !== 'Waiter')) {
     return <WaiterTerminalLogin onAuthenticated={(user) => { setLoggedInUser(user); setForceShowLogin(false); }} />;
