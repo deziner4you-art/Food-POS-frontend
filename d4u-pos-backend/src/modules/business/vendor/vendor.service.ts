@@ -6,15 +6,147 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 
+type PurchaseSchemaShape = {
+  tables: Set<string>;
+  columns: Map<string, Set<string>>;
+};
+
+type ColumnRow = {
+  table_name: string;
+  column_name: string;
+};
+
 @Injectable()
 export class VendorService {
+  private schemaShape?: Promise<PurchaseSchemaShape>;
+
   constructor(private prisma: PrismaService) {}
+
+  private getSchemaShape() {
+    this.schemaShape ??= this.prisma.$queryRaw<ColumnRow[]>`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name IN (
+          'Vendor',
+          'PurchaseOrder',
+          'PurchaseOrderItem',
+          'GoodsReceipt',
+          'GoodsReceiptItem',
+          'VendorLedgerEntry'
+        )
+    `.then((rows) => {
+      const tables = new Set<string>();
+      const columns = new Map<string, Set<string>>();
+      for (const row of rows) {
+        tables.add(row.table_name);
+        if (!columns.has(row.table_name)) columns.set(row.table_name, new Set());
+        columns.get(row.table_name)!.add(row.column_name);
+      }
+      return { tables, columns };
+    });
+
+    return this.schemaShape;
+  }
+
+  private async hasColumn(table: string, column: string) {
+    const shape = await this.getSchemaShape();
+    return shape.columns.get(table)?.has(column) ?? false;
+  }
+
+  private async hasTable(table: string) {
+    const shape = await this.getSchemaShape();
+    return shape.tables.has(table);
+  }
+
+  private vendorSelect(hasStatus: boolean) {
+    return `
+      v.id,
+      v.store_id,
+      v.name,
+      v.phone,
+      v.email,
+      ${hasStatus ? 'v.status' : `'ACTIVE' AS status`},
+      ${hasStatus ? 'v.contact_person' : `NULL::text AS contact_person`},
+      ${hasStatus ? 'v.address' : `NULL::text AS address`},
+      ${hasStatus ? 'v.tax_number' : `NULL::text AS tax_number`},
+      ${hasStatus ? 'v.payment_terms' : `NULL::text AS payment_terms`},
+      ${hasStatus ? 'v.credit_limit' : `0::double precision AS credit_limit`},
+      ${hasStatus ? 'v.notes' : `NULL::text AS notes`},
+      COALESCE(v.ledger_balance, 0)::double precision AS ledger_balance,
+      v."createdAt"
+    `;
+  }
+
+  private normalizeVendor(row: any) {
+    return {
+      id: row.id,
+      store_id: row.store_id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      status: row.status ?? 'ACTIVE',
+      contact_person: row.contact_person ?? null,
+      address: row.address ?? null,
+      tax_number: row.tax_number ?? null,
+      payment_terms: row.payment_terms ?? null,
+      credit_limit: Number(row.credit_limit ?? 0),
+      notes: row.notes ?? null,
+      ledger_balance: Number(row.ledger_balance ?? 0),
+      createdAt: row.createdAt,
+      _count: { purchaseOrders: Number(row.purchase_order_count ?? 0) },
+    };
+  }
+
+  private normalizePO(row: any, vendor?: any, items: any[] = [], goodsReceipts: any[] = []) {
+    const total = Number(row.grand_total ?? row.total_amount ?? 0);
+    return {
+      id: row.id,
+      store_id: row.store_id,
+      vendor_id: row.vendor_id,
+      po_number: row.po_number ?? `PO-${row.id}`,
+      status: row.status ?? 'DRAFT',
+      payment_status: row.payment_status ?? 'UNPAID',
+      subtotal: Number(row.subtotal ?? total),
+      discount: Number(row.discount ?? 0),
+      tax: Number(row.tax ?? 0),
+      shipping_cost: Number(row.shipping_cost ?? 0),
+      other_charges: Number(row.other_charges ?? 0),
+      grand_total: total,
+      total_amount: Number(row.total_amount ?? total),
+      created_by: Number(row.created_by ?? 1),
+      approved_by: row.approved_by ?? null,
+      approvedAt: row.approvedAt ?? null,
+      notes: row.notes ?? null,
+      attachments: row.attachments ?? null,
+      createdAt: row.createdAt,
+      deliveredAt: row.deliveredAt ?? null,
+      vendor,
+      items,
+      goodsReceipts,
+    };
+  }
 
   // ============================================================
   // VENDOR CRUD
   // ============================================================
 
   async getVendors(store_id: number) {
+    const hasStatus = await this.hasColumn('Vendor', 'status');
+    if (!hasStatus) {
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT
+          ${this.vendorSelect(hasStatus)},
+          COUNT(po.id)::int AS purchase_order_count
+        FROM "Vendor" v
+        LEFT JOIN "PurchaseOrder" po ON po.vendor_id = v.id
+        WHERE v.store_id = $1
+        GROUP BY v.id
+        ORDER BY v."createdAt" DESC
+      `, store_id);
+      return rows.map((row) => this.normalizeVendor(row));
+    }
+
     return this.prisma.vendor.findMany({
       where: { store_id, status: { not: 'DELETED' } },
       include: {
@@ -99,6 +231,79 @@ export class VendorService {
     from?: string;
     to?: string;
   }) {
+    const hasPoNumber = await this.hasColumn('PurchaseOrder', 'po_number');
+    const hasGoodsReceipt = await this.hasTable('GoodsReceipt');
+    if (!hasPoNumber || !hasGoodsReceipt) {
+      const clauses = ['po.store_id = $1'];
+      const values: any[] = [store_id];
+      if (filters?.status) {
+        values.push(filters.status);
+        clauses.push(`po.status = $${values.length}`);
+      }
+      if (filters?.vendor_id) {
+        values.push(Number(filters.vendor_id));
+        clauses.push(`po.vendor_id = $${values.length}`);
+      }
+      if (filters?.from) {
+        values.push(new Date(filters.from));
+        clauses.push(`po."createdAt" >= $${values.length}`);
+      }
+      if (filters?.to) {
+        values.push(new Date(filters.to));
+        clauses.push(`po."createdAt" <= $${values.length}`);
+      }
+
+      const poRows = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT
+          po.id,
+          po.store_id,
+          po.vendor_id,
+          ${hasPoNumber ? 'po.po_number' : `NULL::text AS po_number`},
+          po.status,
+          po.payment_status,
+          ${hasPoNumber ? 'po.subtotal' : `po.total_amount AS subtotal`},
+          ${hasPoNumber ? 'po.discount' : `0::double precision AS discount`},
+          ${hasPoNumber ? 'po.tax' : `0::double precision AS tax`},
+          ${hasPoNumber ? 'po.shipping_cost' : `0::double precision AS shipping_cost`},
+          ${hasPoNumber ? 'po.other_charges' : `0::double precision AS other_charges`},
+          ${hasPoNumber ? 'po.grand_total' : `po.total_amount AS grand_total`},
+          po.total_amount,
+          ${hasPoNumber ? 'po.created_by' : `1 AS created_by`},
+          ${hasPoNumber ? 'po.approved_by' : `NULL::integer AS approved_by`},
+          ${hasPoNumber ? 'po."approvedAt"' : `NULL::timestamp AS "approvedAt"`},
+          ${hasPoNumber ? 'po.notes' : `NULL::text AS notes`},
+          ${hasPoNumber ? 'po.attachments' : `NULL::text AS attachments`},
+          po."createdAt",
+          po."deliveredAt",
+          v.id AS vendor_id_joined,
+          v.store_id AS vendor_store_id,
+          v.name AS vendor_name,
+          v.phone AS vendor_phone,
+          v.email AS vendor_email,
+          COALESCE(v.ledger_balance, 0)::double precision AS vendor_ledger_balance,
+          v."createdAt" AS vendor_createdAt
+        FROM "PurchaseOrder" po
+        LEFT JOIN "Vendor" v ON v.id = po.vendor_id
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY po."createdAt" DESC
+      `, ...values);
+
+      return poRows.map((row) => {
+        const vendor = row.vendor_id_joined
+          ? this.normalizeVendor({
+              id: row.vendor_id_joined,
+              store_id: row.vendor_store_id,
+              name: row.vendor_name,
+              phone: row.vendor_phone,
+              email: row.vendor_email,
+              ledger_balance: row.vendor_ledger_balance,
+              createdAt: row.vendor_createdAt,
+            })
+          : null;
+        return this.normalizePO(row, vendor, [], []);
+      });
+    }
+
     const where: any = { store_id };
     if (filters?.status) where.status = filters.status;
     if (filters?.vendor_id) where.vendor_id = Number(filters.vendor_id);
@@ -270,6 +475,8 @@ export class VendorService {
   // ============================================================
 
   async getGRNs(store_id: number, po_id?: number) {
+    if (!await this.hasTable('GoodsReceipt')) return [];
+
     const where: any = { store_id };
     if (po_id) where.po_id = Number(po_id);
     return this.prisma.goodsReceipt.findMany({
@@ -462,6 +669,92 @@ export class VendorService {
   // ============================================================
 
   async getDashboardStats(store_id: number) {
+    const hasVendorStatus = await this.hasColumn('Vendor', 'status');
+    const hasGrandTotal = await this.hasColumn('PurchaseOrder', 'grand_total');
+    if (!hasVendorStatus || !hasGrandTotal) {
+      const [activeRows, pendingRows, monthlyRows, liabilityRows, recentRows] = await Promise.all([
+        this.prisma.$queryRaw<any[]>`
+          SELECT COUNT(*)::int AS count
+          FROM "PurchaseOrder"
+          WHERE store_id = ${store_id}
+            AND status IN ('APPROVED', 'PARTIALLY_RECEIVED')
+        `,
+        this.prisma.$queryRaw<any[]>`
+          SELECT COUNT(*)::int AS count
+          FROM "PurchaseOrder"
+          WHERE store_id = ${store_id}
+            AND status = 'APPROVED'
+        `,
+        this.prisma.$queryRaw<any[]>`
+          SELECT COALESCE(SUM(total_amount), 0)::double precision AS total
+          FROM "PurchaseOrder"
+          WHERE store_id = ${store_id}
+            AND "createdAt" >= date_trunc('month', CURRENT_DATE)
+        `,
+        this.prisma.$queryRaw<any[]>`
+          SELECT COALESCE(SUM(ABS(LEAST(ledger_balance, 0))), 0)::double precision AS total
+          FROM "Vendor"
+          WHERE store_id = ${store_id}
+        `,
+        this.prisma.$queryRaw<any[]>`
+          SELECT
+            po.id,
+            po.store_id,
+            po.vendor_id,
+            NULL::text AS po_number,
+            po.status,
+            po.payment_status,
+            po.total_amount AS subtotal,
+            0::double precision AS discount,
+            0::double precision AS tax,
+            0::double precision AS shipping_cost,
+            0::double precision AS other_charges,
+            po.total_amount AS grand_total,
+            po.total_amount,
+            1 AS created_by,
+            NULL::integer AS approved_by,
+            NULL::timestamp AS "approvedAt",
+            NULL::text AS notes,
+            NULL::text AS attachments,
+            po."createdAt",
+            po."deliveredAt",
+            v.id AS vendor_id_joined,
+            v.store_id AS vendor_store_id,
+            v.name AS vendor_name,
+            v.phone AS vendor_phone,
+            v.email AS vendor_email,
+            COALESCE(v.ledger_balance, 0)::double precision AS vendor_ledger_balance,
+            v."createdAt" AS vendor_createdAt
+          FROM "PurchaseOrder" po
+          LEFT JOIN "Vendor" v ON v.id = po.vendor_id
+          WHERE po.store_id = ${store_id}
+          ORDER BY po."createdAt" DESC
+          LIMIT 5
+        `,
+      ]);
+
+      return {
+        activePOs: Number(activeRows[0]?.count ?? 0),
+        pendingGRNs: Number(pendingRows[0]?.count ?? 0),
+        totalMonthlyPurchases: Number(monthlyRows[0]?.total ?? 0),
+        totalLiabilities: Number(liabilityRows[0]?.total ?? 0),
+        recentOrders: recentRows.map((row) => {
+          const vendor = row.vendor_id_joined
+            ? this.normalizeVendor({
+                id: row.vendor_id_joined,
+                store_id: row.vendor_store_id,
+                name: row.vendor_name,
+                phone: row.vendor_phone,
+                email: row.vendor_email,
+                ledger_balance: row.vendor_ledger_balance,
+                createdAt: row.vendor_createdAt,
+              })
+            : null;
+          return this.normalizePO(row, vendor, [], []);
+        }),
+      };
+    }
+
     const [activePOs, pendingGRNs, totalPOsThisMonth, vendors] = await Promise.all([
       this.prisma.purchaseOrder.count({
         where: { store_id, status: { in: ['APPROVED', 'PARTIALLY_RECEIVED'] } },

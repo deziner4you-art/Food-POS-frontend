@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link, Navigate 
 import { Store, PackageOpen, ChefHat, Globe, LayoutDashboard, LogOut, Lock, Users, Activity, ShoppingCart } from 'lucide-react';
 import { AdminProvider, useAdminContext } from './context/AdminContext';
 import { PackageProvider } from './context/PackageContext';
+import { apiFetch } from './utils/api';
+import { getDeviceId, storeTokens, clearTokens, refreshAccessToken } from './utils/session';
 import GlobalErrorToast from './components/GlobalErrorToast';
 import GlobalHeader from './components/workspace/GlobalHeader';
 
@@ -37,6 +39,17 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
   const { isBranchEntered, setIsBranchEntered, branches, selectedBranchId } = useAdminContext();
   const selectedBranch = branches.find(b => b.id === selectedBranchId);
 
+  // MARKETING-002: SaaS module gating — Marketing Hub disappears entirely
+  // (not just disabled) when the branch's package doesn't include it.
+  const [marketingEnabled, setMarketingEnabled] = useState(true);
+  useEffect(() => {
+    if (!selectedBranchId) return;
+    apiFetch(`/marketing/capabilities?store_id=${selectedBranchId}`)
+      .then(res => res.ok ? res.json() : { enabled: true })
+      .then(data => setMarketingEnabled(data.enabled !== false))
+      .catch(() => setMarketingEnabled(true));
+  }, [selectedBranchId]);
+
   let navItems = forceBootstrap ? [] : [
     { path: '/', label: 'Overview', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' }
   ];
@@ -49,13 +62,16 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
       { path: '/inventory', label: 'Inventory', icon: PackageOpen, color: 'text-[#8b5cf6]', bg: 'bg-[#8b5cf6]/20' },
       { path: '/recipes', label: 'Recipe Costing', icon: ChefHat, color: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]/20' },
       { path: '/purchase', label: 'Purchase & Receiving', icon: ShoppingCart, color: 'text-orange-400', bg: 'bg-orange-500/20' },
-      { path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' },
+      ...(marketingEnabled ? [{ path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' }] : []),
       { path: '/customers', label: 'CRM & Loyalty', icon: Users, color: 'text-amber-400', bg: 'bg-amber-500/20' },
       { path: '/cms', label: 'Website CMS', icon: Globe, color: 'text-[#ec4899]', bg: 'bg-[#ec4899]/20' }
     ];
   }
 
-  if (!forceBootstrap && user?.role === 'Super Admin') {
+  // HQ-level (brand-wide) settings — only relevant at the HQ Overview level,
+  // not inside a specific branch's dashboard (a branch's own sidebar already
+  // covers everything that branch needs; these would just duplicate HQ).
+  if (!forceBootstrap && !isBranchEntered && user?.role === 'Super Admin') {
     navItems.push({ path: '/saas', label: 'SaaS Setup', icon: ShieldCheck, color: 'text-purple-400', bg: 'bg-purple-500/20' });
     navItems.push({ path: '/branches', label: 'Branches (Stores)', icon: Store, color: 'text-teal-400', bg: 'bg-teal-500/20' });
     navItems.push({ path: '/health', label: 'System Health', icon: Activity, color: 'text-emerald-400', bg: 'bg-emerald-500/20' });
@@ -220,19 +236,23 @@ export default function App() {
     try {
       const res = await fetch(`${BACKEND_URL}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-device-id': getDeviceId() },
         body: JSON.stringify({ phone, pin })
       });
       if (!res.ok) throw new Error('Invalid Credentials');
       const data = await res.json();
-      
+
       if (data.user.role !== 'Super Admin' && data.user.role !== 'Business Admin' && data.user.role !== 'Admin' && data.user.role !== 'HeadOffice') {
         throw new Error('Access Denied. Admins only.');
       }
 
       setUser(data.user);
       localStorage.setItem('d4u_admin_user', JSON.stringify(data.user));
-      localStorage.setItem('d4u_admin_token', data.access_token);
+      // Stores refresh_token too — see utils/session.ts's proactive silent
+      // refresh, which keeps this session alive instead of silently expiring
+      // 1 hour after login (every API call was failing with a masked
+      // "unexpected system error" once that happened).
+      storeTokens(data.access_token, data.refresh_token);
     } catch (err: any) {
       setError(err.message);
     }
@@ -241,8 +261,17 @@ export default function App() {
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('d4u_admin_user');
-    localStorage.removeItem('d4u_admin_token');
+    clearTokens();
   };
+
+  // Proactively refresh the access token every 45 minutes so a long-open
+  // admin session (this one, for instance) never silently starts failing.
+  useEffect(() => {
+    if (!user) return;
+    refreshAccessToken();
+    const interval = setInterval(() => { refreshAccessToken(); }, 45 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // Allow /setup and /owner to load without waiting for settings or auth
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';

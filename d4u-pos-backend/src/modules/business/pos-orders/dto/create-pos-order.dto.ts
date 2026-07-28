@@ -40,6 +40,12 @@ export class CreatePosOrderDto {
   @IsOptional()
   customer_id?: number;
 
+  // Loyalty points to redeem atomically with this order (all-or-nothing —
+  // see PosOrdersService.createOrder). Requires customer_id.
+  @IsNumber()
+  @IsOptional()
+  redeem_points?: number;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PosOrderItemDto)
@@ -61,6 +67,12 @@ export class CreatePosOrderDto {
   @IsOptional()
   table_no?: string;
 
+  // Set when this order was created from a Waiter Terminal, so the waiter's
+  // own "My Orders" tab can filter to exactly this order.
+  @IsNumber()
+  @IsOptional()
+  terminal_session_id?: number;
+
   @IsBoolean()
   @IsOptional()
   is_offline?: boolean;
@@ -72,4 +84,27 @@ export class CreatePosOrderDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  couponCode?: string;
+
+  // MARKETING-003 §9 — Order Details / Promotion Stack Explainer: what the
+  // client-side decision engine (POS/Waiter/Website) blocked or overrode
+  // during this transaction, persisted for audit.
+  @IsNumber()
+  @IsOptional()
+  manager_override_by?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  coupon_blocked?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  loyalty_blocked?: boolean;
+
+  @IsArray()
+  @IsOptional()
+  rejected_promotions?: { type: string; reason: string }[];
 }

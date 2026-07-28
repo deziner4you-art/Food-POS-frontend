@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ListTree, Plus, Edit, Trash2, Tag, Utensils, Store, Clock, Sliders, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ListTree, Plus, Edit, Trash2, Tag, Utensils, Store, Clock, Sliders, CheckCircle2, AlertCircle, ClipboardList, FileDown, FileUp } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
+import ProductRequestsTab from './ProductRequestsTab';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -16,7 +17,7 @@ export default function MenuManager() {
     'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
   });
 
-  const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORIES' | 'PRODUCTS' | 'MODIFIERS' | 'AVAILABILITY'>('MENUS');
+  const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORIES' | 'PRODUCTS' | 'MODIFIERS' | 'AVAILABILITY' | 'PRODUCT_REQUESTS'>('MENUS');
   
   const [stores, setStores] = useState<any[]>([]);
 
@@ -46,6 +47,7 @@ export default function MenuManager() {
     sku: '',
     barcode: '',
     image_url: '',
+    thumbnail_url: '',
     tax_rate: 0,
     is_active: true,
     recipe_id: 0,
@@ -284,6 +286,55 @@ export default function MenuManager() {
     fetchAll();
   };
 
+  const handleExportProductsCsv = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/catalog/products/export`, { headers: getAuthHeaderOnly() });
+      if (!res.ok) return customAlert('Failed to export products.');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'menu-products.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      customAlert('Failed to export products.');
+    }
+  };
+
+  const handleImportProductsCsvFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!selectedBranchId) return customAlert('Please select a branch first');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(`${BACKEND_URL}/catalog/products/import?store_id=${selectedBranchId}`, {
+        method: 'POST',
+        headers: getAuthHeaderOnly(),
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        customSuccess(`Import complete: ${data.created} created, ${data.updated} updated${data.errors ? `, ${data.errors} errors` : ''}.`);
+        if (data.errors > 0) {
+          console.warn('CSV import row errors:', data.results.filter((r: any) => r.action === 'error'));
+        }
+        fetchAll();
+      } else {
+        customAlert(data.message || 'CSV import failed.');
+      }
+    } catch (e) {
+      console.error(e);
+      customAlert('CSV import failed.');
+    }
+  };
+
   // Modifier Group Handlers
   const handleGroupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -392,6 +443,53 @@ export default function MenuManager() {
     }
   };
 
+  // Product images are handled by a dedicated per-product endpoint (validates type/size,
+  // generates a thumbnail, and deletes the previous file on replace) rather than the
+  // generic /catalog/upload used above for categories.
+  const handleProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !productForm.id) return;
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      const res = await fetch(`${BACKEND_URL}/catalog/products/${productForm.id}/image`, {
+        method: 'POST',
+        headers: getAuthHeaderOnly(),
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setProductForm({ ...productForm, image_url: data.image_url || '', thumbnail_url: data.thumbnail_url || '' });
+        customSuccess('Product image uploaded successfully!');
+      } else {
+        customAlert(data.message || 'Image upload failed.');
+      }
+    } catch (err) {
+      console.error('Product image upload failed', err);
+      customAlert('Image upload failed.');
+    }
+  };
+
+  const handleProductImageRemove = async () => {
+    if (!productForm.id) return;
+    const confirmed = await customConfirm('Remove this product image?');
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/catalog/products/${productForm.id}/image`, {
+        method: 'DELETE',
+        headers: getAuthHeaderOnly(),
+      });
+      if (res.ok) {
+        setProductForm({ ...productForm, image_url: '', thumbnail_url: '' });
+        customSuccess('Product image removed.');
+      }
+    } catch (err) {
+      console.error('Product image remove failed', err);
+      customAlert('Failed to remove image.');
+    }
+  };
+
   const handleStoreToggle = (storeId: number, currentList: number[], setter: (val: number[]) => void) => {
     if (currentList.includes(storeId)) setter(currentList.filter(id => id !== storeId));
     else setter([...currentList, storeId]);
@@ -431,6 +529,12 @@ export default function MenuManager() {
           className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm ${activeTab === 'AVAILABILITY' ? 'bg-[#3b82f6] text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
         >
           <Clock size={16} /> Availability Rules
+        </button>
+        <button
+          onClick={() => setActiveTab('PRODUCT_REQUESTS')}
+          className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm ${activeTab === 'PRODUCT_REQUESTS' ? 'bg-[#3b82f6] text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+        >
+          <ClipboardList size={16} /> Product Requests
         </button>
       </div>
 
@@ -607,6 +711,15 @@ export default function MenuManager() {
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <Utensils className="text-[#3b82f6]" /> Menu Products Engine
               </h3>
+              <div className="flex gap-2">
+                <button onClick={handleExportProductsCsv} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors">
+                  <FileDown size={16} /> Export CSV
+                </button>
+                <label className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors cursor-pointer">
+                  <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportProductsCsvFile} />
+                  <FileUp size={16} /> Import CSV
+                </label>
+              </div>
             </div>
 
             {/* Form */}
@@ -646,6 +759,26 @@ export default function MenuManager() {
                       className="w-full bg-[#1e293b] border border-[#334155] rounded-md p-2 text-white text-sm focus:outline-none focus:border-[#fbbf24]"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Product Image</label>
+                  {isEditingProduct && productForm.id ? (
+                    <div className="flex gap-3 items-center">
+                      <label className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-white text-sm cursor-pointer hover:bg-slate-800 whitespace-nowrap">
+                        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleProductImageUpload} />
+                        <span>{productForm.image_url ? 'Replace Image' : 'Browse Image'}</span>
+                      </label>
+                      {productForm.image_url && (
+                        <>
+                          <img src={`${BACKEND_URL}${productForm.thumbnail_url || productForm.image_url}`} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-slate-700" />
+                          <button type="button" onClick={handleProductImageRemove} className="text-red-400 text-xs font-bold hover:underline">Remove</button>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 italic">Save the product first, then a Product Image option will appear here.</p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -913,7 +1046,7 @@ export default function MenuManager() {
                       </td>
                       <td className="p-4 font-bold text-white flex items-center gap-3">
                         {p.image_url ? (
-                          <img src={`${BACKEND_URL}${p.image_url}`} alt={p.name} className="w-9 h-9 rounded object-cover border border-slate-600" />
+                          <img src={`${BACKEND_URL}${p.thumbnail_url || p.image_url}`} alt={p.name} className="w-9 h-9 rounded object-cover border border-slate-600" />
                         ) : (
                           <div className="w-9 h-9 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500">No Img</div>
                         )}
@@ -955,7 +1088,8 @@ export default function MenuManager() {
                               category_ids: p.categories?.map((c:any) => c.id) || [], 
                               sku: p.sku || '', 
                               barcode: p.barcode || '',
-                              image_url: p.image_url || '', 
+                              image_url: p.image_url || '',
+                              thumbnail_url: p.thumbnail_url || '',
                               tax_rate: p.tax_rate || 0,
                               is_active: p.is_active ?? true,
                               recipe_id: p.recipe_id || 0,
@@ -1109,6 +1243,11 @@ export default function MenuManager() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* PRODUCT REQUESTS TAB */}
+        {activeTab === 'PRODUCT_REQUESTS' && (
+          <ProductRequestsTab stores={stores} />
         )}
 
       </div>

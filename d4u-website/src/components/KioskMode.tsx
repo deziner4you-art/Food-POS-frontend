@@ -39,8 +39,17 @@ export default function KioskMode({
   onIncreaseQuantity,
   onClearCart
 }: KioskModeProps) {
-  // Navigation active tab
-  const [activeCategory, setActiveCategory] = useState<'Burgers' | 'Pizzas' | 'Sides' | 'Drinks' | 'Desserts'>('Burgers');
+  // Navigation active tab — derived from the branch's real categories (previously
+  // a hardcoded 'Burgers'|'Pizzas'|'Sides'|'Drinks'|'Desserts' list that never
+  // matched actual menu data).
+  const CATEGORIES = Array.from(new Set(foodItems.map((f) => f.category)))
+    .filter((c) => !['extra toppings', 'add-ons', 'addons'].includes((c || '').toLowerCase()));
+  const [activeCategory, setActiveCategory] = useState<string>('');
+  useEffect(() => {
+    if (CATEGORIES.length > 0 && !activeCategory) {
+      setActiveCategory(CATEGORIES[0]);
+    }
+  }, [CATEGORIES.join(','), activeCategory]);
   const [tableNumber, setTableNumber] = useState<number>(12);
   const [isEditingTable, setIsEditingTable] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<string>('');
@@ -281,18 +290,18 @@ export default function KioskMode({
             </div>
           </section>
 
-          {/* Category Tabs */}
-          <section id="kiosk-section-categories" className="px-8 mt-8 sticky top-0 bg-[#0c1322] py-4 z-30">
-            <div className="flex gap-3 overflow-x-auto hide-scrollbar">
-              {['Burgers', 'Pizzas', 'Sides', 'Drinks', 'Desserts'].map((cat) => {
+          {/* Categories (left) + Product Grid (right) */}
+          <section id="kiosk-section-categories-and-grid" className="px-8 mt-8 pb-12 flex gap-6 items-start">
+            <aside id="kiosk-category-sidebar" className="w-48 flex-shrink-0 sticky top-4 flex flex-col gap-2 max-h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
+              {CATEGORIES.map((cat) => {
                 const isActive = activeCategory === cat;
                 return (
                   <button
                     key={`cat-tab-${cat}`}
-                    onClick={() => setActiveCategory(cat as any)}
-                    className={`px-8 py-3.5 rounded-2xl font-bold transition-all whitespace-nowrap text-sm uppercase tracking-wider ${
-                      isActive 
-                        ? 'bg-[#ffe1a7] text-[#402d00] shadow-xl shadow-amber-400/10 scale-[1.02]' 
+                    onClick={() => setActiveCategory(cat)}
+                    className={`w-full text-left px-5 py-3.5 rounded-2xl font-bold transition-all whitespace-nowrap text-sm uppercase tracking-wider ${
+                      isActive
+                        ? 'bg-[#ffe1a7] text-[#402d00] shadow-xl shadow-amber-400/10 scale-[1.02]'
                         : 'bg-[#2e3545] text-[#dce2f7] hover:bg-[#232a3a]'
                     }`}
                   >
@@ -300,11 +309,10 @@ export default function KioskMode({
                   </button>
                 );
               })}
-            </div>
-          </section>
+            </aside>
 
-          {/* Large Visual Product Grid */}
-          <section id="kiosk-item-grid-section" className="px-8 pb-12 mt-4">
+            {/* Large Visual Product Grid */}
+            <div id="kiosk-item-grid-section" className="flex-1 min-w-0">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {filteredFoodItems.map((item) => (
                 <div 
@@ -348,6 +356,7 @@ export default function KioskMode({
                   </div>
                 </div>
               ))}
+            </div>
             </div>
           </section>
 

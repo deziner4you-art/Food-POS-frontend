@@ -31,7 +31,17 @@ export default function MobileMode({
   onClearCart,
   campaigns = []
 }: MobileModeProps) {
-  const [activeCategory, setActiveCategory] = useState<'Burgers' | 'Pizzas' | 'Sides' | 'Drinks' | 'Desserts'>('Burgers');
+  // Derived from the branch's real categories — previously a hardcoded
+  // 'Burgers'|'Pizzas'|'Sides'|'Drinks'|'Desserts' list that never matched
+  // actual menu data.
+  const CATEGORIES = Array.from(new Set(foodItems.map((f) => f.category)))
+    .filter((c) => !['extra toppings', 'add-ons', 'addons'].includes((c || '').toLowerCase()));
+  const [activeCategory, setActiveCategory] = useState<string>('');
+  React.useEffect(() => {
+    if (CATEGORIES.length > 0 && !activeCategory) {
+      setActiveCategory(CATEGORIES[0]);
+    }
+  }, [CATEGORIES.join(','), activeCategory]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [addedFlags, setAddedFlags] = useState<{ [key: string]: boolean }>({});
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
@@ -351,14 +361,14 @@ export default function MobileMode({
         {/* Story Categories Ring List */}
         <span className="px-6 block text-[10px] uppercase font-bold tracking-widest text-[#d3c5ac] mt-4 mb-2">Explore Categories</span>
         <section id="story-categories-slider" className="flex items-center gap-5 overflow-x-auto hide-scrollbar px-6 mb-2 py-3">
-          {[...new Set(foodItems.map(f => f.category))].slice(0, 8).map((categoryName) => {
+          {CATEGORIES.map((categoryName) => {
             const isActive = activeCategory === categoryName;
             // Draw matching item preview image
             const matchingItem = foodItems.find(f => f.category === categoryName);
             return (
-              <div 
+              <div
                 key={`story-${categoryName}`}
-                onClick={() => setActiveCategory(categoryName as any)}
+                onClick={() => setActiveCategory(categoryName)}
                 className="flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer"
               >
                 <div className={`w-16 h-16 rounded-full p-[2px] transition-all duration-300 ${

@@ -7,13 +7,17 @@ import {
   Body,
   Param,
   Query,
+  Res,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { RequirePermissions, Public } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { diskStorage, memoryStorage } from 'multer';
+import { extname, join } from 'path';
+import { mkdirSync } from 'fs';
 import { CatalogService } from './catalog.service';
 import {
   CreateMenuDto,
@@ -23,6 +27,10 @@ import {
   CreateProductDto,
   UpdateProductDto,
 } from './dto';
+
+const MENU_PRODUCTS_DIR = join(process.cwd(), 'uploads', 'menu-products');
+const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_PRODUCT_IMAGE_BYTES = 2 * 1024 * 1024; // 2MB
 
 @Controller('catalog')
 export class CatalogController {
@@ -169,5 +177,72 @@ export class CatalogController {
   deleteProduct(@Param('id') id: string) {
     console.log(`[DELETE PRODUCT] #${id}`);
     return this.service.deleteProduct(Number(id));
+  }
+
+  // -------------------------------------------------------------
+  // PRODUCT CSV IMPORT / EXPORT (Menu Builder bulk editing)
+  // -------------------------------------------------------------
+  @RequirePermissions('catalog.view')
+  @Get('products/export')
+  async exportProducts(@Res() res: Response) {
+    const csv = await this.service.exportProductsCsv();
+    res.set({
+      'Content-Type': 'text/csv',
+      'Content-Disposition': 'attachment; filename="menu-products.csv"',
+    });
+    res.send(csv);
+  }
+
+  @RequirePermissions('catalog.create')
+  @Post('products/import')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  importProducts(@Query('store_id') store_id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No CSV file received.');
+    if (!store_id) throw new BadRequestException('store_id is required.');
+    console.log(`[PRODUCT IMPORT] CSV upload for store ${store_id} — ${file.originalname}`);
+    return this.service.importProductsCsv(Number(store_id), file.buffer);
+  }
+
+  // -------------------------------------------------------------
+  // PRODUCT IMAGE (upload / replace / remove)
+  // -------------------------------------------------------------
+  @RequirePermissions('catalog.update')
+  @Post('products/:id/image')
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          mkdirSync(MENU_PRODUCTS_DIR, { recursive: true });
+          cb(null, MENU_PRODUCTS_DIR);
+        },
+        filename: (_req, file, cb) => {
+          const randomName = Array(32)
+            .fill(null)
+            .map(() => Math.round(Math.random() * 16).toString(16))
+            .join('');
+          cb(null, `${randomName}${extname(file.originalname)}`);
+        },
+      }),
+      fileFilter: (_req, file, cb) => {
+        if (!ALLOWED_IMAGE_MIME_TYPES.includes(file.mimetype)) {
+          cb(new BadRequestException('Unsupported file type. Only JPG, PNG, and WEBP are allowed.'), false);
+          return;
+        }
+        cb(null, true);
+      },
+      limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES },
+    }),
+  )
+  uploadProductImage(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No image file received.');
+    console.log(`[PRODUCT IMAGE] Upload for #${id} — ${file.originalname} (${file.size} bytes)`);
+    return this.service.setProductImage(Number(id), file);
+  }
+
+  @RequirePermissions('catalog.update')
+  @Delete('products/:id/image')
+  deleteProductImage(@Param('id') id: string) {
+    console.log(`[PRODUCT IMAGE] Remove for #${id}`);
+    return this.service.removeProductImage(Number(id));
   }
 }

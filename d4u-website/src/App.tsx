@@ -87,17 +87,18 @@ export default function App() {
 
     const fetchCMS = async () => {
       try {
+        // MARKETING-003 §1/§2: routed through the shared CampaignResolverService
+        // (channel=web, store_id) instead of fetching everything and filtering
+        // client-side — the server now enforces package/schedule/Happy-Hour/
+        // publish-target filtering identically to POS/TV/QR/Kiosk.
         const [bannersRes, settingsRes, campaignsRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/cms/banners`), 
+          fetch(`${BACKEND_URL}/cms/banners`),
           fetch(`${BACKEND_URL}/cms/settings/${selectedStoreId}`),
-          fetch(`${BACKEND_URL}/marketing/campaign`)
+          fetch(`${BACKEND_URL}/marketing/campaign?store_id=${selectedStoreId}&channel=web`)
         ]);
         if (bannersRes.ok) setBanners(await bannersRes.json());
         if (settingsRes.ok) setSettings(await settingsRes.json());
-        if (campaignsRes.ok) {
-          const allCamps = await campaignsRes.json();
-          setCampaigns(allCamps.filter((c: any) => c.published_web));
-        }
+        if (campaignsRes.ok) setCampaigns(await campaignsRes.json());
       } catch (e) { console.error(e); }
     };
 
@@ -113,9 +114,9 @@ export default function App() {
     
     socket.on('marketing_update', () => {
       console.log('Marketing Update Received! Refetching campaigns...');
-      fetch(`${BACKEND_URL}/marketing/campaign`)
+      fetch(`${BACKEND_URL}/marketing/campaign?store_id=${selectedStoreId}&channel=web`)
         .then(res => res.json())
-        .then(allCamps => setCampaigns(allCamps.filter((c: any) => c.published_web)))
+        .then(setCampaigns)
         .catch(console.error);
     });
 

@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+import { BACKEND_URL } from './config/backend';
+import { calculateSubtotalWithTax } from './utils/cartTotals';
+import { syncOfflineOrders as syncOfflineOrdersRequest, ApiRequestError } from './pos/api';
+import * as cartEngine from './cart/cartEngine';
+import type { CartLineItem } from './cart/cartTypes';
+import { generateHeldOrderId } from './cart/heldOrderId';
+import { customConfirm } from './utils/alerts';
+import { validateDeliveryCustomerInfo, calculateLoyaltyDiscountPercent, resolveCustomerMode } from './customer/customerEngine';
+import { lookupCustomerByPhone, createCustomer } from './pos/api';
+import { getDeviceId, storeTokens, refreshAccessToken } from './pos/session';
 const socket = io(BACKEND_URL);
 import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, Receipt, LogOut } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -82,14 +90,17 @@ function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
     try {
       const res = await fetch(BACKEND_URL + '/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-device-id': getDeviceId() },
         body: JSON.stringify({ phone, pin: password })
       });
       const data = await res.json();
 
       if (res.ok && data.user) {
         if (data.access_token) {
-          localStorage.setItem('d4u_pos_token', data.access_token);
+          // Stores refresh_token too — see pos/session.ts's proactive silent
+          // refresh, which keeps this session alive for a full shift instead
+          // of silently expiring 1 hour after login.
+          storeTokens(data.access_token, data.refresh_token);
         }
         onLogin({
           email: data.user.phone,
@@ -218,6 +229,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
                       body: JSON.stringify({ pin: terminalPinInput.trim() })
                     }).then(res => res.json()).then(data => {
                       if (data.success) {
+                        if (data.access_token) localStorage.setItem('d4u_pos_token', data.access_token);
                         onLogin({
                           email: terminalPinInput,
                           password: terminalPinInput,
@@ -278,7 +290,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
-  const [cart, setCart] = useState<any[]>([])
+  const [cart, setCart] = useState<CartLineItem[]>([])
   const [time, setTime] = useState(new Date())
   const [dayClosePin, setDayClosePin] = useState('')
   const [pendingLastDaySettlements, setPendingLastDaySettlements] = useState<any[]>([])
@@ -289,12 +301,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [activeTab, setActiveTab] = useState<'SIZES' | 'TOPPINGS'>('SIZES');
   const [waiterPinModalOpen, setWaiterPinModalOpen] = useState(false);
   const [generatedWaiterPin, setGeneratedWaiterPin] = useState('');
+  const [isGeneratingTabletLink, setIsGeneratingTabletLink] = useState(false);
+  // Blocking validation errors (e.g. "no table selected") need the cashier/
+  // waiter to actually notice and acknowledge them — a header toast is too
+  // easy to miss, so these use a centered popup instead.
+  const [alertModalMessage, setAlertModalMessage] = useState<string | null>(null);
   const [activeWaiters, setActiveWaiters] = useState<any[]>([]);
+  const [terminalSessions, setTerminalSessions] = useState<any[]>([]);
   const [cashier, setCashier] = useState<{ name: string } | null>(() => {
     try { return JSON.parse(localStorage.getItem('d4u_cashier') || 'null'); } catch { return null; }
   });
   const [cashierLoginName, setCashierLoginName] = useState('');
-  const [heldOrders, setHeldOrders] = useState<any[]>([])
+  // Held orders are persisted in Dexie (see db.ts `heldOrders` table) so they survive
+  // a reload/crash instead of living only in React state.
+  const heldOrders = useLiveQuery(() => db.heldOrders.toArray()) || [];
   const [toast, setToast] = useState<{message: string, type: 'success' | 'info' | 'error'} | null>(null);
   const [kotSearchQuery, setKotSearchQuery] = useState('');
   const [kotStatusFilter, setKotStatusFilter] = useState('ALL');
@@ -316,6 +336,16 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   useEffect(() => {
     localStorage.setItem('d4u_pos_settings', JSON.stringify(posSettings));
   }, [posSettings]);
+
+  // The access token expires after 1 hour, but a POS terminal is meant to
+  // stay logged in for a full shift — proactively refresh it well before
+  // expiry so every API call in the app keeps working silently instead of
+  // failing with "Invalid or expired authentication token" mid-shift.
+  useEffect(() => {
+    refreshAccessToken();
+    const interval = setInterval(() => { refreshAccessToken(); }, 45 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (toast && toast.type !== 'error') {
@@ -358,10 +388,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [customItemCode, setCustomItemCode] = useState('');
   const [customItemCategory, setCustomItemCategory] = useState<number>(0);
   const [customItemImg, setCustomItemImg] = useState('');
+  const [customItemImgFile, setCustomItemImgFile] = useState<File | null>(null);
 
   const handleCustomImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setCustomItemImgFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setCustomItemImg(reader.result as string);
@@ -376,6 +408,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     setCustomItemCode('');
     setCustomItemCategory(0);
     setCustomItemImg('');
+    setCustomItemImgFile(null);
   };
 
   const kots = useLiveQuery(() => db.kots.toArray()) || [];
@@ -452,33 +485,56 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const terminalKots = useLiveQuery(() => db.kots.toArray())?.filter(kot => kot.source === 'Terminal' && kot.status !== 'PAID' && kot.status !== 'CANCELLED') || [];
 
   // Offline Sync Engine
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
   useEffect(() => {
+    const BASE_INTERVAL_MS = 30000;
+    const MAX_INTERVAL_MS = 5 * 60000;
+    let consecutiveFailures = 0;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const scheduleNext = () => {
+      const delay = Math.min(BASE_INTERVAL_MS * Math.pow(2, consecutiveFailures), MAX_INTERVAL_MS);
+      timeoutId = setTimeout(syncOfflineOrders, delay);
+    };
+
     const syncOfflineOrders = async () => {
-      if (!navigator.onLine) return;
+      if (!navigator.onLine) {
+        scheduleNext();
+        return;
+      }
       try {
         const unsynced = await db.kots.where('synced').equals('false').toArray();
         const unsyncedReal = unsynced.length === 0 ? await db.kots.filter(k => k.synced === false).toArray() : unsynced; // Dexie query fallback
-        
-        if (unsyncedReal.length === 0) return;
+        setPendingSyncCount(unsyncedReal.length);
 
-        const res = await fetch(`${BACKEND_URL}/pos-orders/sync-offline`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orders: unsyncedReal })
-        });
-        if (res.ok) {
-          const syncedIds = unsyncedReal.map(o => o.id!);
-          await db.kots.where('id').anyOf(syncedIds).modify({ synced: true });
-          console.log(`[Offline Sync] Successfully synced ${syncedIds.length} orders.`);
+        if (unsyncedReal.length === 0) {
+          consecutiveFailures = 0;
+          setSyncStatus('idle');
+          scheduleNext();
+          return;
         }
+
+        setSyncStatus('syncing');
+        await syncOfflineOrdersRequest(unsyncedReal);
+        const syncedIds = unsyncedReal.map(o => o.id!);
+        await db.kots.where('id').anyOf(syncedIds).modify({ synced: true });
+        console.log(`[Offline Sync] Successfully synced ${syncedIds.length} orders.`);
+        consecutiveFailures = 0;
+        setSyncStatus('idle');
+        setPendingSyncCount(0);
       } catch (e) {
-        console.error('[Offline Sync] Sync failed:', e);
+        consecutiveFailures = Math.min(consecutiveFailures + 1, 5);
+        setSyncStatus('error');
+        const message = e instanceof ApiRequestError ? e.message : String(e);
+        console.error(`[Offline Sync] Sync failed (attempt ${consecutiveFailures}):`, message);
       }
+      scheduleNext();
     };
-    const interval = setInterval(syncOfflineOrders, 30000); // 30 seconds
+
     // Initial sync check
-    setTimeout(syncOfflineOrders, 5000);
-    return () => clearInterval(interval);
+    timeoutId = setTimeout(syncOfflineOrders, 5000);
+    return () => clearTimeout(timeoutId);
   }, []);
 
   useEffect(() => {
@@ -600,7 +656,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       });
       socket.on('marketing_update', () => {
         if (currentUser?.store_id) {
-          fetch(`${BACKEND_URL}/marketing/campaign?store_id=${currentUser.store_id}`)
+          // MARKETING-003 §1/§2: routed through the shared CampaignResolverService (channel=pos)
+          fetch(`${BACKEND_URL}/marketing/campaign?store_id=${currentUser.store_id}&channel=pos`)
             .then(res => res.json())
             .then(setActiveCampaigns)
             .catch(console.error);
@@ -618,6 +675,120 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         socket.off('marketing_update');
       };
     }, [currentUser]);
+
+  // ---------------------------------------------------------------
+  // WAITER MODE: own-orders tracking, heartbeat, real-time status toasts
+  // ---------------------------------------------------------------
+  const [waiterTab, setWaiterTab] = useState<'MENU' | 'ORDERS'>('MENU');
+  const [waiterOrders, setWaiterOrders] = useState<any[]>([]);
+  const knownWaiterOrderIds = useRef<Set<number>>(new Set());
+
+  // The "My Orders" overlay must cover only the content area below the
+  // header, not the header itself — measured dynamically (rather than
+  // hardcoded) since the header's height varies (toast banner, low-stock
+  // alert, wrapping, etc.).
+  const mainRef = useRef<HTMLElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const [waiterOverlayTop, setWaiterOverlayTop] = useState(0);
+  useEffect(() => {
+    if (!isWaiterMode) return;
+    const measure = () => {
+      if (headerRef.current && mainRef.current) {
+        setWaiterOverlayTop(headerRef.current.getBoundingClientRect().bottom - mainRef.current.getBoundingClientRect().top);
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (headerRef.current) observer.observe(headerRef.current);
+    window.addEventListener('resize', measure);
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
+  }, [isWaiterMode, toast]);
+
+  const fetchWaiterOrders = async () => {
+    if (!isWaiterMode || !currentUser?.sessionId) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/pos-orders?store_id=${currentUser.store_id}&terminal_session_id=${currentUser.sessionId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+      });
+      if (!res.ok) return;
+      const orders = await res.json();
+      // "Order accepted by cashier" — a small toast the first time an order this
+      // waiter sent shows up as persisted (skipped on the very first load, so
+      // reopening the app doesn't fire a toast burst for every existing order).
+      const isFirstLoad = knownWaiterOrderIds.current.size === 0;
+      for (const o of orders) {
+        if (!knownWaiterOrderIds.current.has(o.id)) {
+          knownWaiterOrderIds.current.add(o.id);
+          if (!isFirstLoad) {
+            setToast({ message: `Table ${o.table_no || ''}: Order accepted by cashier.`, type: 'success' });
+          }
+        }
+      }
+      setWaiterOrders(orders);
+    } catch (e) { /* offline — keep showing last known list */ }
+  };
+
+  useEffect(() => {
+    if (!isWaiterMode || !currentUser?.sessionId) return;
+    fetchWaiterOrders();
+    const interval = setInterval(fetchWaiterOrders, 15000);
+    const heartbeat = setInterval(() => {
+      socket.emit('waiter_heartbeat', { session_id: currentUser.sessionId });
+    }, 25000);
+    return () => { clearInterval(interval); clearInterval(heartbeat); };
+  }, [isWaiterMode, currentUser?.sessionId]);
+
+  useEffect(() => {
+    if (!isWaiterMode) return;
+    const handleKdsUpdate = (data: { kot_id: number; order_id: number; status: string; store_id: number }) => {
+      if (data.store_id !== currentUser?.store_id) return;
+      const mine = waiterOrders.find(o => o.id === data.order_id);
+      if (!mine) return;
+      if (data.status === 'PREPARING') setToast({ message: `Table ${mine.table_no || ''}: Kitchen started preparing your order.`, type: 'success' });
+      if (data.status === 'READY') setToast({ message: `Table ${mine.table_no || ''}: Order is ready!`, type: 'success' });
+      fetchWaiterOrders();
+    };
+    socket.on('kds_update', handleKdsUpdate);
+    return () => { socket.off('kds_update', handleKdsUpdate); };
+  }, [isWaiterMode, waiterOrders, currentUser?.store_id]);
+
+  // ---------------------------------------------------------------
+  // CASHIER: persistent "Connected Waiters" list (backed by TerminalSession,
+  // not just in-memory socket state — survives a POS refresh).
+  // ---------------------------------------------------------------
+  const fetchTerminalSessions = async () => {
+    if (isWaiterMode || !currentUser?.store_id) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/terminal/sessions?store_id=${currentUser.store_id}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+      });
+      if (res.ok) setTerminalSessions(await res.json());
+    } catch (e) { /* ignore — list just won't refresh this tick */ }
+  };
+
+  useEffect(() => {
+    if (isWaiterMode) return;
+    fetchTerminalSessions();
+    const interval = setInterval(fetchTerminalSessions, 15000);
+    socket.on('waiter_sessions_updated', fetchTerminalSessions);
+    return () => { clearInterval(interval); socket.off('waiter_sessions_updated', fetchTerminalSessions); };
+  }, [isWaiterMode, currentUser?.store_id]);
+
+  const handleDisconnectSession = async (id: number) => {
+    await fetch(`${BACKEND_URL}/terminal/sessions/${id}/disconnect`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` } });
+    fetchTerminalSessions();
+  };
+
+  const handleDisconnectAllSessions = async () => {
+    if (!(await customConfirm('Disconnect all connected waiter tablets?'))) return;
+    await fetch(`${BACKEND_URL}/terminal/sessions/disconnect-all?store_id=${currentUser.store_id}`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` } });
+    fetchTerminalSessions();
+  };
+
+  const handleReconnectSession = async (id: number) => {
+    await fetch(`${BACKEND_URL}/terminal/sessions/${id}/reconnect`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` } });
+    fetchTerminalSessions();
+  };
 
   const allOnlineOrders = [...onlineOrdersList, ...backendOnlineOrders];
 
@@ -640,33 +811,39 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         const res = await fetch(`${BACKEND_URL}/catalog/sync/${storeId}`);
         if (res.ok) {
           const data = await res.json();
-          await db.categories.clear();
-          await db.products.clear();
-          
-          if (data.categories && data.categories.length > 0) {
-            await db.categories.bulkPut(data.categories.map((c: any) => ({
-              id: c.id,
-              store_id: storeId,
-              name: c.name
-            })));
-          }
-          
-          if (data.products && data.products.length > 0) {
-            await db.products.bulkPut(data.products.map((p: any) => ({
-              id: p.id,
-              category_id: p.categories && p.categories.length > 0 ? p.categories[0].id : p.category_id,
-              name: p.name,
-              price: p.price,
-              desc: p.sku || 'No description',
-              img: p.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80',
-              variants: p.variants,
-              categories: p.categories,
-              isApproved: p.status === 'APPROVED'
-            })));
-          }
+          // Run clear + repopulate as one Dexie transaction: if bulkPut throws partway
+          // through, the clear is rolled back too, so a failed sync can never leave the
+          // offline catalog empty.
+          await db.transaction('rw', db.categories, db.products, async () => {
+            await db.categories.clear();
+            await db.products.clear();
+
+            if (data.categories && data.categories.length > 0) {
+              await db.categories.bulkPut(data.categories.map((c: any) => ({
+                id: c.id,
+                store_id: storeId,
+                name: c.name
+              })));
+            }
+
+            if (data.products && data.products.length > 0) {
+              await db.products.bulkPut(data.products.map((p: any) => ({
+                id: p.id,
+                category_id: p.categories && p.categories.length > 0 ? p.categories[0].id : p.category_id,
+                name: p.name,
+                price: p.price,
+                desc: p.sku || 'No description',
+                img: p.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80',
+                variants: p.variants,
+                categories: p.categories,
+                isApproved: p.status === 'APPROVED'
+              })));
+            }
+          });
         }
 
-        const campRes = await fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}`);
+        // MARKETING-003 §1/§2: routed through the shared CampaignResolverService (channel=pos)
+        const campRes = await fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}&channel=pos`);
         if (campRes.ok) setActiveCampaigns(await campRes.json());
 
       } catch (err) {
@@ -786,72 +963,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     return () => { socket.off('gps_update', handleGpsUpdate); };
   }, []);
 
-  const getProductDiscount = (product: any) => {
-    if (product.variant_id) return 0;
-    if (product.categories?.some((c:any) => ['extra toppings', 'add-ons', 'addons'].includes((c.name || '').toLowerCase()))) return 0;
-    let maxDiscount = 0;
-    for (const camp of activeCampaigns) {
-      if (!camp.published_pos) continue;
-
-      const hasStoreTarget = camp.target_stores?.length > 0;
-      const hasCategoryTarget = camp.target_categories?.length > 0;
-      const hasProductTarget = camp.target_products?.length > 0;
-
-      const storeId = currentUser?.store_id;
-      const storeMatches = hasStoreTarget ? camp.target_stores.some((s:any) => s.id === storeId) : true;
-      const categoryMatches = hasCategoryTarget ? camp.target_categories.some((c:any) => c.id === product.category_id) : true;
-      const productMatches = hasProductTarget ? camp.target_products.some((p:any) => p.id === product.id) : true;
-
-      const isGlobal = !hasStoreTarget && !hasCategoryTarget && !hasProductTarget;
-
-      let applies = false;
-      if (isGlobal) {
-        applies = true;
-      } else {
-        if (!storeMatches) continue; 
-        
-        if (hasProductTarget) {
-          if (productMatches) applies = true;
-        } else if (hasCategoryTarget) {
-          if (categoryMatches) applies = true;
-        } else {
-          applies = true;
-        }
-      }
-
-      if (applies && camp.discount_pct > maxDiscount) {
-        maxDiscount = camp.discount_pct;
-      }
-    }
-    return maxDiscount;
-  };
+  const getProductDiscount = (product: any) => cartEngine.getProductDiscount(product, activeCampaigns, currentUser?.store_id);
 
   const addToCart = (product: any, variant?: any) => {
-    setCart(prev => {
-      const cartItemId = variant ? `${product.id}-${variant.id}` : `${product.id}`;
-      const existing = prev.find(item => (item.cartItemId || item.id) === cartItemId);
-      if (existing) {
-        return prev.map(item =>
-          (item.cartItemId || item.id) === cartItemId ? { ...item, qty: item.qty + 1 } : item
-        );
-      }
-      const priceToUse = variant ? variant.price : product.price;
-      const nameToUse = variant ? `${product.name} (${variant.name})` : product.name;
-      return [...prev, { ...product, cartItemId, name: nameToUse, price: priceToUse, variant_id: variant?.id, qty: 1 }];
-    });
+    setCart(prev => cartEngine.addToCart(prev, product, variant));
   }
 
   const updateQty = (id: any, delta: number) => {
-    setCart(prev => {
-      return prev.map(item => {
-        if ((item.cartItemId || item.id) === id) {
-          const newQty = item.qty + delta;
-          return newQty > 0 ? { ...item, qty: newQty } : null;
-        }
-        return item;
-      }).filter((item): item is any => item !== null);
-    });
+    setCart(prev => cartEngine.updateCartItemQty(prev, id, delta));
   }
+
+  // cartEngine.removeCartItem is available as an explicit, non-quantity-based removal
+  // helper for future UI wiring; not yet called from any screen (no UI/UX change here).
 
   const handleRepeatOrder = async (itemsStr: string) => {
     const items = itemsStr.split(',').map(s => s.trim());
@@ -914,7 +1037,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const handleCreateKOT = async () => {
     if (cart.length === 0) return setToast({ message: 'Cart is empty', type: 'error' });
-    if (orderType === 'Delivery' && (!customerName.trim() || !customerAddress.trim() || !customerPhone.trim())) {
+    if (!validateDeliveryCustomerInfo(orderType, customerName, customerAddress, customerPhone).valid) {
       setPendingDeliveryAction('KOT');
       return setModalType('DELIVERY_DETAILS');
     }
@@ -1023,40 +1146,52 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     setToast({ message: `Order #${newKot.orderId} sent to KDS and Delivery!`, type: 'success' });
   };
 
-  const handleSendTerminalOrder = () => {
-    if (cart.length === 0) return setToast({ message: 'Cart is empty', type: 'error' });
-    if (!tableNumber) return setToast({ message: 'Please select a Table Number', type: 'error' });
+  const handleSendTerminalOrder = async () => {
+    if (cart.length === 0) return setAlertModalMessage('Cart is empty. Please add items before sending the order.');
+    if (!tableNumber) return setAlertModalMessage('Please select a Table Number before sending the order.');
 
-    const orderData = {
-      id: 'T' + Date.now() + Math.floor(Math.random() * 1000), // Unique ID to prevent duplicates
-      store_id: currentUser.store_id,
-      waiter_name: currentUser.name || 'Waiter Tablet',
-      terminal_pin: currentUser.terminalPin || '0000',
-      table_no: tableNumber,
-      items: cart,
-      total: grandTotal,
-      timestamp: new Date().toISOString()
-    };
+    // Waiter orders go through the same /pos-orders endpoint (and therefore the
+    // same Order+KOT persistence, table assignment, and KDS broadcast) as any
+    // other order — no parallel order system, so KDS/TV/POS all read the same
+    // status from the same place.
+    try {
+      const res = await fetch(`${BACKEND_URL}/pos-orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+        body: JSON.stringify({
+          store_id: currentUser.store_id,
+          created_by: 0,
+          items: cart.map((i: any) => ({ product_id: i.id || 1, quantity: i.qty, price: i.price, special_inst: '' })),
+          order_source: 'WAITER',
+          table_no: tableNumber,
+          terminal_session_id: currentUser.sessionId,
+          notes: `Waiter: ${currentUser.name || 'Waiter Tablet'}`,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || `Order failed (HTTP ${res.status})`);
 
-    socket.emit('NEW_TERMINAL_ORDER', orderData);
-    setToast({ message: 'Order sent to POS!', type: 'success' });
-    setCart([]);
-    setTableNumber('');
+      setToast({ message: 'Order sent to POS!', type: 'success' });
+      setCart([]);
+      setTableNumber('');
+    } catch (e: any) {
+      console.error('Send terminal order failed:', e);
+      setAlertModalMessage(e?.message || 'Failed to send order — please retry.');
+    }
   };
 
   const handleHoldOrder = () => {
     if (cart.length === 0) return;
-    setHeldOrders([...heldOrders, { id: Date.now(), cart, orderType, time: new Date() }]);
+    db.heldOrders.put({ id: generateHeldOrderId(), cart, orderType, time: new Date() });
     setCart([]);
   }
 
   const handleResumeOrder = (id: number) => {
     const orderToResume = heldOrders.find(o => o.id === id);
     if (orderToResume) {
+      db.heldOrders.delete(id);
       if (cart.length > 0) {
-        setHeldOrders(prev => [...prev.filter(o => o.id !== id), { id: Date.now(), cart, orderType, time: new Date() }]);
-      } else {
-        setHeldOrders(prev => prev.filter(o => o.id !== id));
+        db.heldOrders.put({ id: generateHeldOrderId(), cart, orderType, time: new Date() });
       }
       setCart(orderToResume.cart);
       setOrderType(orderToResume.orderType);
@@ -1064,10 +1199,44 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     }
   }
 
+  // Removes a held order without resuming it (Cancel Hold), after confirmation.
+  const handleCancelHeldOrder = async (id: number) => {
+    const confirmed = await customConfirm('This held order will be permanently removed and cannot be resumed.');
+    if (!confirmed) return;
+    await db.heldOrders.delete(id);
+  }
+
+  const cartHasCompanyPromotion = () => cart.some(item => cartEngine.hasActiveCompanyPromotion(item, activeCampaigns, currentUser?.store_id));
+
+  // MARKETING-002 promotion priority: Manual Override (manager PIN) sits above
+  // Company Promotion — a manager can explicitly authorize bypassing the
+  // block for this one transaction; it resets once the sale completes/cart clears.
+  const [promotionOverrideActive, setPromotionOverrideActive] = useState(false);
+  const [pendingOverrideReason, setPendingOverrideReason] = useState<'discount' | 'promotion_block' | null>(null);
+
+  const trackBlockedDiscount = (event: 'blocked_coupon' | 'blocked_loyalty') => {
+    const blockingCampaign = activeCampaigns.find(c => cart.some(item => cartEngine.hasActiveCompanyPromotion(item, [c], currentUser?.store_id)));
+    if (blockingCampaign) {
+      fetch(`${BACKEND_URL}/marketing/analytics/${blockingCampaign.id}/${event}`, { method: 'POST' }).catch(() => {});
+    }
+  };
+
   const handleDiscountChange = (val: string) => {
     const newVal = Number(val);
+    if (newVal > 0 && cartHasCompanyPromotion() && !promotionOverrideActive) {
+      trackBlockedDiscount('blocked_coupon');
+      if (posSettings.discountPassword) {
+        setPendingDiscount(val);
+        setPendingOverrideReason('promotion_block');
+        setModalType('DISCOUNT_AUTH');
+      } else {
+        setToast({ message: 'Company Promotion Active. Additional discounts cannot be applied.', type: 'error' });
+      }
+      return;
+    }
     if (newVal > discountPercent && posSettings.discountPassword) {
       setPendingDiscount(val);
+      setPendingOverrideReason('discount');
       setModalType('DISCOUNT_AUTH');
     } else {
       setDiscountPercent(newVal);
@@ -1116,17 +1285,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [pendingDeliveryAction, setPendingDeliveryAction] = useState<'KOT' | 'PAY' | null>(null);
   const [tableNumber, setTableNumber] = useState<string>(isWaiterMode ? '' : 'T1');
 
-  const subTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const promoDiscountAmount = cart.reduce((sum, item) => {
-    const pct = getProductDiscount(item);
-    return sum + (item.price * item.qty * (pct / 100));
-  }, 0);
-  const afterPromo = subTotal - promoDiscountAmount;
-  const discountAmount = afterPromo * (discountPercent / 100);
-  const totalDiscountAmount = promoDiscountAmount + discountAmount;
-  const afterDiscount = subTotal - totalDiscountAmount;
-  const tax = afterDiscount * 0.10;
-  const grandTotal = afterDiscount + tax;
+  const {
+    subTotal, promoDiscountAmount, bogoDiscountAmount, bundleDiscountAmount, giftDiscountAmount, afterPromo, discountAmount,
+    totalDiscountAmount, afterDiscount, tax, grandTotal, giftApplications
+  } = cartEngine.calculateOrderTotals(cart, activeCampaigns, currentUser?.store_id, discountPercent);
 
   const crmCustomersRaw = useLiveQuery(() => db.crmCustomers.toArray()) || [];
   const crmCustomers = crmCustomersRaw.length > 0 ? crmCustomersRaw : [];
@@ -1150,12 +1312,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   useEffect(() => {
     if (customerPhone.length >= 10) {
-      fetch(`${BACKEND_URL}/customers/phone/${customerPhone}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.id) setLiveCustomer(data);
-          else setLiveCustomer(null);
-        })
+      lookupCustomerByPhone(customerPhone)
+        .then(setLiveCustomer)
         .catch(() => setLiveCustomer(null));
     } else {
       setLiveCustomer(null);
@@ -1190,6 +1348,29 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   return (
     <div className="pos-layout" onClick={() => showMoreMenu && setShowMoreMenu(false)}>
+      {(syncStatus === 'error' || (syncStatus !== 'idle' && pendingSyncCount > 0)) && (
+        <div
+          title={syncStatus === 'error' ? 'Some orders are waiting to sync with the server' : 'Syncing offline orders...'}
+          style={{
+            position: 'fixed', bottom: '10px', right: '10px', zIndex: 9999,
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '6px 12px', borderRadius: '20px',
+            background: syncStatus === 'error' ? 'rgba(220,38,38,0.92)' : 'rgba(30,41,59,0.92)',
+            color: 'white', fontSize: '0.75rem', fontWeight: 600,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)', pointerEvents: 'none'
+          }}
+        >
+          <span
+            style={{
+              width: '8px', height: '8px', borderRadius: '50%',
+              background: syncStatus === 'error' ? '#fca5a5' : '#facc15'
+            }}
+          />
+          {syncStatus === 'error'
+            ? `${pendingSyncCount} order${pendingSyncCount === 1 ? '' : 's'} pending sync`
+            : `Syncing ${pendingSyncCount} order${pendingSyncCount === 1 ? '' : 's'}...`}
+        </div>
+      )}
 
       {/* SIDEBAR */}
       {!isWaiterMode && (
@@ -1262,14 +1443,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       )}
 
       {/* MAIN CONTENT AREA */}
-      <main className="main-content" style={{ position: 'relative' }}>
+      <main ref={mainRef} className="main-content" style={{ position: 'relative' }}>
         {lowStockItems.length > 0 && (
           <div style={{ background: '#ef4444', color: 'white', padding: '8px 24px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.9rem', animation: 'pulse 2s infinite' }}>
             <AlertCircle size={18} />
             LOW STOCK ALERT: {lowStockItems.map(i => `${i.name} (${i.currentStock} left)`).join(', ')}
           </div>
         )}
-        <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-panel)', padding: '12px 24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', marginBottom: '20px', gap: '20px' }}>
+        <header ref={headerRef} className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-panel)', padding: '12px 24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', marginBottom: '20px', gap: '20px' }}>
           <div className="header-info" style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             {activeMenu === 'Dashboard' ? (
               <h1 style={{ fontSize: '1.4rem', color: 'white', fontWeight: 'bold', margin: 0, whiteSpace: 'nowrap' }}>POS Dashboard</h1>
@@ -1285,9 +1466,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           </div>
 
           {isWaiterMode && (
-            <button onClick={onLogout} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <LogOut size={18} /> Logout
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', background: 'var(--bg-base)', borderRadius: '8px', padding: '4px', gap: '4px' }}>
+                <button onClick={() => setWaiterTab('MENU')} style={{ background: waiterTab === 'MENU' ? 'var(--accent-yellow)' : 'transparent', color: waiterTab === 'MENU' ? 'black' : 'var(--text-muted)', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>Menu</button>
+                <button onClick={() => setWaiterTab('ORDERS')} style={{ background: waiterTab === 'ORDERS' ? 'var(--accent-yellow)' : 'transparent', color: waiterTab === 'ORDERS' ? 'black' : 'var(--text-muted)', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>Orders {waiterOrders.length > 0 ? `(${waiterOrders.length})` : ''}</button>
+              </div>
+              <button onClick={onLogout} style={{ background: '#ef4444', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <LogOut size={18} /> Logout
+              </button>
+            </div>
           )}
 
           {/* TOAST NOTIFICATION AREA (IN HEADER) */}
@@ -1399,6 +1586,44 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           </div>
         </header>
 
+        {/* WAITER: MY ORDERS TAB (overlay — Menu view underneath is untouched).
+            Positioned to start below the header (measured via ResizeObserver
+            above) so only the tab content switches — the header stays visible. */}
+        {isWaiterMode && waiterTab === 'ORDERS' && (
+          <div style={{ position: 'absolute', top: waiterOverlayTop, left: 0, right: 0, bottom: 0, background: 'var(--bg-base)', zIndex: 500, overflowY: 'auto', padding: '20px' }}>
+            <h2 style={{ color: 'white', fontSize: '1.2rem', marginBottom: '16px' }}>My Orders</h2>
+            {waiterOrders.length === 0 && (
+              <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginTop: '40px' }}>No orders sent yet.</p>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {waiterOrders.map((order: any) => {
+                const kotStatus = order.kot?.status || order.status || 'PENDING';
+                const statusColor = kotStatus === 'READY' ? 'var(--accent-green)' : kotStatus === 'PREPARING' ? 'var(--accent-yellow)' : kotStatus === 'CANCELLED' ? '#ef4444' : 'var(--text-muted)';
+                let etaMinutes: number | null = null;
+                if (kotStatus === 'PREPARING' && order.kot?.acceptedAt) {
+                  const elapsedMin = (Date.now() - new Date(order.kot.acceptedAt).getTime()) / 60000;
+                  etaMinutes = Math.max(0, Math.round(15 - elapsedMin)); // best-effort default prep window
+                }
+                return (
+                  <div key={order.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 18px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ color: 'white', fontWeight: 'bold' }}>Order #{order.id} — Table {order.table_no || 'N/A'}</span>
+                      <span style={{ color: statusColor, fontWeight: 'bold', fontSize: '0.85rem' }}>{kotStatus}</span>
+                    </div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '6px' }}>
+                      {order.items?.map((i: any) => `${i.quantity}x ${i.product?.name || 'Item'}`).join(', ')}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      <span>{new Date(order.createdAt).toLocaleTimeString()}</span>
+                      {etaMinutes !== null && <span>~{etaMinutes} min remaining</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* DASHBOARD VIEW */}
         {activeMenu === 'Dashboard' && (
           <div style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
@@ -1416,19 +1641,46 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           <>
             {activeCampaigns.some(c => c.published_pos) && (
               <div className="mb-4 flex gap-4 overflow-x-auto pb-2 snap-x" style={{ scrollbarWidth: 'none' }}>
-                {activeCampaigns.filter(c => c.published_pos).map(camp => (
+                {activeCampaigns.filter(c => c.published_pos).map(camp => {
+                  const msLeft = camp.end_date ? new Date(camp.end_date).getTime() - Date.now() : null;
+                  const isLimitedOffer = msLeft !== null && msLeft > 0 && msLeft < 24 * 60 * 60 * 1000;
+                  const hoursLeft = msLeft ? Math.floor(msLeft / 3600000) : 0;
+                  const minsLeft = msLeft ? Math.floor((msLeft % 3600000) / 60000) : 0;
+                  return (
                   <div key={camp.id} className="min-w-[300px] h-32 rounded-2xl overflow-hidden relative shadow-lg snap-start flex-shrink-0 bg-gradient-to-r from-[#ec4899] to-[#8b5cf6] flex items-center p-6 text-white cursor-pointer hover:scale-[1.02] transition-transform" onClick={() => {
                      fetch(`${BACKEND_URL}/marketing/analytics/${camp.id}/offer_click`, { method: 'POST' }).catch(()=>{});
                   }}>
                     {camp.image_url && (
                       <img src={`${BACKEND_URL}${camp.image_url}`} className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-overlay" alt={camp.title} />
                     )}
+                    {isLimitedOffer && (
+                      <div style={{ position: 'absolute', top: '8px', right: '8px', background: '#ef4444', color: 'white', fontSize: '0.65rem', fontWeight: '900', padding: '3px 8px', borderRadius: '10px', zIndex: 10 }}>
+                        LIMITED OFFER
+                      </div>
+                    )}
                     <div className="relative z-10">
-                      <div className="text-3xl font-black mb-1 drop-shadow-md">{camp.discount_pct}% OFF</div>
+                      <div className="text-3xl font-black mb-1 drop-shadow-md">SALE — {camp.discount_pct}% OFF</div>
                       <div className="text-sm font-bold drop-shadow opacity-90 line-clamp-1">{camp.title}</div>
+                      {camp.show_countdown && msLeft !== null && msLeft > 0 && (
+                        <div className="text-xs font-bold mt-1 opacity-90">Ends in {hoursLeft}h {minsLeft}m</div>
+                      )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
+              </div>
+            )}
+            {cartEngine.getActiveBogoCampaigns(activeCampaigns).length > 0 && (
+              <div className="mb-4" style={{ marginBottom: '16px' }}>
+                <div style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '6px' }}>🎁 BOGO Deals</div>
+                <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
+                  {cartEngine.getActiveBogoCampaigns(activeCampaigns).map(camp => (
+                    <div key={camp.id} style={{ minWidth: '220px', flexShrink: 0, background: 'linear-gradient(135deg, #f59e0b, #d97706)', borderRadius: '10px', padding: '10px 14px', color: 'black' }}>
+                      <div style={{ fontWeight: '900', fontSize: '0.8rem' }}>BUY {camp.buy_qty} GET {camp.reward_qty} {camp.reward_type === 'PERCENTAGE' ? `${camp.discount_pct}% OFF` : 'FREE'}</div>
+                      <div style={{ fontSize: '0.7rem', opacity: 0.85 }}>{camp.title}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <div className="nav-categories" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '5px' }}>
@@ -1462,6 +1714,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 return true;
               }).map(prod => {
                 const discount = getProductDiscount(prod);
+                const isBogoProduct = cartEngine.getActiveBogoCampaigns(activeCampaigns).some(c => c.buy_product_id === prod.id || c.get_product_id === prod.id);
                 return (
                 <div
                   key={prod.id}
@@ -1491,6 +1744,19 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       display: 'flex', alignItems: 'center', gap: '3px'
                     }}>
                       🔥 {discount}% OFF
+                    </div>
+                  )}
+                  {isBogoProduct && (
+                    <div style={{
+                      position: 'absolute', top: discount > 0 ? '34px' : '10px', left: '0',
+                      background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                      color: 'black', fontWeight: '900', fontSize: '0.65rem',
+                      padding: '3px 10px 3px 8px',
+                      borderRadius: '0 20px 20px 0',
+                      zIndex: 10,
+                      letterSpacing: '0.05em',
+                    }}>
+                      BOGO
                     </div>
                   )}
                   <div className="product-img-wrapper"><img src={prod.img || ''} alt={prod.name} className="product-img" /></div>
@@ -1528,7 +1794,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#334155'; e.currentTarget.style.color = '#cbd5e1'; }}
                 >
                   <Plus size={40} style={{ marginBottom: '15px' }} />
-                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Add Custom Item</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Submit Product Request</span>
                 </div>
               )}
             </div>
@@ -1705,9 +1971,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                             });
                           }
                         } catch(e) {}
-                        const subTotal = parsedCart.reduce((sum, item) => sum + item.price * item.qty, 0);
-                        const tax = subTotal * 0.1;
-                        const grandTotal = subTotal + tax;
+                        const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(parsedCart);
                         setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: parsedCart, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
                       }} style={{ padding: '12px 20px', background: 'var(--accent-yellow)', color: 'black', fontWeight: 'bold', borderRadius: '5px', border: 'none', cursor: 'pointer' }} title="Print Bill Slip">
                         <Printer size={18} />
@@ -1734,51 +1998,100 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           <div style={{ padding: '20px', background: 'var(--bg-panel)', borderRadius: 'var(--radius-lg)', flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
               <h2 style={{ margin: 0, color: 'var(--accent-green)' }}><Navigation size={24} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '10px' }} />Incoming Terminal Orders</h2>
-              <button 
-                onClick={() => {
-                  const pin = Math.floor(1000 + Math.random() * 9000).toString();
-                  socket.emit('generate_waiter_pin', { store_id: currentUser.store_id, pin });
-                  setGeneratedWaiterPin(pin);
-                  setWaiterPinModalOpen(true);
+              <button
+                disabled={isGeneratingTabletLink}
+                onClick={async () => {
+                  if (!currentUser?.store_id) {
+                    setToast({ message: 'No branch/store detected for this session. Please re-login.', type: 'error' });
+                    return;
+                  }
+                  setIsGeneratingTabletLink(true);
+                  try {
+                    const res = await fetch(`${BACKEND_URL}/terminal/generate`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+                      body: JSON.stringify({ store_id: currentUser.store_id, waiter_name: 'Waiter' }),
+                    });
+                    const data = await res.json().catch(() => null);
+                    if (res.ok && data?.success) {
+                      setGeneratedWaiterPin(data.pin);
+                      setWaiterPinModalOpen(true);
+                    } else {
+                      setToast({ message: data?.message || `Failed to generate tablet link (HTTP ${res.status}). Try logging in again.`, type: 'error' });
+                    }
+                  } catch (e) {
+                    console.error('Generate Tablet Link failed:', e);
+                    setToast({ message: 'Network error while generating tablet link. Check your connection to the server.', type: 'error' });
+                  } finally {
+                    setIsGeneratingTabletLink(false);
+                  }
                 }}
-                style={{ background: 'var(--accent-green)', color: 'black', padding: '10px 20px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                style={{ background: 'var(--accent-green)', color: 'black', padding: '10px 20px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: isGeneratingTabletLink ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', opacity: isGeneratingTabletLink ? 0.6 : 1 }}
               >
-                <Plus size={18} /> Generate Tablet Link
+                <Plus size={18} /> {isGeneratingTabletLink ? 'Generating...' : 'Generate Tablet Link'}
               </button>
             </div>
-            
+
             <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <h3 style={{ margin: 0, color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Navigation size={20} color="var(--accent-green)" /> Connected Waiter Tablets ({activeWaiters.length})
-              </h3>
-              
-              {activeWaiters.length === 0 ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Navigation size={20} color="var(--accent-green)" /> Connected Waiters ({terminalSessions.length})
+                </h3>
+                {terminalSessions.length > 0 && (
+                  <button onClick={handleDisconnectAllSessions} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: '6px 14px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                    Disconnect All
+                  </button>
+                )}
+              </div>
+
+              {terminalSessions.length === 0 ? (
                 <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px', background: 'var(--bg-base)', borderRadius: 'var(--radius-md)' }}>
                   No tablets currently connected. Generate a PIN to let waiters login.
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '15px' }}>
-                  {activeWaiters.map((waiter, idx) => (
-                    <div key={idx} style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--accent-green)', boxShadow: '0 0 10px var(--accent-green)' }}></div>
-                        <span style={{ color: 'white', fontWeight: 'bold' }}>{waiter.name}</span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
+                  {terminalSessions.map((session) => {
+                    const isOnline = !!session.socket_id;
+                    const statusLabel = !session.is_active ? 'DISCONNECTED' : isOnline ? 'ONLINE' : 'OFFLINE';
+                    const statusColor = !session.is_active ? '#94a3b8' : isOnline ? 'var(--accent-green)' : '#f59e0b';
+                    return (
+                      <div key={session.id} style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px', opacity: session.is_active ? 1 : 0.7 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: statusColor, boxShadow: isOnline ? `0 0 10px ${statusColor}` : 'none' }}></div>
+                            <span style={{ color: 'white', fontWeight: 'bold' }}>{session.device_name || session.waiter_name || 'Unnamed device'}</span>
+                          </div>
+                          <span style={{ color: statusColor, fontSize: '0.75rem', fontWeight: 'bold' }}>{statusLabel}</span>
+                        </div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Waiter: {session.waiter_name}</div>
+                        {session.table_no && <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Table: {session.table_no}</div>}
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Connected: {session.connected_at ? new Date(session.connected_at).toLocaleString() : 'N/A'}</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Last activity: {session.last_activity_at ? new Date(session.last_activity_at).toLocaleTimeString() : 'N/A'}</div>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                          {session.is_active ? (
+                            <button onClick={() => handleDisconnectSession(session.id)} style={{ flex: 1, background: '#fee2e2', color: '#dc2626', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                              Disconnect
+                            </button>
+                          ) : (
+                            <button onClick={() => handleReconnectSession(session.id)} style={{ flex: 1, background: 'rgba(34,197,94,0.15)', color: 'var(--accent-green)', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                              Reconnect
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <button 
-                        onClick={() => socket.emit('kick_waiter', { name: waiter.name, store_id: currentUser.store_id })}
-                        style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>
-                        Disconnect
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px 0' }}>
+            {/* Pending Orders (left) / Active Terminal Orders in Kitchen (right) — split into two columns */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start', marginTop: '20px' }}>
+            <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 10px 0' }}>
               <h3 style={{ margin: 0, color: 'white' }}>Pending Orders</h3>
               {terminalOrders.length > 0 && (
-                <button 
+                <button
                   onClick={() => setTerminalOrders([])}
                   style={{ background: '#ef4444', color: 'white', border: 'none', padding: '6px 15px', borderRadius: '5px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
                 >
@@ -1786,9 +2099,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </button>
               )}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', paddingRight: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px', paddingRight: '10px' }}>
               {terminalOrders.length === 0 && (
-                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem', gridColumn: '1 / -1' }}>
+                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem' }}>
                   No pending terminal orders
                 </div>
               )}
@@ -1838,11 +2151,13 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </div>
               ))}
             </div>
+            </div>
 
-            <h3 style={{ margin: '20px 0 10px 0', color: 'white' }}>Active Terminal Orders (In Kitchen)</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', paddingRight: '10px' }}>
+            <div>
+            <h3 style={{ margin: '0 0 10px 0', color: 'white' }}>Active Terminal Orders (In Kitchen)</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px', paddingRight: '10px' }}>
               {terminalKots.length === 0 && (
-                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem', gridColumn: '1 / -1' }}>
+                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem' }}>
                   No active terminal orders
                 </div>
               )}
@@ -1898,6 +2213,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </div>
               ))}
             </div>
+            </div>
+            </div>
           </div>
         )}
 
@@ -1949,9 +2266,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                             <button className="btn-action bg-green-500 text-white font-bold px-4 py-2 flex justify-center items-center gap-2" style={{ width: '100%', borderRadius: '4px' }}
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                const subTotal = del.items.reduce((sum: number, item: any) => sum + (item.price * item.qty), 0);
-                                const tax = subTotal * 0.10;
-                                const grandTotal = subTotal + tax;
+                                const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(del.items);
                                 setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
                                 try {
                                   await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
@@ -2484,12 +2799,16 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 <span>Loyalty Points: <b>{liveCustomer.loyalty_points}</b></span>
                 <button 
                   onClick={() => {
+                    if (cartHasCompanyPromotion() && !promotionOverrideActive) {
+                      trackBlockedDiscount('blocked_loyalty');
+                      setToast({ message: 'Company Promotion Active. Additional discounts cannot be applied.', type: 'error' });
+                      return;
+                    }
                     if (liveCustomer.loyalty_points > 0) {
-                      setDiscountPercent(0); 
-                      // 1 point = Rs. 0.20
-                      const discountVal = liveCustomer.loyalty_points * 0.2;
-                      const maxDiscountPct = (discountVal / subTotal) * 100;
-                      setDiscountPercent(Math.min(100, Math.floor(maxDiscountPct)));
+                      setDiscountPercent(0);
+                      const pointValue = (window as any).d4u_loyalty_point_value ?? 0;
+                      const pct = calculateLoyaltyDiscountPercent(liveCustomer.loyalty_points, pointValue, subTotal);
+                      setDiscountPercent(pct);
                       setRedeemedPoints(liveCustomer.loyalty_points);
                       setToast({ message: `${liveCustomer.loyalty_points} Points applied!`, type: 'success' });
                     }
@@ -2559,6 +2878,32 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             {promoDiscountAmount > 0 && (
               <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', color: '#ec4899' }}><span>Promotional Discounts</span><span>-Rs. {promoDiscountAmount.toFixed(2)}</span></div>
             )}
+            {bogoDiscountAmount > 0 && (
+              <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', color: '#f59e0b' }}><span>BOGO Reward</span><span>-Rs. {bogoDiscountAmount.toFixed(2)}</span></div>
+            )}
+            {bundleDiscountAmount > 0 && (
+              <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', color: '#4edea3' }}><span>Bundle/Combo Deal</span><span>-Rs. {bundleDiscountAmount.toFixed(2)}</span></div>
+            )}
+            {giftDiscountAmount > 0 && (
+              <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', color: '#a78bfa' }}>
+                <span>🎁 FREE ITEM: {giftApplications[0]?.giftProductName}</span><span>-Rs. {giftDiscountAmount.toFixed(2)}</span>
+              </div>
+            )}
+            {/* MARKETING-003 §8 — Promotion Stack Explainer: shows the customer/cashier WHY additional discounts are blocked or overridden. */}
+            {cartHasCompanyPromotion() && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '4px 0' }}>
+                <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '2px 6px', borderRadius: '10px', background: 'rgba(236,72,153,0.15)', color: '#ec4899' }}>Company Promotion Applied</span>
+                {!promotionOverrideActive && (
+                  <>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '2px 6px', borderRadius: '10px', background: 'rgba(148,163,184,0.15)', color: '#94a3b8' }}>Coupon Disabled</span>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '2px 6px', borderRadius: '10px', background: 'rgba(148,163,184,0.15)', color: '#94a3b8' }}>Loyalty Disabled</span>
+                  </>
+                )}
+                {promotionOverrideActive && (
+                  <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '2px 6px', borderRadius: '10px', background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>Manager Override Applied</span>
+                )}
+              </div>
+            )}
             {!isWaiterMode && (
             <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', alignItems: 'center' }}>
               <span>Discount</span>
@@ -2590,7 +2935,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               <button className="btn-action btn-danger" style={{ fontSize: '0.75rem', padding: '2px 0', minHeight: '26px' }} onClick={() => setCart([])}>Cancel</button>
               <button className="btn-action" style={{ background: 'var(--accent-green)', color: 'black', fontWeight: 'bold', fontSize: '0.85rem', padding: '2px 0', minHeight: '26px' }} onClick={() => {
                 if (cart.length === 0) return setToast({ message: 'Cart is empty', type: 'error' });
-                if (orderType === 'Delivery' && (!customerName.trim() || !customerAddress.trim() || !customerPhone.trim())) {
+                if (!validateDeliveryCustomerInfo(orderType, customerName, customerAddress, customerPhone).valid) {
                   setPendingDeliveryAction('PAY');
                   return setModalType('DELIVERY_DETAILS');
                 }
@@ -3207,16 +3552,21 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           <div className="modal-content animate-slide-up" style={{ width: '400px' }}>
             <div className="modal-header">
               <h2><Lock size={24} color="#fbbf24" /> Manager Override</h2>
-              <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setDiscountPasswordInput(''); setPendingDiscount(''); }} />
+              <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setDiscountPasswordInput(''); setPendingDiscount(''); setPendingOverrideReason(null); }} />
             </div>
             <div style={{ padding: '20px', textAlign: 'center' }}>
-              <p style={{ marginBottom: '20px', color: 'var(--text-muted)' }}>Enter Discount Password to authorize this change.</p>
+              <p style={{ marginBottom: '20px', color: 'var(--text-muted)' }}>
+                {pendingOverrideReason === 'promotion_block'
+                  ? 'This item is already part of a Company Promotion. Enter the Manager PIN to override and apply an additional discount anyway.'
+                  : 'Enter Discount Password to authorize this change.'}
+              </p>
               <input type="password" value={discountPasswordInput} onChange={e => setDiscountPasswordInput(e.target.value)} placeholder="Enter Password" style={{ width: '100%', padding: '15px', fontSize: '1.5rem', textAlign: 'center', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', marginBottom: '20px', letterSpacing: '5px' }} autoFocus />
               <button className="btn-action btn-order" onClick={() => {
                 if (discountPasswordInput === posSettings.discountPassword) {
+                  if (pendingOverrideReason === 'promotion_block') setPromotionOverrideActive(true);
                   setDiscountPercent(Number(pendingDiscount) || 0);
                   setToast({ message: 'Discount Applied!', type: 'success' });
-                  setModalType('NONE'); setDiscountPasswordInput(''); setPendingDiscount('');
+                  setModalType('NONE'); setDiscountPasswordInput(''); setPendingDiscount(''); setPendingOverrideReason(null);
                 } else {
                   setToast({ message: 'Invalid Password', type: 'error' });
                 }
@@ -3249,8 +3599,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 <textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} placeholder="House #, Street, Block, Area..." rows={3} style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none', resize: 'none' }} />
               </div>
               <button className="btn-action btn-save" onClick={() => {
-                if (!customerName.trim() || !customerAddress.trim() || !customerPhone.trim()) {
-                  setToast({ message: 'All fields are required!', type: 'error' });
+                const validation = validateDeliveryCustomerInfo('Delivery', customerName, customerAddress, customerPhone);
+                if (!validation.valid) {
+                  setToast({ message: validation.message || 'All fields are required!', type: 'error' });
                   return;
                 }
                 setModalType('NONE');
@@ -3386,16 +3737,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 const returnAmount = Math.max(0, tendered - grandTotal);
                 let customerId = liveCustomer?.id || null;
                 
-                // Add Loyalty Points & Customer
-                if (customerPhone.trim() && !liveCustomer) {
+                // A GUEST with a phone number becomes a registered customer at checkout.
+                if (customerPhone.trim() && resolveCustomerMode(liveCustomer) === 'GUEST') {
                   try {
-                    const custRes = await fetch(BACKEND_URL + '/customers', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ brand_id: currentUser?.brand_id, phone: customerPhone.trim(), name: customerName || 'Walk-in' })
+                    const newCustomerRecord = await createCustomer({
+                      brand_id: currentUser?.brand_id,
+                      phone: customerPhone.trim(),
+                      name: customerName || 'Walk-in',
                     });
-                    const custData = await custRes.json();
-                    if (custData.success) customerId = custData.customer.id;
+                    customerId = newCustomerRecord.id;
                   } catch (e) { console.log('Error saving customer', e); }
                 }
 
@@ -3409,12 +3759,26 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     order_source: orderType,
                     table_no: tableNumber || undefined,
                     notes: orderNotes,
+                    // Redeemed atomically with the order server-side (see PosOrdersService.createOrder) —
+                    // if the points can't actually be redeemed, the whole order is rejected instead of
+                    // succeeding while the points deduction silently fails.
+                    redeem_points: redeemedPoints > 0 ? redeemedPoints : undefined,
                     items: cart.map(i => ({
                       product_id: i.id || 1,
                       quantity: i.qty,
                       price: i.price,
                       special_inst: ''
-                    }))
+                    })),
+                    // MARKETING-003 §9 — Order Details / Promotion Stack Explainer audit trail
+                    manager_override_by: promotionOverrideActive ? (currentUser?.id || undefined) : undefined,
+                    coupon_blocked: cartHasCompanyPromotion() && !promotionOverrideActive,
+                    loyalty_blocked: cartHasCompanyPromotion() && !promotionOverrideActive,
+                    rejected_promotions: cartHasCompanyPromotion() && !promotionOverrideActive
+                      ? [
+                          { type: 'coupon', reason: 'Company Promotion Active. Additional discounts cannot be applied.' },
+                          { type: 'loyalty', reason: 'Company Promotion Active. Additional discounts cannot be applied.' },
+                        ]
+                      : undefined,
                   };
 
                   try {
@@ -3424,17 +3788,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       body: JSON.stringify(payload)
                     });
                     const data = await res.json();
+                    if (res.status === 409) {
+                      // A business-rule rejection from within the order transaction — either
+                      // the table is already occupied, or the loyalty points couldn't be
+                      // redeemed (e.g. insufficient balance). Either way it's not a
+                      // connectivity issue, so do NOT fall back to the offline path below;
+                      // let the cashier fix the input and retry.
+                      setToast({ message: data.message || 'This order could not be completed.', type: 'error' });
+                      return;
+                    }
                     if (!res.ok) throw new Error(data.message || 'Order failed');
 
-                    // Execute Redeem if points were used
-                    if (redeemedPoints > 0 && customerId) {
-                      await fetch(`${BACKEND_URL}/customers/${customerId}/redeem`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ points: redeemedPoints })
-                      });
-                      setRedeemedPoints(0);
-                    }
+                    if (redeemedPoints > 0) setRedeemedPoints(0);
                   } catch (e) {
                     console.error('API Error:', e);
                     setToast({ message: 'Error submitting order to backend, falling back to local.', type: 'error' });
@@ -3487,6 +3852,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 }
                 setOrderNotes('');
                 setCart([]); setCashGiven(''); setModalType('NONE');
+                setPromotionOverrideActive(false); // one-transaction-only manual override
                 setToast({ message: 'Transaction Complete!', type: 'success' });
                 if (posSettings.tillLockEnabled) setIsTillLocked(false);
               }} style={{ width: '100%', padding: '15px', fontSize: '1.1rem', background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
@@ -3502,7 +3868,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         <div className="modal-overlay" style={{ zIndex: 10001, background: 'rgba(15, 23, 42, 0.95)' }}>
           <div className="modal-content animate-slide-up" style={{ width: '500px', background: '#0f172a', border: '1px solid #1e293b', padding: '0', borderRadius: '8px', overflow: 'hidden' }}>
             <div className="modal-header" style={{ padding: '15px 20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ color: 'white', fontSize: '1.2rem', margin: 0 }}><Plus size={20} color="var(--accent-yellow)" /> Add Custom Product</h2>
+              <h2 style={{ color: 'white', fontSize: '1.2rem', margin: 0 }}><Plus size={20} color="var(--accent-yellow)" /> Submit Product Request</h2>
               <X size={20} style={{cursor:'pointer', color: '#94a3b8'}} onClick={() => { setModalType('NONE'); resetCustomItemForm(); }} />
             </div>
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -3540,32 +3906,44 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 <button className="btn-action" onClick={async () => {
                   if (!customItemName || !customItemPrice) { setToast({ message: 'Please enter Name and Price', type: 'error' }); return; }
                   try {
-                    // Send to backend as PENDING
-                    const res = await fetch('http://' + window.location.hostname + ':3001/catalog/products', {
+                    // Submits a Product Request for Head Office review — this does NOT
+                    // create a Menu Product directly; HQ approves it via the Menu Builder.
+                    const res = await fetch(`${BACKEND_URL}/product-requests`, {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`,
+                      },
                       body: JSON.stringify({
                         store_id: currentUser?.store_id,
+                        requested_by: currentUser?.id || 1,
                         name: customItemName,
-                        price: parseFloat(customItemPrice) || 0,
-                        category_ids: [customItemCategory || (categories[0]?.id || 1)],
-                        sku: customItemCode,
-                        cost: 0,
-                        margin_pct: 100,
-                        status: 'PENDING',
-                        image_url: customItemImg
+                        suggested_price: parseFloat(customItemPrice) || 0,
+                        category_id: customItemCategory || undefined,
+                        sku: customItemCode || undefined,
+                        submit: true,
                       })
                     });
-                    
+                    const data = await res.json();
+
                     if (res.ok) {
+                      if (customItemImgFile) {
+                        const formData = new FormData();
+                        formData.append('image', customItemImgFile);
+                        await fetch(`${BACKEND_URL}/product-requests/${data.id}/image`, {
+                          method: 'POST',
+                          headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+                          body: formData,
+                        }).catch(() => {});
+                      }
                       setToast({ message: 'Sent to Head Office for Approval!', type: 'success' });
                     } else {
-                      setToast({ message: 'Failed to submit product', type: 'error' });
+                      setToast({ message: data.message || 'Failed to submit product request', type: 'error' });
                     }
                     setModalType('NONE'); resetCustomItemForm();
-                  } catch (e) { setToast({ message: 'Failed to create product', type: 'error' }); }
+                  } catch (e) { setToast({ message: 'Failed to submit product request', type: 'error' }); }
                 }} style={{ flex: 2, padding: '15px', background: 'var(--accent-yellow)', color: 'black', fontWeight: 'bold', borderRadius: '5px', border: 'none', cursor: 'pointer' }}>
-                  CREATE CUSTOM PRODUCT
+                  SUBMIT PRODUCT REQUEST
                 </button>
               </div>
             </div>
@@ -3597,6 +3975,28 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         </div>
       )}
 
+      {/* BLOCKING VALIDATION POPUP (e.g. "Please select a Table Number") */}
+      {alertModalMessage && (
+        <div className="modal-overlay" onClick={() => setAlertModalMessage(null)}>
+          <div className="modal-content animate-slide-up" style={{ width: '380px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: '20px' }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                <AlertCircle size={28} color="#ef4444" />
+              </div>
+              <p style={{ color: 'white', fontSize: '1rem', fontWeight: 'bold', margin: 0 }}>{alertModalMessage}</p>
+            </div>
+            <button
+              className="btn-action"
+              style={{ width: '100%', padding: '15px', background: 'var(--accent-yellow)', border: 'none', color: 'black', fontWeight: 'bold', borderRadius: '0 0 12px 12px' }}
+              onClick={() => setAlertModalMessage(null)}
+              autoFocus
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* HOLD ORDERS MODAL */}
       {modalType === 'HOLD_ORDERS' && (
         <div className="modal-overlay">
@@ -3612,7 +4012,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '5px' }}>{order.orderType} Order</div>
                     <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Held at: {order.time.toLocaleTimeString()} • {order.cart.length} items</div>
                   </div>
-                  <button className="btn-action btn-save" style={{ padding: '8px 20px' }} onClick={() => handleResumeOrder(order.id)}>Resume</button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="btn-action btn-danger" style={{ padding: '8px 16px' }} onClick={() => handleCancelHeldOrder(order.id)}>Cancel Hold</button>
+                    <button className="btn-action btn-save" style={{ padding: '8px 20px' }} onClick={() => handleResumeOrder(order.id)}>Resume</button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -3934,6 +4337,10 @@ export default function App() {
   const handleLogout = () => {
     if (loggedInUser?.role === 'Waiter') {
       socket.emit('waiter_disconnected', { store_id: loggedInUser.store_id });
+      if ((loggedInUser as any).sessionId) {
+        fetch(`${BACKEND_URL}/terminal/sessions/${(loggedInUser as any).sessionId}/logout`, { method: 'POST' }).catch(() => {});
+      }
+      localStorage.removeItem('d4u_waiter_session_id');
     }
     setLoggedInUser(null);
     setIsCashedIn(false);
@@ -3964,6 +4371,9 @@ export default function App() {
         }
         if (data.brand?.vat_percentage !== undefined) {
           (window as any).d4u_vat = data.brand.vat_percentage;
+        }
+        if (data.loyalty_point_value !== undefined) {
+          (window as any).d4u_loyalty_point_value = data.loyalty_point_value;
         }
       })
       .catch(console.error);

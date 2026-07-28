@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { LOYALTY_POINT_VALUE } from '../customers/loyalty.constants';
 
 @Injectable()
 export class CmsService {
@@ -79,7 +80,10 @@ export class CmsService {
       });
     }
 
-    return settings;
+    // Echoes the single backend source of truth for the loyalty conversion
+    // rate so the POS client never has to hardcode it (reuses this existing
+    // settings response instead of adding a new endpoint/UI).
+    return { ...settings, loyalty_point_value: LOYALTY_POINT_VALUE };
   }
 
   async updateSettings(store_id: number, data: any) {

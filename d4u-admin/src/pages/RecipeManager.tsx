@@ -298,19 +298,19 @@ export default function RecipeManager() {
                 <div className="grid grid-cols-4 gap-4 mb-8 bg-slate-50 p-6 rounded-xl border border-slate-100">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1">Yield (Total Output)</label>
-                    <input type="number" value={selectedRecipe.yield} onChange={e => setSelectedRecipe({...selectedRecipe, yield: parseFloat(e.target.value)})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 font-bold" />
+                    <input type="number" value={selectedRecipe.yield} onChange={e => setSelectedRecipe({...selectedRecipe, yield: parseFloat(e.target.value)})} className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 font-bold" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1">Portion Size</label>
-                    <input type="number" value={selectedRecipe.portion_size || ''} onChange={e => setSelectedRecipe({...selectedRecipe, portion_size: parseFloat(e.target.value)})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 font-bold" placeholder="e.g. 250g" />
+                    <input type="number" value={selectedRecipe.portion_size || ''} onChange={e => setSelectedRecipe({...selectedRecipe, portion_size: parseFloat(e.target.value)})} className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 font-bold" placeholder="e.g. 250g" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1">Waste %</label>
-                    <input type="number" value={selectedRecipe.waste_percentage} onChange={e => setSelectedRecipe({...selectedRecipe, waste_percentage: parseFloat(e.target.value)})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 font-bold" />
+                    <input type="number" value={selectedRecipe.waste_percentage} onChange={e => setSelectedRecipe({...selectedRecipe, waste_percentage: parseFloat(e.target.value)})} className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 font-bold" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1">Prep Time (Mins)</label>
-                    <input type="number" value={selectedRecipe.prep_time_mins} onChange={e => setSelectedRecipe({...selectedRecipe, prep_time_mins: parseInt(e.target.value)})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 font-bold" />
+                    <input type="number" value={selectedRecipe.prep_time_mins} onChange={e => setSelectedRecipe({...selectedRecipe, prep_time_mins: parseInt(e.target.value)})} className="w-full bg-white text-slate-900 border border-slate-200 rounded-lg px-3 py-2 font-bold" />
                   </div>
                   <div className="col-span-4 mt-2">
                     <button onClick={handleUpdateRecipeMeta} disabled={isSaving} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-bold text-sm">Save Recipe Details</button>
@@ -349,7 +349,7 @@ export default function RecipeManager() {
                               <select 
                                 value={row.inventory_id || ''} 
                                 onChange={(e) => updateIngredientRow(row.id, 'inventory_id', e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded p-2 text-sm outline-none focus:border-amber-500"
+                                className="w-full bg-white text-slate-900 border border-slate-200 rounded p-2 text-sm outline-none focus:border-amber-500"
                               >
                                 <option value="">Select Material...</option>
                                 {inventory.map(inv => (
@@ -362,7 +362,7 @@ export default function RecipeManager() {
                                 type="number" 
                                 value={row.quantity || ''}
                                 onChange={(e) => updateIngredientRow(row.id, 'quantity', e.target.value)}
-                                className="w-24 bg-white border border-slate-200 rounded p-2 text-sm outline-none focus:border-amber-500" 
+                                className="w-24 bg-white text-slate-900 border border-slate-200 rounded p-2 text-sm outline-none focus:border-amber-500"
                                 placeholder="Qty"
                               />
                             </td>
@@ -461,7 +461,7 @@ export default function RecipeManager() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-up">
             <h3 className="text-xl font-black text-slate-800 mb-4">New Category</h3>
             <form onSubmit={handleCreateCategory}>
-              <input type="text" autoFocus required value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="e.g. Sauces, Pizza Dough" className="w-full border rounded-xl p-3 mb-4 outline-none focus:border-amber-500" />
+              <input type="text" autoFocus required value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="e.g. Sauces, Pizza Dough" className="w-full bg-white text-slate-900 border rounded-xl p-3 mb-4 outline-none focus:border-amber-500" />
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setShowNewCat(false)} className="px-4 py-2 font-bold text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
                 <button type="submit" className="px-4 py-2 font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg shadow-md">Create</button>
@@ -478,11 +478,11 @@ export default function RecipeManager() {
             <form onSubmit={handleCreateRecipe}>
               <div className="mb-4">
                 <label className="block text-xs font-bold text-slate-500 mb-1">Recipe Name</label>
-                <input type="text" autoFocus required value={newRecipeData.name} onChange={e => setNewRecipeData({...newRecipeData, name: e.target.value})} placeholder="e.g. Standard Pizza Sauce" className="w-full border rounded-xl p-3 outline-none focus:border-amber-500" />
+                <input type="text" autoFocus required value={newRecipeData.name} onChange={e => setNewRecipeData({...newRecipeData, name: e.target.value})} placeholder="e.g. Standard Pizza Sauce" className="w-full bg-white text-slate-900 border rounded-xl p-3 outline-none focus:border-amber-500" />
               </div>
               <div className="mb-6">
                 <label className="block text-xs font-bold text-slate-500 mb-1">Category (Optional)</label>
-                <select value={newRecipeData.category_id} onChange={e => setNewRecipeData({...newRecipeData, category_id: parseInt(e.target.value)})} className="w-full border rounded-xl p-3 outline-none focus:border-amber-500">
+                <select value={newRecipeData.category_id} onChange={e => setNewRecipeData({...newRecipeData, category_id: parseInt(e.target.value)})} className="w-full bg-white text-slate-900 border rounded-xl p-3 outline-none focus:border-amber-500">
                   <option value={0}>None</option>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>

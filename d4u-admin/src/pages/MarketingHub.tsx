@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Megaphone, Globe, Share2, Tag, Percent, CheckCircle, Store, Edit2, Trash2, PauseCircle, PlayCircle, ImagePlus, ChevronDown, ChevronRight, Users, MousePointer2, Activity, Target, TrendingUp } from 'lucide-react';
+import { Megaphone, Globe, Share2, Tag, Percent, CheckCircle, Store, Edit2, Trash2, PauseCircle, PlayCircle, ImagePlus, ChevronDown, ChevronRight, Users, MousePointer2, Activity, Target, TrendingUp, History, Copy, X } from 'lucide-react';
 
 import { useAdminContext } from '../context/AdminContext';
 import { apiFetch } from '../utils/api';
@@ -31,6 +31,11 @@ export default function MarketingHub() {
   const [publishTv, setPublishTv] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+
+  // UI reorganization: split the previously all-in-one-page layout into tabs
+  // so the Create form, live campaigns list, social linking, and analytics
+  // don't all compete for attention on one long page.
+  const [activeTab, setActiveTab] = useState<'create' | 'campaigns' | 'social' | 'analytics'>('create');
   
   // Edit State
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -68,7 +73,39 @@ export default function MarketingHub() {
   const [expandedStores, setExpandedStores] = useState<number[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<number[]>([]);
   
-  const [kpis, setKpis] = useState({ ctr: 0, conversionRate: 0, totalRevenue: 0, totalOrders: 0, aov: 0, roi: 0 });
+  const [kpis, setKpis] = useState<any>({ ctr: 0, conversionRate: 0, totalRevenue: 0, totalOrders: 0, aov: 0, roi: 0 });
+  const [kpiPreset, setKpiPreset] = useState('today');
+  const [kpiFrom, setKpiFrom] = useState('');
+  const [kpiTo, setKpiTo] = useState('');
+
+  // MARKETING-001: campaign type + BOGO
+  const [campaignType, setCampaignType] = useState<'PERCENTAGE' | 'FLAT' | 'BOGO' | 'BUY_X_GET_Y' | 'BUNDLE' | 'COMBO' | 'FREE_GIFT'>('PERCENTAGE');
+  const [flatDiscountAmount, setFlatDiscountAmount] = useState('');
+  const [buyProductId, setBuyProductId] = useState('');
+  const [buyQty, setBuyQty] = useState('1');
+  const [getProductId, setGetProductId] = useState('');
+  const [rewardType, setRewardType] = useState<'FREE' | 'PERCENTAGE'>('FREE');
+  const [rewardQty, setRewardQty] = useState('1');
+  const [priority, setPriority] = useState('0');
+  const [allowStacking, setAllowStacking] = useState(false);
+  const [bundleProductIds, setBundleProductIds] = useState<number[]>([]);
+  const [bundlePrice, setBundlePrice] = useState('');
+  const [minSpend, setMinSpend] = useState('');
+  const [giftProductId, setGiftProductId] = useState('');
+  const [activeDays, setActiveDays] = useState<string[]>([]);
+  const [activeTimeStart, setActiveTimeStart] = useState('');
+  const [activeTimeEnd, setActiveTimeEnd] = useState('');
+  const [showCountdown, setShowCountdown] = useState(false);
+
+  // MARKETING-002: SaaS gating — which campaign types this branch's package allows.
+  const [capabilities, setCapabilities] = useState<{ enabled: boolean; allowedCampaignTypes: string[] } | null>(null);
+  useEffect(() => {
+    if (!selectedBranchId) return;
+    apiFetch(`/marketing/capabilities?store_id=${selectedBranchId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(setCapabilities)
+      .catch(() => setCapabilities(null));
+  }, [selectedBranchId]);
 
   useEffect(() => {
     fetchCampaigns();
@@ -161,31 +198,71 @@ export default function MarketingHub() {
 
   const fetchCampaigns = async () => {
     try {
-      const [res, res2, res4, res5, res6] = await Promise.all([
+      const [res, res2, res4, res5] = await Promise.all([
         apiFetch('/marketing/campaign'),
         apiFetch('/marketing/schedule'),
         apiFetch('/catalog/categories'),
         apiFetch('/catalog/products'),
-        apiFetch('/marketing/kpis'),
       ]);
-      if (res.ok) setCampaigns(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setCampaigns(data.map((c: any) => ({ ...c, is_paused: c.status === 'PAUSED' })));
+      }
       if (res2.ok) setScheduledCampaigns(await res2.json());
       if (res4.ok) setCategories(await res4.json());
       if (res5.ok) setProducts(await res5.json());
-      if (res6.ok) setKpis(await res6.json());
+      await fetchKpis();
     } catch (e) { console.error(e); }
   };
 
+  const fetchKpis = async () => {
+    try {
+      const params = new URLSearchParams({ preset: kpiPreset });
+      if (kpiPreset === 'custom') {
+        if (kpiFrom) params.set('from', kpiFrom);
+        if (kpiTo) params.set('to', kpiTo);
+      }
+      const res = await apiFetch(`/marketing/kpis?${params.toString()}`);
+      if (res.ok) setKpis(await res.json());
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => { fetchKpis(); }, [kpiPreset, kpiFrom, kpiTo]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !discountPct) return;
+    const discountRequired = ['PERCENTAGE'].includes(campaignType) || (campaignType === 'BOGO' && rewardType === 'PERCENTAGE');
+    if (!title || (discountRequired && !discountPct)) return;
     setIsSubmitting(true);
     setSuccessMsg('');
 
     try {
       const formData = new FormData();
       formData.append('title', title);
-      formData.append('discount_pct', discountPct);
+      formData.append('discount_pct', discountPct || '0');
+      formData.append('campaign_type', campaignType);
+      formData.append('priority', priority);
+      formData.append('allow_stacking', String(allowStacking));
+      if (campaignType === 'FLAT') formData.append('flat_discount_amount', flatDiscountAmount);
+      if (campaignType === 'BOGO') {
+        formData.append('buy_product_id', buyProductId);
+        formData.append('buy_qty', buyQty);
+        formData.append('get_product_id', getProductId);
+        formData.append('reward_type', rewardType);
+        formData.append('reward_qty', rewardQty);
+      }
+      if (['BUNDLE', 'COMBO'].includes(campaignType)) {
+        bundleProductIds.forEach(id => formData.append('bundle_product_ids', String(id)));
+        formData.append('bundle_price', bundlePrice);
+      }
+      if (campaignType === 'FREE_GIFT') {
+        formData.append('min_spend', minSpend);
+        formData.append('gift_product_id', giftProductId);
+      }
+      if (activeDays.length > 0) formData.append('active_days', activeDays.join(','));
+      if (activeTimeStart) formData.append('active_time_start', activeTimeStart);
+      if (activeTimeEnd) formData.append('active_time_end', activeTimeEnd);
+      formData.append('show_countdown', String(showCountdown));
       if (imageFile) formData.append('image', imageFile);
 
       if (editingId) {
@@ -239,6 +316,7 @@ export default function MarketingHub() {
         setTargetStoreIds([]);
         setTargetCategoryIds([]);
         setTargetProductIds([]);
+        resetBogoFields();
       } else if (isScheduled) {
         if (!startDate || !endDate) {
           setSuccessMsg('Start and End dates are required.');
@@ -268,6 +346,10 @@ export default function MarketingHub() {
           setTargetStoreIds([]);
           setTargetCategoryIds([]);
           setTargetProductIds([]);
+          resetBogoFields();
+        } else {
+          const err = await res.json().catch(() => null);
+          setSuccessMsg(err?.message || `Failed to schedule deal (HTTP ${res.status}).`);
         }
       } else {
         // ── CREATE new campaign ──
@@ -286,19 +368,49 @@ export default function MarketingHub() {
           body: formData
         });
         if (res.ok) {
-          setSuccessMsg('Campaign launched successfully!');
+          const result = await res.json().catch(() => null);
+          setSuccessMsg(
+            result?.warnings?.length > 0
+              ? `Campaign launched — but note: ${result.warnings.join(' ')}`
+              : 'Campaign launched successfully!'
+          );
           await fetchCampaigns();
           setTitle(''); setDescription(''); setDiscountPct('');
           setPublishWeb(true); setPublishPos(true); setPublishFacebook(false); setPublishInstagram(false); setPublishTv(false);
           setImageFile(null);
           setTargetStoreIds([]);
+          resetBogoFields();
+        } else {
+          const err = await res.json().catch(() => null);
+          setSuccessMsg(err?.message || `Failed to launch campaign (HTTP ${res.status}).`);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setSuccessMsg(err?.message || 'Network error — failed to reach the server.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const resetBogoFields = () => {
+    setCampaignType('PERCENTAGE');
+    setFlatDiscountAmount('');
+    setBuyProductId('');
+    setBuyQty('1');
+    setGetProductId('');
+    setRewardType('FREE');
+    setRewardQty('1');
+    setPriority('0');
+    setAllowStacking(false);
+    setBundleProductIds([]);
+    setBundlePrice('');
+    setMinSpend('');
+    setGiftProductId('');
+    setActiveDays([]);
+    setActiveTimeStart('');
+    setActiveTimeEnd('');
+    setShowCountdown(false);
   };
 
   const handleEdit = (camp: any) => {
@@ -314,9 +426,27 @@ export default function MarketingHub() {
     setTargetStoreIds(camp.target_stores?.map((s:any) => s.id) || []);
     setTargetCategoryIds(camp.target_categories?.map((c:any) => c.id) || []);
     setTargetProductIds(camp.target_products?.map((p:any) => p.id) || []);
+    setCampaignType(camp.campaign_type || 'PERCENTAGE');
+    setFlatDiscountAmount(camp.flat_discount_amount ? String(camp.flat_discount_amount) : '');
+    setBuyProductId(camp.buy_product_id ? String(camp.buy_product_id) : '');
+    setBuyQty(String(camp.buy_qty || 1));
+    setGetProductId(camp.get_product_id ? String(camp.get_product_id) : '');
+    setRewardType(camp.reward_type || 'FREE');
+    setRewardQty(String(camp.reward_qty || 1));
+    setPriority(String(camp.priority || 0));
+    setAllowStacking(camp.allow_stacking || false);
+    setBundleProductIds(camp.bundle_products?.map((p: any) => p.id) || []);
+    setBundlePrice(camp.bundle_price ? String(camp.bundle_price) : '');
+    setMinSpend(camp.min_spend ? String(camp.min_spend) : '');
+    setGiftProductId(camp.gift_product_id ? String(camp.gift_product_id) : '');
+    setActiveDays(camp.active_days ? camp.active_days.split(',') : []);
+    setActiveTimeStart(camp.active_time_start || '');
+    setActiveTimeEnd(camp.active_time_end || '');
+    setShowCountdown(camp.show_countdown || false);
     setIsScheduled(false);
     setSuccessMsg('');
     setImageFile(null);
+    setActiveTab('create');
     const formEl = document.getElementById('campaign-form-top');
     if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
     else window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -343,6 +473,7 @@ export default function MarketingHub() {
     setIsScheduled(true);
     setSuccessMsg('');
     setImageFile(null);
+    setActiveTab('create');
     const formEl = document.getElementById('campaign-form-top');
     if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
     else window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -366,6 +497,7 @@ export default function MarketingHub() {
     setTargetProductIds([]);
     setSuccessMsg('');
     setImageFile(null);
+    resetBogoFields();
   };
 
   const [deleteConfirmType, setDeleteConfirmType] = useState<'CAMPAIGN' | 'SCHEDULED' | null>(null);
@@ -401,6 +533,39 @@ export default function MarketingHub() {
     }
   };
 
+  // MARKETING-003 §10/§11/§16 — Campaign History (audit log + versions) and Multi-Branch Cloning
+  const [historyModal, setHistoryModal] = useState<{ campaign: any; logs: any[]; versions: any[] } | null>(null);
+
+  const handleShowHistory = async (camp: any) => {
+    try {
+      const res = await apiFetch(`/marketing/campaign/${camp.id}/history`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryModal({ campaign: camp, logs: data.logs || [], versions: data.versions || [] });
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleRollback = async (campaignId: number, version: number) => {
+    try {
+      await apiFetch(`/marketing/campaign/${campaignId}/rollback/${version}`, { method: 'POST' });
+      setHistoryModal(null);
+      await fetchCampaigns();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleClone = async (camp: any) => {
+    try {
+      await apiFetch(`/marketing/campaign/${camp.id}/clone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_store_ids: selectedBranchId ? [selectedBranchId] : 'ALL' }),
+      });
+      setSuccessMsg('Campaign cloned (paused) — review and resume it when ready.');
+      await fetchCampaigns();
+    } catch (e) { console.error(e); }
+  };
+
   const handleTogglePause = async (camp: any, isScheduledType = false) => {
     const isCurrentlyPaused = isScheduledType ? !camp.is_active : camp.is_paused;
     const newPausedState = !isCurrentlyPaused;
@@ -412,14 +577,18 @@ export default function MarketingHub() {
     }
 
     try {
-      const endpoint = isScheduledType ? `/marketing/schedule/${camp.id}` : `/marketing/campaign/${camp.id}`;
-      const payload = isScheduledType ? { is_active: !newPausedState } : { is_paused: newPausedState };
-      await apiFetch(endpoint, { 
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    } catch (e) { 
+      if (isScheduledType) {
+        await apiFetch(`/marketing/schedule/${camp.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_active: !newPausedState }),
+        });
+      } else {
+        // MARKETING-003: real pause/resume endpoints (audit-logged), replacing
+        // the previous no-op PATCH with a nonexistent `is_paused` field.
+        await apiFetch(`/marketing/campaign/${camp.id}/${newPausedState ? 'pause' : 'resume'}`, { method: 'POST' });
+      }
+    } catch (e) {
       if (isScheduledType) {
         setScheduledCampaigns(prev => prev.map(c => c.id === camp.id ? { ...c, is_active: camp.is_active } : c));
       } else {
@@ -441,7 +610,30 @@ export default function MarketingHub() {
         <p className="text-slate-400 text-sm mt-1">Create deals and push them to POS, Website, and Social Media instantly.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-1">
+        {([
+          ['create', editingId ? '✏️ Edit Deal' : 'Create Campaign', Tag],
+          ['campaigns', 'Active Campaigns', Megaphone],
+          ['social', 'Social & Publishing', Share2],
+          ['analytics', 'Analytics', TrendingUp],
+        ] as const).map(([key, label, Icon]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveTab(key)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-sm font-bold transition-colors border-b-2 ${
+              activeTab === key
+                ? 'text-[#ec4899] border-[#ec4899] bg-[#ec4899]/10'
+                : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Icon size={16} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'create' && (
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Deal Creator / Editor Form */}
         <div className={`flex flex-col border rounded-2xl p-6 transition-all ${editingId ? 'bg-slate-800 border-amber-500/50 ring-2 ring-amber-500/20' : 'bg-[#1e293b] border-slate-700/50'}`}>
           <div className="flex items-center justify-between mb-6">
@@ -502,19 +694,195 @@ export default function MarketingHub() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Discount Percentage (%)</label>
-              <div className="relative">
-                <Percent size={16} className="absolute left-4 top-3.5 text-slate-500" />
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Campaign Type</label>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  ['PERCENTAGE', 'Percentage Discount'],
+                  ['FLAT', 'Flat Discount'],
+                  ['BOGO', 'Buy One Get One'],
+                  ['BUY_X_GET_Y', 'Buy X Get Y (Foundation)'],
+                  ['BUNDLE', 'Bundle Deal (Foundation)'],
+                  ['COMBO', 'Combo Meal (Future)'],
+                  ['FREE_GIFT', 'Free Gift (Future)'],
+                ] as const).map(([value, label]) => {
+                  const isAllowed = !capabilities || capabilities.allowedCampaignTypes.includes(value);
+                  return (
+                    <label
+                      key={value}
+                      title={isAllowed ? undefined : 'Not included in this branch\'s current package — upgrade to unlock'}
+                      className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border ${
+                        !isAllowed ? 'opacity-40 cursor-not-allowed bg-[#0f172a] text-slate-500 border-slate-800' :
+                        campaignType === value ? 'bg-[#ec4899] text-white border-[#ec4899] cursor-pointer' : 'bg-[#0f172a] text-slate-400 border-slate-700/70 cursor-pointer'
+                      }`}
+                    >
+                      <input type="radio" className="hidden" disabled={!isAllowed} checked={campaignType === value} onChange={() => isAllowed && setCampaignType(value)} />
+                      {label}{!isAllowed && ' 🔒'}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {campaignType === 'PERCENTAGE' && (
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Discount Percentage (%)</label>
+                <div className="relative">
+                  <Percent size={16} className="absolute left-4 top-3.5 text-slate-500" />
+                  <input
+                    type="number"
+                    value={discountPct}
+                    onChange={(e) => setDiscountPct(e.target.value)}
+                    placeholder="20"
+                    max="100"
+                    min="1"
+                    className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg pl-10 pr-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            {campaignType === 'FLAT' && (
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Flat Discount Amount (Rs.)</label>
                 <input
                   type="number"
-                  value={discountPct}
-                  onChange={(e) => setDiscountPct(e.target.value)}
-                  placeholder="20"
-                  max="100"
+                  value={flatDiscountAmount}
+                  onChange={(e) => setFlatDiscountAmount(e.target.value)}
+                  placeholder="200"
                   min="1"
-                  className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg pl-10 pr-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm"
+                  className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm"
                   required
                 />
+              </div>
+            )}
+
+            {campaignType === 'BOGO' && (
+              <div className="bg-[#0f172a] border border-slate-700/70 rounded-lg p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Buy Product</label>
+                    <select value={buyProductId} onChange={(e) => setBuyProductId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required>
+                      <option value="">Select product...</option>
+                      {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Required Quantity</label>
+                    <input type="number" min="1" value={buyQty} onChange={(e) => setBuyQty(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Get Product</label>
+                    <select value={getProductId} onChange={(e) => setGetProductId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required>
+                      <option value="">Select product...</option>
+                      {products.filter((p: any) => String(p.id) !== buyProductId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Reward Quantity</label>
+                    <input type="number" min="1" value={rewardQty} onChange={(e) => setRewardQty(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 items-end">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Reward Type</label>
+                    <select value={rewardType} onChange={(e) => setRewardType(e.target.value as 'FREE' | 'PERCENTAGE')} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm">
+                      <option value="FREE">Free</option>
+                      <option value="PERCENTAGE">Percentage Discount</option>
+                    </select>
+                  </div>
+                  {rewardType === 'PERCENTAGE' && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Discount % on Get Product</label>
+                      <input type="number" min="1" max="100" value={discountPct} onChange={(e) => setDiscountPct(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500">e.g. Buy 2 Shawarmas, Get 1 Pepsi Free — auto-applies at checkout when both items are in the cart.</p>
+              </div>
+            )}
+
+            {['BUNDLE', 'COMBO'].includes(campaignType) && (
+              <div className="bg-[#0f172a] border border-slate-700/70 rounded-lg p-4 space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bundle Products (e.g. Burger + Fries + Drink)</label>
+                  <select
+                    multiple
+                    value={bundleProductIds.map(String)}
+                    onChange={(e) => setBundleProductIds(Array.from(e.target.selectedOptions).map(o => Number(o.value)))}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm h-32"
+                  >
+                    {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">Ctrl/Cmd-click to select multiple products.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Fixed Bundle Price (Rs.)</label>
+                  <input type="number" min="1" value={bundlePrice} onChange={(e) => setBundlePrice(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required />
+                </div>
+                <p className="text-xs text-slate-500">Auto-detected when all selected products are in the cart together — the line total becomes the fixed bundle price.</p>
+              </div>
+            )}
+
+            {campaignType === 'FREE_GIFT' && (
+              <div className="bg-[#0f172a] border border-slate-700/70 rounded-lg p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Minimum Spend (Rs.)</label>
+                    <input type="number" min="1" value={minSpend} onChange={(e) => setMinSpend(e.target.value)} placeholder="3000" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Free Gift Product</label>
+                    <select value={giftProductId} onChange={(e) => setGiftProductId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required>
+                      <option value="">Select product...</option>
+                      {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">e.g. Spend Rs.3000, get a free Dessert — the gift automatically appears once the cart qualifies.</p>
+              </div>
+            )}
+
+            <div className="bg-[#0f172a] border border-slate-700/70 rounded-lg p-4 space-y-3">
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Active Time Window (Optional — Happy Hours)</label>
+              <div className="flex flex-wrap gap-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <label key={day} className={`text-xs font-bold px-2.5 py-1 rounded-lg border cursor-pointer ${activeDays.includes(day) ? 'bg-amber-500 text-black border-amber-500' : 'bg-slate-900 text-slate-400 border-slate-700'}`}>
+                    <input type="checkbox" className="hidden" checked={activeDays.includes(day)} onChange={() => setActiveDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])} />
+                    {day}
+                  </label>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Start Time</label>
+                  <input type="time" value={activeTimeStart} onChange={(e) => setActiveTimeStart(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">End Time</label>
+                  <input type="time" value={activeTimeEnd} onChange={(e) => setActiveTimeEnd(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm font-bold text-white cursor-pointer">
+                <input type="checkbox" checked={showCountdown} onChange={(e) => setShowCountdown(e.target.checked)} className="accent-amber-500 w-4 h-4" />
+                Show countdown timer to customers
+              </label>
+              <p className="text-xs text-slate-500">Leave blank for no time restriction — the campaign runs for its whole scheduled duration. e.g. days=Fri,Sat + 2pm-5pm for a weekend happy hour.</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Priority</label>
+                <input type="number" value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm" />
+                <p className="text-xs text-slate-500 mt-1">Higher priority wins when multiple campaigns match the same item.</p>
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 text-sm font-bold text-white cursor-pointer">
+                  <input type="checkbox" checked={allowStacking} onChange={(e) => setAllowStacking(e.target.checked)} className="accent-[#ec4899] w-4 h-4" />
+                  Allow stacking with other campaigns
+                </label>
               </div>
             </div>
 
@@ -678,11 +1046,14 @@ export default function MarketingHub() {
               )}
             </div>
 
-            {successMsg && (
-              <div className="bg-[#4edea3]/20 border border-[#4edea3]/50 text-[#4edea3] p-3 mb-4 rounded-xl text-sm font-bold flex items-center gap-2">
-                <CheckCircle size={18} /> {successMsg}
-              </div>
-            )}
+            {successMsg && (() => {
+              const isError = /fail|error|not included|required|denied/i.test(successMsg);
+              return (
+                <div className={`p-3 mb-4 rounded-xl text-sm font-bold flex items-center gap-2 ${isError ? 'bg-red-500/20 border border-red-500/50 text-red-400' : 'bg-[#4edea3]/20 border border-[#4edea3]/50 text-[#4edea3]'}`}>
+                  {isError ? <X size={18} /> : <CheckCircle size={18} />} {successMsg}
+                </div>
+              );
+            })()}
 
             <button
               type="submit"
@@ -704,9 +1075,11 @@ export default function MarketingHub() {
             </button>
           </div>
         </div>
+      </form>
+      )}
 
-        <div className="flex flex-col space-y-6">
-          {/* Scheduling and Publishing Panel moved from left */}
+      {activeTab === 'social' && (
+        <div className="max-w-2xl">
           <div className="p-6 bg-[#1e293b] border border-slate-700/50 rounded-2xl">
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               <Share2 size={20} className="text-[#3b82f6]" /> Social Media Integration
@@ -729,46 +1102,42 @@ export default function MarketingHub() {
               </button>
             </div>
           </div>
+        </div>
+      )}
 
+      {activeTab === 'analytics' && (
+        <div>
           <div className="p-6 bg-[#1e293b] border border-slate-700/50 rounded-2xl">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Share2 size={20} className="text-[#4edea3]" /> Marketing Overview
               </h3>
-              <select className="bg-slate-900 border border-slate-700 text-xs text-slate-400 p-1.5 rounded outline-none">
-                <option>This Month</option>
-                <option>Last Month</option>
+              <select value={kpiPreset} onChange={(e) => setKpiPreset(e.target.value)} className="bg-slate-900 border border-slate-700 text-xs text-slate-400 p-1.5 rounded outline-none">
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="this_week">This Week</option>
+                <option value="last_week">Last Week</option>
+                <option value="this_month">This Month</option>
+                <option value="last_month">Last Month</option>
+                <option value="custom">Custom Range</option>
               </select>
             </div>
-            
+
+            {kpiPreset === 'custom' && (
+              <div className="flex gap-3 mb-4">
+                <input type="date" value={kpiFrom} onChange={(e) => setKpiFrom(e.target.value)} className="bg-slate-900 border border-slate-700 text-xs text-white p-2 rounded outline-none" />
+                <input type="date" value={kpiTo} onChange={(e) => setKpiTo(e.target.value)} className="bg-slate-900 border border-slate-700 text-xs text-white p-2 rounded outline-none" />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
                   <Megaphone size={16} className="text-indigo-400" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">{totalCampaigns}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Active Deals</div>
-                </div>
-              </div>
-
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-pink-500/10 border border-pink-500/20 flex items-center justify-center">
-                  <Target size={16} className="text-pink-400" />
-                </div>
-                <div>
-                  <div className="text-2xl font-black text-white">{kpis?.conversionRate || 0}%</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Conv Rate</div>
-                </div>
-              </div>
-
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                  <TrendingUp size={16} className="text-emerald-400" />
-                </div>
-                <div>
-                  <div className="text-2xl font-black text-white">Rs.{kpis?.totalRevenue || 0}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Revenue Generated</div>
+                  <div className="text-2xl font-black text-white">{kpis?.activeCampaigns ?? totalCampaigns}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Active Campaigns</div>
                 </div>
               </div>
 
@@ -777,22 +1146,121 @@ export default function MarketingHub() {
                   <Users size={16} className="text-blue-400" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">{kpis?.ctr || 0}%</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Avg CTR</div>
+                  <div className="text-2xl font-black text-white">{kpis?.impressions || 0}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Impressions</div>
+                </div>
+              </div>
+
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-pink-500/10 border border-pink-500/20 flex items-center justify-center">
+                  <Target size={16} className="text-pink-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-white">{kpis?.orders ?? kpis?.totalOrders ?? 0}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Orders</div>
+                </div>
+              </div>
+
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <TrendingUp size={16} className="text-emerald-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-white">Rs.{kpis?.revenue ?? kpis?.totalRevenue ?? 0}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Revenue Generated</div>
+                </div>
+              </div>
+
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                  <Tag size={16} className="text-amber-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-white">{kpis?.unitsSold ?? 0}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Units Sold (approx.)</div>
+                </div>
+              </div>
+
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                  <Percent size={16} className="text-red-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-white">Rs.{kpis?.discountGiven ?? 0}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Discount Given</div>
+                </div>
+              </div>
+
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                  <Activity size={16} className="text-purple-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-white">Rs.{kpis?.averageOrderValue ?? kpis?.aov ?? 0}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Avg Order Value</div>
+                </div>
+              </div>
+
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
+                  <MousePointer2 size={16} className="text-teal-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-black text-white">{kpis?.conversionRate || 0}%</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Conv Rate</div>
                 </div>
               </div>
             </div>
+
+            {kpis?.topCampaign && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-700/50">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Top Campaign</div>
+                  <div className="text-sm font-bold text-white mt-1">{kpis.topCampaign.title}</div>
+                </div>
+                {kpis.topCategory && (
+                  <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-700/50">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Top Category</div>
+                    <div className="text-sm font-bold text-white mt-1">{kpis.topCategory}</div>
+                  </div>
+                )}
+                {kpis.topProduct && (
+                  <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-700/50">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Top Product</div>
+                    <div className="text-sm font-bold text-white mt-1">{kpis.topProduct}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {kpis?.bogo && (kpis.bogo.orders > 0 || kpis.bogo.freeItemsIssued > 0) && (
+              <div className="bg-[#0f172a] p-4 rounded-xl border border-amber-500/30">
+                <div className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3">BOGO Performance</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                  <div><div className="text-xl font-black text-white">{kpis.bogo.orders}</div><div className="text-[10px] text-slate-500 uppercase">BOGO Orders</div></div>
+                  <div><div className="text-xl font-black text-white">{kpis.bogo.freeItemsIssued}</div><div className="text-[10px] text-slate-500 uppercase">Free Items Issued</div></div>
+                  <div><div className="text-xl font-black text-white">Rs.{kpis.bogo.rewardValue}</div><div className="text-[10px] text-slate-500 uppercase">Reward Value</div></div>
+                  <div><div className="text-sm font-black text-white">{kpis.bogo.topCampaign?.title || 'N/A'}</div><div className="text-[10px] text-slate-500 uppercase">Top BOGO Campaign</div></div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      </form>
+      )}
 
-      <div className="w-full mt-8">
+      {activeTab === 'campaigns' && (
+      <>
+      <div className="w-full">
         <div className="flex justify-between items-end mb-6">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <Share2 size={20} className="text-[#4edea3]" /> Active Campaigns
           </h3>
-          <button className="text-sm font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg transition-colors">
-            View All Campaigns
+          <button
+            type="button"
+            onClick={() => setActiveTab('create')}
+            className="text-sm font-bold bg-gradient-to-r from-[#d946ef] to-[#8b5cf6] hover:opacity-90 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            + New Campaign
           </button>
         </div>
         <div className="max-h-[800px] overflow-y-auto pr-2 pb-4 custom-scrollbar">
@@ -865,10 +1333,24 @@ export default function MarketingHub() {
                       >
                         <Edit2 size={16} />
                       </button>
-                      <button 
-                        onClick={() => handleDelete(camp.id)} 
-                        className="p-2 bg-slate-700 hover:bg-red-500/20 text-slate-300 hover:text-red-400 rounded-lg transition-colors" 
-                        title="Delete"
+                      <button
+                        onClick={() => handleShowHistory(camp)}
+                        className="p-2 bg-slate-700 hover:bg-purple-500/20 text-slate-300 hover:text-purple-400 rounded-lg transition-colors"
+                        title="History & Versions"
+                      >
+                        <History size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleClone(camp)}
+                        className="p-2 bg-slate-700 hover:bg-teal-500/20 text-slate-300 hover:text-teal-400 rounded-lg transition-colors"
+                        title="Clone to this branch (paused)"
+                      >
+                        <Copy size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(camp.id)}
+                        className="p-2 bg-slate-700 hover:bg-red-500/20 text-slate-300 hover:text-red-400 rounded-lg transition-colors"
+                        title="Archive (soft delete)"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -964,6 +1446,8 @@ export default function MarketingHub() {
               </div>
             </div>
           )}
+      </>
+      )}
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
@@ -1014,6 +1498,55 @@ export default function MarketingHub() {
               </div>
               <div className="p-6 border-t border-slate-700 bg-slate-900/50 flex justify-end">
                 <button onClick={() => setShowPageModal(false)} className="px-6 py-2.5 rounded-full font-bold text-slate-300 hover:text-white transition-colors">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MARKETING-003 §10/§11 — Campaign History (audit log) + Versioning/Rollback */}
+        {historyModal && (
+          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setHistoryModal(null)}>
+            <div className="bg-slate-800 rounded-2xl border border-slate-700 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="p-6 border-b border-slate-700 flex items-center justify-between sticky top-0 bg-slate-800">
+                <div>
+                  <h2 className="text-xl font-black text-white">History — {historyModal.campaign.title}</h2>
+                  <p className="text-sm text-slate-400 mt-1">Every lifecycle action, plus rollback to a prior version.</p>
+                </div>
+                <button onClick={() => setHistoryModal(null)} className="text-slate-400 hover:text-white"><X size={20} /></button>
+              </div>
+              <div className="p-6 space-y-6">
+                <div>
+                  <h3 className="text-sm font-black text-slate-300 uppercase tracking-wider mb-3">Audit Log</h3>
+                  <div className="space-y-2">
+                    {historyModal.logs.length === 0 && <p className="text-slate-500 text-sm">No history yet.</p>}
+                    {historyModal.logs.map((log: any) => (
+                      <div key={log.id} className="flex items-center justify-between bg-slate-900/50 rounded-lg px-4 py-2 text-sm">
+                        <div>
+                          <span className="font-bold text-white">{log.action}</span>
+                          {log.new_value && <span className="text-slate-400 ml-2">{log.new_value}</span>}
+                        </div>
+                        <span className="text-xs text-slate-500">{new Date(log.createdAt).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-300 uppercase tracking-wider mb-3">Versions</h3>
+                  <div className="space-y-2">
+                    {historyModal.versions.length === 0 && <p className="text-slate-500 text-sm">No prior versions — this campaign hasn't been edited yet.</p>}
+                    {historyModal.versions.map((v: any) => (
+                      <div key={v.id} className="flex items-center justify-between bg-slate-900/50 rounded-lg px-4 py-2 text-sm">
+                        <span className="text-white">Version {v.version} — {new Date(v.createdAt).toLocaleString()}</span>
+                        <button
+                          onClick={() => handleRollback(historyModal.campaign.id, v.version)}
+                          className="text-xs font-bold text-amber-400 hover:text-amber-300"
+                        >
+                          Rollback to this
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

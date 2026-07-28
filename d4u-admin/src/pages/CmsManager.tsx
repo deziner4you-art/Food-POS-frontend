@@ -155,11 +155,11 @@ export default function CmsManager() {
             <select 
               value={selectedBranchId || 0} 
               onChange={handleBranchChange}
-              className="bg-transparent text-white outline-none font-bold"
+              className="bg-slate-800 text-white outline-none font-bold"
             >
-              <option value={0}>All Branches (Global)</option>
+              <option value={0} className="bg-slate-800 text-white">All Branches (Global)</option>
               {(activeBrandId ? brands.find(b => b.id === activeBrandId)?.stores || [] : branches).map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
+                <option key={b.id} value={b.id} className="bg-slate-800 text-white">{b.name}</option>
               ))}
             </select>
           </div>

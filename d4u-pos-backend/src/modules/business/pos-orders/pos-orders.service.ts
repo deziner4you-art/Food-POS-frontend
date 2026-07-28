@@ -9,6 +9,7 @@ import { AppGateway } from '../../../app.gateway';
 import { InventoryService } from '../inventory/inventory.service';
 import { CustomersService } from '../customers/customers.service';
 import { PricingService } from './pricing.service';
+import { TablesService } from '../tables/tables.service';
 
 @Injectable()
 export class PosOrdersService {
@@ -18,10 +19,11 @@ export class PosOrdersService {
     private inventoryService: InventoryService,
     private customersService: CustomersService,
     private pricing: PricingService,
+    private tablesService: TablesService,
   ) {}
 
   // تمام آرڈرز — آج کی Business Day کے
-  async getOrders(store_id: number, business_day_id?: number) {
+  async getOrders(store_id: number, business_day_id?: number, terminal_session_id?: number) {
     const where: any = { store_id };
     if (business_day_id) where.business_day_id = business_day_id;
     else {
@@ -32,10 +34,12 @@ export class PosOrdersService {
       });
       if (openDay) where.business_day_id = openDay.id;
     }
+    // Waiter's "My Orders" tab — only orders created from their own terminal session.
+    if (terminal_session_id) where.terminal_session_id = terminal_session_id;
 
     return this.prisma.order.findMany({
       where,
-      include: { items: { include: { product: true } }, customer: true },
+      include: { items: { include: { product: true } }, customer: true, kot: true },
       orderBy: { id: 'desc' },
     });
   }
@@ -59,6 +63,7 @@ export class PosOrdersService {
     store_id: number;
     created_by: number;
     customer_id?: number;
+    redeem_points?: number;
     items: {
       product_id: number;
       quantity: number;
@@ -69,10 +74,15 @@ export class PosOrdersService {
     payment_method?: string;
     order_source?: string;
     table_no?: string;
+    terminal_session_id?: number;
     is_offline?: boolean;
     delivery_address?: string;
     notes?: string;
     couponCode?: string;
+    manager_override_by?: number;
+    coupon_blocked?: boolean;
+    loyalty_blocked?: boolean;
+    rejected_promotions?: { type: string; reason: string }[];
   }) {
     // Active Business Day تلاش کریں
     const openDay = await this.prisma.businessDay.findFirst({
@@ -104,8 +114,24 @@ export class PosOrdersService {
           payment_method: body.payment_method ?? 'CASH',
           payment_status: 'PAID',
           table_no: body.table_no ?? null,
+          terminal_session_id: body.terminal_session_id ?? null,
           is_offline: body.is_offline ?? false,
           delivery_address: body.delivery_address ?? null,
+          // MARKETING-002: Promotion Execution Engine attribution
+          promotion_id: pricingResult.promotionId ?? null,
+          promotion_type: pricingResult.promotionType ?? null,
+          promotion_name: pricingResult.promotionName ?? null,
+          promotion_discount: pricingResult.promotionDiscount ?? 0,
+          gift_items: pricingResult.giftItems.length > 0 ? pricingResult.giftItems : undefined,
+          bogo_items: pricingResult.bogoItems.length > 0 ? pricingResult.bogoItems : undefined,
+          bundle_id: pricingResult.bundleId ?? null,
+          combo_id: pricingResult.comboId ?? null,
+          // MARKETING-003 §9: full promotion-decision audit trail
+          applied_rules: pricingResult.appliedRules?.length > 0 ? pricingResult.appliedRules : undefined,
+          rejected_promotions: body.rejected_promotions && body.rejected_promotions.length > 0 ? body.rejected_promotions : undefined,
+          manager_override_by: body.manager_override_by ?? null,
+          coupon_blocked: body.coupon_blocked ?? false,
+          loyalty_blocked: body.loyalty_blocked ?? false,
           items: {
             create: body.items.map((i) => ({
               product_id: i.product_id,
@@ -117,6 +143,17 @@ export class PosOrdersService {
         },
         include: { items: { include: { product: true } } },
       });
+
+      // Dine-in table assignment — validates the table isn't already occupied
+      // by a different active order; rolls back the whole order on conflict.
+      if (body.table_no) {
+        await this.tablesService.assignTable(
+          body.store_id,
+          body.table_no,
+          order.id,
+          tx,
+        );
+      }
 
       // KOT خودکار بنائیں
       const kotItems = order.items.map((i) => ({
@@ -135,6 +172,18 @@ export class PosOrdersService {
           status: 'NEW',
         },
       });
+
+      // Loyalty redemption — atomic with order creation: if the customer
+      // doesn't actually have enough points (e.g. a race with another
+      // redemption), this throws and the whole order rolls back instead of
+      // the order succeeding while the points deduction silently fails.
+      if (body.customer_id && body.redeem_points && body.redeem_points > 0) {
+        await this.customersService.redeemPoints(
+          body.customer_id,
+          body.redeem_points,
+          tx,
+        );
+      }
 
       // Customer کا آرڈر count بڑھائیں
       if (body.customer_id) {
@@ -229,6 +278,9 @@ export class PosOrdersService {
       data: { status: 'CANCELLED' },
     });
 
+    // Free the dine-in table (if any) this order was holding.
+    await this.tablesService.releaseTableByOrderId(id);
+
     console.log(
       `[VOID] Order #${id} — Reason: ${body.void_reason} — By Manager: ${manager.name}`,
     );
@@ -256,6 +308,9 @@ export class PosOrdersService {
     if (count === 0) {
       return { success: true, order };
     }
+
+    // Free the dine-in table (if any) this order was holding.
+    await this.tablesService.releaseTableByOrderId(id);
 
     console.log(`[SETTLED] POS Order #${id} | Method: ${body.payment_method}`);
     this.gateway.broadcast('order_settled', { order_id: id });

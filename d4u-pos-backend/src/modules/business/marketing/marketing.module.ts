@@ -5,9 +5,10 @@ import { MarketingController } from './marketing.controller';
 import { SocialService } from './social.service';
 import { SocialController } from './social.controller';
 import { AppGateway } from '../../../app.gateway';
+import { PosOrdersModule } from '../pos-orders/pos-orders.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, PosOrdersModule],
   providers: [MarketingService, SocialService, AppGateway],
   controllers: [MarketingController, SocialController],
 })

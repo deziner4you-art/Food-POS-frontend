@@ -1,7 +1,15 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class TerminalLoginDto {
   @IsString()
   @IsNotEmpty()
   pin: string;
+
+  @IsString()
+  @IsOptional()
+  device_id?: string;
+
+  @IsString()
+  @IsOptional()
+  device_name?: string;
 }

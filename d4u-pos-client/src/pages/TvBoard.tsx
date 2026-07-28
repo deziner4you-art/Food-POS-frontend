@@ -3,16 +3,23 @@ import { Megaphone, CheckCircle2 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { io } from 'socket.io-client';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+import { BACKEND_URL } from '../config/backend';
 
 export default function TvBoard() {
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [upcoming, setUpcoming] = useState<any[]>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   const user = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
   const storeName = user?.store_name || user?.store?.name || 'HQ';
+  const storeId = user?.store_id;
+
+  // MARKETING-003 §5 — rotation priority: Scheduled/Current (both already
+  // priority-sorted by CampaignResolverService) → Upcoming. No video/image/
+  // brand-slide CMS asset model exists yet in this codebase (see gap notes),
+  // so those tiers are a documented gap rather than built here.
+  const slides = [...campaigns, ...upcoming];
 
   const activeKots = useLiveQuery(
     () => db.kots.where('status').anyOf(['PREPARING', 'READY']).toArray()
@@ -32,11 +39,27 @@ export default function TvBoard() {
     .sort((a, b) => b.id - a.id);
 
   const fetchCampaigns = () => {
-    fetch(`${BACKEND_URL}/marketing/campaign`)
+    // MARKETING-003 §1/§2: store-scoped, routed through the shared
+    // CampaignResolverService (channel=tv) — replaces the previous global,
+    // client-side-filtered fetch.
+    if (storeId) {
+      fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}&channel=tv`)
+        .then(res => res.json())
+        .then(setCampaigns)
+        .catch(console.error);
+    } else {
+      fetch(`${BACKEND_URL}/marketing/campaign`)
+        .then(res => res.json())
+        .then(data => setCampaigns(data.filter((c: any) => c.published_tv || c.published_pos)))
+        .catch(console.error);
+    }
+
+    // "Upcoming" tier — SCHEDULED campaigns bound for this store's TV, shown
+    // after the live rotation so staff/customers can see what's coming next.
+    const listUrl = storeId ? `${BACKEND_URL}/marketing/campaign?store_id=${storeId}` : `${BACKEND_URL}/marketing/campaign`;
+    fetch(listUrl)
       .then(res => res.json())
-      .then(data => {
-        setCampaigns(data.filter((c: any) => c.published_tv || c.published_pos));
-      })
+      .then(data => setUpcoming(data.filter((c: any) => c.status === 'SCHEDULED' && c.published_tv)))
       .catch(console.error);
   };
 
@@ -67,23 +90,23 @@ export default function TvBoard() {
     };
   }, []);
 
-  // Auto-rotate Marketing Campaigns
+  // Auto-rotate Marketing Campaigns (Scheduled/Current, then Upcoming)
   useEffect(() => {
-    if (campaigns.length === 0) return;
+    if (slides.length === 0) return;
     const interval = setInterval(() => {
-      setCurrentSlide(prev => (prev + 1) % campaigns.length);
+      setCurrentSlide(prev => (prev + 1) % slides.length);
     }, 5000); // Rotate every 5 seconds
     return () => clearInterval(interval);
-  }, [campaigns]);
+  }, [slides.length]);
 
-  // Telemetry View Tracking
+  // Telemetry View Tracking (live campaigns only — no view event for upcoming previews)
   useEffect(() => {
-    if (campaigns.length > 0 && campaigns[currentSlide]) {
+    if (currentSlide < campaigns.length && campaigns[currentSlide]) {
       const campId = campaigns[currentSlide].id;
       const lastViewKey = `camp_view_${campId}`;
       const lastView = localStorage.getItem(lastViewKey);
       const now = Date.now();
-      
+
       // 5-minute throttle (300,000 ms)
       if (!lastView || now - parseInt(lastView) > 300000) {
         localStorage.setItem(lastViewKey, now.toString());
@@ -105,28 +128,66 @@ export default function TvBoard() {
           <span className="text-xl font-bold text-white tracking-widest uppercase">Special Offers</span>
         </div>
 
-        {campaigns.length > 0 ? (
+        {slides.length > 0 && slides[currentSlide] ? (() => {
+          const slide = slides[currentSlide];
+          const isUpcoming = currentSlide >= campaigns.length;
+          const msLeft = slide.end_date ? new Date(slide.end_date).getTime() - Date.now() : null;
+          const isLimitedOffer = !isUpcoming && msLeft !== null && msLeft > 0 && msLeft < 24 * 60 * 60 * 1000;
+          const hoursLeft = msLeft ? Math.max(0, Math.floor(msLeft / (60 * 60 * 1000))) : 0;
+          const minsLeft = msLeft ? Math.max(0, Math.floor((msLeft % (60 * 60 * 1000)) / 60000)) : 0;
+          const badgeText =
+            slide.campaign_type === 'BOGO'
+              ? `BOGO — BUY ${slide.buy_qty} GET ${slide.reward_qty} ${slide.reward_type === 'PERCENTAGE' ? `${slide.discount_pct}% OFF` : 'FREE'}`
+              : slide.campaign_type === 'FLAT'
+                ? `SALE — Rs.${slide.flat_discount_amount} OFF`
+                : slide.campaign_type === 'BUNDLE'
+                  ? `BUNDLE — FIXED PRICE Rs.${slide.bundle_price}`
+                  : slide.campaign_type === 'COMBO'
+                    ? `COMBO — FIXED PRICE Rs.${slide.bundle_price}`
+                    : slide.campaign_type === 'FREE_GIFT'
+                      ? `FREE ITEM — SPEND Rs.${slide.min_spend}+`
+                      : `SALE — ${slide.discount_pct}% OFF`;
+          return (
           <div className="w-full h-full flex flex-col justify-center items-center text-center p-12 transition-all duration-1000 animate-fade-in relative z-0">
-            {campaigns[currentSlide].image_url ? (
-              <img 
-                src={`${BACKEND_URL}${campaigns[currentSlide].image_url}`} 
-                alt={campaigns[currentSlide].title}
+            {isUpcoming && (
+              <div className="absolute top-8 right-8 z-20 bg-blue-600 text-white text-xl font-black px-4 py-2 rounded-xl shadow-2xl uppercase tracking-wider">
+                Upcoming{slide.scheduled_at ? ` — ${new Date(slide.scheduled_at).toLocaleDateString()}` : ''}
+              </div>
+            )}
+            {isLimitedOffer && (
+              <div className="absolute top-8 right-8 z-20 bg-red-600 text-white text-xl font-black px-4 py-2 rounded-xl shadow-2xl uppercase tracking-wider animate-pulse">
+                Limited Offer
+              </div>
+            )}
+            {slide.image_url ? (
+              <img
+                src={`${BACKEND_URL}${slide.image_url}`}
+                alt={slide.title}
                 className="absolute inset-0 w-full h-full object-cover z-0"
               />
             ) : (
               <>
                 <div className="bg-[#ec4899] text-white text-3xl font-black px-6 py-2 rounded-xl mb-8 transform -rotate-3 shadow-2xl relative z-10">
-                  {campaigns[currentSlide].discount_pct}% OFF
+                  {badgeText}
                 </div>
                 <h1 className="text-6xl font-black text-white mb-6 leading-tight relative z-10 drop-shadow-2xl">
-                  {campaigns[currentSlide].title}
+                  {slide.title}
                 </h1>
                 <p className="text-2xl text-slate-200 max-w-lg relative z-10 drop-shadow-lg font-medium mb-8">
-                  {campaigns[currentSlide].description}
+                  {slide.description}
                 </p>
-                {campaigns[currentSlide].target_products?.length > 0 && (
+                {slide.show_countdown && !isUpcoming && msLeft !== null && msLeft > 0 && (
+                  <p className="text-red-400 text-2xl font-black mb-6 relative z-10">Ends in {hoursLeft}h {minsLeft}m</p>
+                )}
+                {slide.campaign_type === 'FREE_GIFT' && slide.giftProduct?.name && (
+                  <p className="text-amber-400 text-xl font-bold mb-6 relative z-10">🎁 Free Gift: {slide.giftProduct.name}</p>
+                )}
+                {['BUNDLE', 'COMBO'].includes(slide.campaign_type) && slide.bundle_products?.length > 0 && (
+                  <p className="text-amber-400 text-xl font-bold mb-6 relative z-10">Includes: {slide.bundle_products.map((p: any) => p.name).join(' + ')}</p>
+                )}
+                {slide.target_products?.length > 0 && (
                   <div className="grid grid-cols-2 gap-6 w-full max-w-2xl relative z-10">
-                    {campaigns[currentSlide].target_products.slice(0, 4).map((p: any) => (
+                    {slide.target_products.slice(0, 4).map((p: any) => (
                       <div key={p.id} className="bg-slate-900/80 backdrop-blur rounded-2xl p-4 flex items-center gap-4 border border-slate-700 shadow-xl">
                         {p.image_url ? (
                           <img src={p.image_url.startsWith('http') ? p.image_url : `${BACKEND_URL}${p.image_url}`} className="w-20 h-20 rounded-xl object-cover border-2 border-slate-700" alt={p.name} />
@@ -144,7 +205,8 @@ export default function TvBoard() {
               </>
             )}
           </div>
-        ) : (
+          );
+        })() : (
           <div className="text-slate-500 text-center animate-pulse">
             <Megaphone size={64} className="mx-auto mb-4 opacity-50" />
             <h2 className="text-3xl font-bold">Welcome to D4U POS</h2>
@@ -152,11 +214,11 @@ export default function TvBoard() {
         )}
 
         {/* Carousel Indicators */}
-        {campaigns.length > 1 && (
+        {slides.length > 1 && (
           <div className="absolute bottom-12 flex gap-3 z-10">
-            {campaigns.map((_, idx) => (
-              <div 
-                key={idx} 
+            {slides.map((_, idx) => (
+              <div
+                key={idx}
                 className={`h-2 rounded-full transition-all duration-500 ${idx === currentSlide ? 'w-12 bg-[#ec4899]' : 'w-4 bg-slate-600'}`}
               />
             ))}

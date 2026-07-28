@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "cors": "^2.8.6",
+    "csv-parse": "^7.0.1",
+    "csv-stringify": "^6.8.1",
     "express": "^5.2.1",
     "framer-motion": "^12.40.0",
     "recharts": "^3.8.1",

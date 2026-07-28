@@ -3,7 +3,11 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { LOYALTY_POINT_VALUE } from './loyalty.constants';
+
+type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class CustomersService {
@@ -136,38 +140,49 @@ export class CustomersService {
   }
 
   // Loyalty Points استعمال کریں
-  async redeemPoints(customer_id: number, points: number) {
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: customer_id },
-    });
-    if (!customer) throw new NotFoundException('Customer not found');
-    if (customer.loyalty_points < points) {
-      throw new ConflictException(
-        `Insufficient points. Available: ${customer.loyalty_points}`,
-      );
-    }
+  // Accepts an optional Prisma transaction client so the caller (e.g.
+  // PosOrdersService.createOrder) can run the redemption atomically together
+  // with the order it belongs to — either both commit or neither does. Called
+  // without a client (the standalone POST /customers/:id/redeem route), it
+  // wraps itself in its own transaction exactly as before.
+  async redeemPoints(
+    customer_id: number,
+    points: number,
+    client?: Prisma.TransactionClient,
+  ) {
+    const run = async (tx: PrismaClientOrTx) => {
+      const customer = await tx.customer.findUnique({
+        where: { id: customer_id },
+      });
+      if (!customer) throw new NotFoundException('Customer not found');
+      if (customer.loyalty_points < points) {
+        throw new ConflictException(
+          `Insufficient points. Available: ${customer.loyalty_points}`,
+        );
+      }
 
-    await this.prisma.$transaction([
-      this.prisma.loyaltyTransaction.create({
+      await tx.loyaltyTransaction.create({
         data: {
           customer_id,
           type: 'REDEEM',
           points: -points,
           description: 'Points redeemed at POS',
         },
-      }),
-      this.prisma.customer.update({
+      });
+      await tx.customer.update({
         where: { id: customer_id },
         data: { loyalty_points: { decrement: points } },
-      }),
-    ]);
+      });
 
-    // 1 point = Rs.0.20 (or configure as needed)
-    const discount = points * 0.2;
-    console.log(
-      `[LOYALTY REDEEM] Customer #${customer_id} used ${points} points = Rs.${discount}`,
-    );
-    return { success: true, points_used: points, discount_amount: discount };
+      const discount = points * LOYALTY_POINT_VALUE;
+      console.log(
+        `[LOYALTY REDEEM] Customer #${customer_id} used ${points} points = Rs.${discount}`,
+      );
+      return { success: true, points_used: points, discount_amount: discount };
+    };
+
+    if (client) return run(client);
+    return this.prisma.$transaction((tx) => run(tx));
   }
 
   // گاہک کا Wallet Balance

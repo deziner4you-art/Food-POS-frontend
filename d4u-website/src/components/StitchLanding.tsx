@@ -229,8 +229,19 @@ export default function StitchLanding({
     updateCart(updated);
   };
 
+  // MARKETING-003 §8 — Promotion Stack Explainer: same block message used on
+  // POS/Waiter, shown here whenever the cart already carries an
+  // auto-applying company promotion (Percentage/Flat/BOGO/Bundle/Combo/Free
+  // Gift) and the customer tries to layer a second discount on top.
+  const cartHasCompanyPromotion = () => cart.some((item) => getProductDiscount(item.product) > 0);
+  const COMPANY_PROMOTION_BLOCK_MESSAGE = 'Company Promotion Active. Additional discounts cannot be applied.';
+
   // Coupons trigger
   const applyCoupon = (coupon: Coupon) => {
+    if (cartHasCompanyPromotion()) {
+      triggerToast(COMPANY_PROMOTION_BLOCK_MESSAGE, 'error');
+      return;
+    }
     setAppliedCoupon(coupon);
     triggerToast(`Coupon ${coupon.code} applied successfully!`, 'success');
   };
@@ -329,6 +340,10 @@ export default function StitchLanding({
   const handleRedeemPoints = () => {
     if (!loyaltyAccount || loyaltyAccount.points < 200) {
       triggerToast("Minimum 200 points required to redeem.", "error");
+      return;
+    }
+    if (cartHasCompanyPromotion()) {
+      triggerToast(COMPANY_PROMOTION_BLOCK_MESSAGE, "error");
       return;
     }
     const pointsToRedeem = 500;
@@ -687,18 +702,35 @@ export default function StitchLanding({
                   id="campaigns-scroll-container"
                   className="flex gap-6 overflow-x-auto pb-4 snap-x hide-scrollbar"
                 >
-                  {campaigns.map((campaign: any) => (
-                    <div 
-                      key={campaign.id} 
+                  {campaigns.map((campaign: any) => {
+                    const msLeft = campaign.end_date ? new Date(campaign.end_date).getTime() - Date.now() : null;
+                    const isLimitedOffer = msLeft !== null && msLeft > 0 && msLeft < 24 * 60 * 60 * 1000;
+                    const hoursLeft = msLeft ? Math.max(0, Math.floor(msLeft / (60 * 60 * 1000))) : 0;
+                    const minsLeft = msLeft ? Math.max(0, Math.floor((msLeft % (60 * 60 * 1000)) / 60000)) : 0;
+                    const badgeText =
+                      campaign.campaign_type === 'BOGO'
+                        ? `BOGO — BUY ${campaign.buy_qty} GET ${campaign.reward_qty} ${campaign.reward_type === 'PERCENTAGE' ? `${campaign.discount_pct}% OFF` : 'FREE'}`
+                        : campaign.campaign_type === 'FLAT'
+                          ? `SALE — Rs.${campaign.flat_discount_amount} OFF`
+                          : campaign.campaign_type === 'BUNDLE'
+                            ? `BUNDLE — FIXED PRICE Rs.${campaign.bundle_price}`
+                            : campaign.campaign_type === 'COMBO'
+                              ? `COMBO — FIXED PRICE Rs.${campaign.bundle_price}`
+                              : campaign.campaign_type === 'FREE_GIFT'
+                                ? `FREE ITEM — SPEND Rs.${campaign.min_spend}+`
+                                : `SALE — ${campaign.discount_pct}% OFF`;
+                    return (
+                    <div
+                      key={campaign.id}
                       className="bg-brand-light border border-slate-800/80 hover:border-brand-yellow rounded-2xl p-6 relative overflow-hidden group transition duration-300 flex flex-col justify-between min-w-[300px] sm:min-w-[340px] snap-center flex-1"
                     >
                       {/* Background Image */}
                       {campaign.image_url && (
                         <div className="absolute inset-0 z-0">
-                          <img 
-                            src={campaign.image_url.startsWith('http') ? campaign.image_url : `${BACKEND_URL}${campaign.image_url}`} 
-                            className="w-full h-full object-cover opacity-40 group-hover:opacity-50 transition-opacity" 
-                            alt={campaign.title} 
+                          <img
+                            src={campaign.image_url.startsWith('http') ? campaign.image_url : `${BACKEND_URL}${campaign.image_url}`}
+                            className="w-full h-full object-cover opacity-40 group-hover:opacity-50 transition-opacity"
+                            alt={campaign.title}
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/90 to-transparent"></div>
                         </div>
@@ -706,100 +738,128 @@ export default function StitchLanding({
 
                       {/* Corner gradient */}
                       <div className="absolute top-0 right-0 w-24 h-24 bg-brand-yellow/5 rounded-bl-full -mr-6 -mt-6 transition-transform group-hover:scale-110 z-0"></div>
-                      
+
+                      {isLimitedOffer && (
+                        <span className="absolute top-3 left-3 z-20 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-wider shadow-lg animate-pulse">
+                          Limited Offer
+                        </span>
+                      )}
+
                       <div className="relative z-10">
                         <span className="bg-brand-pink text-white text-[10px] font-black px-2.5 py-1 rounded mb-4 inline-block uppercase tracking-wider shadow-lg">
-                          {campaign.discount_pct}% OFF
+                          {badgeText}
                         </span>
                         <h3 className="text-lg sm:text-xl font-bold mb-1 text-white drop-shadow-md">{campaign.title}</h3>
                         <p className="text-slate-300 text-xs sm:text-sm mb-4 leading-relaxed line-clamp-2 drop-shadow-md">{campaign.description}</p>
+                        {campaign.campaign_type === 'FREE_GIFT' && campaign.giftProduct?.name && (
+                          <p className="text-brand-yellow text-xs font-bold mb-2">🎁 Free Gift: {campaign.giftProduct.name}</p>
+                        )}
+                        {['BUNDLE', 'COMBO'].includes(campaign.campaign_type) && campaign.bundle_products?.length > 0 && (
+                          <p className="text-brand-yellow text-xs font-bold mb-2">
+                            Includes: {campaign.bundle_products.map((p: any) => p.name).join(' + ')}
+                          </p>
+                        )}
+                        {campaign.show_countdown && msLeft !== null && msLeft > 0 && (
+                          <p className="text-red-400 text-xs font-bold mb-2">Ends in {hoursLeft}h {minsLeft}m</p>
+                        )}
                       </div>
 
                       <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700/60 relative z-10">
                         <span className="text-[10px] font-bold text-brand-yellow tracking-wider font-mono uppercase drop-shadow-md">
                           OFFER
                         </span>
-                        <button 
+                        <button
                           onClick={() => {
-                            applyCoupon({
-                              code: `CAMP-${campaign.id}`,
-                              name: campaign.title,
-                              discountPercent: campaign.discount_pct,
-                              description: campaign.description,
-                              target_categories: campaign.target_categories,
-                              target_products: campaign.target_products
-                            });
-                            
+                            // BOGO/Bundle/Combo/Free Gift auto-apply at checkout (same pricing
+                            // engine as POS) once eligibility is met in-cart — not a % coupon
+                            // like Percentage/Flat campaigns.
+                            const autoApplyTypes = ['BOGO', 'BUNDLE', 'COMBO', 'FREE_GIFT'];
+                            if (!autoApplyTypes.includes(campaign.campaign_type)) {
+                              applyCoupon({
+                                code: `CAMP-${campaign.id}`,
+                                name: campaign.title,
+                                discountPercent: campaign.discount_pct,
+                                description: campaign.description,
+                                target_categories: campaign.target_categories,
+                                target_products: campaign.target_products
+                              });
+                            }
+
                             if (campaign.target_categories && campaign.target_categories.length > 0) {
                               setActiveCategory(campaign.target_categories[0].name);
                             }
-                            
+
                             setTimeout(() => {
                               document.getElementById('menu-grid-section')?.scrollIntoView({ behavior: 'smooth' });
                             }, 50);
                           }}
                           className="bg-brand-yellow hover:bg-white text-brand-dark text-xs font-black py-2 px-4 rounded-full transition duration-300 shadow-[0_0_15px_rgba(255,215,0,0.3)] hover:shadow-[0_0_20px_rgba(255,255,255,0.5)]"
                         >
-                          {appliedCoupon?.code === `CAMP-${campaign.id}` ? 'Applied ✓' : 'Avail Offer'}
+                          {['BOGO', 'BUNDLE', 'COMBO', 'FREE_GIFT'].includes(campaign.campaign_type)
+                            ? 'View Deal'
+                            : (appliedCoupon?.code === `CAMP-${campaign.id}` ? 'Applied ✓' : 'Avail Offer')}
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
 
-            {/* CATEGORIES MENU ROW */}
-            <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-              <div className="bg-brand-light rounded-2xl sm:rounded-full p-2 border border-slate-800/80 flex items-center justify-between">
-                <div className="flex-1 flex gap-4 sm:justify-around items-center px-4 overflow-x-auto py-1">
-                  {['All Items', 'Discounted', ...(CATEGORIES as string[])].map(category => (
-                    <button
-                      key={category}
-                      onClick={() => setActiveCategory(category)}
-                      className={`flex items-center gap-2 min-w-max px-5 py-2.5 rounded-full font-bold text-sm tracking-wide transition cursor-pointer ${
-                        activeCategory === category 
-                          ? 'bg-brand-yellow text-brand-dark' 
-                          : 'bg-slate-900/60 text-slate-400 hover:text-white hover:bg-slate-800'
-                      }`}
-                    >
-                      {category === 'Discounted' ? <span className="text-base leading-none">🔥</span> : <Sparkles className="w-4 h-4 shrink-0" />}
-                      {category}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            {/* PRODUCTS GRID */}
-            <section id="menu-grid-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
-                <h2 className="text-3xl sm:text-4xl font-black text-brand-yellow tracking-tight">{activeCategory}</h2>
-                
-                {/* Simple Menu Search & View All Menu */}
-                <div className="flex items-center gap-4 max-w-md w-full justify-end">
-
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Search menu..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-full pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow"
-                    />
+            {/* CATEGORIES + PRODUCTS: sidebar on desktop (lg+), horizontal strip below that */}
+            <section id="menu-grid-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10 flex flex-col lg:flex-row gap-6 lg:gap-8">
+              {/* CATEGORIES */}
+              <aside className="lg:w-64 lg:flex-shrink-0 lg:sticky lg:top-24 lg:self-start">
+                <div className="bg-brand-light rounded-2xl lg:rounded-2xl p-2 border border-slate-800/80 flex lg:block items-center justify-between">
+                  <div className="flex-1 flex lg:flex-col gap-2 lg:gap-1 items-stretch px-2 lg:px-1 py-1 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:max-h-[75vh] custom-scrollbar">
+                    {['All Items', 'Discounted', ...(CATEGORIES as string[])].map(category => (
+                      <button
+                        key={category}
+                        onClick={() => setActiveCategory(category)}
+                        className={`flex items-center gap-2 min-w-max lg:min-w-0 lg:w-full px-5 py-2.5 rounded-full lg:rounded-xl font-bold text-sm tracking-wide transition cursor-pointer text-left ${
+                          activeCategory === category
+                            ? 'bg-brand-yellow text-brand-dark'
+                            : 'bg-slate-900/60 text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        {category === 'Discounted' ? <span className="text-base leading-none">🔥</span> : <Sparkles className="w-4 h-4 shrink-0" />}
+                        {category}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              </div>
+              </aside>
 
-              {filteredProducts.length === 0 ? (
-                <div className="text-center py-16 bg-brand-light rounded-3xl border border-slate-800/50">
-                  <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-400 font-bold">No products found matching your search.</p>
+              {/* PRODUCTS GRID */}
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+                  <h2 className="text-3xl sm:text-4xl font-black text-brand-yellow tracking-tight">{activeCategory}</h2>
+
+                  {/* Simple Menu Search & View All Menu */}
+                  <div className="flex items-center gap-4 max-w-md w-full justify-end">
+
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search menu..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-full pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow"
+                      />
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {filteredProducts.map((product: any) => (
+
+                {filteredProducts.length === 0 ? (
+                  <div className="text-center py-16 bg-brand-light rounded-3xl border border-slate-800/50">
+                    <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                    <p className="text-slate-400 font-bold">No products found matching your search.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8">
+                    {filteredProducts.map((product: any) => (
                     <div 
                       key={product.id} 
                       className="bg-brand-light border border-slate-800/60 rounded-3xl overflow-hidden relative group hover:border-brand-yellow/30 transition-all duration-300"
@@ -865,6 +925,7 @@ export default function StitchLanding({
                   ))}
                 </div>
               )}
+              </div>
             </section>
 
             {/* ORDER STATUS TRACKING INDICATOR */}

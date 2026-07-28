@@ -166,14 +166,24 @@ model SystemAuditLog {
 }
 
 model TerminalSession {
-  id          Int      @id @default(autoincrement())
-  store_id    Int
-  pin         String   @unique
-  waiter_name String
-  is_active   Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id               Int       @id @default(autoincrement())
+  store_id         Int
+  pin              String    @unique
+  waiter_name      String
+  device_id        String? // Client-generated persistent id (localStorage) — enables "remember device"
+  device_name      String? // e.g. "Rooftop Tablet 01"
+  table_no         String?
+  socket_id        String? // Current live socket id; null when offline (but still "connected" per is_active)
+  is_active        Boolean   @default(true) // false only when cashier disconnects or waiter logs out
+  connected_at     DateTime?
+  last_activity_at DateTime?
+  logged_out_at    DateTime?
+  createdAt        DateTime  @default(now())
 
   store Store @relation(fields: [store_id], references: [id])
+
+  @@index([store_id])
+  @@index([device_id])
 }
 
 // -------------------------------------------------------------
@@ -377,7 +387,9 @@ model PackageModule {
   package_id Int
   module_key String  // BASE_POS, INVENTORY, MARKETING, etc.
   price      Float
-  
+  config     Json?   // Feature-flag payload for this module, e.g. MARKETING:
+                      // { allowedCampaignTypes: string[], socialPublishing: bool, tvBoard: bool, analytics: bool }
+
   package    Package @relation(fields: [package_id], references: [id])
 }
 
@@ -478,6 +490,9 @@ model Product {
   sku            String?
   barcode        String?
   image_url      String?
+  thumbnail_url  String?
+  mime_type      String?
+  file_size      Int?
   description    String?
   internal_notes String?
   status         String   @default("APPROVED") // PENDING, APPROVED
@@ -490,6 +505,10 @@ model Product {
   recipe_id          Int?
   recipe             Recipe?             @relation(fields: [recipe_id], references: [id])
   marketingCampaigns MarketingCampaign[] @relation("CampaignProducts")
+  bogoBuyCampaigns   MarketingCampaign[] @relation("CampaignBuyProduct")
+  bogoGetCampaigns   MarketingCampaign[] @relation("CampaignGetProduct")
+  bundleCampaigns    MarketingCampaign[] @relation("CampaignBundleProducts")
+  giftCampaigns      MarketingCampaign[] @relation("CampaignGiftProduct")
   variants           ProductVariant[]
   productions        ProductionOrder[]   @relation("TargetProduct")
   
@@ -500,6 +519,50 @@ model Product {
   availability_rule_id Int?
   availabilityRule     AvailabilityRule? @relation(fields: [availability_rule_id], references: [id])
   modifierGroups       ProductModifierGroup[]
+}
+
+// -------------------------------------------------------------
+// PRODUCT REQUEST WORKFLOW (Branch proposes -> HQ approves -> Menu Product)
+// -------------------------------------------------------------
+model ProductRequest {
+  id                 Int       @id @default(autoincrement())
+  store_id           Int // Branch that submitted the request
+  requested_by       Int // User id (Chef / Branch Manager)
+  name               String
+  description        String?
+  category_id        Int?
+  suggested_price    Float
+  sku                String?
+  image_url          String?
+  thumbnail_url      String?
+  recipe_notes       String?
+  recipe_id          Int? // Optional link to an existing Recipe (Recipe Review stage)
+  kitchen_station    String?
+  status             String    @default("DRAFT") // DRAFT, SUBMITTED, UNDER_REVIEW, RECIPE_REVIEW, COSTING_REVIEW, APPROVED, REJECTED, PUBLISHED
+  hq_comments        String?
+  approved_by        Int?
+  approved_at        DateTime?
+  created_product_id Int? // Menu Product created on approval — original request kept for history
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  auditLog ProductRequestAuditLog[]
+
+  @@index([store_id])
+  @@index([status])
+}
+
+model ProductRequestAuditLog {
+  id                Int      @id @default(autoincrement())
+  product_request_id Int
+  action            String // CREATED, SUBMITTED, REVIEWED, APPROVED, REJECTED, PUBLISHED, RETURNED_FOR_REVISION
+  user_id           Int?
+  comments          String?
+  createdAt         DateTime @default(now())
+
+  productRequest ProductRequest @relation(fields: [product_request_id], references: [id], onDelete: Cascade)
+
+  @@index([product_request_id])
 }
 
 model ProductVariant {
@@ -707,6 +770,7 @@ model Order {
   delivery_address String?
   is_offline       Boolean  @default(false)
   table_no         String? // For dine-in
+  terminal_session_id Int? // Waiter terminal that created this order, if any
 
   // Audit Trail
   created_by       Int // Cashier
@@ -717,6 +781,25 @@ model Order {
   customer_feedback String?
   rating            Int?
   delivery_info     Json?
+
+  // MARKETING-002: Promotion Execution Engine attribution
+  promotion_id       Int?
+  promotion_type     String? // PERCENTAGE, FLAT, BOGO, BUNDLE, COMBO, FREE_GIFT, HAPPY_HOUR
+  promotion_name     String?
+  promotion_discount Float?  @default(0)
+  gift_items         Json?   // [{product_id, name, qty}] — Free Gift line(s)
+  bogo_items         Json?   // [{product_id, name, qty, rewardUnits}] — BOGO reward line(s)
+  bundle_id          Int?    // MarketingCampaign.id when a bundle/combo price applied
+  combo_id           Int?
+
+  // MARKETING-003: full promotion-decision audit trail on the order itself
+  applied_rules       Json?   // human-readable list of every rule that applied (mirrors PricingService.appliedRules)
+  rejected_promotions Json?   // [{type: 'coupon'|'loyalty'|'cashier_discount', reason}] — what was blocked and why
+  manager_override_by Int?    // User ID who authorized a Manual Override, if any
+  coupon_blocked      Boolean @default(false)
+  loyalty_blocked     Boolean @default(false)
+
+  promotion          MarketingCampaign? @relation(fields: [promotion_id], references: [id])
 
   store       Store        @relation(fields: [store_id], references: [id])
   customer    Customer?    @relation(fields: [customer_id], references: [id])
@@ -740,6 +823,23 @@ model OrderItem {
   order   Order           @relation(fields: [order_id], references: [id])
   product Product         @relation(fields: [product_id], references: [id])
   variant ProductVariant? @relation(fields: [variant_id], references: [id])
+}
+
+// -------------------------------------------------------------
+// RESTAURANT TABLE MANAGEMENT (Dine-In)
+// -------------------------------------------------------------
+model RestaurantTable {
+  id               Int      @id @default(autoincrement())
+  store_id         Int
+  label            String // e.g. "T1", "VIP-2" — matches Order.table_no
+  status           String   @default("AVAILABLE") // AVAILABLE, OCCUPIED, RESERVED, CLEANING
+  current_order_id Int? // Active order currently seated at this table
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([store_id, label])
+  @@index([store_id])
+  @@index([current_order_id])
 }
 
 // -------------------------------------------------------------
@@ -1021,6 +1121,94 @@ model MarketingCampaign {
   ab_test_parent_id   Int?
 
   audit_logs          CampaignAuditLog[]
+
+  // MARKETING-001: campaign type + BOGO foundation
+  campaign_type       String     @default("PERCENTAGE") // PERCENTAGE, FLAT, BOGO, BUY_X_GET_Y, BUNDLE, COMBO, FREE_GIFT
+  flat_discount_amount Float?    // Used when campaign_type = FLAT
+  buy_product_id      Int?       // BOGO: product the customer must buy
+  buy_qty             Int        @default(1)
+  get_product_id      Int?       // BOGO: product the customer receives as the reward
+  reward_type         String?    @default("FREE") // FREE, PERCENTAGE
+  reward_qty          Int        @default(1)
+  published_qr        Boolean    @default(false) // Foundation — QR Menu (future)
+  published_kiosk     Boolean    @default(false) // Foundation — Self-Ordering Kiosk (future)
+
+  buyProduct          Product?   @relation("CampaignBuyProduct", fields: [buy_product_id], references: [id])
+  getProduct          Product?   @relation("CampaignGetProduct", fields: [get_product_id], references: [id])
+  publications        CampaignPublication[]
+
+  // MARKETING-002: Bundle / Combo (fixed-price product sets — same execution path)
+  bundle_products     Product[]  @relation("CampaignBundleProducts")
+  bundle_price        Float?
+
+  // MARKETING-002: Free Gift
+  min_spend           Float?     // Spend threshold that unlocks the gift
+  gift_product_id     Int?
+  giftProduct         Product?   @relation("CampaignGiftProduct", fields: [gift_product_id], references: [id])
+
+  // MARKETING-002: Happy Hours / time-window (optional, layers on top of any campaign_type)
+  active_days         String?    // CSV weekday abbreviations, e.g. "Fri,Sat" — null = every day
+  active_time_start   String?    // "HH:mm" — null = no time restriction
+  active_time_end     String?    // "HH:mm"
+  active_dates        String?    // CSV specific ISO dates, e.g. for Ramadan/one-off dates
+  show_countdown      Boolean    @default(false)
+
+  orders              Order[]
+
+  // MARKETING-003: governance — soft delete (never hard-delete a campaign)
+  deleted_at          DateTime?
+  deleted_by          Int?
+  archived_reason     String?
+
+  // MARKETING-003: versioning / rollback
+  version             Int        @default(1)
+  versions            CampaignVersion[]
+  created_by          Int?
+  updated_by          Int?
+
+  // MARKETING-003: approval workflow — separate from the operational `status`
+  // lifecycle (RUNNING/SCHEDULED/EXPIRED/...) so existing behavior is
+  // unaffected unless a store explicitly opts into requiring approval.
+  // DRAFT, PENDING_APPROVAL, APPROVED, REJECTED
+  approval_status     String     @default("APPROVED")
+  rejection_reason    String?
+  submitted_by        Int?
+  approved_by         Int?
+  approved_at         DateTime?
+
+  // MARKETING-003: multi-branch cloning lineage
+  cloned_from_id      Int?
+  cloned_from         MarketingCampaign?  @relation("CampaignClones", fields: [cloned_from_id], references: [id])
+  clones              MarketingCampaign[] @relation("CampaignClones")
+}
+
+// MARKETING-003: one immutable snapshot per edit — never overwrite history, rollback supported.
+model CampaignVersion {
+  id          Int      @id @default(autoincrement())
+  campaign_id Int
+  version     Int
+  data        Json // full campaign field snapshot BEFORE the edit that created this version
+  changed_by  Int?
+  createdAt   DateTime @default(now())
+
+  campaign MarketingCampaign @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+
+  @@index([campaign_id])
+}
+
+// Prepares social-channel publishing without building a scheduler/poster —
+// one record per (campaign, channel) marks intent to publish; an external
+// job/integration can pick these up later.
+model CampaignPublication {
+  id          Int      @id @default(autoincrement())
+  campaign_id Int
+  channel     String // FACEBOOK, INSTAGRAM
+  status      String   @default("PENDING") // PENDING, PUBLISHED, FAILED
+  createdAt   DateTime @default(now())
+
+  campaign MarketingCampaign @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+
+  @@index([campaign_id])
 }
 
 model CampaignAnalytics {
@@ -1043,6 +1231,9 @@ model CampaignAnalytics {
   profit_impact    Float             @default(0.0)
   new_customers    Int               @default(0)
   returning_customers Int            @default(0)
+  free_items_given Int               @default(0) // BOGO — units given away as the reward
+  blocked_coupons  Int               @default(0) // Manual coupon/loyalty attempts rejected due to an active company promotion
+  blocked_loyalty  Int               @default(0)
 
   updatedAt        DateTime          @updatedAt
 
@@ -1053,9 +1244,16 @@ model CampaignAuditLog {
   id               Int               @id @default(autoincrement())
   campaign_id      Int
   user_id          Int?              // Optional: which user made the change
-  action           String            // e.g., CREATED, PAUSED, EXPIRED, EDITED
+  action           String            // e.g., CREATED, PAUSED, EXPIRED, EDITED, PUBLISHED, APPROVED, REJECTED, DELETED, RESTORED, CLONED, ROLLED_BACK
   changes          String?           @db.Text // JSON string describing what changed
   createdAt        DateTime          @default(now())
+
+  // MARKETING-003: enterprise audit — where/how the action was taken
+  store_id         Int?
+  ip_address       String?
+  device           String?           @db.Text // User-Agent string
+  previous_value   String?           @db.Text
+  new_value        String?           @db.Text
 
   campaign         MarketingCampaign @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
 }

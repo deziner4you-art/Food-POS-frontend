@@ -278,6 +278,54 @@ export class SubscriptionService {
     return { success: true, new_expiry_date: expiry_date };
   }
 
+  // -------------------------------------------------------------
+  // MARKETING-002: SaaS feature gating for the Marketing Hub / Promotion Engine
+  // -------------------------------------------------------------
+  async getMarketingCapabilities(store_id: number) {
+    const disabled = { enabled: false, allowedCampaignTypes: [] as string[], socialPublishing: false, tvBoard: false, analytics: false };
+
+    const store = await this.prisma.store.findUnique({
+      where: { id: store_id },
+      include: { saas_package: { include: { modules: true } } },
+    });
+    const pkg = store?.saas_package;
+    const marketingModule = pkg?.modules.find((m) => m.module_key === 'MARKETING');
+    if (!pkg || !marketingModule) return disabled;
+
+    const cfg = (marketingModule.config as any) || null;
+    if (cfg?.allowedCampaignTypes) {
+      return {
+        enabled: true,
+        allowedCampaignTypes: cfg.allowedCampaignTypes,
+        socialPublishing: !!cfg.socialPublishing,
+        tvBoard: !!cfg.tvBoard,
+        analytics: cfg.analytics !== false,
+      };
+    }
+
+    // No explicit config on this package's MARKETING module yet — fall back to a
+    // sensible tier inferred from the package name/code, so pre-existing packages
+    // keep working until an admin configures `config` explicitly (additive, non-breaking).
+    const label = `${pkg.code} ${pkg.name}`.toUpperCase();
+    if (label.includes('ENTERPRISE')) {
+      return {
+        enabled: true,
+        allowedCampaignTypes: ['PERCENTAGE', 'FLAT', 'BOGO', 'BUY_X_GET_Y', 'BUNDLE', 'COMBO', 'FREE_GIFT', 'HAPPY_HOUR'],
+        socialPublishing: true,
+        tvBoard: true,
+        analytics: true,
+      };
+    }
+    if (label.includes('PROFESSIONAL')) {
+      return { enabled: true, allowedCampaignTypes: ['PERCENTAGE', 'FLAT'], socialPublishing: false, tvBoard: true, analytics: true };
+    }
+    if (label.includes('STANDARD')) {
+      return { enabled: true, allowedCampaignTypes: ['FLAT'], socialPublishing: false, tvBoard: false, analytics: false };
+    }
+    // BASIC, or an unrecognized package that still purchased MARKETING a-la-carte.
+    return { enabled: true, allowedCampaignTypes: ['FLAT'], socialPublishing: false, tvBoard: false, analytics: false };
+  }
+
   async suspendSubscription(id: number, data: { reason: string }) {
     await this.prisma.$transaction([
       this.prisma.billingHistory.create({

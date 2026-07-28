@@ -81,11 +81,11 @@ export default function WorkspaceSwitcher({ user }: { user: any }) {
                 setPendingBrandId(newBrandId === 0 ? null : newBrandId);
                 setPendingBranchId(0);
               }}
-              className="bg-transparent text-white outline-none font-bold min-w-[120px]"
+              className="bg-slate-800 text-white outline-none font-bold min-w-[120px]"
             >
-              <option value={0}>All Brands</option>
+              <option value={0} className="bg-slate-800 text-white">All Brands</option>
               {brands.map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
+                <option key={b.id} value={b.id} className="bg-slate-800 text-white">{b.name}</option>
               ))}
             </select>
             <div className="w-px h-6 bg-slate-700 mx-2"></div>
@@ -96,11 +96,11 @@ export default function WorkspaceSwitcher({ user }: { user: any }) {
         <select 
           value={pendingBranchId || 0} 
           onChange={e => setPendingBranchId(Number(e.target.value))}
-          className="bg-transparent text-white outline-none font-bold min-w-[120px]"
+          className="bg-slate-800 text-white outline-none font-bold min-w-[120px]"
         >
-          <option value={0}>All Branches</option>
+          <option value={0} className="bg-slate-800 text-white">All Branches</option>
           {(pendingBrandId ? brands.find(b => b.id === pendingBrandId)?.stores || [] : branches).map(b => (
-            <option key={b.id} value={b.id}>{b.name}</option>
+            <option key={b.id} value={b.id} className="bg-slate-800 text-white">{b.name}</option>
           ))}
         </select>
 

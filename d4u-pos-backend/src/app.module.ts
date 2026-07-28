@@ -34,6 +34,9 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { TerminalModule } from './modules/core/terminal/terminal.module';
 import { AccountingModule } from './modules/business/accounting/accounting.module';
 import { SubscriptionModule } from './modules/core/subscription/subscription.module';
+import { TablesModule } from './modules/business/tables/tables.module';
+import { ProductRequestsModule } from './modules/business/product-requests/product-requests.module';
+import { CampaignResolverModule } from './modules/business/pos-orders/campaign-resolver.module';
 
 @Module({
   imports: [
@@ -61,6 +64,9 @@ import { SubscriptionModule } from './modules/core/subscription/subscription.mod
     TerminalModule,
     AccountingModule,
     SubscriptionModule,
+    TablesModule,
+    ProductRequestsModule,
+    CampaignResolverModule,
   ],
   controllers: [AppController],
   providers: [

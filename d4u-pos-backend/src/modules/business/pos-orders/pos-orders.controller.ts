@@ -28,12 +28,14 @@ export class PosOrdersController {
     @CurrentUser() user: any,
     @Query('store_id') store_id: string,
     @Query('business_day_id') business_day_id?: string,
+    @Query('terminal_session_id') terminal_session_id?: string,
   ) {
     validateTenantAccess(user, Number(store_id));
     console.log(`[GET] POS Orders — Store: ${store_id}`);
     return this.service.getOrders(
       Number(store_id),
       business_day_id ? Number(business_day_id) : undefined,
+      terminal_session_id ? Number(terminal_session_id) : undefined,
     );
   }
 
