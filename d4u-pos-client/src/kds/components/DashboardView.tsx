@@ -28,27 +28,33 @@ interface DashboardViewProps {
   orders: Order[];
   ingredients: Ingredient[];
   logs: LogEvent[];
+  metrics?: any;
 }
 
 export default function DashboardView({
   orders,
   ingredients,
-  logs
+  logs,
+  metrics
 }: DashboardViewProps) {
   
   // 1. KPI Calculations
   const completedOrders = orders.filter(o => o.status === 'completed');
   const activeOrders = orders.filter(o => o.status === 'preparing' || o.status === 'pending');
+  
+  const completedOrdersCount = metrics?.readyTodayCount ?? completedOrders.length;
+  const activeOrdersCount = metrics?.queue?.total_active ?? activeOrders.length;
+  
   const lowStockCount = ingredients.filter(i => i.currentStock <= i.warningThreshold).length;
 
   // Average Preparation Time calculation
   const totalCompletedPrepTime = completedOrders.reduce((acc, curr) => {
-    // If we have selectedPrepMinutes, use mock elapsed calculations, else standard timer elapsed
     return acc + curr.timerElapsedSeconds;
   }, 0);
-  const averagePrepSeconds = completedOrders.length > 0 
-    ? Math.round(totalCompletedPrepTime / completedOrders.length) 
-    : 0;
+  
+  const averagePrepSeconds = metrics?.avgPrepTimeMinutesToday !== undefined 
+    ? metrics.avgPrepTimeMinutesToday * 60
+    : (completedOrders.length > 0 ? Math.round(totalCompletedPrepTime / completedOrders.length) : 0);
   
   const formatSeconds = (totalSecs: number) => {
     const mins = Math.floor(totalSecs / 60);
@@ -56,39 +62,27 @@ export default function DashboardView({
     return `${mins}m ${secs}s`;
   };
 
-  // 2. Data Formatting for Recharts
-  // A. Hourly Volume over the last few hours
-  const hourlyData = [
-    { hour: '08:00', orders: 4, averageTime: 320 },
-    { hour: '10:00', orders: 7, averageTime: 390 },
-    { hour: '12:00', orders: 15, averageTime: 480 },
-    { hour: '14:00', orders: 9, averageTime: 360 },
-    { hour: '16:00', orders: 11, averageTime: 410 },
-    { hour: '18:00', orders: 22, averageTime: 540 },
-    { hour: '20:00', orders: 18, averageTime: 490 },
-  ];
+  // B. Product popularity chart data
+  const productTally: { [name: string]: number } = {};
 
-  // Dynamically blend current activity to hourly statistics
-  const currentHour = new Date().getHours();
-  const currentHourKey = `${currentHour.toString().padStart(2, '0')}:00`;
-  const existingHourIdx = hourlyData.findIndex(h => h.hour === currentHourKey);
-  if (existingHourIdx !== -1) {
-    hourlyData[existingHourIdx].orders += completedOrders.length + activeOrders.length;
-  } else {
-    hourlyData.push({
-      hour: currentHourKey,
-      orders: completedOrders.length + activeOrders.length,
-      averageTime: averagePrepSeconds > 0 ? averagePrepSeconds : 420
-    });
-  }
+  const hourlyData: { hour: string, orders: number, averageTime: number }[] = [];
+  
+  // Aggregate orders into hourly buckets
+  orders.forEach(o => {
+    if (o.startTime) {
+      const h = new Date(o.startTime).getHours();
+      const hKey = `${h.toString().padStart(2, '0')}:00`;
+      const idx = hourlyData.findIndex(hd => hd.hour === hKey);
+      if (idx !== -1) {
+        hourlyData[idx].orders++;
+      } else {
+        hourlyData.push({ hour: hKey, orders: 1, averageTime: averagePrepSeconds });
+      }
+    }
+  });
 
   // B. Product popularity chart data
-  const productTally: { [name: string]: number } = {
-    'Zinger Deluxe Burger': 0,
-    'Signature Wagyu Burger': 0,
-    'Truffle Fries': 0,
-    'Grilled Salmon': 0,
-  };
+
 
   // Populate from actual current data
   orders.forEach(order => {
@@ -102,9 +96,9 @@ export default function DashboardView({
   });
 
   const productData = Object.keys(productTally).map(name => ({
-    name: name.replace(' Burger', '').replace(' Fries', ''),
-    Volume: productTally[name] + (name === 'Zinger Deluxe Burger' ? 4 : name === 'Signature Wagyu Burger' ? 3 : 2), // Pre-populate mock baselines for beautiful display
-  })).sort((a, b) => b.Volume - a.Volume);
+    name: name,
+    Volume: productTally[name],
+  })).sort((a, b) => b.Volume - a.Volume).slice(0, 5);
 
   // C. Preparation Target compliance chart data
   const prepEfficiencyData = completedOrders.map((o, idx) => ({
@@ -113,15 +107,7 @@ export default function DashboardView({
     'Actual Time': Number((o.timerElapsedSeconds / 60).toFixed(1)),
   })).slice(-6); // Limit to last 6 orders
 
-  // Fallback if no completed orders exist yet
-  if (prepEfficiencyData.length === 0) {
-    prepEfficiencyData.push(
-      { order: '#2408', 'Target Time': 10, 'Actual Time': 8.5 },
-      { order: '#2410', 'Target Time': 15, 'Actual Time': 14.1 },
-      { order: '#2411', 'Target Time': 5, 'Actual Time': 4.8 },
-      { order: '#2414', 'Target Time': 10, 'Actual Time': 11.2 }
-    );
-  }
+
 
   const COLORS = ['#fbbf24', '#4edea3', '#ff3333', '#00a572'];
 
@@ -140,7 +126,7 @@ export default function DashboardView({
               Completed Tickets
             </p>
             <h3 className="text-3xl font-display font-bold text-[#dce2f7] mt-1.5 tabular-nums">
-              {completedOrders.length}
+              {completedOrdersCount}
             </h3>
             <p className="text-[10px] text-brand-green font-mono mt-1 font-bold">● STATION ACTIVE</p>
           </div>
@@ -155,7 +141,7 @@ export default function DashboardView({
               Avg. Preparation Time
             </p>
             <h3 className="text-3xl font-display font-bold text-[#dce2f7] mt-1.5 tabular-nums">
-              {completedOrders.length > 0 ? formatSeconds(averagePrepSeconds) : '8m 42s'}
+              {metrics?.avgPrepTimeMins ? `${metrics.avgPrepTimeMins}m 0s` : (completedOrders.length > 0 ? formatSeconds(averagePrepSeconds) : '8m 42s')}
             </h3>
             <p className="text-[10px] text-[#d3c5ac] font-mono mt-1">Within target limits</p>
           </div>

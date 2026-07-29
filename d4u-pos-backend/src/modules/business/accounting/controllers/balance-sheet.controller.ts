@@ -2,6 +2,7 @@ import { Controller, Get, Query, Req, ParseIntPipe } from '@nestjs/common';
 import { RequirePermissions } from '../../../../common/decorators';
 import { BalanceSheetService } from '../services/balance-sheet.service';
 import { BalanceSheetFilter } from '../interfaces/balance-sheet-filter.interface';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/balance-sheet')
 export class BalanceSheetController {
@@ -16,7 +17,7 @@ export class BalanceSheetController {
       date: new Date(query.date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1; 
+    const userId = getSessionUserId(req.user); 
     return this.bsService.generateBalanceSheet(filter, userId);
   }
 
@@ -28,7 +29,7 @@ export class BalanceSheetController {
       date: new Date(query.date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     const result = await this.bsService.generateBalanceSheet(filter, userId);
     
     let csv = `Balance Sheet Statement - ${result.statement_name}\n`;

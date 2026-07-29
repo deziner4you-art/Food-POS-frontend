@@ -1,15 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { resolveOrderBy } from '../../../common/utils/sort.util';
+
+const AVAILABILITY_RULE_SORT_FIELDS = ['name', 'type', 'id'] as const;
 
 @Injectable()
 export class AvailabilityService {
   constructor(private prisma: PrismaService) {}
 
-  async getAvailabilityRules(store_id: number) {
+  async getAvailabilityRules(store_id: number, sort_by?: string, sort_dir?: string) {
+    const orderBy = resolveOrderBy(sort_by, sort_dir, AVAILABILITY_RULE_SORT_FIELDS, 'name');
     return this.prisma.availabilityRule.findMany({
       where: { store_id },
       include: { products: true },
-      orderBy: { name: 'asc' },
+      orderBy,
     });
   }
 

@@ -26,7 +26,7 @@ import RecycleBin from './pages/RecycleBin';
 import HealthDashboard from './pages/HealthDashboard';
 import PurchaseManager from './pages/PurchaseManager';
 
-import { Megaphone, ShieldCheck, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Megaphone, ShieldCheck, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
@@ -51,7 +51,7 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
   }, [selectedBranchId]);
 
   let navItems = forceBootstrap ? [] : [
-    { path: '/', label: 'Overview', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' }
+    { path: '/', label: 'Live Analytics', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' }
   ];
 
   if (isBranchEntered) {
@@ -88,27 +88,32 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
           {isSidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
         </button>
 
-        <div className={`mb-6 pt-4 transition-all overflow-hidden ${isSidebarOpen ? 'px-4' : 'px-0 text-center'}`}>
-          <h2 className={`font-black text-white whitespace-nowrap ${isSidebarOpen ? 'text-2xl' : 'text-sm'}`}>
-            {isSidebarOpen ? 'D4U Admin' : 'D4U'}
-          </h2>
-          {isSidebarOpen && <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">Head Office HQ</p>}
-        </div>
-
-        {/* Branch context indicator */}
-        {isBranchEntered && selectedBranch && (
-          <div className="mb-2">
-            <div className={`${isSidebarOpen ? 'px-4 py-3' : 'px-2 py-3 justify-center'} flex items-center gap-2 bg-pink-500/10 border border-pink-500/30 rounded-xl`}>
-              <Store size={16} className="text-pink-400 min-w-[16px]" />
-              {isSidebarOpen && <span className="text-pink-300 font-bold text-xs whitespace-nowrap overflow-hidden text-ellipsis">{selectedBranch.name}</span>}
-            </div>
-            <button
-              onClick={() => { setIsBranchEntered(false); navigate('/'); }}
-              className={`mt-1 w-full text-xs text-slate-400 hover:text-white flex items-center ${isSidebarOpen ? 'gap-1 px-2 justify-start' : 'justify-center'} py-1 rounded-lg hover:bg-slate-800 transition-colors`}
-              title="Back to Overview"
-            >
-              <ChevronLeft size={14} /> {isSidebarOpen && 'Back to Overview'}
-            </button>
+        {/* Branch context indicator or HQ Header */}
+        {isBranchEntered && selectedBranch ? (
+          <>
+            {user?.role === 'Super Admin' && (
+              <div className="mb-4 flex items-center gap-2 pt-2">
+                <button
+                  onClick={() => { setIsBranchEntered(false); navigate('/'); }}
+                  className={`flex-1 flex items-center justify-center gap-2 bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-2 rounded-xl font-bold transition-all shadow-lg text-sm`}
+                  title="Return to HQ"
+                >
+                  <Building2 size={16} /> {isSidebarOpen && 'Super Admin'}
+                </button>
+                {isSidebarOpen && (
+                  <button onClick={onLogout} className="p-2 text-red-400 bg-red-400/10 hover:bg-red-400/20 rounded-xl transition-colors" title="Logout">
+                    <LogOut size={18} />
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className={`mb-6 pt-4 transition-all overflow-hidden ${isSidebarOpen ? 'px-4' : 'px-0 text-center'}`}>
+            <h2 className={`font-black text-white whitespace-nowrap ${isSidebarOpen ? 'text-2xl' : 'text-sm'}`}>
+              {isSidebarOpen ? 'D4U Admin' : 'D4U'}
+            </h2>
+            {isSidebarOpen && <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">Head Office HQ</p>}
           </div>
         )}
 

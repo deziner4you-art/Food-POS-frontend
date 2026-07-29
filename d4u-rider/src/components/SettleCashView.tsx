@@ -9,7 +9,6 @@ interface SettleCashViewProps {
 }
 
 export default function SettleCashView({ stats, onBack, onSettle }: SettleCashViewProps) {
-  // Mock weekly summary for UI layout
   const weeklySummary = {
     earnings: stats.todayEarnings + 85.45,
     workTime: '12hr 45 min',

@@ -37,6 +37,7 @@ import { SubscriptionModule } from './modules/core/subscription/subscription.mod
 import { TablesModule } from './modules/business/tables/tables.module';
 import { ProductRequestsModule } from './modules/business/product-requests/product-requests.module';
 import { CampaignResolverModule } from './modules/business/pos-orders/campaign-resolver.module';
+import { KitchenModule } from './modules/business/kitchen/kitchen.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { CampaignResolverModule } from './modules/business/pos-orders/campaign-r
     TablesModule,
     ProductRequestsModule,
     CampaignResolverModule,
+    KitchenModule,
   ],
   controllers: [AppController],
   providers: [

@@ -2,6 +2,7 @@ import { Controller, Get, Query, Req, ParseIntPipe } from '@nestjs/common';
 import { RequirePermissions } from '../../../../common/decorators';
 import { CashFlowService } from '../services/cash-flow.service';
 import { CashFlowFilter } from '../interfaces/cash-flow-filter.interface';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/cash-flow')
 export class CashFlowController {
@@ -17,7 +18,7 @@ export class CashFlowController {
       end_date: new Date(query.end_date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1; 
+    const userId = getSessionUserId(req.user); 
     return this.cfService.generateCashFlow(filter, userId);
   }
 
@@ -30,7 +31,7 @@ export class CashFlowController {
       end_date: new Date(query.end_date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     const result = await this.cfService.generateCashFlow(filter, userId);
     
     let csv = `Cash Flow Statement - ${result.statement_name}\n`;

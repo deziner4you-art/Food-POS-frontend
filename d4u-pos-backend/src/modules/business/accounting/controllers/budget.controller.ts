@@ -4,6 +4,7 @@ import { BudgetService } from '../services/budget.service';
 import { BudgetAnalysisService } from '../services/budget-analysis.service';
 import { CreateBudgetInput } from '../interfaces/budget.interface';
 import { BudgetAnalysisFilter } from '../interfaces/budget-analysis.interface';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/budget')
 export class BudgetController {
@@ -15,14 +16,14 @@ export class BudgetController {
   @RequirePermissions('finance.accounting.create')
   @Post()
   async createBudget(@Body() body: any, @Req() req: any) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.budgetService.createBudget(body, userId);
   }
 
   @RequirePermissions('finance.accounting.approve')
   @Put(':id/approve')
   async approveBudget(@Param('id') id: string, @Req() req: any) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.budgetService.approveBudget(Number(id), userId);
   }
 
@@ -36,7 +37,7 @@ export class BudgetController {
       start_date: new Date(query.start_date),
       end_date: new Date(query.end_date)
     };
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.analysisService.generateComparison(filter, userId);
   }
 }

@@ -94,6 +94,7 @@ model Store {
   menus                 Menu[]                 @relation("MenuStores")
   assignedCategories    Category[]             @relation("CategoryStores")
   assignedProducts      Product[]              @relation("ProductStores")
+  assignedCategoryGroups CategoryGroup[]        @relation("CategoryGroupStores")
   MarketingCampaign     MarketingCampaign[]    @relation("CampaignStores")
   socialAccount         BranchSocialAccount?
   terminalSessions      TerminalSession[]
@@ -152,6 +153,12 @@ model Store {
   audit_findings        AuditFinding[]
   golive_checklists     GoLiveChecklist[]
   system_certifications SystemCertification[]
+
+  // KDS Backend Foundation
+  kitchenStations KitchenStation[]
+  chefSessions    ChefSession[]
+  stockRequests   StockRequest[]
+  inventoryLocks  InventoryLock[]
 }
 
 model SystemAuditLog {
@@ -459,24 +466,79 @@ model Menu {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  brand      Brand      @relation(fields: [brand_id], references: [id])
-  stores     Store[]    @relation("MenuStores")
-  categories Category[]
+  brand          Brand           @relation(fields: [brand_id], references: [id])
+  stores         Store[]         @relation("MenuStores")
+  categories     Category[]
+  categoryGroups CategoryGroup[]
+}
+
+// Menu Builder hierarchy (Sprint 28.7): Menu Collection -> Category Group -> Category -> Product.
+// Products never link directly to a Category Group — only through a Category.
+model CategoryGroup {
+  id          Int     @id @default(autoincrement())
+  menu_id     Int
+  name        String
+  description String?
+  sort_order  Int     @default(0)
+  icon        String?
+  color       String?
+  image_url   String?
+  is_active   Boolean @default(true)
+
+  // Sprint 28.8A — true only for the "Default Group" auto-created as a
+  // holding bucket so Category.category_group_id is never null. Not a
+  // user-created entity: excluded from the navigation contract's
+  // category_groups list (its categories surface as flat/ungrouped there).
+  // Still a fully real, manageable row everywhere else (admin CRUD, etc).
+  is_system_default Boolean @default(false)
+
+  // Channel Visibility
+  visible_pos      Boolean @default(true)
+  visible_website  Boolean @default(true)
+  visible_waiter   Boolean @default(true)
+  visible_qr_menu  Boolean @default(true)
+  visible_kiosk    Boolean @default(true)
+  visible_delivery Boolean @default(true)
+  visible_takeaway Boolean @default(true)
+
+  created_by Int?
+  updated_by Int?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deleted_at DateTime? // Soft delete — restore clears this instead of a hard DELETE
+
+  menu            Menu       @relation(fields: [menu_id], references: [id])
+  assigned_stores Store[]    @relation("CategoryGroupStores")
+  categories      Category[]
+
+  @@index([menu_id])
 }
 
 model Category {
   id       Int    @id @default(autoincrement())
   store_id Int // Creator Store (Admin)
   menu_id  Int?
+  // Hotfix: Category Groups are OPTIONAL (business requirement change) — a
+  // restaurant may use Menu -> Categories -> Products with no groups at all.
+  // Nullable, ON DELETE SET NULL: deleting a group never blocks and never
+  // requires reassigning its categories anywhere — they simply become
+  // ungrouped.
+  category_group_id Int?
   name     String
   is_active   Boolean @default(true)
   sort_order  Int     @default(0)
   image_url   String?
 
   menu               Menu?               @relation(fields: [menu_id], references: [id])
+  categoryGroup      CategoryGroup?      @relation(fields: [category_group_id], references: [id], onDelete: SetNull)
   assigned_stores    Store[]             @relation("CategoryStores")
   products           Product[]           @relation("ProductCategories")
   marketingCampaigns MarketingCampaign[] @relation("CampaignCategories")
+
+  // Sprint 28.8D — Menu Builder list/filter performance
+  // (category_group_id already indexed — Category_category_group_id_idx, Sprint 28.7)
+  @@index([store_id])
+  @@index([menu_id])
 }
 
 model Product {
@@ -497,6 +559,7 @@ model Product {
   internal_notes String?
   status         String   @default("APPROVED") // PENDING, APPROVED
   createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt // Sprint 28.8D — Product List API requires "Updated At"
 
   store              Store               @relation(fields: [store_id], references: [id])
   categories         Category[]          @relation("ProductCategories")
@@ -513,12 +576,22 @@ model Product {
   productions        ProductionOrder[]   @relation("TargetProduct")
   
   tax_rate             Float    @default(0)
-  kitchen_station      String?  
-  printer_group        String?  
-  kds_group            String?  
+  kitchen_station      String?  // Legacy free-text station label — kept for backward compatibility, still authoritative until a product is migrated to kitchen_station_id below.
+  printer_group        String?
+  kds_group            String?
   availability_rule_id Int?
   availabilityRule     AvailabilityRule? @relation(fields: [availability_rule_id], references: [id])
   modifierGroups       ProductModifierGroup[]
+
+  // KDS Backend Foundation — additive, optional FK. When set, takes priority
+  // over the legacy `kitchen_station` string for ticket routing; when null,
+  // consumers fall back to the legacy string (see KitchenDashboardService).
+  kitchen_station_id Int?
+  kitchenStation     KitchenStation? @relation(fields: [kitchen_station_id], references: [id])
+
+  // Sprint 28.8D — Menu Builder list/filter performance
+  @@index([store_id])
+  @@index([status])
 }
 
 // -------------------------------------------------------------
@@ -651,6 +724,10 @@ model InventoryItem {
   ProductionOutput         ProductionOutput[]
   ProductionConsumption    ProductionConsumption[]
   grnItems                 GoodsReceiptItem[]
+
+  // KDS Backend Foundation
+  stockRequests StockRequest[]
+  locks         InventoryLock[]
 }
 
 model InventoryTransactionLog {
@@ -860,6 +937,112 @@ model KOT {
   store       Store        @relation(fields: [store_id], references: [id])
   order       Order        @relation(fields: [order_id], references: [id])
   businessDay BusinessDay? @relation(fields: [business_day_id], references: [id])
+
+  inventoryLocks InventoryLock[]
+}
+
+// -------------------------------------------------------------
+// KDS BACKEND FOUNDATION (Kitchen Stations, Chef Auth, Stock
+// Requests, Inventory Locks) — additive only, no existing model
+// or column touched. Mirrors the TerminalSession PIN-pairing
+// pattern (see terminal.service.ts) and the CampaignAuditLog /
+// void-order manager-PIN patterns already used elsewhere.
+// -------------------------------------------------------------
+
+model KitchenStation {
+  id         Int      @id @default(autoincrement())
+  store_id   Int
+  name       String
+  is_active  Boolean  @default(true)
+  sort_order Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  store         Store          @relation(fields: [store_id], references: [id])
+  products      Product[]
+  chefSessions  ChefSession[]
+  stockRequests StockRequest[]
+
+  @@unique([store_id, name])
+  @@index([store_id])
+}
+
+// PIN-paired kitchen-staff session — same shape/lifecycle as TerminalSession,
+// but scoped to a Chef/kitchen role rather than a Waiter, and optionally
+// bound to one station.
+model ChefSession {
+  id                 Int       @id @default(autoincrement())
+  store_id           Int
+  pin                String    @unique
+  chef_name          String
+  kitchen_station_id Int?
+  device_id          String?
+  device_name        String?
+  socket_id          String?
+  is_active          Boolean   @default(true)
+  connected_at       DateTime?
+  last_activity_at   DateTime?
+  logged_out_at      DateTime?
+  createdAt          DateTime  @default(now())
+
+  store   Store           @relation(fields: [store_id], references: [id])
+  station KitchenStation? @relation(fields: [kitchen_station_id], references: [id])
+  stockRequests StockRequest[]
+
+  @@index([store_id])
+  @@index([device_id])
+}
+
+// A kitchen station running low/out of an ingredient requests more from
+// inventory/management. Read-model only — does not itself move stock;
+// approval/fulfillment is a manual InventoryItem adjustment by whoever
+// actions the request (kept simple deliberately, matches project scope).
+model StockRequest {
+  id                 Int       @id @default(autoincrement())
+  store_id           Int
+  inventory_id       Int
+  kitchen_station_id Int?
+  chef_session_id    Int?
+  requested_by_name  String?
+  requested_qty      Float
+  unit               String
+  status             String    @default("PENDING") // PENDING, APPROVED, FULFILLED, REJECTED
+  reason             String?
+  approved_by        Int?
+  fulfilled_qty      Float?
+  createdAt          DateTime  @default(now())
+  resolvedAt         DateTime?
+
+  store       Store           @relation(fields: [store_id], references: [id])
+  inventory   InventoryItem   @relation(fields: [inventory_id], references: [id])
+  station     KitchenStation? @relation(fields: [kitchen_station_id], references: [id])
+  chefSession ChefSession?    @relation(fields: [chef_session_id], references: [id])
+
+  @@index([store_id])
+  @@index([inventory_id])
+}
+
+// A hold placed on an inventory item — e.g. a chef flags it 86'd/out mid-shift.
+// While `is_active`, Recipe Availability treats the item as unavailable
+// regardless of its real `quantity`. Only a manager PIN-unlock (mirrors the
+// void-order manager_pin pattern) can release it — see InventoryLockService.
+model InventoryLock {
+  id           Int       @id @default(autoincrement())
+  store_id     Int
+  inventory_id Int
+  kot_id       Int?
+  reason       String?
+  locked_by    Int?
+  is_active    Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  releasedAt   DateTime?
+  released_by  Int?
+
+  store     Store         @relation(fields: [store_id], references: [id])
+  inventory InventoryItem @relation(fields: [inventory_id], references: [id])
+  kot       KOT?          @relation(fields: [kot_id], references: [id])
+
+  @@index([store_id])
+  @@index([inventory_id])
 }
 
 // -------------------------------------------------------------

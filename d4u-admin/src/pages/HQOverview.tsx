@@ -146,7 +146,7 @@ export default function HQOverview() {
               <div key={brand.id} className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden shadow-xl transition-all">
                 {/* Brand Header */}
                 <div 
-                  onClick={() => toggleBrand(brand.id, brand.stores.length, brand.stores[0]?.id)}
+                  onClick={() => toggleBrand(brand.id)}
                   className={`p-6 flex items-center justify-between cursor-pointer hover:bg-slate-700/50 transition-colors ${isExpanded ? 'border-b border-slate-700 bg-slate-800' : ''}`}
                 >
                   <div className="flex items-center gap-4">
@@ -211,13 +211,13 @@ export default function HQOverview() {
                               <div className="flex items-center gap-2">
                                 <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">{store.name}</h3>
                                 <span className={`px-2 py-0.5 rounded text-xs font-bold border ${
-                                  store.status === 'SUSPENDED' 
+                                  (store as any).status === 'SUSPENDED' 
                                     ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
-                                    : store.status === 'MAINTENANCE' 
+                                    : (store as any).status === 'MAINTENANCE' 
                                     ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
                                     : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                 }`}>
-                                  {store.status || (store.is_online ? 'ACTIVE' : 'SUSPENDED')}
+                                  {(store as any).status || ((store as any).is_online ? 'ACTIVE' : 'SUSPENDED')}
                                 </span>
                               </div>
                               <p className="text-sm text-slate-400">{store.location || 'No location set'}</p>
@@ -228,14 +228,14 @@ export default function HQOverview() {
                             <button 
                               onClick={(e) => { e.stopPropagation(); handleEnterStore(store.id); }}
                               className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-lg ${
-                                store.status === 'SUSPENDED'
+                                (store as any).status === 'SUSPENDED'
                                   ? 'bg-slate-700 text-amber-300 hover:bg-slate-600'
-                                  : store.status === 'MAINTENANCE'
+                                  : (store as any).status === 'MAINTENANCE'
                                   ? 'bg-blue-600 hover:bg-blue-500 text-white'
                                   : 'bg-indigo-500 hover:bg-indigo-600 text-white'
                               }`}
                             >
-                              {store.status === 'SUSPENDED' ? 'Read-Only Dashboard' : store.status === 'MAINTENANCE' ? 'Maintenance Mode' : 'Enter Dashboard'}
+                              {(store as any).status === 'SUSPENDED' ? 'Read-Only Dashboard' : (store as any).status === 'MAINTENANCE' ? 'Maintenance Mode' : 'Enter Dashboard'}
                             </button>
 
                             {isSuperAdmin && (
@@ -243,7 +243,7 @@ export default function HQOverview() {
                                 <button
                                   onClick={async (e) => {
                                     e.stopPropagation();
-                                    const nextStatus = store.status === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED';
+                                    const nextStatus = (store as any).status === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED';
                                     await apiFetch(`/stores/${store.id}/lifecycle`, {
                                       method: 'PATCH',
                                       headers: { 'Content-Type': 'application/json' },
@@ -251,35 +251,35 @@ export default function HQOverview() {
                                     });
                                     window.location.reload();
                                   }}
-                                  className={`px-3 py-2 rounded-lg font-bold text-xs transition-all ${
-                                    store.status === 'SUSPENDED'
-                                      ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30'
-                                      : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30'
+                                  className={`p-2 rounded-lg transition-colors ${
+                                    (store as any).status === 'SUSPENDED'
+                                      ? 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
+                                      : 'text-slate-400 hover:text-amber-400 hover:bg-amber-500/10'
                                   }`}
-                                  title={store.status === 'SUSPENDED' ? 'Resume Branch Operations' : 'Suspend Branch Operations'}
+                                  title={(store as any).status === 'SUSPENDED' ? "Reactivate Branch" : "Suspend Branch"}
                                 >
-                                  {store.status === 'SUSPENDED' ? 'Resume' : 'Suspend'}
+                                  <AlertCircle size={18} />
                                 </button>
-
+                                
                                 <button
                                   onClick={async (e) => {
                                     e.stopPropagation();
-                                    const nextStatus = store.status === 'MAINTENANCE' ? 'ACTIVE' : 'MAINTENANCE';
+                                    const nextStatus = (store as any).status === 'MAINTENANCE' ? 'ACTIVE' : 'MAINTENANCE';
                                     await apiFetch(`/stores/${store.id}/lifecycle`, {
                                       method: 'PATCH',
                                       headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ status: nextStatus, reason: `Admin toggled maintenance` })
+                                      body: JSON.stringify({ status: nextStatus, reason: `Admin toggled to ${nextStatus}` })
                                     });
                                     window.location.reload();
                                   }}
-                                  className={`px-3 py-2 rounded-lg font-bold text-xs transition-all ${
-                                    store.status === 'MAINTENANCE'
-                                      ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                                      : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30'
+                                  className={`p-2 rounded-lg transition-colors ${
+                                    (store as any).status === 'MAINTENANCE'
+                                      ? 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20'
+                                      : 'text-slate-400 hover:text-blue-400 hover:bg-blue-500/10'
                                   }`}
-                                  title="Toggle Maintenance Mode"
+                                  title={(store as any).status === 'MAINTENANCE' ? "Exit Maintenance" : "Enter Maintenance"}
                                 >
-                                  {store.status === 'MAINTENANCE' ? 'Exit Maint' : 'Maintenance'}
+                                  <Store size={18} />
                                 </button>
 
                                 <button 

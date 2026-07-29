@@ -1,5 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { resolveOrderBy } from '../../../common/utils/sort.util';
+
+const MODIFIER_GROUP_SORT_FIELDS = ['name', 'id'] as const;
 
 @Injectable()
 export class ModifierService {
@@ -8,11 +11,12 @@ export class ModifierService {
   // ==========================================
   // Modifier Groups
   // ==========================================
-  async getModifierGroups(store_id: number) {
+  async getModifierGroups(store_id: number, sort_by?: string, sort_dir?: string) {
+    const orderBy = resolveOrderBy(sort_by, sort_dir, MODIFIER_GROUP_SORT_FIELDS, 'name');
     return this.prisma.modifierGroup.findMany({
       where: { store_id },
       include: { modifiers: true },
-      orderBy: { name: 'asc' },
+      orderBy,
     });
   }
 

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { DeliveryStatus, DeliveryOrder, SavedCompletedMission, RiderStats } from './types';
-import { INITIAL_PAST_MISSIONS } from './data';
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 import { generateGridPath } from './utils';
 import { io } from 'socket.io-client';
@@ -51,7 +50,7 @@ export default function App() {
     if (saved) {
       try { return JSON.parse(saved); } catch (e) {}
     }
-    return INITIAL_PAST_MISSIONS;
+    return [];
   });
 
   const [riderStats, setRiderStats] = useState<RiderStats>(() => {
@@ -86,8 +85,8 @@ export default function App() {
     
     if (token && store) {
       setRiderStoreId(Number(store));
-      setRiderName(name || 'Rider');
-      setRiderStoreName(storeName || 'Branch');
+      setRiderName(name || '');
+      setRiderStoreName(storeName || '');
       setCurrentView('map');
     } else {
       setCurrentView('login');
@@ -173,9 +172,9 @@ export default function App() {
         const deliveryOrder: DeliveryOrder = {
           id: order.id,
           source: 'ONLINE_ORDER',
-          restaurantName: 'D4U Enterprise POS',
+          restaurantName: riderStoreName || 'Restaurant',
           restaurantX: 50, restaurantY: 50,
-          restaurantAddress: 'Main Branch',
+          restaurantAddress: riderStoreName || 'Branch Location',
           customerName: order.customer || 'Customer',
           customerAddress: order.customerAddress || 'Customer Address',
           customerX: 80, customerY: 20,

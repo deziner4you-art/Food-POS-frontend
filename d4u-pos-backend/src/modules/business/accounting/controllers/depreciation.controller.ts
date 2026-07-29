@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Query, Req } from '@nestjs/common';
 import { RequirePermissions } from '../../../../common/decorators';
 import { DepreciationService } from '../services/depreciation.service';
 import { DepreciationPostingService } from '../services/depreciation-posting.service';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/depreciation')
 export class DepreciationController {
@@ -13,14 +14,14 @@ export class DepreciationController {
   @RequirePermissions('finance.accounting.create')
   @Post('run')
   async runDepreciation(@Body() body: any, @Req() req: any) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.depreciationService.runMonthlyDepreciation(body, userId);
   }
 
   @RequirePermissions('finance.accounting.create')
   @Post('post')
   async postDepreciation(@Body() body: any, @Req() req: any) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.postingService.postDepreciation(body, userId);
   }
 

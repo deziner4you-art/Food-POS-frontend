@@ -71,8 +71,10 @@ export type CatalogProduct = {
 };
 
 export type CatalogSyncResponse = {
+  system_tabs?: any[];
+  category_groups?: any[];
   categories: CatalogCategory[];
-  products: CatalogProduct[];
+  products?: CatalogProduct[];
   synced_at: string;
 };
 

@@ -31,14 +31,27 @@ export default function MobileMode({
   onClearCart,
   campaigns = []
 }: MobileModeProps) {
-  // Derived from the branch's real categories — previously a hardcoded
-  // 'Burgers'|'Pizzas'|'Sides'|'Drinks'|'Desserts' list that never matched
-  // actual menu data.
-  const CATEGORIES = Array.from(new Set(foodItems.map((f) => f.category)))
-    .filter((c) => !['extra toppings', 'add-ons', 'addons'].includes((c || '').toLowerCase()));
+  // Derived from the branch's real categories
+  const CATEGORY_GROUPS = Array.from(new Set(foodItems.map(f => f.categoryGroup).filter(Boolean))) as string[];
+  const [activeGroup, setActiveGroup] = useState<string>('');
+
+  const CATEGORIES = Array.from(new Set(
+    foodItems
+      .filter(f => CATEGORY_GROUPS.length === 0 || f.categoryGroup === activeGroup || !activeGroup)
+      .map((f) => f.category)
+  )).filter((c) => !['extra toppings', 'add-ons', 'addons'].includes((c || '').toLowerCase()));
   const [activeCategory, setActiveCategory] = useState<string>('');
+  
+  React.useEffect(() => {
+    if (CATEGORY_GROUPS.length > 0 && !activeGroup) {
+      setActiveGroup(CATEGORY_GROUPS[0]);
+    }
+  }, [CATEGORY_GROUPS.join(','), activeGroup]);
+
   React.useEffect(() => {
     if (CATEGORIES.length > 0 && !activeCategory) {
+      setActiveCategory(CATEGORIES[0]);
+    } else if (CATEGORIES.length > 0 && !CATEGORIES.includes(activeCategory)) {
       setActiveCategory(CATEGORIES[0]);
     }
   }, [CATEGORIES.join(','), activeCategory]);
@@ -358,6 +371,47 @@ export default function MobileMode({
       {/* Sub-Scroll Container */}
       <main className="flex-1 overflow-y-auto custom-scrollbar pb-28">
         
+        {CATEGORY_GROUPS.length > 0 && (
+          <>
+            <span className="px-6 block text-[10px] uppercase font-bold tracking-widest text-[#d3c5ac] mt-4 mb-2">Explore Groups</span>
+            <section id="story-groups-slider" className="flex items-center gap-5 overflow-x-auto hide-scrollbar px-6 mb-2 py-3">
+              {CATEGORY_GROUPS.map((groupName) => {
+                const isActive = activeGroup === groupName;
+                const matchingItem = foodItems.find(f => f.categoryGroup === groupName);
+                return (
+                  <div
+                    key={`group-${groupName}`}
+                    onClick={() => { setActiveGroup(groupName); setActiveCategory(''); }}
+                    className="flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer"
+                  >
+                    <div className={`w-16 h-16 rounded-full p-[2px] transition-all duration-300 ${
+                      isActive ? 'bg-gradient-to-tr from-[#ffe1a7] via-[#fbbf24] to-[#f9bd22] scale-105 shadow-md shadow-amber-400/10' : 'border border-slate-700/50'
+                    }`}>
+                      <div className="w-full h-full rounded-full bg-[#0c1322] p-[3px] overflow-hidden">
+                        {matchingItem?.image ? (
+                          <img 
+                            className="w-full h-full rounded-full object-cover image-no-referrer" 
+                            src={matchingItem.image.startsWith('http') ? matchingItem.image : `${BACKEND_URL}${matchingItem.image}`} 
+                            alt=""
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-xl font-bold text-slate-500">{groupName.charAt(0)}</div>
+                        )}
+                      </div>
+                    </div>
+                    <span className={`text-[10px] uppercase font-bold tracking-widest max-w-[70px] truncate text-center ${
+                      isActive ? 'text-[#ffe1a7]' : 'text-[#d3c5ac]'
+                    }`}>
+                      {groupName}
+                    </span>
+                  </div>
+                );
+              })}
+            </section>
+          </>
+        )}
+
         {/* Story Categories Ring List */}
         <span className="px-6 block text-[10px] uppercase font-bold tracking-widest text-[#d3c5ac] mt-4 mb-2">Explore Categories</span>
         <section id="story-categories-slider" className="flex items-center gap-5 overflow-x-auto hide-scrollbar px-6 mb-2 py-3">

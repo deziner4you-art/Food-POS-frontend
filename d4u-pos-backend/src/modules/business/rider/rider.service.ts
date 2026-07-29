@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
+import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
 
 @Injectable()
 export class RiderService {
@@ -10,20 +11,25 @@ export class RiderService {
   ) {}
 
   async getRiderOrders(storeId?: string) {
+    // Sprint 28.9: store_id must never be optional here — omitting it used
+    // to silently return every store's delivery orders (cross-tenant leak).
+    if (!storeId) {
+      throw new BadRequestException('store_id is required.');
+    }
     const validStatuses = ['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID', 'SETTLED'];
-    
+
     const onlineWhere: any = {
       status: { in: validStatuses },
+      store_id: Number(storeId),
     };
     const posWhere: any = {
       status: { in: validStatuses },
-      order_source: 'DELIVERY'
+      // Sprint 28.9: the POS UI's order-type dropdown saves order_source as
+      // "Delivery" (mixed case) — this filter previously compared against
+      // the exact string "DELIVERY" and never matched a single POS order.
+      order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+      store_id: Number(storeId),
     };
-
-    if (storeId) {
-      onlineWhere.store_id = Number(storeId);
-      posWhere.store_id = Number(storeId);
-    }
 
     const onlineOrders = await this.prisma.onlineOrder.findMany({
       where: onlineWhere,
@@ -39,30 +45,7 @@ export class RiderService {
       }
     });
 
-    // Format POS Orders to look exactly like OnlineOrders for the Rider App UI
-    const formattedPosOrders = posOrders.map(order => ({
-      id: order.id,
-      store_id: order.store_id,
-      orderId: order.id,
-      status: order.status,
-      kdsStatus: order.status,
-      type: 'Delivery',
-      source: 'POS',
-      customer: order.customer ? order.customer.name : 'Guest',
-      customerPhone: order.customer ? order.customer.phone : '',
-      customerAddress: order.delivery_address || 'No Address Provided',
-      items: order.items.map(i => `${i.quantity}x ${i.product.name}`).join(', '),
-      totalAmount: String(order.total_amount),
-      notes: order.customer_feedback || '',
-      prepTimeMinutes: 0,
-      estimatedReadyAt: '',
-      timePlaced: order.createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      riderAssigned: !!order.rider_id,
-      feedback: null,
-      delivery: order.delivery_info,
-      createdAt: order.createdAt,
-      isPos: true
-    }));
+    const formattedPosOrders = posOrders.map(formatPosOrderForRider);
 
     const allOrders = [...onlineOrders, ...formattedPosOrders].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()

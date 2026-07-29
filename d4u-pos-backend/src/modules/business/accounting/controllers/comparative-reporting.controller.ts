@@ -2,6 +2,7 @@ import { Controller, Get, Query, Req } from '@nestjs/common';
 import { RequirePermissions } from '../../../../common/decorators';
 import { ComparativeReportingService } from '../services/comparative-reporting.service';
 import { ComparativeFilter } from '../interfaces/comparative-report.interface';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/comparative')
 export class ComparativeReportingController {
@@ -21,7 +22,7 @@ export class ComparativeReportingController {
       compare_end_date: new Date(query.compare_end_date),
     };
     
-    const userId = req.user?.id || 1; 
+    const userId = getSessionUserId(req.user);
     return this.compService.generateComparativeReport(filter, userId);
   }
 }

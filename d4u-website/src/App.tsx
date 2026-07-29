@@ -56,12 +56,30 @@ export default function App() {
     // Fetch dynamic catalog for selected store
     const fetchCatalog = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/catalog/sync/${selectedStoreId}`);
+        const res = await fetch(`${BACKEND_URL}/catalog/category-groups/hierarchy/store/${selectedStoreId}?channel=website`);
         if (res.ok) {
           const data = await res.json();
-          if (data.products && data.categories) {
-            const mappedItems: FoodItem[] = (data.products || []).map((p: any) => {
-              const catName = p.categories && p.categories.length > 0 ? p.categories[0].name : 'Uncategorized';
+          const allProducts: any[] = [];
+          
+          if (data.category_groups) {
+            data.category_groups.forEach((group: any) => {
+              (group.categories || []).forEach((cat: any) => {
+                (cat.products || []).forEach((p: any) => {
+                  allProducts.push({ ...p, __catName: cat.name, __groupName: group.name });
+                });
+              });
+            });
+          }
+          if (data.categories) {
+            data.categories.forEach((cat: any) => {
+              (cat.products || []).forEach((p: any) => {
+                allProducts.push({ ...p, __catName: cat.name, __groupName: undefined });
+              });
+            });
+          }
+
+          if (allProducts.length > 0) {
+            const mappedItems: FoodItem[] = allProducts.map((p: any) => {
               return {
                 id: String(p.id),
                 name: p.name,
@@ -69,7 +87,8 @@ export default function App() {
                 priceUSD: parseFloat((p.price / 280).toFixed(2)),
                 description: p.sku || 'Delicious item from our menu',
                 image: p.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80',
-                category: catName,
+                category: p.__catName,
+                categoryGroup: p.__groupName,
                 tag: 'New',
                 preparationTime: '10 mins',
                 calories: 500,
@@ -77,7 +96,10 @@ export default function App() {
                 categories: p.categories || []
               };
             });
-            setFoodItems(mappedItems);
+            
+            // Deduplicate products in case they belong to multiple categories
+            const uniqueItemsMap = new Map(mappedItems.map(item => [item.id, item]));
+            setFoodItems(Array.from(uniqueItemsMap.values()));
           }
         }
       } catch (err) {

@@ -2,6 +2,7 @@ import { Controller, Post, Body, Req, Res } from '@nestjs/common';
 import { RequirePermissions } from '../../../../common/decorators';
 import { FinancialExportService } from '../services/financial-export.service';
 import { ExportRequest } from '../interfaces/financial-export.interface';
+import { getSessionStoreId, getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/export')
 export class FinancialExportController {
@@ -10,8 +11,8 @@ export class FinancialExportController {
   @RequirePermissions('finance.accounting.create')
   @Post()
   async exportReport(@Body() request: any, @Req() req: any, @Res() res: any) {
-    const storeId = req.body.store_id || 1;
-    const userId = req.user?.id || 1;
+    const storeId = req.body.store_id ?? getSessionStoreId(req.user);
+    const userId = getSessionUserId(req.user);
 
     const result = await this.exportService.generateExport(request, storeId, userId);
 

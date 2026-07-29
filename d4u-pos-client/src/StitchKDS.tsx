@@ -8,6 +8,7 @@ const socket = io(BACKEND_URL);
 import { AnimatePresence, motion } from 'framer-motion'; // using framer-motion since motion/react might not be installed
 import { ShieldAlert, Check } from 'lucide-react';
 import { customConfirm } from './utils/alerts';
+import { apiFetch } from './pos/api';
 
 import Sidebar from './kds/components/Sidebar';
 import Header from './kds/components/Header';
@@ -21,10 +22,10 @@ import NewOrderOverlay from './kds/components/NewOrderOverlay';
 import type { Tab, Order, Ingredient, StationSettings, LogEvent, OrderItem, OrderStatus } from './kds/types';
 import { playNewOrderAlert, playReadyAlert, playEmergencyAlert, playUrgentAlert, playTimerTick } from './kds/utils/audio';
 
-const INITIAL_SETTINGS: StationSettings = {
+const DEFAULT_SETTINGS: StationSettings = {
   stationName: 'Chef Station #1',
-  specialtyName: 'Main Grill & Fryer',
-  chefAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBK3tYdWIHrzS35gXN_e8OLTGDFtifxhEFCdElswQsgA3zZcvfGAOI5w3O0f_7BFo6y2bJQDhHlU2rWyvDeAcavaiwRoee-s8XQYp1dqFualqFn76rC7mEaFMZ_I3_IcKMFBbtvGNoXiFlNwf0XM3_NztGSmdFyjyp8AC7gFwMoQsOAsF5-5_35OLAeWTDZle1FF65Ham_uNnxWrZUQNsAPEqP4pTwt9puEmyA1DJsGvHb3U6Qv7vTQwBfkOGeBsLk2HfBZfuz7wzg',
+  specialtyName: 'Main Kitchen',
+  chefAvatar: '',
   silentAlert: false,
   autoSimulate: false,
   simulateIntervalSeconds: 45,
@@ -32,47 +33,14 @@ const INITIAL_SETTINGS: StationSettings = {
   volume: 35,
   standardBurgerPrepSeconds: 600,
   standardSidesPrepSeconds: 300,
+  selectedStations: ['Grill', 'Fryer', 'Salad', 'Drinks'],
 };
 
-const INITIAL_INGREDIENTS: Ingredient[] = [
-  { 
-    id: 'buns', name: 'Brioche Buns', category: 'Bakery', currentStock: 75, maxStock: 100, unit: 'pcs', warningThreshold: 20,
-    deductPerItem: { 'Zinger Deluxe Burger': 1, 'Signature Wagyu Burger': 1 }
-  },
-  { 
-    id: 'wagyu', name: 'Wagyu Beef Patties', category: 'Meat', currentStock: 48, maxStock: 60, unit: 'pcs', warningThreshold: 15,
-    deductPerItem: { 'Signature Wagyu Burger': 1 }
-  },
-  { 
-    id: 'chicken', name: 'Crispy Fillet Patties', category: 'Meat', currentStock: 35, maxStock: 50, unit: 'pcs', warningThreshold: 12,
-    deductPerItem: { 'Zinger Deluxe Burger': 1 }
-  },
-  { 
-    id: 'cheese', name: 'Cheddar Slices', category: 'Dairy', currentStock: 90, maxStock: 120, unit: 'pcs', warningThreshold: 30,
-    deductPerItem: { 'Zinger Deluxe Burger': 1, 'Signature Wagyu Burger': 1 }
-  },
-  { 
-    id: 'mayo', name: 'Gourmet Mayonnaise', category: 'Condiments', currentStock: 680, maxStock: 1000, unit: 'ml', warningThreshold: 250,
-    deductPerItem: { 'Zinger Deluxe Burger': 25, 'Signature Wagyu Burger': 10 }
-  },
-  { 
-    id: 'potatoes', name: 'Premium Potatoes', category: 'Produce', currentStock: 45, maxStock: 80, unit: 'kg', warningThreshold: 20,
-    deductPerItem: { 'Truffle Fries': 1 }
-  },
-  { 
-    id: 'truffle', name: 'Truffle Fragrance Oil', category: 'Condiments', currentStock: 180, maxStock: 300, unit: 'ml', warningThreshold: 80,
-    deductPerItem: { 'Truffle Fries': 15 }
-  },
-  { 
-    id: 'salmon', name: 'Atlantic Salmon Fillets', category: 'Fish', currentStock: 14, maxStock: 25, unit: 'pcs', warningThreshold: 6,
-    deductPerItem: { 'Grilled Salmon': 1 }
-  }
-];
-
-export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) {
+export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?: any, onLogout?: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('kitchen');
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isEmergencyStop, setIsEmergencyStop] = useState<boolean>(false);
-  const [settings, setSettings] = useState<StationSettings>(INITIAL_SETTINGS);
+  const [settings, setSettings] = useState<StationSettings>(DEFAULT_SETTINGS);
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
   const [showPinModal, setShowPinModal] = useState<boolean>(false);
@@ -81,29 +49,26 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
   const [pinError, setPinError] = useState('');
   const [isUnlocking, setIsUnlocking] = useState(false);
 
-  const handleAdminUnlock = async (e: React.FormEvent) => {
+  const handleChefLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUnlocking(true);
     setPinError('');
     try {
-      const res = await fetch(`${BACKEND_URL}/auth/login`, {
+      const res = await apiFetch(`/kitchen/chef-auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: pinPhone, pin: pinCode })
+        body: JSON.stringify({ pin: pinCode, device_name: 'KDS Terminal' })
       });
       const data = await res.json();
-      if (res.ok && data.user) {
-        const role = data.user.role || '';
-        if (['Manager', 'Admin', 'Super Admin', 'Branch Manager', 'Business Owner'].includes(role)) {
-          setIsAdminUnlocked(true);
-          setShowPinModal(false);
-          setPinPhone('');
-          setPinCode('');
-        } else {
-          setPinError('Insufficient permissions. Admin required.');
-        }
+      if (res.ok && data.access_token) {
+        // Store chef session token
+        localStorage.setItem('chef_token', data.access_token);
+        localStorage.setItem('chef_session_id', data.session_id.toString());
+        setIsAdminUnlocked(true);
+        setShowPinModal(false);
+        setPinCode('');
       } else {
-        setPinError(data.message || 'Invalid Phone or PIN');
+        setPinError(data.message || 'Invalid Chef PIN');
       }
     } catch (err) {
       setPinError('Network error connecting to auth server.');
@@ -111,16 +76,74 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
       setIsUnlocking(false);
     }
   };
+
+  const handleChefLogout = async () => {
+    try {
+      const sessionId = localStorage.getItem('chef_session_id');
+      if (sessionId) {
+        await apiFetch(`/kitchen/chef-auth/sessions/${sessionId}/logout`, { method: 'POST', auth: true });
+      }
+    } catch (e) {}
+    localStorage.removeItem('chef_token');
+    localStorage.removeItem('chef_session_id');
+    setIsAdminUnlocked(false);
+  };
   const [logs, setLogs] = useState<LogEvent[]>([]);
 
-  const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
-  const ingredients = inventoryItems.length > 0 ? inventoryItems : INITIAL_INGREDIENTS;
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [dashboardMetrics, setDashboardMetrics] = useState<any>(null);
+  const [kitchenStations, setKitchenStations] = useState<any[]>([]);
+  const [unavailableRecipes, setUnavailableRecipes] = useState<any[]>([]);
+
+  const syncInventory = async () => {
+    try {
+      const storeId = currentUser?.store_id || 1;
+      const res = await apiFetch(`/inventory/items/${storeId}`, { auth: true });
+      if (res.ok) {
+        const data = await res.json();
+        const locksRes = await apiFetch(`/kitchen/inventory-locks?store_id=${storeId}`, { auth: true });
+        const locksData = locksRes.ok ? await locksRes.json() : [];
+        const locksMap = new Map();
+        locksData.forEach((l: any) => locksMap.set(l.inventory_id.toString(), l.id.toString()));
+
+        const mapped: Ingredient[] = data.map((item: any) => ({
+          id: item.id.toString(),
+          name: item.name,
+          category: item.category?.name || 'General',
+          currentStock: item.quantity,
+          maxStock: item.quantity * 2 || 100,
+          unit: item.unit,
+          warningThreshold: 10,
+          deductPerItem: {},
+          isLocked: locksMap.has(item.id.toString()),
+          lockId: locksMap.get(item.id.toString())
+        }));
+        setIngredients(mapped);
+      }
+      
+      const unavailRes = await apiFetch(`/kitchen/availability/unavailable?store_id=${storeId}`, { auth: true });
+      if (unavailRes.ok) {
+        setUnavailableRecipes(await unavailRes.json());
+      }
+    } catch (e) {
+      console.log('Error fetching inventory', e);
+      setToast({ id: Math.random().toString(), title: 'Sync Error', subtitle: 'Could not fetch inventory from backend.' });
+      setTimeout(() => setToast(null), 4000);
+    }
+  };
 
   useEffect(() => {
-    if (inventoryItems.length === 0) {
-      db.inventory.bulkAdd(INITIAL_INGREDIENTS).catch(() => {});
-    }
-  }, [inventoryItems.length]);
+    const init = async () => {
+      setIsLoading(true);
+      await Promise.all([syncKOTs(), syncInventory()]);
+      setIsLoading(false);
+    };
+    init();
+    
+    // Resume session if valid token exists
+    const token = localStorage.getItem('chef_token');
+    if (token) setIsAdminUnlocked(true);
+  }, []);
 
   // We map Dexie OfflineKOTs to KDS Orders
   const kots = useLiveQuery(() => db.kots.toArray()) || [];
@@ -128,34 +151,47 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
   // Sync KOTs from Backend on Load and on Socket Event
   const syncKOTs = async () => {
     try {
-      const res = await fetch(BACKEND_URL + '/kots');
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        // Clear local KOTs and replace with server KOTs
-        await db.kots.clear();
-        const mapped = data.map(k => ({
-          id: k.id,
-          orderId: k.order_id,
-          type: k.order?.orderType || 'Walk-in',
-          customer: k.order?.customer?.name || '',
-          customerPhone: k.order?.customer?.phone || '',
-          items: k.items ? JSON.stringify(k.items) : '[]',
-          notes: k.notes,
-          timePlaced: new Date(k.createdAt).toLocaleTimeString(),
-          prepTimeMinutes: k.prep_time_minutes || 10,
-          status: k.status,
-          startTime: k.start_time ? new Date(k.start_time).toISOString() : '',
-          totalAmount: k.order?.total_amount || 0,
-          paymentMethod: k.order?.payment_method || 'CASH',
-          printCount: 0
-        }));
-        await db.kots.bulkAdd(mapped);
+      const storeId = currentUser?.store_id || 1;
+      const res = await apiFetch(`/kots?store_id=${storeId}`, { auth: true });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          await db.kots.clear();
+          const mapped = data.map(k => ({
+            id: k.id,
+            orderId: k.order_id,
+            type: k.order?.orderType || 'Walk-in',
+            customer: k.order?.customer?.name || '',
+            customerPhone: k.order?.customer?.phone || '',
+            items: k.items ? JSON.stringify(k.items) : '[]',
+            notes: k.notes,
+            timePlaced: new Date(k.createdAt).toLocaleTimeString(),
+            prepTimeMinutes: k.prep_time_minutes || 10,
+            status: k.status,
+            startTime: k.start_time ? new Date(k.start_time).toISOString() : '',
+            totalAmount: k.order?.total_amount || 0,
+            paymentMethod: k.order?.payment_method || 'CASH',
+            printCount: 0
+          }));
+          await db.kots.bulkAdd(mapped);
+        }
       }
-    } catch (e) { console.log('Offline: Using local KOTs', e); }
+      
+      // Also fetch dashboard analytics and stations
+      const dbRes = await apiFetch(`/kitchen/dashboard?store_id=${storeId}`, { auth: true });
+      if (dbRes.ok) setDashboardMetrics(await dbRes.json());
+      
+      const stRes = await apiFetch(`/kitchen/stations?store_id=${storeId}`, { auth: true });
+      if (stRes.ok) setKitchenStations(await stRes.json());
+      
+    } catch (e) { 
+      console.log('Offline: Using local KOTs', e); 
+      setToast({ id: Math.random().toString(), title: 'Offline Mode', subtitle: 'Showing locally cached KOTs.' });
+      setTimeout(() => setToast(null), 4000);
+    }
   };
 
   useEffect(() => {
-    syncKOTs();
     socket.on('kds_update', () => {
       syncKOTs();
     });
@@ -344,10 +380,11 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
     const kotToUpdate = (kots || []).find(k => (k.id && k.id.toString() === orderId) || k.orderId.toString() === orderId);
     if (kotToUpdate && kotToUpdate.id) {
       try {
-        const res = await fetch(`${BACKEND_URL}/kots/${kotToUpdate.id}/status`, {
+        const res = await apiFetch(`/kots/${kotToUpdate.id}/status`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'PREPARING' })
+          body: JSON.stringify({ status: 'PREPARING' }),
+          auth: true
         });
         if (!res.ok) throw new Error('Backend update failed');
       } catch (e) {
@@ -357,16 +394,6 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
           prepTimeMinutes: prepMinutes,
           startTime: new Date().toISOString()
         });
-      }
-
-      // Sync to website tracking if this is a bridge order
-      if (kotToUpdate.bridgeOrderId) {
-        const readyAt = new Date(Date.now() + prepMinutes * 60000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        fetch(`${BACKEND_URL}/online-orders/${kotToUpdate.bridgeOrderId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kdsStatus: 'PREPARING', prepTimeMinutes: prepMinutes, estimatedReadyAt: readyAt }),
-        }).catch(() => {});
       }
     }
 
@@ -397,23 +424,15 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
     const kotToUpdate = (kots || []).find(k => (k.id && k.id.toString() === orderId) || k.orderId.toString() === orderId);
     if (kotToUpdate && kotToUpdate.id) {
       try {
-        const res = await fetch(`${BACKEND_URL}/kots/${kotToUpdate.id}/status`, {
+        const res = await apiFetch(`/kots/${kotToUpdate.id}/status`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'READY' })
+          body: JSON.stringify({ status: 'READY' }),
+          auth: true
         });
         if (!res.ok) throw new Error('Backend update failed');
       } catch (e) {
-        await db.kots.update(kotToUpdate.id, { status: 'READY', readyAt: Date.now() });
-      }
-
-      // Sync to website tracking if this is a bridge order
-      if (kotToUpdate.bridgeOrderId) {
-        fetch(`${BACKEND_URL}/online-orders/${kotToUpdate.bridgeOrderId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kdsStatus: 'READY' }),
-        }).catch(() => {});
+        await db.kots.update(kotToUpdate.id, { status: 'READY' });
       }
     }
 
@@ -441,34 +460,113 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
       }
       return ing;
     });
-    await db.inventory.bulkPut(nextIngredients);
+    setIngredients(nextIngredients);
   };
 
   const handleRestockAll = async () => {
     const restocked = ingredients.map(ing => ({ ...ing, currentStock: ing.maxStock }));
-    await db.inventory.bulkPut(restocked);
+    setIngredients(restocked);
     addLog('inventory_restock', 'System Restock Activated. All raw ingredient matrices filled to maximum.');
     if (settings.alarmSoundEnabled) playReadyAlert(settings.volume);
   };
 
   const handleUpdateInventoryUnit = async (ingredientId: string, amount: number) => {
-    const updated = ingredients.map(ing => {
-      if (ing.id === ingredientId) {
-        return { ...ing, currentStock: Math.min(ing.maxStock, Math.max(0, ing.currentStock + amount)) };
+    try {
+      const operation = amount > 0 ? 'ADD' : 'SUBTRACT';
+      const absAmount = Math.abs(amount);
+      const res = await apiFetch(`/inventory/adjust`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inventory_id: Number(ingredientId),
+          operation,
+          amount: absAmount,
+          reason: 'Manual adjustment from KDS'
+        }),
+        auth: true
+      });
+      if (!res.ok) throw new Error('Adjust failed');
+      
+      // Update UI optimistically
+      const updated = ingredients.map(ing => {
+        if (ing.id === ingredientId) {
+          return { ...ing, currentStock: Math.min(ing.maxStock, Math.max(0, ing.currentStock + amount)) };
+        }
+        return ing;
+      });
+      setIngredients(updated);
+    } catch (e) {
+      setToast({ id: Math.random().toString(), title: 'Adjustment Failed', subtitle: 'Could not sync inventory change to backend.' });
+      setTimeout(() => setToast(null), 4000);
+    }
+  };
+
+  const handleInventoryUnlock = async (lockId: string, managerPin: string) => {
+    try {
+      const res = await apiFetch(`/kitchen/inventory-locks/${lockId}/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manager_pin: managerPin, approved_by: currentUser?.id || 1 }),
+        auth: true
+      });
+      if (res.ok) {
+        setToast({ id: Math.random().toString(), title: 'Unlocked', subtitle: 'Item unlocked successfully.' });
+        syncInventory();
+        setTimeout(() => setToast(null), 4000);
+      } else {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to unlock');
       }
-      return ing;
-    });
-    await db.inventory.bulkPut(updated);
+    } catch (e: any) {
+      setToast({ id: Math.random().toString(), title: 'Unlock Failed', subtitle: e.message });
+      setTimeout(() => setToast(null), 4000);
+    }
+  };
+
+  const handleStockRequest = async (ingredientId: string, qty: number) => {
+    const ingredient = ingredients.find(i => i.id === ingredientId);
+    if (!ingredient) return;
+    
+    try {
+      const storeId = currentUser?.store_id || 1;
+      const res = await apiFetch(`/kitchen/stock-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          store_id: storeId,
+          inventory_id: Number(ingredientId),
+          requested_qty: qty,
+          unit: ingredient.unit,
+          reason: 'Low stock during active service'
+        }),
+        auth: true
+      });
+      
+      if (!res.ok) throw new Error('Failed to send stock request');
+
+      setToast({
+        id: Math.random().toString(),
+        title: 'Stock Request Sent',
+        subtitle: `Requested ${qty} ${ingredient.unit} of ${ingredient.name} from warehouse.`
+      });
+      setTimeout(() => setToast(null), 4000);
+      addLog('inventory_restock', `Stock request sent for ${qty} ${ingredient.unit} of ${ingredient.name}.`);
+    } catch (e) {
+      setToast({
+        id: Math.random().toString(),
+        title: 'Request Failed',
+        subtitle: `Could not send request for ${ingredient.name}.`
+      });
+      setTimeout(() => setToast(null), 4000);
+    }
   };
 
   const handleResetData = async () => {
     const confirmation = await customConfirm("Reset KDS to factory defaults? This clears history logs and all orders in Database.");
     if (confirmation) {
       await db.kots.clear();
-      await db.inventory.clear();
-      await db.inventory.bulkAdd(INITIAL_INGREDIENTS);
       setLogs([]);
-      setSettings(INITIAL_SETTINGS);
+      setSettings(DEFAULT_SETTINGS);
       localStorage.clear();
       seenNewOrders.current.clear();
       addLog('inventory_restock', 'Kitchen terminal diagnostics cleared and reset to factory defaults.');
@@ -505,7 +603,7 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
         onLogout={onLogout}
         isAdminUnlocked={isAdminUnlocked}
         onAdminLogin={() => setShowPinModal(true)}
-        onAdminLogout={() => setIsAdminUnlocked(false)}
+        onAdminLogout={handleChefLogout}
       />
 
       <main className="flex-1 flex flex-col min-w-0 bg-[#0c1322] relative overflow-hidden">
@@ -514,56 +612,72 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
           pendingCount={pendingOrdersCount}
           readyCount={readyOrdersCount}
           onRefresh={handleResetData}
-          onSimulateNewOrder={triggerSimulatedNewOrder}
+          onLogout={onLogout}
+          branchName={currentUser?.store_id ? `Branch ${currentUser.store_id}` : undefined}
           isEmergencyStop={isEmergencyStop}
         />
 
-        <div className="flex-1 flex min-h-0 relative">
-          
-          {activeTab === 'kitchen' && (
-            <KitchenView 
-              orders={mappedOrders} 
-              onMarkReady={handleMarkReady}
-              onSimulateOrder={triggerSimulatedNewOrder}
-              onAcceptOrderClick={setIncomingOverlayOrder}
-              isEmergencyStop={isEmergencyStop}
-            />
-          )}
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-4 border-brand-yellow border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-brand-yellow font-display font-bold animate-pulse">Syncing with Kitchen...</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex min-h-0 relative">
+            {activeTab === 'kitchen' && (
+              <KitchenView 
+                orders={mappedOrders} 
+                onMarkReady={handleMarkReady}
+                onSimulateOrder={triggerSimulatedNewOrder}
+                onAcceptOrderClick={setIncomingOverlayOrder}
+                isEmergencyStop={isEmergencyStop}
+                settings={settings}
+              />
+            )}
 
-          {activeTab === 'dashboard' && (
-            <DashboardView 
-              orders={mappedOrders}
-              ingredients={ingredients}
-              logs={logs}
-            />
-          )}
+            {activeTab === 'dashboard' && (
+              <DashboardView 
+                orders={mappedOrders}
+                ingredients={ingredients}
+                logs={logs}
+                metrics={dashboardMetrics}
+              />
+            )}
 
-          {activeTab === 'orders' && (
-            <OrdersView 
-              orders={mappedOrders}
-              onCreateManualOrder={handleCreateManualOrder}
-              isEmergencyStop={isEmergencyStop}
-            />
-          )}
+            {activeTab === 'orders' && (
+              <OrdersView 
+                orders={mappedOrders}
+                onCreateManualOrder={handleCreateManualOrder}
+                isEmergencyStop={isEmergencyStop}
+              />
+            )}
 
-          {activeTab === 'inventory' && (
-            <InventoryView 
-              ingredients={ingredients}
-              onUpdateInventory={handleUpdateInventoryUnit}
-              onRestockAll={handleRestockAll}
-              readOnly={!isAdminUnlocked}
-            />
-          )}
+            {activeTab === 'inventory' && (
+              <InventoryView 
+                ingredients={ingredients}
+                onUpdateInventory={handleUpdateInventoryUnit}
+                onRestockAll={handleRestockAll}
+                readOnly={!isAdminUnlocked}
+                onRequestUnlock={() => setShowPinModal(true)}
+                onStockRequest={handleStockRequest}
+                onInventoryUnlock={handleInventoryUnlock}
+                unavailableRecipes={unavailableRecipes}
+              />
+            )}
 
-          {activeTab === 'settings' && (
-            <SettingsView 
-              settings={settings}
-              updateSettings={handleUpdateSettings}
-              readOnly={!isAdminUnlocked}
-            />
-          )}
-
-        </div>
+            {activeTab === 'settings' && (
+              <SettingsView 
+                settings={settings}
+                updateSettings={handleUpdateSettings}
+                readOnly={!isAdminUnlocked}
+                onRequestUnlock={() => setShowPinModal(true)}
+                stations={kitchenStations}
+              />
+            )}
+          </div>
+        )}
 
         <AnimatePresence>
           {incomingOverlayOrder && !isEmergencyStop && activeTab === 'kitchen' && (
@@ -643,21 +757,10 @@ export default function KitchenDisplay({ onLogout }: { onLogout?: () => void }) 
                 </button>
                 <div className="text-center mb-6">
                   <ShieldAlert className="w-12 h-12 text-brand-yellow mx-auto mb-3" />
-                  <h3 className="text-xl font-display font-bold text-white">Admin Access</h3>
-                  <p className="text-xs text-slate-400 mt-1">Enter your manager phone and PIN</p>
+                  <h3 className="text-xl font-display font-bold text-white">Chef Login</h3>
+                  <p className="text-xs text-slate-400 mt-1">Enter your Chef PIN to unlock station</p>
                 </div>
-                <form onSubmit={handleAdminUnlock} className="space-y-4">
-                  <div>
-                    <input 
-                      type="text" 
-                      placeholder="Phone Number (e.g. 0300...)" 
-                      value={pinPhone}
-                      onChange={e => setPinPhone(e.target.value)}
-                      className="w-full bg-[#0c1322] border border-[#2e3545] text-white rounded-xl px-4 py-3 focus:outline-none focus:border-brand-yellow transition"
-                      required
-                      autoFocus
-                    />
-                  </div>
+                <form onSubmit={handleChefLogin} className="space-y-4">
                   <div>
                     <input 
                       type="password" 

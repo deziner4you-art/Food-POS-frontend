@@ -49,7 +49,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       
       localStorage.setItem('d4u_rider_store', storeId.toString());
       localStorage.setItem('d4u_rider_name', data.user.name);
-      localStorage.setItem('d4u_rider_store_name', data.user.store?.name || 'Deziner4You Branch');
+      localStorage.setItem('d4u_rider_store_name', data.user.store?.name || '');
       
       onLoginSuccess(data.user.id.toString(), storeId, data.user.name);
     } catch (err: any) {

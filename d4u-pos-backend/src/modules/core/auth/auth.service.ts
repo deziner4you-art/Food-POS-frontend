@@ -137,6 +137,23 @@ export class AuthService {
       where: { user_id: user.id, status: 'ACTIVE', is_primary: true },
     });
 
+    // Sprint 28.9: the response never included the ACTIVE workspace's branch
+    // name — only the raw brand_id/store_id numbers. Every consumer that
+    // wants to display "which branch am I in" (Rider App included) had
+    // nothing to read, so it either showed blank or fell back to a
+    // hardcoded placeholder. Resolve by the same active_store_id/
+    // active_brand_id the token itself carries (not user.store/user.brand,
+    // which reflect the user's raw columns and can differ once a
+    // multi-assignment user switches workspace).
+    const [activeStore, activeBrand] = await Promise.all([
+      payload.active_store_id
+        ? this.prisma.store.findUnique({ where: { id: payload.active_store_id }, select: { id: true, name: true } })
+        : null,
+      payload.active_brand_id
+        ? this.prisma.brand.findUnique({ where: { id: payload.active_brand_id }, select: { id: true, name: true } })
+        : null,
+    ]);
+
     return {
       ...tokens,
       device_id: resolvedDeviceId,
@@ -150,6 +167,8 @@ export class AuthService {
         role_id: user.role_id,
         brand_id: payload.active_brand_id,
         store_id: payload.active_store_id,
+        store: activeStore,
+        brand: activeBrand,
         module_permissions: user.module_permissions,
       },
     };

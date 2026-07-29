@@ -9,6 +9,10 @@ export class UpdateCategoryDto {
   @IsOptional()
   menu_id?: number;
 
+  @IsInt()
+  @IsOptional()
+  category_group_id?: number;
+
   @IsArray()
   @IsInt({ each: true })
   @IsOptional()

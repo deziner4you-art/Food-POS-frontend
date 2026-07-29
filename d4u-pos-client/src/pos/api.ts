@@ -63,7 +63,7 @@ export async function apiFetch(
 }
 
 export async function fetchCatalog(storeId: number): Promise<CatalogSyncResponse> {
-  const response = await apiFetch(`/catalog/sync/${storeId}`);
+  const response = await apiFetch(`/catalog/category-groups/hierarchy/store/${storeId}?channel=pos`);
   return readJson<CatalogSyncResponse>(response);
 }
 

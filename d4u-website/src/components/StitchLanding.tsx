@@ -57,12 +57,20 @@ export default function StitchLanding({
     is_active: true,
     image_url: fi.image ? (fi.image.startsWith('http') ? fi.image : `${BACKEND_URL}${fi.image}`) : null,
     category: fi.category,
+    categoryGroup: fi.categoryGroup,
     description: fi.description,
     variants: fi.variants,
     categories: fi.categories
   }));
 
-  const CATEGORIES: string[] = Array.from(new Set(PRODUCTS.map((p: any) => p.category as string))).filter(c => !['extra toppings', 'add-ons', 'addons'].includes((c || '').toLowerCase()));
+  const CATEGORY_GROUPS = Array.from(new Set(PRODUCTS.map((p: any) => p.categoryGroup as string).filter(Boolean)));
+  const [activeCategoryGroup, setActiveCategoryGroup] = useState<string>('');
+
+  const CATEGORIES: string[] = Array.from(new Set(
+    PRODUCTS
+      .filter((p: any) => CATEGORY_GROUPS.length === 0 || p.categoryGroup === activeCategoryGroup || !activeCategoryGroup)
+      .map((p: any) => p.category as string)
+  )).filter(c => !['extra toppings', 'add-ons', 'addons'].includes((c || '').toLowerCase()));
 
   // Navigation & Location states — pre-set to the chosen store
   const [selectedLocation, setSelectedLocation] = useState<{ city: string; branch: string } | null>(
@@ -84,7 +92,15 @@ export default function StitchLanding({
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   useEffect(() => {
+    if (CATEGORY_GROUPS.length > 0 && !activeCategoryGroup) {
+      setActiveCategoryGroup(CATEGORY_GROUPS[0]);
+    }
+  }, [CATEGORY_GROUPS, activeCategoryGroup]);
+
+  useEffect(() => {
     if (CATEGORIES.length > 0 && !activeCategory) {
+      setActiveCategory(CATEGORIES[0]);
+    } else if (CATEGORIES.length > 0 && !CATEGORIES.includes(activeCategory)) {
       setActiveCategory(CATEGORIES[0]);
     }
   }, [CATEGORIES, activeCategory]);
@@ -813,6 +829,18 @@ export default function StitchLanding({
               <aside className="lg:w-64 lg:flex-shrink-0 lg:sticky lg:top-24 lg:self-start">
                 <div className="bg-brand-light rounded-2xl lg:rounded-2xl p-2 border border-slate-800/80 flex lg:block items-center justify-between">
                   <div className="flex-1 flex lg:flex-col gap-2 lg:gap-1 items-stretch px-2 lg:px-1 py-1 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:max-h-[75vh] custom-scrollbar">
+                    {CATEGORY_GROUPS.length > 0 && CATEGORY_GROUPS.map(group => (
+                      <button
+                        key={group}
+                        onClick={() => { setActiveCategoryGroup(group); setActiveCategory(''); }}
+                        className={`text-left px-4 py-2 lg:py-3 rounded-xl transition font-bold text-sm lg:text-[15px] whitespace-nowrap lg:whitespace-normal
+                          ${activeCategoryGroup === group ? 'bg-[#ffe1a7] text-black shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+                      >
+                        {group}
+                      </button>
+                    ))}
+                    {CATEGORY_GROUPS.length > 0 && <div className="hidden lg:block w-full h-[1px] bg-slate-800 my-2"></div>}
+                    
                     {['All Items', 'Discounted', ...(CATEGORIES as string[])].map(category => (
                       <button
                         key={category}

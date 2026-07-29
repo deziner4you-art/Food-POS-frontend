@@ -61,14 +61,25 @@ export class OnlineOrdersController {
 
   @Public()
   @Post('auth/register')
-  async webRegister(@Body() body: { phone: string; name: string }) {
+  async webRegister(@Body() body: { phone: string; name: string; brand_id?: number; store_id?: number }) {
     let customer = await this.service['prisma'].customer.findUnique({
       where: { phone: body.phone },
     });
     if (!customer) {
+      // Sprint 28.9: no website surface sends brand/store context to this
+      // endpoint today, so it can't reliably scope new customers — hardcoded
+      // brand_id: 1 is a known gap here (see multi-tenant audit report),
+      // preserved as-is rather than half-fixed without a frontend change to
+      // actually supply real context. Accepts either field if a future
+      // caller does provide it, resolving store_id -> its brand.
+      let brandId = body.brand_id;
+      if (!brandId && body.store_id) {
+        const store = await this.service['prisma'].store.findUnique({ where: { id: body.store_id }, select: { brand_id: true } });
+        brandId = store?.brand_id;
+      }
       customer = await this.service['prisma'].customer.create({
         data: {
-          brand_id: 1,
+          brand_id: brandId ?? 1,
           phone: body.phone,
           name: body.name,
         },

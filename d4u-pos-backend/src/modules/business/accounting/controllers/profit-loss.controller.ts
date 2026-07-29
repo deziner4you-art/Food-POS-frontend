@@ -2,6 +2,7 @@ import { Controller, Get, Query, Req, ParseIntPipe } from '@nestjs/common';
 import { RequirePermissions } from '../../../../common/decorators';
 import { ProfitLossService } from '../services/profit-loss.service';
 import { ProfitLossFilter } from '../interfaces/profit-loss-filter.interface';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/profit-loss')
 export class ProfitLossController {
@@ -17,7 +18,7 @@ export class ProfitLossController {
       end_date: new Date(query.end_date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1; 
+    const userId = getSessionUserId(req.user); 
     return this.plService.generateProfitLoss(filter, userId);
   }
 
@@ -30,7 +31,7 @@ export class ProfitLossController {
       end_date: new Date(query.end_date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     const result = await this.plService.generateProfitLoss(filter, userId);
     
     let csv = `Profit & Loss Statement - ${result.statement_name}\n`;

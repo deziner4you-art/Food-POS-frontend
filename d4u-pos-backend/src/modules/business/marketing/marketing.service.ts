@@ -754,9 +754,12 @@ export class MarketingService {
 
   // 5. Create Scheduled Discount
   async createScheduledDiscount(body: any) {
+    if (!body.brand_id) {
+      throw new BadRequestException('brand_id is required to create a scheduled discount.');
+    }
     return this.prisma.scheduledDiscount.create({
       data: {
-        brand_id: body.brand_id || 1,
+        brand_id: body.brand_id,
         title: body.title,
         discount_pct: Number(body.discount_pct),
         image_url: body.image_url || null,

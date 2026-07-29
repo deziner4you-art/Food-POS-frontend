@@ -3,6 +3,7 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { GeneralLedgerReportService } from '../services/general-ledger-report.service';
 import { GeneralLedgerDrilldownService } from '../services/general-ledger-drilldown.service';
 import { GeneralLedgerFilter } from '../interfaces/general-ledger-filter.interface';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/general-ledger-report')
 export class GeneralLedgerReportController {
@@ -23,7 +24,7 @@ export class GeneralLedgerReportController {
       account_id: query.account_id ? Number(query.account_id) : undefined,
       journal_number: query.journal_number,
     };
-    const userId = req.user?.id || 1; 
+    const userId = getSessionUserId(req.user); 
     return this.glReportService.generateReport(filter, userId);
   }
 
@@ -37,7 +38,7 @@ export class GeneralLedgerReportController {
       store_id: Number(query.store_id),
       account_id: query.account_id ? Number(query.account_id) : undefined,
     };
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     const result = await this.glReportService.generateReport(filter, userId);
     
     let csv = 'Date,Account Code,Account Name,Journal Number,Voucher Number,Ref Module,Ref Number,Description,Debit,Credit,Running Balance,Posted By\\n';
@@ -55,7 +56,7 @@ export class GeneralLedgerReportController {
     @Query('store_id', ParseIntPipe) storeId: number,
     @Req() req: any
   ) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.glDrilldownService.getDrilldown(glLineId, storeId, userId);
   }
 }

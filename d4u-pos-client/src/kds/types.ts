@@ -32,6 +32,8 @@ export interface Ingredient {
   unit: string;
   warningThreshold: number;
   deductPerItem: Record<string, number>;
+  isLocked?: boolean;
+  lockId?: string;
 }
 
 export interface LogEvent {
@@ -52,4 +54,5 @@ export interface StationSettings {
   volume: number;
   standardBurgerPrepSeconds: number;
   standardSidesPrepSeconds: number;
+  selectedStations?: string[];
 }

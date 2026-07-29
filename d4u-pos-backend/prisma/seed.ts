@@ -85,8 +85,14 @@ async function main() {
   }
 
   // 5. Create test products idempotently
-  const category = await prisma.category.findFirst({ where: { store_id: store.id, name: 'Burgers' } }) 
-    || await prisma.category.create({ data: { store_id: store.id, name: 'Burgers' } });
+  // Menu Builder (Sprint 28.7): Category now requires a menu + category group.
+  const menu = await prisma.menu.findFirst({ where: { brand_id: brand.id } })
+    || await prisma.menu.create({ data: { brand_id: brand.id, name: 'Main Menu', stores: { connect: [{ id: store.id }] } } });
+  const categoryGroup = await prisma.categoryGroup.findFirst({ where: { menu_id: menu.id, name: 'Default Group' } })
+    || await prisma.categoryGroup.create({ data: { menu_id: menu.id, name: 'Default Group' } });
+
+  const category = await prisma.category.findFirst({ where: { store_id: store.id, name: 'Burgers' } })
+    || await prisma.category.create({ data: { store_id: store.id, name: 'Burgers', menu_id: menu.id, category_group_id: categoryGroup.id } });
 
   const existingProduct = await prisma.product.findFirst({ where: { store_id: store.id, name: 'Zinger Burger' } });
   if (!existingProduct) {

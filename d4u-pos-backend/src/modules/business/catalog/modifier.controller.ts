@@ -13,8 +13,8 @@ export class ModifierController {
   // ==========================================
   @RequirePermissions('catalog.view')
   @Get('groups')
-  getGroups(@Query('store_id') store_id: string) {
-    return this.service.getModifierGroups(Number(store_id));
+  getGroups(@Query('store_id') store_id: string, @Query('sort_by') sort_by?: string, @Query('sort_dir') sort_dir?: string) {
+    return this.service.getModifierGroups(Number(store_id), sort_by, sort_dir);
   }
 
   @RequirePermissions('catalog.view')

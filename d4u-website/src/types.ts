@@ -9,6 +9,7 @@ export interface FoodItem {
   tag?: 'Bestseller' | 'New Arrival' | 'Limited Edition' | "CHEF'S SPECIAL" | 'VEGETARIAN' | 'BEST SELLER';
   preparationTime?: string;
   calories?: number;
+  categoryGroup?: string;
 }
 
 export interface CartItem {

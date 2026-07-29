@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { PricingService } from '../pos-orders/pricing.service';
@@ -12,7 +12,15 @@ export class OnlineOrdersService {
   ) {}
 
   async createOrder(body: any) {
-    const storeId = body.store_id ? Number(body.store_id) : 1;
+    // Sprint 28.9: no hardcoded branch — a missing store_id must fail loudly,
+    // not silently route the order (and any auto-created customer, loyalty
+    // points, etc.) to whichever store happens to be id #1.
+    if (!body.store_id) {
+      throw new BadRequestException('store_id is required to place an order.');
+    }
+    const storeId = Number(body.store_id);
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { brand_id: true } });
+    if (!store) throw new BadRequestException(`Store #${storeId} not found.`);
     let parsedItems = typeof body.items === 'string' ? JSON.parse(body.items) : body.items;
 
     const pricingResult = await this.pricing.calculatePricing({
@@ -71,10 +79,10 @@ export class OnlineOrdersService {
           );
         }
       } else {
-        // Auto-create customer
+        // Auto-create customer — scoped to the brand that actually placed this order, not a hardcoded default.
         await this.prisma.customer.create({
           data: {
-            brand_id: 1, // Default brand
+            brand_id: store.brand_id,
             phone: body.customerPhone,
             name: body.customer || 'Online Guest',
             address: body.customerAddress || '',

@@ -4,6 +4,7 @@ import { FinancialStatementMappingService } from '../services/financial-statemen
 import { FinancialStatementBuilderService } from '../services/financial-statement-builder.service';
 import { CreateStatementSectionDto } from '../interfaces/statement-section.interface';
 import { CreateStatementMappingDto } from '../interfaces/mapping.interface';
+import { getSessionStoreId, getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/financial-statements')
 export class FinancialStatementController {
@@ -15,21 +16,21 @@ export class FinancialStatementController {
   @RequirePermissions('finance.accounting.create')
   @Post()
   async createStatement(@Body() body: any, @Req() req: any) {
-    const storeId = body.store_id || 1;
+    const storeId = body.store_id ?? getSessionStoreId(req.user);
     return this.mappingService.createStatement(storeId, body.name, body.type, body.description);
   }
 
   @RequirePermissions('finance.accounting.create')
   @Post('sections')
-  async createSection(@Body() dto: any, @Body('store_id') storeId: number) {
-    return this.mappingService.createSection(storeId || 1, dto);
+  async createSection(@Body() dto: any, @Body('store_id') storeId: number, @Req() req: any) {
+    return this.mappingService.createSection(storeId ?? getSessionStoreId(req.user), dto);
   }
 
   @RequirePermissions('finance.accounting.create')
   @Post('mappings')
   async createMapping(@Body() dto: any, @Body('store_id') storeId: number, @Req() req: any) {
-    const userId = req.user?.id || 1;
-    return this.mappingService.mapAccount(storeId || 1, dto, userId);
+    const userId = getSessionUserId(req.user);
+    return this.mappingService.mapAccount(storeId ?? getSessionStoreId(req.user), dto, userId);
   }
 
   @RequirePermissions('finance.accounting.view')
@@ -42,7 +43,7 @@ export class FinancialStatementController {
     @Query('end_date') endDate: string,
     @Req() req: any
   ) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.builderService.buildStatement(storeId, id, new Date(startDate), new Date(endDate), fiscalYearId, userId);
   }
 }

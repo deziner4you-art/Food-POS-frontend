@@ -26,6 +26,8 @@ import {
   UpdateCategoryDto,
   CreateProductDto,
   UpdateProductDto,
+  BulkAssignCategoryGroupDto,
+  BulkAssignProductCategoryDto,
 } from './dto';
 
 const MENU_PRODUCTS_DIR = join(process.cwd(), 'uploads', 'menu-products');
@@ -72,8 +74,8 @@ export class CatalogController {
   // -------------------------------------------------------------
   @RequirePermissions('catalog.view')
   @Get('menus')
-  getMenus() {
-    return this.service.getMenus();
+  getMenus(@Query('sort_by') sort_by?: string, @Query('sort_dir') sort_dir?: string) {
+    return this.service.getMenus({ sort_by, sort_dir });
   }
 
   @RequirePermissions('catalog.create')
@@ -109,8 +111,28 @@ export class CatalogController {
   // -------------------------------------------------------------
   @RequirePermissions('catalog.view')
   @Get('categories')
-  getCategories(@Query('store_id') store_id: string) {
-    return this.service.getCategories(Number(store_id));
+  getCategories(
+    @Query('store_id') store_id?: string,
+    @Query('menu_id') menu_id?: string,
+    @Query('category_group_id') category_group_id?: string,
+    @Query('sort_by') sort_by?: string,
+    @Query('sort_dir') sort_dir?: string,
+  ) {
+    return this.service.getCategories({
+      store_id: store_id ? Number(store_id) : undefined,
+      menu_id: menu_id ? Number(menu_id) : undefined,
+      category_group_id: category_group_id ? Number(category_group_id) : undefined,
+      sort_by,
+      sort_dir,
+    });
+  }
+
+  // Sprint 28.8D — assign many Categories to one Category Group in one transaction.
+  @RequirePermissions('catalog.update')
+  @Post('categories/bulk-assign-group')
+  bulkAssignCategoryGroup(@Body() body: BulkAssignCategoryGroupDto) {
+    console.log(`[BULK ASSIGN] ${body.category_ids.length} categor${body.category_ids.length === 1 ? 'y' : 'ies'} -> group ${body.category_group_id ?? 'none'}`);
+    return this.service.bulkAssignCategoryGroup(body);
   }
 
   @RequirePermissions('catalog.create')
@@ -125,6 +147,7 @@ export class CatalogController {
       body.is_active,
       body.sort_order,
       body.image_url,
+      body.category_group_id,
     );
   }
 
@@ -147,8 +170,34 @@ export class CatalogController {
   // -------------------------------------------------------------
   @RequirePermissions('catalog.view')
   @Get('products')
-  getProducts(@Query('store_id') store_id: string) {
-    return this.service.getProducts(Number(store_id));
+  getProducts(
+    @Query('store_id') store_id?: string,
+    @Query('category_id') category_id?: string,
+    @Query('category_group_id') category_group_id?: string,
+    @Query('menu_id') menu_id?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('sort_by') sort_by?: string,
+    @Query('sort_dir') sort_dir?: string,
+  ) {
+    return this.service.getProducts({
+      store_id: store_id ? Number(store_id) : undefined,
+      category_id: category_id ? Number(category_id) : undefined,
+      category_group_id: category_group_id ? Number(category_group_id) : undefined,
+      menu_id: menu_id ? Number(menu_id) : undefined,
+      status,
+      search,
+      sort_by,
+      sort_dir,
+    });
+  }
+
+  // Sprint 28.8D — assign many Products to one Category (adds the category; doesn't replace a product's existing ones) in one transaction.
+  @RequirePermissions('catalog.update')
+  @Post('products/bulk-assign-category')
+  bulkAssignProductCategory(@Body() body: BulkAssignProductCategoryDto) {
+    console.log(`[BULK ASSIGN] ${body.product_ids.length} product(s) -> category ${body.category_id}`);
+    return this.service.bulkAssignProductCategory(body);
   }
 
   @RequirePermissions('catalog.create')
@@ -184,8 +233,8 @@ export class CatalogController {
   // -------------------------------------------------------------
   @RequirePermissions('catalog.view')
   @Get('products/export')
-  async exportProducts(@Res() res: Response) {
-    const csv = await this.service.exportProductsCsv();
+  async exportProducts(@Res() res: Response, @Query('store_id') store_id?: string) {
+    const csv = await this.service.exportProductsCsv(store_id ? Number(store_id) : undefined);
     res.set({
       'Content-Type': 'text/csv',
       'Content-Disposition': 'attachment; filename="menu-products.csv"',

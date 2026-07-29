@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
+import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
 
 @Injectable()
 export class KotsService {
@@ -73,6 +74,23 @@ export class KotsService {
       status,
       store_id: kot.store_id,
     });
+
+    // Sprint 28.9: this was the actual break in "POS -> Kitchen -> Ready ->
+    // Rider App" — the Rider App only listens for 'order_updated' (the same
+    // event/shape online-orders.service.ts already emits correctly), but
+    // this method only ever emitted 'kds_update' (different name, different
+    // shape), so a POS-originated delivery order becoming READY never
+    // reached any rider, regardless of dispatch/assignment. Only applies to
+    // delivery orders — dine-in/takeaway tickets have no rider to notify.
+    if (status === 'READY' && kot.order?.order_source?.toUpperCase() === 'DELIVERY') {
+      const fullOrder = await this.prisma.order.findUnique({
+        where: { id: kot.order_id },
+        include: { customer: true, items: { include: { product: true } } },
+      });
+      if (fullOrder) {
+        this.gateway.broadcast('order_updated', formatPosOrderForRider(fullOrder), `store_${kot.store_id}`);
+      }
+    }
 
     return { success: true, kot };
   }

@@ -156,11 +156,17 @@ export class PosOrdersService {
       }
 
       // KOT خودکار بنائیں
+      // product_id/kitchen_station_id are additive fields (KDS Backend
+      // Foundation) — older KOT rows simply won't have them, and every
+      // existing consumer of `items` only reads name/qty/price/specialInst,
+      // so this is purely additive, not a breaking shape change.
       const kotItems = order.items.map((i) => ({
         name: i.product.name,
         qty: i.quantity,
         price: i.price,
         specialInst: i.special_inst ?? '',
+        product_id: i.product_id,
+        kitchen_station_id: i.product.kitchen_station_id ?? null,
       }));
 
       await tx.kOT.create({

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Timer, Clock, ThumbsUp, AlertTriangle, Salad, Sparkles } from 'lucide-react';
-import type { Order } from '../types';
+import type { Order, StationSettings } from '../types';
 
 interface KitchenViewProps {
   orders: Order[];
@@ -9,6 +9,7 @@ interface KitchenViewProps {
   onAcceptOrderClick?: (order: Order) => void;
   isEmergencyStop: boolean;
   readOnly?: boolean;
+  settings?: StationSettings;
 }
 
 export default function KitchenView({
@@ -17,10 +18,17 @@ export default function KitchenView({
   onSimulateOrder,
   onAcceptOrderClick,
   isEmergencyStop,
-  readOnly = false
+  readOnly = false,
+  settings
 }: KitchenViewProps) {
   // Only show orders that are 'preparing' (or accepted 'pending' orders that we should render)
-  const activeOrders = orders.filter(o => o.status === 'preparing' || o.status === 'pending');
+  // Also filter based on selectedStations if they exist, assuming order.tableName maps to station roughly, or if not mapped, show all.
+  const activeOrders = orders.filter(o => {
+    const isStatusMatch = o.status === 'preparing' || o.status === 'pending';
+    const isStationMatch = !settings || !settings.selectedStations || settings.selectedStations.length === 0 || 
+                           settings.selectedStations.some(s => o.tableName.includes(s) || o.tableName === s) || true; // Currently forced true until backend maps properly.
+    return isStatusMatch && isStationMatch;
+  });
 
   const formatTime = (totalSeconds: number, elapsedSeconds: number) => {
     const remaining = totalSeconds - elapsedSeconds;

@@ -64,15 +64,41 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .emit('update_active_waiters', waitersList);
   }
 
+  /**
+   * Sprint 28.9: every frontend but d4u-rider calls this with an object
+   * ({store_id: X}); d4u-rider calls it with a bare string (`store_${id}`).
+   * The old handler assumed the object shape, so d4u-rider always joined
+   * room "store_undefined" — silently never receiving any store-scoped
+   * broadcast (order_updated, gps_update, etc.), which was the entire
+   * reason POS/online orders never reached the Rider App in realtime.
+   * Accept either shape rather than requiring every caller to agree.
+   */
   @SubscribeMessage('join_store')
   handleJoinStore(
-    @MessageBody() data: { store_id: number },
+    @MessageBody() data: { store_id?: number } | string | number,
     @ConnectedSocket() client: Socket,
   ) {
-    const roomName = `store_${data.store_id}`;
+    const roomName = this.resolveStoreRoom(data);
+    if (!roomName) {
+      console.warn(`[SOCKET] join_store received an unresolvable payload from ${client.id}:`, data);
+      return { event: 'joined', data: null };
+    }
     client.join(roomName);
     console.log(`[SOCKET] Client ${client.id} joined room: ${roomName}`);
     return { event: 'joined', data: roomName };
+  }
+
+  private resolveStoreRoom(data: { store_id?: number } | string | number): string | null {
+    if (typeof data === 'number' && !isNaN(data)) return `store_${data}`;
+    if (typeof data === 'string') {
+      if (/^store_\d+$/.test(data)) return data; // already a valid room name
+      if (/^\d+$/.test(data)) return `store_${data}`;
+      return null; // e.g. "store_undefined" — reject rather than join a garbage room
+    }
+    if (data && typeof data === 'object' && data.store_id != null && !isNaN(Number(data.store_id))) {
+      return `store_${data.store_id}`;
+    }
+    return null;
   }
 
   @SubscribeMessage('NEW_TERMINAL_ORDER')

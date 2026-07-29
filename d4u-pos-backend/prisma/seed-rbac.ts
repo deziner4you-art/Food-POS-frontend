@@ -9,6 +9,7 @@ export async function seedRbac(prisma: PrismaClient) {
     { module_name: 'workspace', description: 'Multi-Tenant Workspace Context' },
     { module_name: 'pos', description: 'POS & Operations' },
     { module_name: 'inventory', description: 'Inventory, Stock & Purchasing' },
+    { module_name: 'catalog', description: 'Menu Builder — Category Groups & Catalog Structure' },
     { module_name: 'kitchen', description: 'Kitchen Display & Prep' },
     { module_name: 'recipe', description: 'Production & Recipe Costing' },
     { module_name: 'crm', description: 'Customer Relationship Management' },
@@ -85,10 +86,29 @@ export async function seedRbac(prisma: PrismaClient) {
     { group: 'inventory', resource: 'po', action: 'create', description: 'Create Purchase Order' },
     { group: 'inventory', resource: 'po', action: 'approve', description: 'Approve Purchase Order' },
 
+    // Catalog — Menu Builder (Sprint 28.7: Menu Collection -> Category Group -> Category -> Product)
+    { group: 'catalog', resource: 'category_group', action: 'view', description: 'View category groups' },
+    { group: 'catalog', resource: 'category_group', action: 'create', description: 'Create category group' },
+    { group: 'catalog', resource: 'category_group', action: 'update', description: 'Update category group (incl. reorder, branch/channel assignment)' },
+    { group: 'catalog', resource: 'category_group', action: 'delete', description: 'Soft-delete category group' },
+    { group: 'catalog', resource: 'category_group', action: 'restore', description: 'Restore a soft-deleted category group' },
+
     // Kitchen
     { group: 'kitchen', resource: 'tickets', action: 'read', description: 'View KDS tickets' },
     { group: 'kitchen', resource: 'tickets', action: 'bump', description: 'Bump completed ticket' },
     { group: 'kitchen', resource: 'tickets', action: 'recall', description: 'Recall bumped ticket' },
+    { group: 'kitchen', resource: 'dashboard', action: 'read', description: 'View KDS dashboard & metrics' },
+    { group: 'kitchen', resource: 'stations', action: 'read', description: 'View kitchen stations' },
+    { group: 'kitchen', resource: 'stations', action: 'manage', description: 'Create/edit/assign kitchen stations' },
+    { group: 'kitchen', resource: 'sessions', action: 'create', description: 'Generate chef PIN / pair kitchen device' },
+    { group: 'kitchen', resource: 'sessions', action: 'read', description: 'View connected chef sessions' },
+    { group: 'kitchen', resource: 'sessions', action: 'manage', description: 'Disconnect/reconnect chef sessions' },
+    { group: 'kitchen', resource: 'stock_requests', action: 'create', description: 'Request stock from the kitchen' },
+    { group: 'kitchen', resource: 'stock_requests', action: 'read', description: 'View stock requests' },
+    { group: 'kitchen', resource: 'stock_requests', action: 'approve', description: 'Approve/fulfill/reject stock requests' },
+    { group: 'kitchen', resource: 'inventory_locks', action: 'create', description: 'Lock (86) an inventory item from the kitchen' },
+    { group: 'kitchen', resource: 'inventory_locks', action: 'read', description: 'View inventory locks' },
+    { group: 'kitchen', resource: 'inventory_locks', action: 'unlock', description: 'Manager PIN-unlock a locked inventory item' },
 
     // Recipe
     { group: 'recipe', resource: 'recipes', action: 'read', description: 'View recipes' },
@@ -237,7 +257,12 @@ export async function seedRbac(prisma: PrismaClient) {
       'pos.orders.read', 'pos.orders.create', 'pos.orders.update', 'pos.orders.void', 'pos.orders.refund', 'pos.orders.discount',
       'pos.cash_drawer.open', 'pos.cash_drawer.reconcile', 'pos.tables.manage', 'pos.reservations.manage',
       'inventory.products.read', 'inventory.stock.read', 'inventory.stock.adjust', 'inventory.transfers.create', 'inventory.transfers.approve',
+      'catalog.category_group.view',
       'kitchen.tickets.read', 'kitchen.tickets.bump', 'kitchen.tickets.recall',
+      'kitchen.dashboard.read', 'kitchen.stations.read', 'kitchen.stations.manage',
+      'kitchen.sessions.create', 'kitchen.sessions.read', 'kitchen.sessions.manage',
+      'kitchen.stock_requests.read', 'kitchen.stock_requests.approve',
+      'kitchen.inventory_locks.read', 'kitchen.inventory_locks.unlock',
       'crm.customers.read', 'crm.customers.create', 'crm.customers.update',
       'finance.expenses.create', 'hr.attendance.read', 'delivery.dispatch.assign'
     ],
@@ -246,17 +271,27 @@ export async function seedRbac(prisma: PrismaClient) {
       'crm.customers.read', 'crm.customers.create'
     ],
     'Chef': [
-      'kitchen.tickets.read', 'kitchen.tickets.bump', 'kitchen.tickets.recall', 'recipe.recipes.read'
+      'kitchen.tickets.read', 'kitchen.tickets.bump', 'kitchen.tickets.recall', 'recipe.recipes.read',
+      'kitchen.dashboard.read', 'kitchen.stations.read',
+      'kitchen.stock_requests.create', 'kitchen.stock_requests.read',
+      'kitchen.inventory_locks.create', 'kitchen.inventory_locks.read',
     ],
     'Kitchen Manager': [
       'kitchen.tickets.read', 'kitchen.tickets.bump', 'kitchen.tickets.recall',
       'recipe.recipes.read', 'recipe.recipes.manage', 'recipe.bom.manage', 'recipe.production.create', 'recipe.production.approve',
-      'inventory.stock.read'
+      'inventory.stock.read',
+      'kitchen.dashboard.read', 'kitchen.stations.read', 'kitchen.stations.manage',
+      'kitchen.sessions.create', 'kitchen.sessions.read', 'kitchen.sessions.manage',
+      'kitchen.stock_requests.create', 'kitchen.stock_requests.read', 'kitchen.stock_requests.approve',
+      'kitchen.inventory_locks.create', 'kitchen.inventory_locks.read', 'kitchen.inventory_locks.unlock',
     ],
     'Inventory Manager': [
       'inventory.categories.read', 'inventory.categories.manage', 'inventory.products.read', 'inventory.products.create', 'inventory.products.update',
       'inventory.stock.read', 'inventory.stock.adjust', 'inventory.transfers.create', 'inventory.transfers.approve',
-      'inventory.suppliers.manage', 'inventory.po.create', 'inventory.po.approve'
+      'inventory.suppliers.manage', 'inventory.po.create', 'inventory.po.approve',
+      'catalog.category_group.view', 'catalog.category_group.create', 'catalog.category_group.update',
+      'kitchen.stock_requests.read', 'kitchen.stock_requests.approve',
+      'kitchen.inventory_locks.read', 'kitchen.inventory_locks.unlock',
     ],
     'Finance Manager': [
       'finance.ledgers.read', 'finance.journals.create', 'finance.journals.post',

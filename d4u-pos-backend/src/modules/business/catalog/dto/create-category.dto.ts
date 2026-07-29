@@ -20,6 +20,12 @@ export class CreateCategoryDto {
   @IsOptional()
   menu_id?: number;
 
+  // Category Groups are optional — if omitted, the category is simply
+  // ungrouped (no group is ever auto-created to hold it).
+  @IsInt()
+  @IsOptional()
+  category_group_id?: number;
+
   @IsArray()
   @IsInt({ each: true })
   @IsOptional()

@@ -5,15 +5,18 @@ interface HeaderProps {
   pendingCount: number;
   readyCount: number;
   onRefresh: () => void;
-  onSimulateNewOrder: () => void;
+  onLogout?: () => void;
+  branchName?: string;
   isEmergencyStop: boolean;
 }
+
 
 export default function Header({
   pendingCount,
   readyCount,
   onRefresh,
-  onSimulateNewOrder,
+  onLogout,
+  branchName,
   isEmergencyStop
 }: HeaderProps) {
   const [localTime, setLocalTime] = useState<string>('00:00:00');
@@ -34,7 +37,7 @@ export default function Header({
     <header className="h-20 flex items-center justify-between px-8 border-b border-[#4f4633]/30 bg-[#191f2f] shadow-md z-10 shrink-0">
       <div className="flex items-center gap-6">
         <h1 className="font-display font-bold text-2xl text-[#dce2f7] select-none flex items-center gap-2">
-          <span>Kitchen Display System</span>
+          <span>Kitchen Display System {branchName ? `- ${branchName}` : ''}</span>
           {isEmergencyStop && (
             <span className="flex items-center gap-1.5 px-3 py-1 bg-brand-red/10 border border-brand-red/30 rounded-full text-xs font-mono font-bold text-brand-red animate-pulse">
               <ShieldAlert className="w-3.5 h-3.5" />
@@ -42,6 +45,7 @@ export default function Header({
             </span>
           )}
         </h1>
+
         
         {/* Status Badges */}
         <div className="flex gap-3 select-none">
@@ -63,17 +67,17 @@ export default function Header({
       <div className="flex items-center gap-5">
         {/* Action controls for previewing & testing */}
         <div className="flex gap-2">
-          <button
-            id="simulation-trigger"
-            onClick={onSimulateNewOrder}
-            disabled={isEmergencyStop}
-            className="flex items-center gap-2 px-3.5 py-1.5 bg-[#2a2618]/60 hover:bg-[#3d3722] disabled:opacity-40 border border-brand-yellow/30 hover:border-brand-yellow/50 rounded-lg text-xs font-mono font-bold text-brand-yellow transition-all cursor-pointer"
-            title="Create and simulate a brand new client sandwich ticket immediately"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-brand-yellow" />
-            <span>PUSH TEST ORDER</span>
-          </button>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-2 px-3.5 py-1.5 bg-red-900/60 hover:bg-red-800 border border-red-500/30 hover:border-red-500/50 rounded-lg text-xs font-mono font-bold text-white transition-all cursor-pointer"
+              title="Logout Chef"
+            >
+              <span>LOGOUT</span>
+            </button>
+          )}
         </div>
+
 
         {/* Local time */}
         <div className="flex flex-col items-end mr-2 select-none">

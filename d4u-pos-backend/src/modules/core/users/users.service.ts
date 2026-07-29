@@ -75,6 +75,21 @@ export class UsersService {
 
     const hashedPin = data.pin ? await bcrypt.hash(data.pin, 10) : await bcrypt.hash('1234', 10);
 
+    // Sprint 28.9: brand_id must never silently default to brand #1 — that
+    // misassigns any new staff/rider whose form omitted brand_id straight
+    // into another tenant. If a store_id is given, the store's own brand is
+    // authoritative (also guards against a mismatched brand_id/store_id pair
+    // ever being passed together); otherwise an explicit brand_id is required.
+    let resolvedBrandId = data.brand_id;
+    if (data.store_id) {
+      const store = await this.prisma.store.findUnique({ where: { id: data.store_id }, select: { brand_id: true } });
+      if (!store) throw new BadRequestException(`Store #${data.store_id} not found.`);
+      resolvedBrandId = store.brand_id;
+    }
+    if (!resolvedBrandId) {
+      throw new BadRequestException('brand_id or store_id is required to create a user.');
+    }
+
     return this.prisma.user.create({
       data: {
         name: data.name,
@@ -82,7 +97,7 @@ export class UsersService {
         hashedPin: hashedPin,
         role_id: data.role_id,
         store_id: data.store_id || null,
-        brand_id: data.brand_id || 1,
+        brand_id: resolvedBrandId,
         image_url: data.image_url || null,
         module_permissions: data.module_permissions || {},
         rider_details: data.rider_details || null,

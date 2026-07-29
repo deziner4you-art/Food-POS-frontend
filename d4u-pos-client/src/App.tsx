@@ -59,18 +59,7 @@ const KOTTimer = ({ kot }: { kot: any }) => {
   return <span style={{ color: 'var(--accent-yellow)', fontWeight: 'bold' }}>{timeLeft}</span>;
 };
 
-const USERS = import.meta.env.DEV ? [
-  { email: '03000000001',  password: '1234',  name: 'Ali Cashier (B1)',  role: 'Cashier', id: 1, store_id: 1 },
-  { email: '03000000002',  password: 'manager123', name: 'Sara Manager (B1)', role: 'Manager', id: 2, store_id: 1 },
-  { email: '03000000003',  password: 'admin',  name: 'Super Admin (B1)',  role: 'Admin', id: 3, store_id: 1 },
-  
-  // Branch 2 Users
-  { email: '03000000004',  password: '1234',  name: 'Umer Cashier (B2)',  role: 'Cashier', id: 5, store_id: 2 },
-  { email: '03000000005',  password: 'manager123', name: 'Zoya Manager (B2)', role: 'Manager', id: 6, store_id: 2 },
-
-  // Branch 3 Users
-  { email: '03000000006',  password: '1234',  name: 'Bilal Cashier (B3)',  role: 'Cashier', id: 7, store_id: 3 },
-] : [];
+const USERS: any[] = [];
 
 function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
   const [phone, setPhone]       = useState('');
@@ -274,6 +263,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [isWaiterConnected, setIsWaiterConnected] = useState(false);
   const inventoryItems = useLiveQuery(() => db.inventory.toArray()) || [];
   const lowStockItems = inventoryItems.filter(ing => ing.currentStock <= ing.warningThreshold);
+  const [activeCategoryGroupId, setActiveCategoryGroupId] = useState<number | null>(null)
   const [activeCategoryId, setActiveCategoryId] = useState<number | string | null>('ALL')
   const [categoryInitialized, setCategoryInitialized] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -802,6 +792,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [activeDeliveries, setActiveDeliveries] = useState<any[]>([]);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
 
+  const categoryGroups = useLiveQuery(() => db.category_groups?.toArray()) || []
   const categories = useLiveQuery(() => db.categories.toArray()) || []
   const allProducts = useLiveQuery(() => db.products.toArray()) || []
   const products = useLiveQuery(() =>
@@ -815,28 +806,50 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     const fetchCatalog = async () => {
       try {
         const storeId = currentUser?.store_id;
-        const res = await fetch(`${BACKEND_URL}/catalog/sync/${storeId}`);
+        const res = await fetch(`${BACKEND_URL}/catalog/category-groups/hierarchy/store/${storeId}?channel=pos`);
         if (res.ok) {
           const data = await res.json();
           // Run clear + repopulate as one Dexie transaction: if bulkPut throws partway
           // through, the clear is rolled back too, so a failed sync can never leave the
           // offline catalog empty.
-          await db.transaction('rw', db.categories, db.products, async () => {
+          await db.transaction('rw', db.category_groups, db.categories, db.products, async () => {
+            await db.category_groups.clear();
             await db.categories.clear();
             await db.products.clear();
 
-            if (data.categories && data.categories.length > 0) {
-              await db.categories.bulkPut(data.categories.map((c: any) => ({
-                id: c.id,
-                store_id: storeId,
-                name: c.name
+            if (data.category_groups && data.category_groups.length > 0) {
+              await db.category_groups.bulkPut(data.category_groups.map((cg: any) => ({
+                id: cg.id,
+                name: cg.name,
+                sort_order: cg.sort_order || 0,
+                icon: cg.icon,
+                color: cg.color,
+                is_active: cg.is_active
               })));
             }
 
-            if (data.products && data.products.length > 0) {
-              await db.products.bulkPut(data.products.map((p: any) => ({
+            const allCategories = [
+              ...(data.category_groups || []).flatMap((g: any) => g.categories.map((c: any) => ({ ...c, category_group_id: g.id }))),
+              ...(data.categories || [])
+            ];
+
+            if (allCategories.length > 0) {
+              await db.categories.bulkPut(allCategories.map((c: any) => ({
+                id: c.id,
+                store_id: storeId,
+                name: c.name,
+                category_group_id: c.category_group_id || null
+              })));
+            }
+
+            const allProducts = allCategories.flatMap((c: any) => (c.products || []).map((p: any) => ({ ...p, parent_category_id: c.id })));
+            const uniqueProductsMap = new Map(allProducts.map((p: any) => [p.id, p]));
+            const uniqueProducts = Array.from(uniqueProductsMap.values());
+
+            if (uniqueProducts.length > 0) {
+              await db.products.bulkPut(uniqueProducts.map((p: any) => ({
                 id: p.id,
-                category_id: p.categories && p.categories.length > 0 ? p.categories[0].id : p.category_id,
+                category_id: p.parent_category_id,
                 name: p.name,
                 price: p.price,
                 desc: p.sku || 'No description',
@@ -1690,29 +1703,102 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </div>
               </div>
             )}
-            <div className="nav-categories" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '5px' }}>
+            {/* TOP ROW: Main Navigation */}
+            <div className="nav-categories" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px' }}>
               <button 
-                className={`nav-category-btn ${activeCategoryId === null ? 'active' : ''}`}
-                onClick={() => { setActiveCategoryId(null); setCategoryInitialized(true); }}
+                className={`nav-category-btn ${activeCategoryId === null && activeCategoryGroupId === null ? 'active' : ''}`}
+                onClick={() => { setActiveCategoryGroupId(null); setActiveCategoryId(null); setCategoryInitialized(true); }}
               >
                 All Items
               </button>
+              
               <button 
                 className={`nav-category-btn ${activeCategoryId === 'DISCOUNT' ? 'active' : ''}`}
-                onClick={() => setActiveCategoryId('DISCOUNT')}
+                onClick={() => { setActiveCategoryId('DISCOUNT'); setActiveCategoryGroupId(null); }}
               >
                 <span style={{ color: '#fbbf24', marginRight: '5px' }}>🔥</span> Discounted
               </button>
-              {categories.filter(c => !['extra toppings', 'add-ons', 'addons'].includes(c.name.toLowerCase())).map(c => (
+
+              {/* Visible Category Groups (Max 5 to account for All Items & Discounted) */}
+              {categoryGroups.slice(0, 5).map(cg => (
+                <button 
+                  key={cg.id} 
+                  className={`nav-category-btn ${activeCategoryGroupId === cg.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveCategoryGroupId(cg.id);
+                    // Auto-select first category in group
+                    const groupCats = categories.filter(c => c.category_group_id === cg.id);
+                    if (groupCats.length > 0) setActiveCategoryId(groupCats[0].id);
+                    else setActiveCategoryId(null); // No categories
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  {cg.color && <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: cg.color }}></div>}
+                  {cg.name}
+                </button>
+              ))}
+
+              {/* Overflow 'More' Dropdown */}
+              {categoryGroups.length > 5 && (
+                <div style={{ position: 'relative' }}>
+                  <select
+                    className={`nav-category-btn`}
+                    style={{ appearance: 'none', paddingRight: '30px', outline: 'none', cursor: 'pointer', background: '#1e293b', color: 'white' }}
+                    value={activeCategoryGroupId !== null && activeCategoryGroupId > categoryGroups[4]?.id ? activeCategoryGroupId : ''}
+                    onChange={(e) => {
+                      const id = parseInt(e.target.value);
+                      if (id) {
+                        setActiveCategoryGroupId(id);
+                        const groupCats = categories.filter(c => c.category_group_id === id);
+                        if (groupCats.length > 0) setActiveCategoryId(groupCats[0].id);
+                        else setActiveCategoryId(null);
+                      }
+                    }}
+                  >
+                    <option value="" disabled>More...</option>
+                    {categoryGroups.slice(5).map(cg => (
+                      <option key={cg.id} value={cg.id}>{cg.name}</option>
+                    ))}
+                  </select>
+                  <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>▼</div>
+                </div>
+              )}
+            </div>
+
+            {/* SECOND ROW: Categories ONLY */}
+            {(categoryGroups.length === 0 || activeCategoryGroupId !== null || activeCategoryId === 'DISCOUNT') && (
+            <div className="nav-categories" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px', borderBottom: '1px solid #1e293b', marginBottom: '15px' }}>
+              {categories
+                .filter(c => !['extra toppings', 'add-ons', 'addons'].includes(c.name.toLowerCase()))
+                .filter(c => {
+                  if (activeCategoryId === 'DISCOUNT') {
+                    // Show categories containing discounted products
+                    return products.some(p => getProductDiscount(p) > 0 && (p.category_id === c.id || p.categories?.some((cat:any) => cat.id === c.id)));
+                  }
+                  if (activeCategoryGroupId !== null) {
+                    // Show categories belonging to the selected group
+                    return c.category_group_id === activeCategoryGroupId;
+                  }
+                  // All Items (activeCategoryId === null && activeCategoryGroupId === null)
+                  return true;
+                })
+                .map(c => (
                 <button 
                   key={c.id} 
                   className={`nav-category-btn ${activeCategoryId === c.id ? 'active' : ''}`}
-                  onClick={() => setActiveCategoryId(c.id)}
+                  onClick={() => {
+                    setActiveCategoryId(c.id);
+                    if (c.category_group_id) {
+                      setActiveCategoryGroupId(c.category_group_id);
+                    }
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '0.85rem' }}
                 >
                   {c.name}
                 </button>
               ))}
             </div>
+            )}
             <div className="product-grid">
               {products.filter(prod => {
                 if (activeCategoryId === 0 && prod.categories?.some((c:any) => ['extra toppings', 'add-ons', 'addons'].includes((c.name || '').toLowerCase()))) return false;
@@ -4468,7 +4554,7 @@ export default function App() {
 
     return (
       <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-        <KitchenDisplay onLogout={() => setLoggedInUser(null)} />
+        <KitchenDisplay currentUser={activeUser} onLogout={() => setLoggedInUser(null)} />
       </div>
     );
   }

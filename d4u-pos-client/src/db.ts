@@ -1,9 +1,22 @@
 import Dexie, { type Table } from 'dexie';
 
+export interface OfflineCategoryGroup {
+  id: number;
+  name: string;
+  sort_order: number;
+  icon?: string;
+  color?: string;
+  description?: string;
+  is_active: boolean;
+  store_ids?: number[];
+  channel_visibility?: any;
+}
+
 export interface OfflineCategory {
   id: number;
   store_id: number;
   name: string;
+  category_group_id?: number;
 }
 
 export interface OfflineProduct {
@@ -91,6 +104,7 @@ export interface OfflineHeldOrder {
 
 export class D4UDatabase extends Dexie {
   users!: Table<any, number>;
+  category_groups!: Table<OfflineCategoryGroup, number>;
   categories!: Table<OfflineCategory, number>;
   products!: Table<OfflineProduct, number>;
   transactions!: Table<QueuedTransaction, number>;
@@ -128,6 +142,29 @@ export class D4UDatabase extends Dexie {
       products: 'id, category_id, name',
       transactions: '++id, synced',
       kots: '++id, status, synced',
+      inventory: 'id, category',
+      staffLogs: '++id, name, clockIn',
+      crmCustomers: 'id, phone',
+      heldOrders: 'id'
+    });
+    this.version(10).stores({
+      users: 'id, phone',
+      categories: 'id, store_id',
+      products: 'id, category_id, name',
+      transactions: '++id, synced',
+      kots: '++id, status, synced, bridgeOrderId',
+      inventory: 'id, category',
+      staffLogs: '++id, name, clockIn',
+      crmCustomers: 'id, phone',
+      heldOrders: 'id'
+    });
+    this.version(11).stores({
+      users: 'id, phone',
+      category_groups: 'id, sort_order',
+      categories: 'id, store_id, category_group_id',
+      products: 'id, category_id, name',
+      transactions: '++id, synced',
+      kots: '++id, status, synced, bridgeOrderId',
       inventory: 'id, category',
       staffLogs: '++id, name, clockIn',
       crmCustomers: 'id, phone',

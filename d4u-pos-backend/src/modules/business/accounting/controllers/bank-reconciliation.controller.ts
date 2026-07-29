@@ -3,6 +3,7 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { BankStatementService } from '../services/bank-statement.service';
 import { BankReconciliationService } from '../services/bank-reconciliation.service';
 import { ReconciliationMatchingService } from '../services/reconciliation-matching.service';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/bank-reconciliation')
 export class BankReconciliationController {
@@ -15,35 +16,35 @@ export class BankReconciliationController {
   @RequirePermissions('finance.accounting.create')
   @Post('import-statement')
   async importStatement(@Body() body: any, @Req() req: any) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.statementService.importStatement(body, userId);
   }
 
   @RequirePermissions('finance.accounting.create')
   @Post('run')
   async runReconciliation(@Body() body: any, @Req() req: any) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.reconciliationService.runReconciliation(body, userId);
   }
 
   @RequirePermissions('finance.accounting.create')
   @Post('match')
   async manualMatch(@Body() body: any, @Req() req: any) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.matchingService.manualMatch(body, userId);
   }
 
   @RequirePermissions('finance.accounting.create')
   @Post('adjustment')
   async createAdjustment(@Body() body: any, @Req() req: any) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.reconciliationService.createAdjustment(body, userId);
   }
 
   @RequirePermissions('finance.accounting.create')
   @Post(':id/finalize')
   async finalize(@Param('id') id: string, @Req() req: any) {
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     return this.reconciliationService.finalizeReconciliation(Number(id), userId);
   }
 

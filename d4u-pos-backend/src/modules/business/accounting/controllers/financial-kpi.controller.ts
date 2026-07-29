@@ -3,6 +3,7 @@ import { RequirePermissions } from '../../../../common/decorators';
 import { FinancialKpiService } from '../services/financial-kpi.service';
 import { FinancialRatioService } from '../services/financial-ratio.service';
 import { KpiFilter } from '../interfaces/financial-kpi.interface';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting')
 export class FinancialKpiController {
@@ -21,7 +22,7 @@ export class FinancialKpiController {
       end_date: new Date(query.end_date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1; 
+    const userId = getSessionUserId(req.user);
     return this.kpiService.generateKpis(filter, userId);
   }
 
@@ -35,7 +36,7 @@ export class FinancialKpiController {
       end_date: new Date(query.end_date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1; 
+    const userId = getSessionUserId(req.user);
     return this.ratioService.generateRatios(filter, userId);
   }
 }

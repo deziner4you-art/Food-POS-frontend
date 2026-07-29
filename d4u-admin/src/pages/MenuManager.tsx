@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ListTree, Plus, Edit, Trash2, Tag, Utensils, Store, Clock, Sliders, CheckCircle2, AlertCircle, ClipboardList, FileDown, FileUp } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { ListTree, Plus, Edit, Trash2, Tag, Utensils, Store, Clock, Sliders, CheckCircle2, AlertCircle, ClipboardList, FileDown, FileUp, Search } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
+import { DataTable } from '../components/DataTable';
 import ProductRequestsTab from './ProductRequestsTab';
+import Papa from 'papaparse';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -17,7 +19,7 @@ export default function MenuManager() {
     'Authorization': `Bearer ${localStorage.getItem('d4u_admin_token')}`
   });
 
-  const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORIES' | 'PRODUCTS' | 'MODIFIERS' | 'AVAILABILITY' | 'PRODUCT_REQUESTS'>('MENUS');
+  const [activeTab, setActiveTab] = useState<'MENUS' | 'CATEGORY_GROUPS' | 'CATEGORIES' | 'PRODUCTS' | 'MODIFIERS' | 'AVAILABILITY' | 'PRODUCT_REQUESTS'>('MENUS');
   
   const [stores, setStores] = useState<any[]>([]);
 
@@ -26,10 +28,33 @@ export default function MenuManager() {
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [menuForm, setMenuForm] = useState({ id: 0, name: '', store_ids: [] as number[] });
 
+  // Category Groups State
+  const [categoryGroups, setCategoryGroups] = useState<any[]>([]);
+  const [showCategoryGroupModal, setShowCategoryGroupModal] = useState(false);
+  const [categoryGroupForm, setCategoryGroupForm] = useState({ 
+    id: 0, 
+    name: '', 
+    sort_order: 0, 
+    icon: '', 
+    color: '#3b82f6', 
+    description: '', 
+    is_active: true, 
+    store_ids: [] as number[],
+    channel_visibility: {
+      pos: true,
+      website: true,
+      waiter: true,
+      qr: true,
+      kiosk: true,
+      delivery: true,
+      takeaway: true
+    }
+  });
+
   // Categories State
   const [categories, setCategories] = useState<any[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [categoryForm, setCategoryForm] = useState({ id: 0, name: '', menu_id: 0, store_ids: [] as number[], image_url: '', is_active: true, sort_order: 0 });
+  const [categoryForm, setCategoryForm] = useState({ id: 0, name: '', menu_id: 0, category_group_id: 0, store_ids: [] as number[], image_url: '', is_active: true, sort_order: 0 });
 
   // Products State
   const [products, setProducts] = useState<any[]>([]);
@@ -64,10 +89,33 @@ export default function MenuManager() {
   const [productForm, setProductForm] = useState(initialProductForm);
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [productFilterCategoryId, setProductFilterCategoryId] = useState<number>(0);
+  const [productFilterGroupId, setProductFilterGroupId] = useState<number>(0);
+  const [productFilterMenuId, setProductFilterMenuId] = useState<number>(0);
+  const [productFilterStatus, setProductFilterStatus] = useState<string>('all');
+  const [productSearch, setProductSearch] = useState<string>('');
+  
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [isModifierDropdownOpen, setIsModifierDropdownOpen] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
+  
+  const [categoryFilterGroupId, setCategoryFilterGroupId] = useState<number>(0);
+  const [categorySortConfig, setCategorySortConfig] = useState<{key: string, direction: 'asc'|'desc'}>({key: 'sort_order', direction: 'asc'});
+  
+  const [bulkCategoryGroupId, setBulkCategoryGroupId] = useState<number>(0);
+  const [bulkProductCategoryId, setBulkProductCategoryId] = useState<number>(0);
+  const [isProductEngineExpanded, setIsProductEngineExpanded] = useState(() => {
+    const stored = sessionStorage.getItem('productEngineExpanded');
+    return stored !== null ? stored === 'true' : false;
+  });
+
+  const [csvPreviewData, setCsvPreviewData] = useState<{headers: string[], rows: any[], file: File | null} | null>(null);
+  const [csvErrors, setCsvErrors] = useState<string[]>([]);
+
+  useEffect(() => {
+    sessionStorage.setItem('productEngineExpanded', isProductEngineExpanded.toString());
+  }, [isProductEngineExpanded]);
+
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const modifierDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -98,9 +146,10 @@ export default function MenuManager() {
 
   const fetchAll = async () => {
     try {
-      const [stRes, mnRes, ctRes, prRes, rcRes, avRes, mgRes] = await Promise.all([
+      const [stRes, mnRes, cgRes, ctRes, prRes, rcRes, avRes, mgRes] = await Promise.all([
         fetch(`${BACKEND_URL}/stores`, { headers: getAuthHeaderOnly() }),
         fetch(`${BACKEND_URL}/catalog/menus`, { headers: getAuthHeaderOnly() }),
+        fetch(`${BACKEND_URL}/catalog/category-groups?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() }).catch(() => null), // Mock if missing
         fetch(`${BACKEND_URL}/catalog/categories?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() }),
         fetch(`${BACKEND_URL}/catalog/products?store_id=${selectedBranchId}`, { headers: getAuthHeaderOnly() }),
         fetch(`${BACKEND_URL}/recipes/store/${selectedBranchId}`, { headers: getAuthHeaderOnly() }),
@@ -109,6 +158,15 @@ export default function MenuManager() {
       ]);
       if (stRes.ok) setStores(await stRes.json());
       if (mnRes.ok) setMenus(await mnRes.json());
+      if (cgRes && cgRes.ok) {
+        setCategoryGroups(await cgRes.json());
+      } else {
+        // Fallback mock category groups if endpoint doesn't exist yet
+        setCategoryGroups([
+          { id: 1, name: 'Fast Food', sort_order: 1, icon: 'burger', color: '#ff5722', is_active: true },
+          { id: 2, name: 'Beverages', sort_order: 2, icon: 'cup', color: '#03a9f4', is_active: true }
+        ]);
+      }
       if (ctRes.ok) setCategories(await ctRes.json());
       if (prRes.ok) setProducts(await prRes.json());
       if (rcRes.ok) setRecipes(await rcRes.json());
@@ -162,7 +220,99 @@ export default function MenuManager() {
     } catch (e) { console.error(e); }
   };
 
+  // Category Group Handlers
+  const handleCategoryGroupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const method = categoryGroupForm.id ? 'PATCH' : 'POST';
+    const url = categoryGroupForm.id ? `${BACKEND_URL}/catalog/category-groups/${categoryGroupForm.id}` : `${BACKEND_URL}/catalog/category-groups`;
+    if (!selectedBranchId) return customAlert('Please select a branch first');
+    try {
+      const payload = {
+        store_id: selectedBranchId,
+        ...categoryGroupForm,
+        sort_order: Number(categoryGroupForm.sort_order)
+      };
+      const res = await fetch(url, {
+        method,
+        headers: getHeaders(),
+        body: JSON.stringify(payload)
+      }).catch(() => null);
+      if (res && res.ok) {
+        setShowCategoryGroupModal(false);
+        fetchAll();
+        customSuccess('Category Group saved!');
+      } else {
+        // Mock fallback logic
+        const mockNew = { ...payload, id: categoryGroupForm.id || Math.floor(Math.random() * 1000) };
+        if (categoryGroupForm.id) {
+          setCategoryGroups(categoryGroups.map(g => g.id === categoryGroupForm.id ? mockNew : g));
+        } else {
+          setCategoryGroups([...categoryGroups, mockNew]);
+        }
+        setShowCategoryGroupModal(false);
+        customSuccess('Category Group saved! (Mocked)');
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteCategoryGroup = async (id: number) => {
+    const group = categoryGroups.find(g => g.id === id);
+    if (!group) return;
+
+    const isSystemOrMigration = group.is_system === true || group.name.toLowerCase().includes('migration') || group.name.toLowerCase().includes('legacy');
+
+    const confirmMsg = isSystemOrMigration 
+      ? "This is a temporary migration group.\nDeleting it permanently removes the migration group.\nCategories must already be reassigned."
+      : "Delete this Category Group?\nCategories will become ungrouped.";
+
+    if (!(await customConfirm(confirmMsg))) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/catalog/category-groups/${id}`, { method: 'DELETE', headers: getAuthHeaderOnly() }).catch(() => null);
+      if (res && res.ok) {
+        fetchAll();
+      }
+    } catch (e) { console.error(e); }
+  };
+
   // Category Handlers
+  const handleBulkAssignCategoryGroup = async () => {
+    if (selectedCategories.length === 0 || bulkCategoryGroupId === 0) return;
+    try {
+      await Promise.all(selectedCategories.map(catId => {
+        return fetch(`${BACKEND_URL}/catalog/categories/${catId}`, {
+          method: 'PATCH',
+          headers: getHeaders(),
+          body: JSON.stringify({ store_id: selectedBranchId, category_group_id: bulkCategoryGroupId })
+        });
+      }));
+      customSuccess(`Successfully assigned ${selectedCategories.length} categories to group.`);
+      setSelectedCategories([]);
+      setBulkCategoryGroupId(0);
+      fetchAll();
+    } catch (err) {
+      customAlert('Failed to bulk assign category group');
+    }
+  };
+
+  const handleBulkAssignProductCategory = async () => {
+    if (selectedProducts.length === 0 || bulkProductCategoryId === 0) return;
+    try {
+      await Promise.all(selectedProducts.map(prodId => {
+        return fetch(`${BACKEND_URL}/catalog/products/${prodId}`, {
+          method: 'PATCH',
+          headers: getHeaders(),
+          body: JSON.stringify({ store_id: selectedBranchId, category_ids: [bulkProductCategoryId] })
+        });
+      }));
+      customSuccess(`Successfully assigned ${selectedProducts.length} products to category.`);
+      setSelectedProducts([]);
+      setBulkProductCategoryId(0);
+      fetchAll();
+    } catch (err) {
+      customAlert('Failed to bulk assign product category');
+    }
+  };
+
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const method = categoryForm.id ? 'PATCH' : 'POST';
@@ -173,6 +323,7 @@ export default function MenuManager() {
         store_id: selectedBranchId, 
         name: categoryForm.name, 
         menu_id: categoryForm.menu_id > 0 ? categoryForm.menu_id : null,
+        category_group_id: categoryForm.category_group_id > 0 ? categoryForm.category_group_id : null,
         store_ids: categoryForm.store_ids,
         is_active: categoryForm.is_active,
         sort_order: Number(categoryForm.sort_order),
@@ -259,6 +410,7 @@ export default function MenuManager() {
       if (res.ok) {
         setProductForm(initialProductForm);
         setIsEditingProduct(false);
+        setIsProductEngineExpanded(false);
         fetchAll();
         customSuccess(isEditingProduct ? 'Product updated successfully!' : 'Product added successfully!');
       } else {
@@ -305,14 +457,40 @@ export default function MenuManager() {
     }
   };
 
-  const handleImportProductsCsvFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportProductsCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
     if (!selectedBranchId) return customAlert('Please select a branch first');
 
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const errors: string[] = [];
+        if (results.errors.length > 0) {
+          errors.push(...results.errors.map(err => `Row ${err.row}: ${err.message}`));
+        }
+        
+        results.data.forEach((row: any, i) => {
+          if (!row.name) errors.push(`Row ${i+1}: Missing product name`);
+          if (!row.price) errors.push(`Row ${i+1}: Missing price`);
+        });
+
+        setCsvPreviewData({
+          headers: results.meta.fields || [],
+          rows: results.data.slice(0, 10), // preview first 10 rows
+          file
+        });
+        setCsvErrors(errors);
+      }
+    });
+  };
+
+  const confirmCsvUpload = async () => {
+    if (!csvPreviewData?.file || !selectedBranchId) return;
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', csvPreviewData.file);
     try {
       const res = await fetch(`${BACKEND_URL}/catalog/products/import?store_id=${selectedBranchId}`, {
         method: 'POST',
@@ -326,6 +504,7 @@ export default function MenuManager() {
           console.warn('CSV import row errors:', data.results.filter((r: any) => r.action === 'error'));
         }
         fetchAll();
+        setCsvPreviewData(null);
       } else {
         customAlert(data.message || 'CSV import failed.');
       }
@@ -495,6 +674,487 @@ export default function MenuManager() {
     else setter([...currentList, storeId]);
   };
 
+  const filteredAndSortedCategories = useMemo(() => {
+    let result = [...categories];
+    if (categoryFilterGroupId > 0) {
+      result = result.filter(c => c.category_group_id === categoryFilterGroupId);
+    }
+    result.sort((a, b) => {
+      const { key, direction } = categorySortConfig;
+      let valA: any = a[key as keyof typeof a];
+      let valB: any = b[key as keyof typeof b];
+
+      if (key === 'menu') {
+        valA = a.menu?.name || '';
+        valB = b.menu?.name || '';
+      } else if (key === 'category_group') {
+        valA = categoryGroups.find(g => g.id === a.category_group_id)?.name || '';
+        valB = categoryGroups.find(g => g.id === b.category_group_id)?.name || '';
+      } else if (key === 'name') {
+        valA = a.name?.toLowerCase() || '';
+        valB = b.name?.toLowerCase() || '';
+      }
+
+      if (valA === valB) return 0;
+      if (valA === undefined || valA === null) return direction === 'asc' ? 1 : -1;
+      if (valB === undefined || valB === null) return direction === 'asc' ? -1 : 1;
+
+      const comp = valA > valB ? 1 : -1;
+      return direction === 'asc' ? comp : -comp;
+    });
+    return result;
+  }, [categories, categoryFilterGroupId, categorySortConfig, categoryGroups]);
+
+  const handleCategorySort = (key: string) => {
+    setCategorySortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const menuColumns = useMemo(() => {
+    const cols = [
+      { key: 'name', label: 'Menu Collection', render: (m: any) => <span className="font-bold text-white text-base">{m.name}</span> },
+      { 
+        key: 'assigned_branches', 
+        label: 'Assigned Branches', 
+        sortable: false,
+        render: (m: any) => (
+          <div className="flex flex-wrap gap-1 max-w-sm">
+            {m.stores?.length > 0 ? m.stores.map((s:any) => (
+              <span key={s.id} className="bg-slate-700 px-2 py-1 rounded text-xs text-slate-300">{s.name}</span>
+            )) : <span className="text-slate-500 italic text-xs">None</span>}
+          </div>
+        )
+      },
+      { 
+        key: 'category_count', 
+        label: 'Categories', 
+        render: (m: any) => <span className="text-slate-300 font-mono">{m.categories?.length || 0}</span> 
+      },
+      {
+        key: 'actions',
+        label: 'Actions',
+        sortable: false,
+        render: (m: any) => (
+          <div className="flex justify-end gap-3 items-center">
+            <button onClick={() => handleDuplicateMenu(m.id)} className="text-purple-400 hover:text-purple-300 flex items-center gap-1" title="Duplicate Menu">
+              <Plus size={16}/> Copy
+            </button>
+            <button onClick={() => { setMenuForm({ id: m.id, name: m.name, store_ids: m.stores.map((s:any)=>s.id) }); setShowMenuModal(true); }} className="text-slate-400 hover:text-white"><Edit size={16}/></button>
+            <button onClick={() => handleDeleteMenu(m.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button>
+          </div>
+        )
+      }
+    ];
+    return selectedBranchId ? cols.filter(c => c.key !== 'assigned_branches') : cols;
+  }, [selectedBranchId]);
+
+  const modifierGroupColumns = useMemo(() => {
+    return [
+      { key: 'name', label: 'Group Name', render: (g: any) => <span className="font-bold text-white text-base">{g.name}</span> },
+      { 
+        key: 'status', 
+        label: 'Status', 
+        render: (g: any) => (
+          <span className={`px-2 py-0.5 rounded text-xs font-bold ${g.is_required ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-300'}`}>
+            {g.is_required ? 'Required' : 'Optional'}
+          </span>
+        )
+      },
+      { 
+        key: 'limits', 
+        label: 'Selection Limits', 
+        sortable: false,
+        render: (g: any) => <span className="font-mono text-xs text-slate-400">Min: {g.min_selection} • Max: {g.max_selection}</span> 
+      },
+      {
+        key: 'choices',
+        label: 'Modifier Choices',
+        sortable: false,
+        render: (g: any) => (
+          <div className="flex flex-col gap-1 w-full max-w-sm">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Items</span>
+              <button 
+                onClick={() => { setModifierForm({ id: 0, modifier_group_id: g.id, name: '', additional_price: 0 }); setShowModifierModal(true); }}
+                className="text-[10px] text-[#3b82f6] hover:underline font-bold flex items-center gap-0.5"
+              >
+                <Plus size={10} /> Add Item
+              </button>
+            </div>
+            {g.modifiers?.map((m: any) => (
+              <div key={m.id} className="flex justify-between items-center text-xs bg-slate-800/60 px-2 py-1 rounded border border-slate-700/50">
+                <span className="text-slate-300">{m.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[#4edea3] font-mono text-[10px]">+Rs. {m.additional_price}</span>
+                  <button onClick={() => handleDeleteModifier(m.id)} className="text-red-400 hover:text-red-300"><Trash2 size={12}/></button>
+                </div>
+              </div>
+            ))}
+            {(!g.modifiers || g.modifiers.length === 0) && (
+              <span className="text-[10px] text-slate-500 italic">No choices</span>
+            )}
+          </div>
+        )
+      },
+      {
+        key: 'actions',
+        label: 'Actions',
+        sortable: false,
+        render: (group: any) => (
+          <div className="flex justify-end gap-3 items-center">
+            <button onClick={() => { setGroupForm({ id: group.id, name: group.name, is_required: group.is_required, min_selection: group.min_selection, max_selection: group.max_selection }); setShowGroupModal(true); }} className="text-slate-400 hover:text-white"><Edit size={16}/></button>
+            <button onClick={() => handleDeleteGroup(group.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button>
+          </div>
+        )
+      }
+    ];
+  }, []);
+
+  const availabilityRuleColumns = useMemo(() => {
+    return [
+      { key: 'name', label: 'Rule Name', render: (r: any) => <span className="font-bold text-white text-base">{r.name}</span> },
+      { 
+        key: 'type', 
+        label: 'Rule Type', 
+        render: (r: any) => <span className="text-amber-400 font-bold text-sm">{r.type}</span>
+      },
+      { 
+        key: 'hours', 
+        label: 'Active Hours', 
+        sortable: false,
+        render: (r: any) => r.type !== 'ALWAYS' ? <span className="font-mono text-slate-300 text-xs">{r.start_time} - {r.end_time}</span> : <span className="text-slate-500 italic text-xs">-</span>
+      },
+      { 
+        key: 'days', 
+        label: 'Active Days', 
+        sortable: false,
+        render: (r: any) => r.type !== 'ALWAYS' ? <span className="text-slate-300 text-xs">{r.days}</span> : <span className="text-slate-500 italic text-xs">-</span>
+      },
+      {
+        key: 'actions',
+        label: 'Actions',
+        sortable: false,
+        render: (rule: any) => (
+          <div className="flex justify-end gap-3 items-center">
+            <button onClick={() => { setRuleForm({ id: rule.id, name: rule.name, type: rule.type, start_time: rule.start_time || '09:00', end_time: rule.end_time || '23:00', days: rule.days || 'Mon,Tue,Wed,Thu,Fri,Sat,Sun' }); setShowRuleModal(true); }} className="text-slate-400 hover:text-white"><Edit size={16}/></button>
+            <button onClick={() => handleDeleteRule(rule.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button>
+          </div>
+        )
+      }
+    ];
+  }, []);
+
+  const categoryGroupColumns = useMemo(() => {
+    return [
+      {
+        key: 'icon',
+        label: 'Icon',
+        sortable: false,
+        width: '60px',
+        render: (g: any) => (
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-xl font-bold" style={{ backgroundColor: g.color || '#3b82f6' }}>
+            {g.name.charAt(0)}
+          </div>
+        )
+      },
+      {
+        key: 'name',
+        label: 'Group Name',
+        render: (g: any) => (
+          <div>
+            <h4 className="font-bold text-white text-base">{g.name}</h4>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${g.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+              {g.is_active ? 'Active' : 'Inactive'}
+            </span>
+          </div>
+        )
+      },
+      {
+        key: 'description',
+        label: 'Description',
+        render: (g: any) => <span className="text-sm text-slate-400 max-w-xs block truncate">{g.description || '-'}</span>
+      },
+      {
+        key: 'sort_order',
+        label: 'Sort Order',
+        render: (g: any) => <span className="font-mono text-slate-300">{g.sort_order}</span>
+      },
+      {
+        key: 'actions',
+        label: 'Actions',
+        sortable: false,
+        render: (g: any) => (
+          <div className="flex justify-end gap-3 items-center">
+            <button onClick={() => { setCategoryGroupForm({ ...g }); setShowCategoryGroupModal(true); }} className="text-slate-400 hover:text-white"><Edit size={18}/></button>
+            <button onClick={() => handleDeleteCategoryGroup(g.id)} className="text-red-400 hover:text-red-300"><Trash2 size={18}/></button>
+          </div>
+        )
+      }
+    ];
+  }, []);
+
+  const categoryColumns = useMemo(() => {
+    const cols = [
+      {
+        key: 'sort_order',
+        label: 'Sort',
+        width: '60px',
+        render: (c: any) => <span className="font-mono text-slate-400">{c.sort_order ?? 0}</span>
+      },
+      {
+        key: 'name',
+        label: 'Category Name',
+        render: (c: any) => (
+          <div className="font-bold text-white flex items-center gap-3">
+            {c.image_url ? (
+              <img src={`${BACKEND_URL}${c.image_url}`} alt={c.name} className="w-8 h-8 rounded object-cover border border-slate-600" />
+            ) : (
+              <div className="w-8 h-8 rounded bg-slate-700 flex items-center justify-center text-[10px] text-slate-400">No Img</div>
+            )}
+            {c.name}
+          </div>
+        )
+      },
+      {
+        key: 'category_group',
+        label: 'Category Group',
+        render: (c: any) => {
+          const group = categoryGroups.find(g => g.id === c.category_group_id);
+          if (group) {
+            return (
+              <span 
+                className="px-2 py-1 rounded-md text-xs font-bold text-white shadow-sm flex items-center w-max gap-1.5"
+                style={{ backgroundColor: group.color || '#3b82f6' }}
+              >
+                <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[10px]">
+                  {group.name.charAt(0)}
+                </div>
+                {group.name}
+              </span>
+            );
+          }
+          return <span className="text-slate-500 italic text-sm">No Group</span>;
+        }
+      },
+      {
+        key: 'is_active',
+        label: 'Status',
+        render: (c: any) => (
+          <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${c.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+            {c.is_active ? 'Active' : 'Inactive'}
+          </span>
+        )
+      },
+      {
+        key: 'menu',
+        label: 'Menu',
+        render: (c: any) => <span className="text-slate-400 text-sm">{c.menu?.name || 'Unassigned'}</span>
+      },
+      {
+        key: 'assigned_branches',
+        label: 'Assigned Branches',
+        sortable: false,
+        render: (c: any) => (
+          <div className="flex flex-wrap gap-1 max-w-[200px]">
+            {c.assigned_stores?.length > 0 ? c.assigned_stores.map((s:any) => (
+              <span key={s.id} className="bg-slate-700 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-wider text-slate-300">{s.name}</span>
+            )) : <span className="text-slate-500 italic text-xs">None</span>}
+          </div>
+        )
+      },
+      {
+        key: 'actions',
+        label: 'Actions',
+        sortable: false,
+        render: (c: any) => (
+          <div className="flex justify-end gap-3 items-center">
+            <button 
+              onClick={() => { 
+                setCategoryForm({ 
+                  id: c.id, 
+                  name: c.name, 
+                  menu_id: c.menu_id || 0, 
+                  category_group_id: c.category_group_id || 0,
+                  store_ids: c.assigned_stores?.map((s:any)=>s.id) || [], 
+                  image_url: c.image_url || '',
+                  is_active: c.is_active ?? true,
+                  sort_order: c.sort_order ?? 0
+                }); 
+                setShowCategoryModal(true); 
+              }}
+              className="text-slate-400 hover:text-white transition-colors"
+            >
+              <Edit size={18} />
+            </button>
+            <button onClick={() => handleDeleteCategory(c.id)} className="text-red-400 hover:text-red-300 transition-colors">
+              <Trash2 size={18} />
+            </button>
+          </div>
+        )
+      }
+    ];
+    return selectedBranchId ? cols.filter(c => c.key !== 'assigned_branches') : cols;
+  }, [categoryGroups, selectedBranchId]);
+
+  const productColumns = useMemo(() => {
+    return [
+      {
+        key: 'image',
+        label: 'Image',
+        sortable: false,
+        width: '60px',
+        render: (p: any) => p.image_url ? (
+          <img src={`${BACKEND_URL}${p.thumbnail_url || p.image_url}`} alt={p.name} className="w-10 h-10 rounded object-cover border border-slate-600" />
+        ) : (
+          <div className="w-10 h-10 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500">No Img</div>
+        )
+      },
+      {
+        key: 'name',
+        label: 'Product Name',
+        render: (p: any) => <span className="font-bold text-white">{p.name}</span>
+      },
+      { key: 'sku', label: 'SKU', render: (p: any) => <span className="font-mono text-slate-400 text-xs">{p.sku || '-'}</span> },
+      { 
+        key: 'category', 
+        label: 'Category', 
+        render: (p: any) => <span className="text-slate-300 text-sm">{p.categories?.map((c:any) => c.name).join(', ') || '-'}</span>
+      },
+      { 
+        key: 'category_group', 
+        label: 'Category Group', 
+        render: (p: any) => {
+          const groupNames = p.categories?.map((c:any) => categoryGroups.find(g => g.id === c.category_group_id)?.name).filter(Boolean);
+          const uniqueGroups = Array.from(new Set(groupNames));
+          return <span className="text-slate-300 text-sm">{uniqueGroups.join(', ') || 'Ungrouped'}</span>;
+        }
+      },
+      { 
+        key: 'menu', 
+        label: 'Menu Collection', 
+        render: (p: any) => {
+          const menuNames = p.categories?.map((c:any) => menus.find(m => m.id === c.menu_id)?.name).filter(Boolean);
+          const uniqueMenus = Array.from(new Set(menuNames));
+          return <span className="text-slate-300 text-sm">{uniqueMenus.join(', ') || '-'}</span>;
+        }
+      },
+      { 
+        key: 'modifiers', 
+        label: 'Modifier Groups',
+        sortable: false,
+        render: (p: any) => (
+          <div className="flex flex-wrap gap-1">
+            {p.modifierGroups?.map((mg:any) => {
+              const g = modifierGroups.find(x => x.id === mg.modifier_group_id);
+              return g ? <span key={g.id} className="bg-slate-700 px-1.5 py-0.5 rounded text-[10px]">{g.name}</span> : null;
+            })}
+          </div>
+        )
+      },
+      { 
+        key: 'recipe', 
+        label: 'Recipe', 
+        render: (p: any) => p.recipe ? (
+          <span className="inline-flex items-center gap-1 text-emerald-400 text-xs font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+            <CheckCircle2 size={12} /> {p.recipe.name}
+          </span>
+        ) : <span className="text-slate-500 text-xs italic">No Recipe</span>
+      },
+      { key: 'kitchen_station', label: 'Kitchen Station', render: (p: any) => <span className="text-slate-300 text-xs">{p.kitchen_station || 'Default'}</span> },
+      { key: 'printer_group', label: 'Printer Group', render: (p: any) => <span className="text-slate-300 text-xs">{p.printer_group || 'Default'}</span> },
+      { key: 'kds_group', label: 'KDS Group', render: (p: any) => <span className="text-slate-300 text-xs">{p.kds_group || 'Default'}</span> },
+      { 
+        key: 'availability', 
+        label: 'Availability Rule', 
+        render: (p: any) => {
+          const rule = availabilityRules?.find((r:any) => r.id === p.availability_rule_id);
+          return <span className="text-slate-300 text-xs">{rule ? rule.name : '-'}</span>;
+        }
+      },
+      { 
+        key: 'price', 
+        label: 'Price', 
+        render: (p: any) => <span className="font-mono font-bold text-[#4edea3]">{p.variants?.length > 0 ? `${p.variants.length} Sizes` : `Rs. ${p.price}`}</span> 
+      },
+      { key: 'cost', label: 'Cost', render: (p: any) => <span className="font-mono text-rose-400 text-xs">Rs. {p.cost || 0}</span> },
+      { 
+        key: 'margin', 
+        label: 'Margin', 
+        render: (p: any) => {
+          if (p.variants?.length > 0) return <span className="text-slate-500">-</span>;
+          const cost = p.cost || 0;
+          const price = p.price || 0;
+          if (price === 0) return <span className="text-slate-500">0%</span>;
+          const marginPct = ((price - cost) / price * 100).toFixed(1);
+          return <span className="font-mono text-emerald-400 text-xs">{marginPct}%</span>;
+        }
+      },
+      { key: 'tax_rate', label: 'Tax', render: (p: any) => <span className="font-mono text-slate-300 text-xs">{p.tax_rate || 0}%</span> },
+      { 
+        key: 'is_active', 
+        label: 'Status', 
+        render: (p: any) => (
+          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${p.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+            {p.is_active ? 'Active' : 'Inactive'}
+          </span>
+        ) 
+      },
+      {
+        key: 'updated_at',
+        label: 'Updated',
+        render: (p: any) => <span className="text-slate-400 text-[10px]">{new Date(p.updated_at).toLocaleDateString()}</span>
+      },
+      {
+        key: 'actions',
+        label: 'Actions',
+        sortable: false,
+        render: (p: any) => (
+          <div className="flex justify-end gap-3 items-center">
+            <button 
+              onClick={() => { 
+                setProductForm({ 
+                  id: p.id, 
+                  name: p.name, 
+                  price: p.price, 
+                  cost: p.cost || 0,
+                  description: p.description || '',
+                  category_ids: p.categories?.map((c:any) => c.id) || [], 
+                  sku: p.sku || '', 
+                  barcode: p.barcode || '',
+                  image_url: p.image_url || '',
+                  thumbnail_url: p.thumbnail_url || '',
+                  tax_rate: p.tax_rate || 0,
+                  is_active: p.is_active ?? true,
+                  recipe_id: p.recipe_id || 0,
+                  availability_rule_id: p.availability_rule_id || 0,
+                  kitchen_station: p.kitchen_station || 'Kitchen Main',
+                  printer_group: p.printer_group || 'Hot Printer',
+                  kds_group: p.kds_group || 'KDS Display 1',
+                  modifier_group_ids: p.modifierGroups?.map((mg:any) => mg.modifier_group_id) || [],
+                  assigned_store_ids: p.assigned_stores?.map((s:any) => s.id) || [], 
+                  hasVariants: p.variants && p.variants.length > 0, 
+                  variants: p.variants ? p.variants.map((v:any) => ({
+                    name: v.name, price: v.price, cost: v.cost || 0, sku: v.sku || '', barcode: v.barcode || '', recipe_id: v.recipe_id || 0
+                  })) : [] 
+                }); 
+                setIsEditingProduct(true); 
+                setIsProductEngineExpanded(true);
+              }} 
+              className="text-slate-400 hover:text-white transition-colors"
+            >
+              <Edit size={18} />
+            </button>
+            <button onClick={() => handleDeleteProduct(p.id)} className="text-red-400 hover:text-red-300 transition-colors">
+              <Trash2 size={18} />
+            </button>
+          </div>
+        )
+      }
+    ];
+  }, [categoryGroups, menus, modifierGroups, availabilityRules]);
+
   return (
     <div className="animate-fade-in flex flex-col h-[calc(100vh-160px)]">
       
@@ -510,7 +1170,13 @@ export default function MenuManager() {
           onClick={() => setActiveTab('CATEGORIES')}
           className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm ${activeTab === 'CATEGORIES' ? 'bg-[#3b82f6] text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
         >
-          <Tag size={16} /> Categories
+          <ListTree size={16} /> Categories
+        </button>
+        <button 
+          onClick={() => setActiveTab('CATEGORY_GROUPS')}
+          className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm ${activeTab === 'CATEGORY_GROUPS' ? 'bg-[#3b82f6] text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+        >
+          <Sliders size={16} /> Category Groups
         </button>
         <button 
           onClick={() => setActiveTab('PRODUCTS')}
@@ -554,31 +1220,45 @@ export default function MenuManager() {
                 <Plus size={18} /> Create Menu Collection
               </button>
             </div>
-            <div className="flex-1 p-6 overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {menus.map(m => (
-                  <div key={m.id} className="bg-slate-900 p-5 rounded-xl border border-slate-700 flex flex-col gap-3">
-                    <div className="flex justify-between items-start">
-                      <h4 className="font-bold text-white text-lg">{m.name}</h4>
-                      <div className="flex gap-2">
-                        <button onClick={() => handleDuplicateMenu(m.id)} className="text-purple-400 hover:text-purple-300 mr-2 flex items-center gap-1" title="Duplicate Menu">
-                          <Plus size={16}/> Copy
-                        </button>
-                        <button onClick={() => { setMenuForm({ id: m.id, name: m.name, store_ids: m.stores.map((s:any)=>s.id) }); setShowMenuModal(true); }} className="text-slate-400 hover:text-white"><Edit size={16}/></button>
-                        <button onClick={() => handleDeleteMenu(m.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button>
-                      </div>
-                    </div>
-                    <div className="text-sm text-slate-400">
-                      <strong>Assigned Branches:</strong><br/>
-                      {m.stores?.length > 0 ? m.stores.map((s:any) => s.name).join(', ') : <span className="text-slate-500 italic">None</span>}
-                    </div>
-                    <div className="text-sm text-slate-400">
-                      <strong>Categories:</strong> {m.categories?.length || 0}
-                    </div>
-                  </div>
-                ))}
-                {menus.length === 0 && <p className="text-slate-500 col-span-full text-center p-8">No menu collections found. Create one to assign to branches.</p>}
-              </div>
+            <div className="flex-1 overflow-y-auto">
+              <DataTable 
+                data={menus}
+                columns={menuColumns}
+                storageKey="menus_table"
+                searchFields={['name']}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* CATEGORY GROUPS TAB */}
+        {activeTab === 'CATEGORY_GROUPS' && (
+          <div className="flex flex-col h-full">
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Sliders className="text-[#3b82f6]" /> Category Groups
+              </h3>
+              <button 
+                onClick={() => {
+                  setCategoryGroupForm({ 
+                    id: 0, name: '', sort_order: categoryGroups.length + 1, icon: '', color: '#3b82f6', description: '', is_active: true, store_ids: stores.map(s => s.id),
+                    channel_visibility: { pos: true, website: true, waiter: true, qr: true, kiosk: true, delivery: true, takeaway: true }
+                  });
+                  setShowCategoryGroupModal(true);
+                }}
+                className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
+              >
+                <Plus size={18} /> New Group
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto">
+              <DataTable 
+                data={categoryGroups}
+                columns={categoryGroupColumns}
+                storageKey="category_groups_table"
+                searchFields={['name', 'description']}
+              />
             </div>
           </div>
         )}
@@ -590,117 +1270,71 @@ export default function MenuManager() {
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <ListTree className="text-[#3b82f6]" /> Menu Categories
               </h3>
-              <button 
-                onClick={() => { setCategoryForm({ id: 0, name: '', menu_id: 0, store_ids: [], image_url: '', is_active: true, sort_order: categories.length + 1 }); setShowCategoryModal(true); }}
-                className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
-              >
-                <Plus size={18} /> Add Category
-              </button>
+              <div className="flex items-center gap-3">
+                <select 
+                  value={categoryFilterGroupId} 
+                  onChange={e => setCategoryFilterGroupId(parseInt(e.target.value) || 0)}
+                  className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-sm focus:outline-none focus:border-[#fbbf24] w-64"
+                >
+                  <option value={0}>All Category Groups</option>
+                  {categoryGroups.map(cg => <option key={cg.id} value={cg.id}>{cg.name}</option>)}
+                </select>
+                <button 
+                  onClick={() => { setCategoryForm({ id: 0, name: '', menu_id: 0, category_group_id: 0, store_ids: [], image_url: '', is_active: true, sort_order: categories.length + 1 }); setShowCategoryModal(true); }}
+                  className="flex items-center gap-2 bg-[#3b82f6] hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold transition-colors"
+                >
+                  <Plus size={18} /> Add Category
+                </button>
+              </div>
             </div>
             
-            <div className="bg-slate-900 border-b border-slate-700 p-3 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-bold text-white px-2">Total Categories: {categories.length}</span>
-                {selectedCategories.length > 0 && (
-                  <button 
-                    onClick={handleBulkDeleteCategories}
-                    className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
-                  >
-                    <Trash2 size={14} /> Delete Selected ({selectedCategories.length})
-                  </button>
-                )}
+            <div className="bg-slate-900 border-b border-slate-700 p-3 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-bold text-white px-2">Total Categories: {categories.length}</span>
+                  {selectedCategories.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={handleBulkDeleteCategories}
+                        className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                      >
+                        <Trash2 size={14} /> Delete Selected ({selectedCategories.length})
+                      </button>
+                      <div className="flex items-center gap-1 border-l border-slate-700 pl-2 ml-2">
+                        <select 
+                          value={bulkCategoryGroupId} 
+                          onChange={e => setBulkCategoryGroupId(parseInt(e.target.value) || 0)}
+                          className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-xs focus:outline-none focus:border-[#fbbf24]"
+                        >
+                          <option value={0}>Assign Category Group...</option>
+                          {categoryGroups.map(cg => <option key={cg.id} value={cg.id}>{cg.name}</option>)}
+                        </select>
+                        {bulkCategoryGroupId > 0 && (
+                          <button 
+                            onClick={handleBulkAssignCategoryGroup}
+                            className="bg-[#3b82f6] hover:bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                          >
+                            Apply
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-800 text-xs uppercase font-bold text-slate-400 sticky top-0 z-10">
-                  <tr>
-                    <th className="p-4 w-12">
-                      <input 
-                        type="checkbox" 
-                        className="accent-[#fbbf24] cursor-pointer"
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedCategories(categories.map(c => c.id));
-                          else setSelectedCategories([]);
-                        }}
-                        checked={selectedCategories.length > 0 && selectedCategories.length === categories.length}
-                      />
-                    </th>
-                    <th className="p-4">Sort</th>
-                    <th className="p-4">Category Name</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4">Menu</th>
-                    <th className="p-4">Assigned Branches</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {categories.map(c => (
-                    <tr key={c.id} className={`border-t border-slate-700/50 hover:bg-slate-700/20 ${selectedCategories.includes(c.id) ? 'bg-[#fbbf24]/10' : ''}`}>
-                      <td className="p-4">
-                        <input 
-                          type="checkbox" 
-                          className="accent-[#fbbf24] cursor-pointer"
-                          checked={selectedCategories.includes(c.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) setSelectedCategories([...selectedCategories, c.id]);
-                            else setSelectedCategories(selectedCategories.filter(id => id !== c.id));
-                          }}
-                        />
-                      </td>
-                      <td className="p-4 font-mono text-slate-400">{c.sort_order ?? 0}</td>
-                      <td className="p-4 font-bold text-white flex items-center gap-3">
-                        {c.image_url ? (
-                          <img src={`${BACKEND_URL}${c.image_url}`} alt={c.name} className="w-8 h-8 rounded object-cover border border-slate-600" />
-                        ) : (
-                          <div className="w-8 h-8 rounded bg-slate-700 flex items-center justify-center text-[10px] text-slate-400">No Img</div>
-                        )}
-                        {c.name}
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${c.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                          {c.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-slate-400 text-sm">{c.menu?.name || 'Unassigned'}</td>
-                      <td className="p-4">
-                        <div className="flex flex-wrap gap-1">
-                          {c.assigned_stores?.map((s:any) => (
-                            <span key={s.id} className="bg-slate-700 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-wider text-slate-300">{s.name}</span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-4 flex justify-end gap-3 items-center">
-                        <button 
-                          onClick={() => { 
-                            setCategoryForm({ 
-                              id: c.id, 
-                              name: c.name, 
-                              menu_id: c.menu_id || 0, 
-                              store_ids: c.assigned_stores?.map((s:any)=>s.id) || [], 
-                              image_url: c.image_url || '',
-                              is_active: c.is_active ?? true,
-                              sort_order: c.sort_order ?? 0
-                            }); 
-                            setShowCategoryModal(true); 
-                          }}
-                          className="text-slate-400 hover:text-white transition-colors"
-                        >
-                          <Edit size={18} />
-                        </button>
-                        <button onClick={() => handleDeleteCategory(c.id)} className="text-red-400 hover:text-red-300 transition-colors">
-                          <Trash2 size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {categories.length === 0 && (
-                    <tr><td colSpan={7} className="p-8 text-center text-slate-500">No categories found.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable 
+              data={categories.filter(c => categoryFilterGroupId === 0 || c.category_group_id === categoryFilterGroupId)}
+              columns={categoryColumns}
+              storageKey="categories_table"
+              searchFields={['name']}
+              selection={{
+                selectedIds: selectedCategories,
+                onSelect: setSelectedCategories,
+                getId: c => c.id
+              }}
+            />
           </div>
         )}
 
@@ -708,10 +1342,26 @@ export default function MenuManager() {
         {activeTab === 'PRODUCTS' && (
           <div className="flex flex-col h-full">
             <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Utensils className="text-[#3b82f6]" /> Menu Products Engine
+              <h3 
+                className="text-xl font-bold text-white flex items-center gap-2 cursor-pointer select-none"
+                onClick={() => setIsProductEngineExpanded(!isProductEngineExpanded)}
+              >
+                <Utensils className="text-[#3b82f6]" /> Menu Products Engine 
+                <span className="text-slate-400 text-sm ml-2">{isProductEngineExpanded ? '▼' : '▶'}</span>
               </h3>
               <div className="flex gap-2">
+                {!isProductEngineExpanded && (
+                  <button 
+                    onClick={() => {
+                      setProductForm(initialProductForm);
+                      setIsEditingProduct(false);
+                      setIsProductEngineExpanded(true);
+                    }}
+                    className="flex items-center gap-2 bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 px-4 py-2 rounded-lg font-bold text-sm transition-colors"
+                  >
+                    <Plus size={16} /> Create Product
+                  </button>
+                )}
                 <button onClick={handleExportProductsCsv} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors">
                   <FileDown size={16} /> Export CSV
                 </button>
@@ -723,7 +1373,8 @@ export default function MenuManager() {
             </div>
 
             {/* Form */}
-            <div className="bg-slate-900 border-b border-slate-700 p-4 max-h-[360px] overflow-y-auto">
+            {isProductEngineExpanded && (
+            <div className="bg-slate-900 border-b border-slate-700 p-4 overflow-y-auto max-h-[360px]">
               <form onSubmit={handleProductSubmit} className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div>
@@ -982,151 +1633,118 @@ export default function MenuManager() {
                 </div>
               </form>
             </div>
+            )}
 
             {/* Filter */}
-            <div className="bg-slate-900 border-b border-slate-700 p-3 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-bold text-white px-2">Total Products: {products.length}</span>
-                {selectedProducts.length > 0 && (
-                  <button 
-                    onClick={handleBulkDeleteProducts}
-                    className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
-                  >
-                    <Trash2 size={14} /> Delete Selected ({selectedProducts.length})
-                  </button>
-                )}
+            <div className="bg-slate-900 border-b border-slate-700 p-3 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-bold text-white px-2">Total Products: {products.length}</span>
+                  {selectedProducts.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={handleBulkDeleteProducts}
+                        className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                      >
+                        <Trash2 size={14} /> Delete Selected ({selectedProducts.length})
+                      </button>
+                      <div className="flex items-center gap-1 border-l border-slate-700 pl-2 ml-2">
+                        <select 
+                          value={bulkProductCategoryId} 
+                          onChange={e => setBulkProductCategoryId(parseInt(e.target.value) || 0)}
+                          className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-xs focus:outline-none focus:border-[#fbbf24]"
+                        >
+                          <option value={0}>Assign Category...</option>
+                          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                        {bulkProductCategoryId > 0 && (
+                          <button 
+                            onClick={handleBulkAssignProductCategory}
+                            className="bg-[#fbbf24] hover:bg-yellow-500 text-slate-900 px-3 py-1.5 rounded-md text-xs font-bold transition-colors"
+                          >
+                            Apply
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <select 
-                value={productFilterCategoryId} 
-                onChange={e => setProductFilterCategoryId(parseInt(e.target.value))}
-                className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-sm focus:outline-none focus:border-[#fbbf24] w-64"
-              >
-                <option value={0}>All Categories</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+
+              {/* Advanced Filters */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
+                  <input 
+                    type="text" 
+                    placeholder="Search products by name, SKU..." 
+                    value={productSearch}
+                    onChange={e => setProductSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 bg-[#1e293b] border border-[#334155] rounded-md text-white text-sm focus:outline-none focus:border-[#fbbf24]"
+                  />
+                </div>
+                <select 
+                  value={productFilterMenuId} 
+                  onChange={e => setProductFilterMenuId(parseInt(e.target.value) || 0)}
+                  className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-sm focus:outline-none focus:border-[#fbbf24] w-48"
+                >
+                  <option value={0}>All Menu Collections</option>
+                  {menus.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <select 
+                  value={productFilterGroupId} 
+                  onChange={e => setProductFilterGroupId(parseInt(e.target.value) || 0)}
+                  className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-sm focus:outline-none focus:border-[#fbbf24] w-48"
+                >
+                  <option value={0}>All Category Groups</option>
+                  {categoryGroups.map(cg => <option key={cg.id} value={cg.id}>{cg.name}</option>)}
+                </select>
+                <select 
+                  value={productFilterCategoryId} 
+                  onChange={e => setProductFilterCategoryId(parseInt(e.target.value) || 0)}
+                  className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-sm focus:outline-none focus:border-[#fbbf24] w-48"
+                >
+                  <option value={0}>All Categories</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <select 
+                  value={productFilterStatus} 
+                  onChange={e => setProductFilterStatus(e.target.value)}
+                  className="bg-[#1e293b] border border-[#334155] rounded-md p-1.5 text-white text-sm focus:outline-none focus:border-[#fbbf24] w-32"
+                >
+                  <option value="all">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-left text-sm text-slate-300">
-                <thead className="bg-slate-900/50 text-slate-400 font-bold uppercase text-xs">
-                  <tr>
-                    <th className="p-4 w-12">
-                      <input 
-                        type="checkbox" 
-                        className="accent-[#fbbf24] cursor-pointer"
-                        onChange={(e) => {
-                          const filtered = products.filter(p => productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId));
-                          if (e.target.checked) setSelectedProducts(filtered.map(p => p.id));
-                          else setSelectedProducts([]);
-                        }}
-                        checked={selectedProducts.length > 0 && selectedProducts.length === products.filter(p => productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId)).length}
-                      />
-                    </th>
-                    <th className="p-4">Product Name</th>
-                    <th className="p-4">Recipe</th>
-                    <th className="p-4">Routing</th>
-                    <th className="p-4">Selling Price</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.filter(p => productFilterCategoryId === 0 || p.categories?.some((c:any) => c.id === productFilterCategoryId)).map(p => (
-                    <tr key={p.id} className={`border-t border-slate-700/50 hover:bg-slate-700/20 ${selectedProducts.includes(p.id) ? 'bg-[#fbbf24]/10' : ''}`}>
-                      <td className="p-4">
-                        <input 
-                          type="checkbox" 
-                          className="accent-[#fbbf24] cursor-pointer"
-                          checked={selectedProducts.includes(p.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) setSelectedProducts([...selectedProducts, p.id]);
-                            else setSelectedProducts(selectedProducts.filter(id => id !== p.id));
-                          }}
-                        />
-                      </td>
-                      <td className="p-4 font-bold text-white flex items-center gap-3">
-                        {p.image_url ? (
-                          <img src={`${BACKEND_URL}${p.thumbnail_url || p.image_url}`} alt={p.name} className="w-9 h-9 rounded object-cover border border-slate-600" />
-                        ) : (
-                          <div className="w-9 h-9 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500">No Img</div>
-                        )}
-                        <div>
-                          <div>{p.name}</div>
-                          <div className="text-xs font-mono text-slate-400 font-normal">SKU: {p.sku || 'N/A'} • Tax: {p.tax_rate}%</div>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        {p.recipe ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-400 text-xs font-bold bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                            <CheckCircle2 size={12} /> {p.recipe.name}
-                          </span>
-                        ) : (
-                          <span className="text-slate-500 text-xs italic">No Recipe</span>
-                        )}
-                      </td>
-                      <td className="p-4 text-xs text-slate-400">
-                        <div>Station: <span className="text-slate-200">{p.kitchen_station || 'Default'}</span></div>
-                        <div>KDS: <span className="text-slate-200">{p.kds_group || 'Default'}</span></div>
-                      </td>
-                      <td className="p-4 font-mono font-bold text-[#4edea3]">
-                        {p.variants?.length > 0 ? `${p.variants.length} Sizes/Variants` : `Rs. ${p.price}`}
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${p.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                          {p.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="p-4 flex justify-end gap-3 items-center">
-                        <button 
-                          onClick={() => { 
-                            setProductForm({ 
-                              id: p.id, 
-                              name: p.name, 
-                              price: p.price, 
-                              cost: p.cost || 0,
-                              description: p.description || '',
-                              category_ids: p.categories?.map((c:any) => c.id) || [], 
-                              sku: p.sku || '', 
-                              barcode: p.barcode || '',
-                              image_url: p.image_url || '',
-                              thumbnail_url: p.thumbnail_url || '',
-                              tax_rate: p.tax_rate || 0,
-                              is_active: p.is_active ?? true,
-                              recipe_id: p.recipe_id || 0,
-                              availability_rule_id: p.availability_rule_id || 0,
-                              kitchen_station: p.kitchen_station || 'Kitchen Main',
-                              printer_group: p.printer_group || 'Hot Printer',
-                              kds_group: p.kds_group || 'KDS Display 1',
-                              modifier_group_ids: p.modifierGroups?.map((mg:any) => mg.modifier_group_id) || [],
-                              assigned_store_ids: p.assigned_stores?.map((s:any) => s.id) || [], 
-                              hasVariants: p.variants && p.variants.length > 0, 
-                              variants: p.variants ? p.variants.map((v:any) => ({
-                                name: v.name, 
-                                price: v.price,
-                                cost: v.cost || 0,
-                                sku: v.sku || '',
-                                barcode: v.barcode || '',
-                                recipe_id: v.recipe_id || 0
-                              })) : [] 
-                            }); 
-                            setIsEditingProduct(true); 
-                          }} 
-                          className="text-slate-400 hover:text-white transition-colors"
-                        >
-                          <Edit size={18} />
-                        </button>
-                        <button onClick={() => handleDeleteProduct(p.id)} className="text-red-400 hover:text-red-300 transition-colors">
-                          <Trash2 size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {products.length === 0 && (
-                    <tr><td colSpan={7} className="p-8 text-center text-slate-500">No products found.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable 
+              data={products.filter(p => {
+                let show = true;
+                if (productFilterMenuId > 0) {
+                  show = show && p.categories?.some((c:any) => c.menu_id === productFilterMenuId);
+                }
+                if (productFilterGroupId > 0) {
+                  show = show && p.categories?.some((c:any) => c.category_group_id === productFilterGroupId);
+                }
+                if (productFilterCategoryId > 0) {
+                  show = show && p.categories?.some((c:any) => c.id === productFilterCategoryId);
+                }
+                if (productFilterStatus === 'active') show = show && p.is_active;
+                if (productFilterStatus === 'inactive') show = show && !p.is_active;
+                return show;
+              })}
+              columns={productColumns}
+              storageKey="products_table"
+              searchQuery={productSearch}
+              searchFields={['name', 'sku', 'description']}
+              selection={{
+                selectedIds: selectedProducts,
+                onSelect: setSelectedProducts,
+                getId: p => p.id
+              }}
+            />
           </div>
         )}
 
@@ -1145,55 +1763,13 @@ export default function MenuManager() {
               </button>
             </div>
 
-            <div className="flex-1 p-6 overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {modifierGroups.map(group => (
-                  <div key={group.id} className="bg-slate-900 p-5 rounded-xl border border-slate-700 flex flex-col justify-between gap-4">
-                    <div>
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-bold text-white text-lg">{group.name}</h4>
-                        <div className="flex gap-2">
-                          <button onClick={() => { setGroupForm({ id: group.id, name: group.name, is_required: group.is_required, min_selection: group.min_selection, max_selection: group.max_selection }); setShowGroupModal(true); }} className="text-slate-400 hover:text-white"><Edit size={16}/></button>
-                          <button onClick={() => handleDeleteGroup(group.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button>
-                        </div>
-                      </div>
-                      <div className="text-xs text-slate-400 flex gap-2 mb-3">
-                        <span className={`px-2 py-0.5 rounded font-bold ${group.is_required ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>
-                          {group.is_required ? 'Required' : 'Optional'}
-                        </span>
-                        <span className="bg-slate-800 px-2 py-0.5 rounded">Min: {group.min_selection} • Max: {group.max_selection}</span>
-                      </div>
-
-                      <div className="space-y-1.5 border-t border-slate-800 pt-3">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs font-bold text-slate-400 uppercase">Modifiers</span>
-                          <button 
-                            onClick={() => { setModifierForm({ id: 0, modifier_group_id: group.id, name: '', additional_price: 0 }); setShowModifierModal(true); }}
-                            className="text-xs text-[#3b82f6] hover:underline font-bold flex items-center gap-1"
-                          >
-                            <Plus size={12} /> Add Item
-                          </button>
-                        </div>
-                        {group.modifiers?.map((m: any) => (
-                          <div key={m.id} className="flex justify-between items-center text-sm bg-slate-800/60 px-3 py-1.5 rounded border border-slate-700/50">
-                            <span className="text-white font-medium">{m.name}</span>
-                            <div className="flex items-center gap-3">
-                              <span className="text-[#4edea3] font-mono text-xs">+Rs. {m.additional_price}</span>
-                              <button onClick={() => handleDeleteModifier(m.id)} className="text-red-400 hover:text-red-300"><Trash2 size={14}/></button>
-                            </div>
-                          </div>
-                        ))}
-                        {(!group.modifiers || group.modifiers.length === 0) && (
-                          <p className="text-xs text-slate-500 italic">No modifier choices added yet.</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {modifierGroups.length === 0 && (
-                  <p className="text-slate-500 col-span-full text-center p-8">No modifier groups found. Create one (e.g., Extra Cheese, Sauces).</p>
-                )}
-              </div>
+            <div className="flex-1 overflow-y-auto">
+              <DataTable 
+                data={modifierGroups}
+                columns={modifierGroupColumns}
+                storageKey="modifiers_table"
+                searchFields={['name']}
+              />
             </div>
           </div>
         )}
@@ -1213,34 +1789,13 @@ export default function MenuManager() {
               </button>
             </div>
 
-            <div className="flex-1 p-6 overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {availabilityRules.map(rule => (
-                  <div key={rule.id} className="bg-slate-900 p-5 rounded-xl border border-slate-700 flex flex-col justify-between gap-3">
-                    <div>
-                      <div className="flex justify-between items-start">
-                        <h4 className="font-bold text-white text-lg">{rule.name}</h4>
-                        <div className="flex gap-2">
-                          <button onClick={() => { setRuleForm({ id: rule.id, name: rule.name, type: rule.type, start_time: rule.start_time || '09:00', end_time: rule.end_time || '23:00', days: rule.days || 'Mon,Tue,Wed,Thu,Fri,Sat,Sun' }); setShowRuleModal(true); }} className="text-slate-400 hover:text-white"><Edit size={16}/></button>
-                          <button onClick={() => handleDeleteRule(rule.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button>
-                        </div>
-                      </div>
-                      <div className="text-sm text-slate-400 mt-2">
-                        <div><strong>Rule Type:</strong> <span className="text-amber-400 font-bold">{rule.type}</span></div>
-                        {rule.type !== 'ALWAYS' && (
-                          <>
-                            <div><strong>Hours:</strong> {rule.start_time} - {rule.end_time}</div>
-                            <div><strong>Days:</strong> {rule.days}</div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {availabilityRules.length === 0 && (
-                  <p className="text-slate-500 col-span-full text-center p-8">No custom rules found. Default rule is Always Available.</p>
-                )}
-              </div>
+            <div className="flex-1 overflow-y-auto">
+              <DataTable 
+                data={availabilityRules}
+                columns={availabilityRuleColumns}
+                storageKey="availability_table"
+                searchFields={['name', 'type']}
+              />
             </div>
           </div>
         )}
@@ -1288,6 +1843,87 @@ export default function MenuManager() {
         </div>
       )}
 
+      {/* Category Group Modal */}
+      {showCategoryGroupModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-lg animate-scale-up max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-white mb-4">{categoryGroupForm.id ? 'Edit Category Group' : 'Create Category Group'}</h3>
+            <form onSubmit={handleCategoryGroupSubmit}>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Group Name *</label>
+                  <input 
+                    required type="text" value={categoryGroupForm.name} onChange={e => setCategoryGroupForm({...categoryGroupForm, name: e.target.value})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#3b82f6]"
+                    placeholder="e.g. Fast Food"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Sort Order</label>
+                  <input 
+                    type="number" value={categoryGroupForm.sort_order} onChange={e => setCategoryGroupForm({...categoryGroupForm, sort_order: parseInt(e.target.value) || 0})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Color (Hex)</label>
+                  <input 
+                    type="text" value={categoryGroupForm.color} onChange={e => setCategoryGroupForm({...categoryGroupForm, color: e.target.value})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                    placeholder="#3b82f6"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Description</label>
+                  <textarea 
+                    value={categoryGroupForm.description} onChange={e => setCategoryGroupForm({...categoryGroupForm, description: e.target.value})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#3b82f6]"
+                    rows={2}
+                  ></textarea>
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <label className="flex items-center gap-2 cursor-pointer text-sm text-white font-bold bg-slate-900 p-3 rounded-lg border border-slate-700 w-max">
+                  <input 
+                    type="checkbox" 
+                    checked={categoryGroupForm.is_active}
+                    onChange={e => setCategoryGroupForm({...categoryGroupForm, is_active: e.target.checked})}
+                    className="accent-[#3b82f6] w-5 h-5 cursor-pointer"
+                  />
+                  Active Status
+                </label>
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-xs font-bold text-slate-400 mb-2">Channel Visibility</label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {Object.keys(categoryGroupForm.channel_visibility).map(channel => (
+                    <label key={channel} className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                      <input 
+                        type="checkbox" 
+                        checked={(categoryGroupForm.channel_visibility as any)[channel]}
+                        onChange={e => setCategoryGroupForm({
+                          ...categoryGroupForm, 
+                          channel_visibility: { ...categoryGroupForm.channel_visibility, [channel]: e.target.checked }
+                        })}
+                        className="accent-[#3b82f6] w-4 h-4 cursor-pointer"
+                      />
+                      {channel.toUpperCase()}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowCategoryGroupModal(false)} className="flex-1 py-3 rounded-lg font-bold text-slate-400 bg-slate-900 hover:bg-slate-700">Cancel</button>
+                <button type="submit" className="flex-1 py-3 rounded-lg font-bold text-white bg-[#3b82f6] hover:bg-blue-600">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Category Modal */}
       {showCategoryModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
@@ -1307,7 +1943,19 @@ export default function MenuManager() {
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
                   />
                 </div>
-                <div className="flex items-end pb-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Category Group</label>
+                  <select 
+                    value={categoryForm.category_group_id || 0} onChange={e => setCategoryForm({...categoryForm, category_group_id: parseInt(e.target.value) || 0})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  >
+                    <option value={0}>None</option>
+                    {categoryGroups.map(cg => (
+                      <option key={cg.id} value={cg.id}>{cg.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end pb-2 col-span-2">
                   <label className="flex items-center gap-2 text-sm font-bold text-white cursor-pointer">
                     <input 
                       type="checkbox" checked={categoryForm.is_active} onChange={e => setCategoryForm({...categoryForm, is_active: e.target.checked})}
@@ -1441,6 +2089,82 @@ export default function MenuManager() {
                 <button type="submit" className="flex-1 py-3 rounded-lg font-bold text-white bg-[#3b82f6] hover:bg-blue-600">Save</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* CSV Preview Modal */}
+      {csvPreviewData && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-fade-in overflow-y-auto">
+          <div className="bg-slate-800 rounded-xl p-6 w-full max-w-5xl shadow-2xl border border-slate-700 my-8 flex flex-col max-h-[90vh]">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <FileUp className="text-[#3b82f6]" /> CSV Import Preview
+            </h2>
+            
+            {csvErrors.length > 0 && (
+              <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg p-4 max-h-40 overflow-y-auto">
+                <h4 className="text-red-400 font-bold text-sm mb-2 flex items-center gap-2">
+                  <AlertCircle size={16} /> Validation Errors Found
+                </h4>
+                <ul className="list-disc pl-5 text-red-300 text-xs space-y-1">
+                  {csvErrors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-auto border border-slate-700 rounded-lg bg-slate-900">
+              <table className="w-full text-left border-collapse text-sm whitespace-nowrap">
+                <thead className="bg-slate-800 text-xs uppercase font-bold text-slate-400 sticky top-0 z-10">
+                  <tr>
+                    {csvPreviewData.headers.map((header, idx) => (
+                      <th key={idx} className="p-3 border-b border-slate-700">{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {csvPreviewData.rows.map((row, rIdx) => (
+                    <tr key={rIdx} className="border-b border-slate-700/50 hover:bg-slate-800/50">
+                      {csvPreviewData.headers.map((header, cIdx) => (
+                        <td key={cIdx} className="p-3 text-slate-300">
+                          {row[header]}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  {csvPreviewData.rows.length === 0 && (
+                    <tr>
+                      <td colSpan={csvPreviewData.headers.length} className="p-4 text-center text-slate-500">
+                        No valid rows found in CSV.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            <p className="text-slate-500 text-xs mt-3 mb-6 italic">
+              Showing preview of first 10 rows. Check headers and data before confirming upload.
+            </p>
+
+            <div className="flex gap-3">
+              <button 
+                type="button" 
+                onClick={() => { setCsvPreviewData(null); setCsvErrors([]); }} 
+                className="flex-1 py-3 rounded-lg font-bold text-slate-400 bg-slate-900 hover:bg-slate-700 border border-slate-700"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={confirmCsvUpload}
+                disabled={csvErrors.length > 0}
+                className={`flex-1 py-3 rounded-lg font-bold text-white transition-colors flex items-center justify-center gap-2
+                  ${csvErrors.length > 0 ? 'bg-slate-600 cursor-not-allowed opacity-50' : 'bg-[#fbbf24] hover:bg-yellow-500 text-slate-900'}`}
+              >
+                <CheckCircle2 size={18} /> Confirm Upload
+              </button>
+            </div>
           </div>
         </div>
       )}

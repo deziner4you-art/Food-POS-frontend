@@ -2,6 +2,7 @@ import { Controller, Get, Query, Req } from '@nestjs/common';
 import { RequirePermissions } from '../../../../common/decorators';
 import { TrialBalanceService } from '../services/trial-balance.service';
 import { TrialBalanceFilter } from '../interfaces/trial-balance-filter.interface';
+import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/trial-balance')
 export class TrialBalanceController {
@@ -17,7 +18,7 @@ export class TrialBalanceController {
       end_date: new Date(query.end_date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1; // Fallback for simulation
+    const userId = getSessionUserId(req.user);
     return this.trialBalanceService.generateTrialBalance(filter, userId);
   }
 
@@ -31,7 +32,7 @@ export class TrialBalanceController {
       end_date: new Date(query.end_date),
       store_id: Number(query.store_id),
     };
-    const userId = req.user?.id || 1;
+    const userId = getSessionUserId(req.user);
     const result = await this.trialBalanceService.generateTrialBalance(filter, userId);
     
     // Very basic CSV generation for demonstration

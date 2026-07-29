@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Volume2, ShieldAlert, BadgeInfo, Play, Cpu, Sparkles, Lock } from 'lucide-react';
+import { Settings, Volume2, ShieldAlert, BadgeInfo, Play, Cpu, Sparkles, Lock, Grid3X3 } from 'lucide-react';
 import type { StationSettings } from '../types';
 import { playNewOrderAlert, playReadyAlert, playEmergencyAlert } from '../utils/audio';
 
@@ -7,12 +7,14 @@ interface SettingsProps {
   settings: StationSettings;
   updateSettings: (s: Partial<StationSettings>) => void;
   readOnly?: boolean;
+  onRequestUnlock?: () => void;
 }
 
 export default function SettingsView({
   settings,
   updateSettings,
-  readOnly = false
+  readOnly = false,
+  onRequestUnlock
 }: SettingsProps) {
 
   const handleTestAudio = () => {
@@ -40,7 +42,14 @@ export default function SettingsView({
         <h2 className="text-2xl font-display font-bold text-[#dce2f7] flex items-center gap-2">
           <Settings className="w-7 h-7 text-brand-yellow" />
           <span>Kitchen Terminal Configurations</span>
-          {readOnly && <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-xs uppercase tracking-wider font-bold border border-slate-700 flex items-center gap-1"><Lock className="w-3 h-3" /> Locked</span>}
+          {readOnly && (
+            <button 
+              onClick={onRequestUnlock}
+              className="ml-2 px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs uppercase tracking-wider font-bold border border-slate-600 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Lock className="w-3 h-3" /> Locked - Click to Unlock
+            </button>
+          )}
         </h2>
         <p className="text-[#d3c5ac] text-xs font-mono mt-1">
           Adjust cooking durations, simulation triggers, acoustic frequencies and chef profile states.
@@ -270,6 +279,42 @@ export default function SettingsView({
           </div>
         </div>
 
+      </div>
+
+      {/* Kitchen Stations Section */}
+      <div className="mt-6 bg-[#191f2f] border border-[#4f4633]/20 p-5 rounded-xl space-y-4 shadow-lg">
+        <h3 className="text-sm font-mono font-bold text-[#d3c5ac] uppercase tracking-wider flex items-center gap-2 border-b border-[#4f4633]/20 pb-2.5">
+          <Grid3X3 className="w-4 h-4 text-brand-yellow" />
+          <span>Active Kitchen Stations</span>
+        </h3>
+        <p className="text-xs text-[#d3c5ac]/80 font-mono mb-2">Select which stations this terminal should display orders for:</p>
+        <div className="flex flex-wrap gap-3">
+          {['Grill', 'Fryer', 'Salad', 'Drinks', 'Dessert', 'Pizza'].map((station) => {
+            const isSelected = settings.selectedStations?.includes(station);
+            return (
+              <button
+                key={station}
+                type="button"
+                disabled={readOnly}
+                onClick={() => {
+                  const current = settings.selectedStations || [];
+                  if (isSelected) {
+                    updateSettings({ selectedStations: current.filter(s => s !== station) });
+                  } else {
+                    updateSettings({ selectedStations: [...current, station] });
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all disabled:opacity-50 ${
+                  isSelected 
+                    ? 'bg-brand-green/20 border-brand-green text-brand-green'
+                    : 'bg-[#0c1322] border-[#4f4633]/40 text-[#d3c5ac] hover:border-[#4f4633]'
+                }`}
+              >
+                {station}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Emergency Stops documentation warning */}
