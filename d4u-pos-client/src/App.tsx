@@ -542,13 +542,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     const fetchInitialData = async () => {
       try {
         const storeId = currentUser?.store_id;
+        // currentUser never carries a `.token` field — the real access token
+        // lives in localStorage (set at login, see LoginScreen/session.ts).
+        // Using currentUser?.token here always sent "Bearer undefined",
+        // making this fetch 401 silently on every page refresh — the online
+        // order was only ever visible via the live socket event, never
+        // reloaded from the backend afterwards.
+        const authToken = localStorage.getItem('d4u_pos_token');
         const res = await fetch(`${BACKEND_URL}/online-orders?store_id=${storeId}`, {
-          headers: { 'Authorization': `Bearer ${currentUser?.token}` }
+          headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (res.ok) setBackendOnlineOrders(await res.json());
 
         const riderRes = await fetch(`${BACKEND_URL}/rider-orders`, {
-          headers: { 'Authorization': `Bearer ${currentUser?.token}` }
+          headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (riderRes.ok) {
           const riderOrders: any[] = await riderRes.json();

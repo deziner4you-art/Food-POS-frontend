@@ -100,3 +100,31 @@ cd d4u-website && npm run dev
 - Never use `alert()`, `confirm()`, `prompt()` — use Toast or Modal instead
 - All frontend apps use custom UI popups only
 - Backend URL is auto-detected: `http://<hostname>:3001`
+
+==============================
+D4U AI TEAM RULES
+==============================
+
+1. Never modify the same file simultaneously.
+2. Never refactor another agent's work.
+3. Never rename folders unless approved.
+4. Never push to git.
+5. Never merge branches.
+6. Never remove backward compatibility.
+7. Every completed task must update documentation.
+8. Every task must include
+   - Executive Summary
+   - Files Created
+   - Files Modified
+   - Database Changes
+   - API Changes
+   - Known Gaps
+   - Next Recommendations
+9. Maintain docs/AI_TEAM_PROGRESS.md
+10. Maintain docs/CHANGELOG_AI.md
+11. Every commit-sized task must be documented before STOP.
+12. If another agent already modified a file, STOP and report conflict. Never overwrite.
+
+docs/AI_TEAM_PROGRESS.md / CHANGELOG_AI.md format:
+Sprint | Agent | Task | Status | Files | Pending | Known Issues | Next Step
+Date | Agent | Task | Files Changed | Summary

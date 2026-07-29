@@ -812,12 +812,47 @@ export default function MarketingHub() {
                     multiple
                     value={bundleProductIds.map(String)}
                     onChange={(e) => setBundleProductIds(Array.from(e.target.selectedOptions).map(o => Number(o.value)))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm h-32"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm h-32 font-mono"
                   >
-                    {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {products.map((p: any) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} — Sell: Rs.{p.price ?? 0} / Cost: Rs.{p.cost ?? 0}
+                      </option>
+                    ))}
                   </select>
                   <p className="text-xs text-slate-500 mt-1">Ctrl/Cmd-click to select multiple products.</p>
                 </div>
+                {bundleProductIds.length > 0 && (() => {
+                  const selectedProducts = products.filter((p: any) => bundleProductIds.includes(p.id));
+                  const totalSell = selectedProducts.reduce((sum: number, p: any) => sum + (p.price || 0), 0);
+                  const totalCost = selectedProducts.reduce((sum: number, p: any) => sum + (p.cost || 0), 0);
+                  const bundlePriceNum = Number(bundlePrice) || 0;
+                  const bundleMargin = bundlePriceNum > 0 ? (((bundlePriceNum - totalCost) / bundlePriceNum) * 100).toFixed(1) : null;
+                  return (
+                    <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs space-y-1">
+                      <div className="flex justify-between text-slate-300">
+                        <span>Selected items — combined selling price:</span>
+                        <span className="font-bold text-white">Rs. {totalSell.toFixed(0)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Combined cost:</span>
+                        <span className="font-bold">Rs. {totalCost.toFixed(0)}</span>
+                      </div>
+                      {bundlePriceNum > 0 && (
+                        <>
+                          <div className="flex justify-between text-amber-400">
+                            <span>Discount vs buying separately:</span>
+                            <span className="font-bold">Rs. {Math.max(0, totalSell - bundlePriceNum).toFixed(0)}</span>
+                          </div>
+                          <div className="flex justify-between text-emerald-400">
+                            <span>Your margin at this bundle price:</span>
+                            <span className="font-bold">{bundleMargin}%</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div>
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Fixed Bundle Price (Rs.)</label>
                   <input type="number" min="1" value={bundlePrice} onChange={(e) => setBundlePrice(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required />

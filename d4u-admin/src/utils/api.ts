@@ -24,10 +24,14 @@ export const logger = {
 };
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
-export const getAuthHeaders = (): Record<string, string> => {
+// isFormData: omit Content-Type entirely for multipart/form-data requests —
+// the browser must set its own `multipart/form-data; boundary=...` value,
+// which it only does when no Content-Type header is present at all. See
+// apiFetch() below for the enterprise-wide enforcement of this.
+export const getAuthHeaders = (isFormData = false): Record<string, string> => {
   const token = localStorage.getItem('d4u_admin_token');
   return {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 };
@@ -70,13 +74,33 @@ export const apiFetch = async (
   const isExternal = endpoint.startsWith('http');
   const url = isExternal ? endpoint : `${BACKEND_URL}${endpoint}`;
 
+  // Enterprise-safe, module-agnostic: any caller in any module (Marketing,
+  // Inventory, CRM, Website CMS, Menu Builder, future modules, ...) that
+  // passes a FormData body — file uploads, multipart form submissions —
+  // automatically gets the correct headers with zero per-call opt-in.
+  // Root cause this fixes: a hardcoded 'Content-Type': 'application/json'
+  // was previously forced onto every request, including multipart ones,
+  // which made the backend's body-parser try to JSON.parse raw multipart
+  // bytes and fail with a 400 before the request ever reached the
+  // controller/FileInterceptor.
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
+  const mergedHeaders: Record<string, string> = {
+    ...getAuthHeaders(isFormData),
+    ...(options.headers as Record<string, string> | undefined || {}),
+  };
+  // Belt-and-braces: strip any Content-Type a caller might still set
+  // explicitly (now or in the future) when the body is FormData, so this
+  // guarantee holds regardless of what any individual call site does.
+  if (isFormData) {
+    delete mergedHeaders['Content-Type'];
+    delete mergedHeaders['content-type'];
+  }
+
   try {
     const response = await fetch(url, {
       ...options,
-      headers: {
-        ...getAuthHeaders(),
-        ...(options.headers || {}),
-      },
+      headers: mergedHeaders,
     });
 
     // Central HTTP error handling
