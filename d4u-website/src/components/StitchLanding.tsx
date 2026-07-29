@@ -15,6 +15,7 @@ export interface Product {
   is_active: boolean;
   image_url?: string;
   category: string;
+  category_id?: number;
   description: string;
 }
 
@@ -63,10 +64,10 @@ export default function StitchLanding({
     categories: fi.categories
   }));
 
-  const CATEGORY_GROUPS = Array.from(new Set(PRODUCTS.map((p: any) => p.categoryGroup as string).filter(Boolean)));
+  const CATEGORY_GROUPS: string[] = Array.from(new Set<string>(PRODUCTS.map((p: any) => p.categoryGroup as string).filter(Boolean)));
   const [activeCategoryGroup, setActiveCategoryGroup] = useState<string>('');
 
-  const CATEGORIES: string[] = Array.from(new Set(
+  const CATEGORIES: string[] = Array.from(new Set<string>(
     PRODUCTS
       .filter((p: any) => CATEGORY_GROUPS.length === 0 || p.categoryGroup === activeCategoryGroup || !activeCategoryGroup)
       .map((p: any) => p.category as string)
@@ -495,19 +496,19 @@ export default function StitchLanding({
   });
 
   return (
-    <div className="min-h-screen bg-brand-dark text-white flex flex-col font-sans relative selection:bg-brand-yellow selection:text-brand-dark">
+    <div className="min-h-screen bg-stitch-bg text-stitch-ink flex flex-col font-sans relative selection:bg-stitch-accent selection:text-stitch-accent-ink">
       
       {/* ================= TOAST NOTIFICATION LAYER ================= */}
       {toast && (
-        <div className="fixed top-24 right-6 z-[200] max-w-sm w-full bg-slate-900/95 border border-slate-700 rounded-xl p-4 shadow-2xl backdrop-blur-md transition-all animate-bounce">
+        <div className="fixed top-24 right-6 z-[200] max-w-sm w-full bg-stitch-card/95 border border-stitch-border rounded-xl p-4 shadow-2xl backdrop-blur-md transition-all animate-bounce">
           <div className="flex items-start gap-3">
-            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />}
-            {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />}
-            {toast.type === 'info' && <Sparkles className="w-5 h-5 text-brand-yellow shrink-0 mt-0.5" />}
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-stitch-success shrink-0 mt-0.5" />}
+            {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-stitch-danger shrink-0 mt-0.5" />}
+            {toast.type === 'info' && <Sparkles className="w-5 h-5 text-stitch-accent shrink-0 mt-0.5" />}
             <div className="flex-1">
-              <p className="text-sm font-medium text-slate-100">{toast.message}</p>
+              <p className="text-sm font-medium text-stitch-ink">{toast.message}</p>
             </div>
-            <button onClick={() => setToast(null)} className="text-slate-400 hover:text-white shrink-0">
+            <button onClick={() => setToast(null)} className="text-stitch-muted hover:text-stitch-ink shrink-0">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -515,14 +516,14 @@ export default function StitchLanding({
       )}
 
       {/* ================= STICKY TOP NAVBAR ================= */}
-      <header className="sticky top-0 z-50 bg-brand-dark/95 border-b border-gray-800/80 backdrop-blur-md">
+      <header className="sticky top-0 z-50 bg-stitch-bg/95 border-b border-stitch-border backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 sm:h-20">
             {/* Logo */}
             <div className="flex-shrink-0">
-              <button 
-                onClick={() => setActiveTab('home')} 
-                className="text-lg sm:text-2xl font-black tracking-tight text-white hover:text-brand-yellow transition"
+              <button
+                onClick={() => setActiveTab('home')}
+                className="text-lg sm:text-2xl font-black tracking-tight text-stitch-ink hover:text-stitch-accent transition"
               >
                 {storeName || 'D4U Restaurant'}
               </button>
@@ -530,21 +531,21 @@ export default function StitchLanding({
 
             {/* Navigation links */}
             <nav className="hidden md:flex space-x-8">
-              <button 
+              <button
                 onClick={() => { setActiveTab('home'); }}
-                className={`px-1 py-2 text-sm font-bold tracking-wider transition ${activeTab === 'home' ? 'text-brand-yellow border-b-2 border-brand-yellow' : 'text-gray-300 hover:text-white'}`}
+                className={`px-1 py-2 text-sm font-bold tracking-wider transition ${activeTab === 'home' ? 'text-stitch-accent border-b-2 border-stitch-accent' : 'text-stitch-muted hover:text-stitch-ink'}`}
               >
                 MENU
               </button>
-              <button 
+              <button
                 onClick={() => { setActiveTab('rewards'); }}
-                className={`px-1 py-2 text-sm font-bold tracking-wider transition ${activeTab === 'rewards' ? 'text-brand-yellow border-b-2 border-brand-yellow' : 'text-gray-300 hover:text-white'}`}
+                className={`px-1 py-2 text-sm font-bold tracking-wider transition ${activeTab === 'rewards' ? 'text-stitch-accent border-b-2 border-stitch-accent' : 'text-stitch-muted hover:text-stitch-ink'}`}
               >
                 REWARDS
               </button>
-              <button 
+              <button
                 onClick={() => { setActiveTab('support'); }}
-                className={`px-1 py-2 text-sm font-bold tracking-wider transition ${activeTab === 'support' ? 'text-brand-yellow border-b-2 border-brand-yellow' : 'text-gray-300 hover:text-white'}`}
+                className={`px-1 py-2 text-sm font-bold tracking-wider transition ${activeTab === 'support' ? 'text-stitch-accent border-b-2 border-stitch-accent' : 'text-stitch-muted hover:text-stitch-ink'}`}
               >
                 SUPPORT
               </button>
@@ -553,33 +554,33 @@ export default function StitchLanding({
             {/* Right-side Actions */}
             <div className="flex items-center space-x-3 sm:space-x-5">
               {/* Dynamic Location Badge — opens same BranchSelectorModal as on load */}
-              <button 
+              <button
                 onClick={() => onChangeBranch ? onChangeBranch() : null}
-                className="flex items-center text-brand-yellow hover:text-brand-yellowHover text-xs sm:text-sm font-bold tracking-wider uppercase border border-brand-yellow/30 px-3 py-1.5 rounded-full bg-brand-yellow/5 hover:bg-brand-yellow/10 transition gap-1"
+                className="flex items-center text-stitch-accent hover:text-stitch-accent-hover text-xs sm:text-sm font-bold tracking-wider uppercase border border-stitch-accent/30 px-3 py-1.5 rounded-full bg-stitch-accent/5 hover:bg-stitch-accent/10 transition gap-1"
               >
                 <MapPin className="w-4 h-4 animate-pulse" />
                 {selectedLocation ? selectedLocation.branch : storeName || 'Select Location'}
-                <span className="text-[10px] text-brand-yellow/60 font-medium normal-case tracking-normal border-l border-brand-yellow/30 pl-2 ml-1">Change Branch</span>
+                <span className="text-[10px] text-stitch-accent/60 font-medium normal-case tracking-normal border-l border-stitch-accent/30 pl-2 ml-1">Change Branch</span>
               </button>
 
               {/* Track Order Button */}
-              <button 
+              <button
                 onClick={() => setIsTrackModalOpen(true)}
-                className="flex items-center gap-1.5 text-brand-yellow hover:text-white px-3 py-1.5 rounded-full hover:bg-slate-800 transition text-xs sm:text-sm font-bold uppercase tracking-wider"
+                className="flex items-center gap-1.5 text-stitch-accent hover:text-stitch-ink px-3 py-1.5 rounded-full hover:bg-stitch-surface transition text-xs sm:text-sm font-bold uppercase tracking-wider"
               >
                 <MapPin className="w-4 h-4" />
                 <span className="hidden sm:inline">Track Order</span>
               </button>
 
               {/* Cart Button */}
-              <button 
+              <button
                 onClick={() => setIsCartOpen(true)}
-                className="relative p-2.5 rounded-full text-gray-300 hover:text-white hover:bg-slate-800 transition"
+                className="relative p-2.5 rounded-full text-stitch-muted hover:text-stitch-ink hover:bg-stitch-surface transition"
                 aria-label="View Cart"
               >
                 <ShoppingCart className="w-5 h-5 sm:w-6 h-6" />
                 {cart.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-brand-pink text-white text-[10px] sm:text-xs font-black w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center border-2 border-brand-dark animate-pulse">
+                  <span className="absolute -top-1 -right-1 bg-stitch-danger text-white text-[10px] sm:text-xs font-black w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center border-2 border-stitch-bg animate-pulse">
                     {cart.reduce((sum, item) => sum + item.quantity, 0)}
                   </span>
                 )}
@@ -589,22 +590,22 @@ export default function StitchLanding({
         </div>
 
         {/* Responsive Mobile Nav Bar */}
-        <div className="md:hidden flex justify-around border-t border-gray-800/80 py-2.5 bg-brand-dark/95">
-          <button 
+        <div className="md:hidden flex justify-around border-t border-stitch-border py-2.5 bg-stitch-bg/95">
+          <button
             onClick={() => setActiveTab('home')}
-            className={`text-xs font-bold px-3 py-1 rounded-full ${activeTab === 'home' ? 'bg-brand-yellow text-brand-dark' : 'text-gray-400'}`}
+            className={`text-xs font-bold px-3 py-1 rounded-full ${activeTab === 'home' ? 'bg-stitch-accent text-stitch-accent-ink' : 'text-stitch-muted'}`}
           >
             MENU
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('rewards')}
-            className={`text-xs font-bold px-3 py-1 rounded-full ${activeTab === 'rewards' ? 'bg-brand-yellow text-brand-dark' : 'text-gray-400'}`}
+            className={`text-xs font-bold px-3 py-1 rounded-full ${activeTab === 'rewards' ? 'bg-stitch-accent text-stitch-accent-ink' : 'text-stitch-muted'}`}
           >
             REWARDS
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('support')}
-            className={`text-xs font-bold px-3 py-1 rounded-full ${activeTab === 'support' ? 'bg-brand-yellow text-brand-dark' : 'text-gray-400'}`}
+            className={`text-xs font-bold px-3 py-1 rounded-full ${activeTab === 'support' ? 'bg-stitch-accent text-stitch-accent-ink' : 'text-stitch-muted'}`}
           >
             SUPPORT
           </button>
@@ -618,38 +619,38 @@ export default function StitchLanding({
         {activeTab === 'home' && (
           <div>
             {/* HERO BANNER SLIDER */}
-            <section className="relative w-full min-h-[420px] sm:h-[500px] bg-brand-light flex items-center overflow-hidden transition-all duration-700">
+            <section className="relative w-full min-h-[420px] sm:h-[500px] bg-stitch-panel flex items-center overflow-hidden transition-all duration-700">
               <div className="absolute inset-0 z-0">
                 <div key={banners && banners.length > 0 ? banners[currentBannerIndex]?.id : 'default'} className="absolute inset-0 w-full h-full animate-fade-in">
-                  <img 
-                    alt={banners && banners.length > 0 ? banners[currentBannerIndex]?.title : "Delicious Premium Angus Burger"} 
-                    className="w-full h-full object-cover opacity-60 sm:opacity-80 animate-pan-zoom" 
+                  <img
+                    alt={banners && banners.length > 0 ? banners[currentBannerIndex]?.title : "Delicious Premium Angus Burger"}
+                    className="w-full h-full object-cover opacity-60 sm:opacity-80 animate-pan-zoom"
                     src={banners && banners.length > 0 ? `${BACKEND_URL}${banners[currentBannerIndex]?.imageUrl}` : "https://lh3.googleusercontent.com/aida-public/AB6AXuCIiya8Cbx_CdyZFIhVoboYMFkd2vfkN2hNvIBC6MwktpbKWWK4XVpoYLZEK6XF8rcaVTA6WKdoKFxr4wEo9vWFC6IzgvT4w8esgqz1lYyl1UwVY688mJQV9T5YVs_dgZYDIHY4zavtQh609odDannRlv2zZMAjpEue35Zpt7bYUFTRhhj7gzZBZmAQgpnQ0diZpLOw54wg6AEE4oNU4Oqi6EmSwayeNFkVrt2X69ckCqsBJzyk5opi0fXNiweo3dgOgiTVTPrsCYU"}
                   />
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-r from-brand-dark/90 via-brand-dark/40 to-transparent"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-stitch-bg/90 via-stitch-bg/40 to-transparent"></div>
               </div>
-              
+
               <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full animate-fade-in" key={`text-${currentBannerIndex}`}>
-                <div className="max-w-2xl bg-brand-dark/40 p-8 sm:p-12 rounded-[2rem] border border-white/10 shadow-2xl">
-                  <span className="inline-block bg-brand-yellow text-brand-dark text-[10px] sm:text-xs font-black px-3.5 py-1.5 rounded-full mb-4 uppercase tracking-wider">
+                <div className="max-w-2xl bg-stitch-bg/40 p-8 sm:p-12 rounded-[2rem] border border-stitch-border shadow-2xl">
+                  <span className="inline-block bg-stitch-accent text-stitch-accent-ink text-[10px] sm:text-xs font-black px-3.5 py-1.5 rounded-full mb-4 uppercase tracking-wider">
                     Featured
                   </span>
-                  <h1 className="text-4xl sm:text-6xl md:text-8xl font-black tracking-tight leading-none mb-4">
+                  <h1 className="text-4xl sm:text-6xl md:text-8xl font-black tracking-tight leading-none mb-4 text-stitch-ink">
                     {banners && banners.length > 0 ? (
                       <>
                         {(banners[currentBannerIndex]?.title || '').split(' ').slice(0, -1).join(' ')}<br/>
-                        <span className="text-brand-yellow">{(banners[currentBannerIndex]?.title || '').split(' ').slice(-1).join(' ')}</span>
+                        <span className="text-stitch-accent">{(banners[currentBannerIndex]?.title || '').split(' ').slice(-1).join(' ')}</span>
                       </>
                     ) : (
-                      <>Delicious<br/><span className="text-brand-yellow">Burgers</span></>
+                      <>Delicious<br/><span className="text-stitch-accent">Burgers</span></>
                     )}
                   </h1>
-                  <p className="mt-2 max-w-lg text-sm sm:text-lg text-slate-300 mb-6">
+                  <p className="mt-2 max-w-lg text-sm sm:text-lg text-stitch-muted mb-6">
                     {banners && banners.length > 0 ? banners[currentBannerIndex]?.subtitle : "Try our new premium Angus beef burger, loaded with melted cheddar, crisp vegetables, and our signature secret sauce. Freshly flame-cooked for your delight."}
                   </p>
                   <div className="flex flex-wrap gap-4">
-                    <button 
+                    <button
                       onClick={() => {
                         if (banners && banners.length > 0 && banners[currentBannerIndex]?.linkUrl) {
                           window.location.href = banners[currentBannerIndex].linkUrl;
@@ -658,7 +659,7 @@ export default function StitchLanding({
                           if (section) section.scrollIntoView({ behavior: 'smooth' });
                         }
                       }}
-                      className="bg-brand-yellow hover:bg-brand-yellowHover text-brand-dark font-extrabold py-3 px-8 rounded-full flex items-center gap-2 transition duration-300 transform hover:scale-105"
+                      className="bg-stitch-accent hover:bg-stitch-accent-hover text-stitch-accent-ink font-extrabold py-3 px-8 rounded-full flex items-center gap-2 transition duration-300 transform hover:scale-105 accent-glow"
                     >
                       {banners && banners.length > 0 ? (banners[currentBannerIndex]?.buttonText || 'ORDER NOW') : 'ORDER NOW'} <ArrowRight className="w-5 h-5" />
                     </button>
@@ -670,10 +671,10 @@ export default function StitchLanding({
               {banners && banners.length > 1 && (
                 <div className="absolute bottom-6 right-6 flex space-x-2 z-10">
                   {banners.map((_: any, idx: number) => (
-                    <button 
+                    <button
                       key={idx}
                       onClick={() => setCurrentBannerIndex(idx)}
-                      className={`h-2 rounded-full transition-all duration-300 ${idx === currentBannerIndex ? 'w-10 bg-brand-yellow' : 'w-2 bg-slate-500 hover:bg-slate-400'}`}
+                      className={`h-2 rounded-full transition-all duration-300 ${idx === currentBannerIndex ? 'w-10 bg-stitch-accent' : 'w-2 bg-stitch-muted/50 hover:bg-stitch-muted'}`}
                     />
                   ))}
                 </div>
@@ -682,31 +683,31 @@ export default function StitchLanding({
 
             {/* LIMITED TIME SPECIAL OFFERS */}
             {campaigns && campaigns.length > 0 && (
-              <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 border-t border-gray-800 relative">
+              <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 border-t border-stitch-border relative">
                 <div className="flex items-center justify-between mb-8">
                   <div>
-                    <p className="text-brand-pink text-xs font-black uppercase tracking-widest mb-1">Limited Time</p>
-                    <h2 className="text-xl sm:text-3xl font-black flex items-center gap-2">
-                      <Percent className="w-6 h-6 text-brand-pink" /> SPECIAL OFFERS
+                    <p className="text-stitch-accent text-xs font-black uppercase tracking-widest mb-1">Limited Time</p>
+                    <h2 className="text-xl sm:text-3xl font-black flex items-center gap-2 text-stitch-ink">
+                      <Percent className="w-6 h-6 text-stitch-accent" /> SPECIAL OFFERS
                     </h2>
                   </div>
                   {campaigns.length > 3 && (
                     <div className="flex space-x-2">
-                      <button 
+                      <button
                         onClick={() => {
                           const container = document.getElementById('campaigns-scroll-container');
                           if (container) container.scrollBy({ left: -320, behavior: 'smooth' });
                         }}
-                        className="p-2 bg-slate-800 hover:bg-brand-yellow text-white hover:text-brand-dark rounded-full transition"
+                        className="p-2 bg-stitch-surface hover:bg-stitch-accent text-stitch-ink hover:text-stitch-accent-ink rounded-full transition"
                       >
                         <ChevronLeft className="w-5 h-5" />
                       </button>
-                      <button 
+                      <button
                         onClick={() => {
                           const container = document.getElementById('campaigns-scroll-container');
                           if (container) container.scrollBy({ left: 320, behavior: 'smooth' });
                         }}
-                        className="p-2 bg-slate-800 hover:bg-brand-yellow text-white hover:text-brand-dark rounded-full transition"
+                        className="p-2 bg-stitch-surface hover:bg-stitch-accent text-stitch-ink hover:text-stitch-accent-ink rounded-full transition"
                       >
                         <ChevronRight className="w-5 h-5" />
                       </button>
@@ -738,7 +739,7 @@ export default function StitchLanding({
                     return (
                     <div
                       key={campaign.id}
-                      className="bg-brand-light border border-slate-800/80 hover:border-brand-yellow rounded-2xl p-6 relative overflow-hidden group transition duration-300 flex flex-col justify-between min-w-[300px] sm:min-w-[340px] snap-center flex-1"
+                      className="bg-stitch-card border border-stitch-border hover:border-stitch-accent rounded-2xl p-6 relative overflow-hidden group transition duration-300 flex flex-col justify-between min-w-[300px] sm:min-w-[340px] snap-center flex-1"
                     >
                       {/* Background Image */}
                       {campaign.image_url && (
@@ -748,40 +749,40 @@ export default function StitchLanding({
                             className="w-full h-full object-cover opacity-40 group-hover:opacity-50 transition-opacity"
                             alt={campaign.title}
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/90 to-transparent"></div>
+                          <div className="absolute inset-0 bg-gradient-to-t from-stitch-card via-stitch-card/90 to-transparent"></div>
                         </div>
                       )}
 
                       {/* Corner gradient */}
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-brand-yellow/5 rounded-bl-full -mr-6 -mt-6 transition-transform group-hover:scale-110 z-0"></div>
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-stitch-accent/5 rounded-bl-full -mr-6 -mt-6 transition-transform group-hover:scale-110 z-0"></div>
 
                       {isLimitedOffer && (
-                        <span className="absolute top-3 left-3 z-20 bg-red-600 text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-wider shadow-lg animate-pulse">
+                        <span className="absolute top-3 left-3 z-20 bg-stitch-danger text-white text-[9px] font-black px-2 py-1 rounded uppercase tracking-wider shadow-lg animate-pulse">
                           Limited Offer
                         </span>
                       )}
 
                       <div className="relative z-10">
-                        <span className="bg-brand-pink text-white text-[10px] font-black px-2.5 py-1 rounded mb-4 inline-block uppercase tracking-wider shadow-lg">
+                        <span className="bg-stitch-accent text-stitch-accent-ink text-[10px] font-black px-2.5 py-1 rounded mb-4 inline-block uppercase tracking-wider shadow-lg">
                           {badgeText}
                         </span>
-                        <h3 className="text-lg sm:text-xl font-bold mb-1 text-white drop-shadow-md">{campaign.title}</h3>
-                        <p className="text-slate-300 text-xs sm:text-sm mb-4 leading-relaxed line-clamp-2 drop-shadow-md">{campaign.description}</p>
+                        <h3 className="text-lg sm:text-xl font-bold mb-1 text-stitch-ink drop-shadow-md">{campaign.title}</h3>
+                        <p className="text-stitch-muted text-xs sm:text-sm mb-4 leading-relaxed line-clamp-2 drop-shadow-md">{campaign.description}</p>
                         {campaign.campaign_type === 'FREE_GIFT' && campaign.giftProduct?.name && (
-                          <p className="text-brand-yellow text-xs font-bold mb-2">🎁 Free Gift: {campaign.giftProduct.name}</p>
+                          <p className="text-stitch-accent text-xs font-bold mb-2">🎁 Free Gift: {campaign.giftProduct.name}</p>
                         )}
                         {['BUNDLE', 'COMBO'].includes(campaign.campaign_type) && campaign.bundle_products?.length > 0 && (
-                          <p className="text-brand-yellow text-xs font-bold mb-2">
+                          <p className="text-stitch-accent text-xs font-bold mb-2">
                             Includes: {campaign.bundle_products.map((p: any) => p.name).join(' + ')}
                           </p>
                         )}
                         {campaign.show_countdown && msLeft !== null && msLeft > 0 && (
-                          <p className="text-red-400 text-xs font-bold mb-2">Ends in {hoursLeft}h {minsLeft}m</p>
+                          <p className="text-stitch-danger text-xs font-bold mb-2">Ends in {hoursLeft}h {minsLeft}m</p>
                         )}
                       </div>
 
-                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700/60 relative z-10">
-                        <span className="text-[10px] font-bold text-brand-yellow tracking-wider font-mono uppercase drop-shadow-md">
+                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-stitch-border relative z-10">
+                        <span className="text-[10px] font-bold text-stitch-accent tracking-wider font-mono uppercase drop-shadow-md">
                           OFFER
                         </span>
                         <button
@@ -809,7 +810,7 @@ export default function StitchLanding({
                               document.getElementById('menu-grid-section')?.scrollIntoView({ behavior: 'smooth' });
                             }, 50);
                           }}
-                          className="bg-brand-yellow hover:bg-white text-brand-dark text-xs font-black py-2 px-4 rounded-full transition duration-300 shadow-[0_0_15px_rgba(255,215,0,0.3)] hover:shadow-[0_0_20px_rgba(255,255,255,0.5)]"
+                          className="bg-stitch-accent hover:bg-stitch-accent-hover text-stitch-accent-ink text-xs font-black py-2 px-4 rounded-full transition duration-300 accent-glow accent-glow-hover"
                         >
                           {['BOGO', 'BUNDLE', 'COMBO', 'FREE_GIFT'].includes(campaign.campaign_type)
                             ? 'View Deal'
@@ -827,28 +828,28 @@ export default function StitchLanding({
             <section id="menu-grid-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10 flex flex-col lg:flex-row gap-6 lg:gap-8">
               {/* CATEGORIES */}
               <aside className="lg:w-64 lg:flex-shrink-0 lg:sticky lg:top-24 lg:self-start">
-                <div className="bg-brand-light rounded-2xl lg:rounded-2xl p-2 border border-slate-800/80 flex lg:block items-center justify-between">
+                <div className="bg-stitch-card rounded-2xl lg:rounded-2xl p-2 border border-stitch-border flex lg:block items-center justify-between">
                   <div className="flex-1 flex lg:flex-col gap-2 lg:gap-1 items-stretch px-2 lg:px-1 py-1 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:max-h-[75vh] custom-scrollbar">
                     {CATEGORY_GROUPS.length > 0 && CATEGORY_GROUPS.map(group => (
                       <button
                         key={group}
                         onClick={() => { setActiveCategoryGroup(group); setActiveCategory(''); }}
                         className={`text-left px-4 py-2 lg:py-3 rounded-xl transition font-bold text-sm lg:text-[15px] whitespace-nowrap lg:whitespace-normal
-                          ${activeCategoryGroup === group ? 'bg-[#ffe1a7] text-black shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+                          ${activeCategoryGroup === group ? 'bg-stitch-accent text-stitch-accent-ink shadow-md' : 'text-stitch-muted hover:text-stitch-ink hover:bg-stitch-surface'}`}
                       >
                         {group}
                       </button>
                     ))}
-                    {CATEGORY_GROUPS.length > 0 && <div className="hidden lg:block w-full h-[1px] bg-slate-800 my-2"></div>}
-                    
+                    {CATEGORY_GROUPS.length > 0 && <div className="hidden lg:block w-full h-[1px] bg-stitch-border my-2"></div>}
+
                     {['All Items', 'Discounted', ...(CATEGORIES as string[])].map(category => (
                       <button
                         key={category}
                         onClick={() => setActiveCategory(category)}
                         className={`flex items-center gap-2 min-w-max lg:min-w-0 lg:w-full px-5 py-2.5 rounded-full lg:rounded-xl font-bold text-sm tracking-wide transition cursor-pointer text-left ${
                           activeCategory === category
-                            ? 'bg-brand-yellow text-brand-dark'
-                            : 'bg-slate-900/60 text-slate-400 hover:text-white hover:bg-slate-800'
+                            ? 'bg-stitch-accent text-stitch-accent-ink'
+                            : 'bg-stitch-surface/60 text-stitch-muted hover:text-stitch-ink hover:bg-stitch-surface'
                         }`}
                       >
                         {category === 'Discounted' ? <span className="text-base leading-none">🔥</span> : <Sparkles className="w-4 h-4 shrink-0" />}
@@ -862,78 +863,78 @@ export default function StitchLanding({
               {/* PRODUCTS GRID */}
               <div className="flex-1 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
-                  <h2 className="text-3xl sm:text-4xl font-black text-brand-yellow tracking-tight">{activeCategory}</h2>
+                  <h2 className="text-3xl sm:text-4xl font-black text-stitch-accent tracking-tight">{activeCategory}</h2>
 
                   {/* Simple Menu Search & View All Menu */}
                   <div className="flex items-center gap-4 max-w-md w-full justify-end">
 
                     <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stitch-muted" />
                       <input
                         type="text"
                         placeholder="Search menu..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-full pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-yellow"
+                        className="w-full bg-stitch-surface border border-stitch-border rounded-full pl-9 pr-4 py-2 text-sm text-stitch-ink focus:outline-none focus:border-stitch-accent"
                       />
                     </div>
                   </div>
                 </div>
 
                 {filteredProducts.length === 0 ? (
-                  <div className="text-center py-16 bg-brand-light rounded-3xl border border-slate-800/50">
-                    <ShoppingBag className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                    <p className="text-slate-400 font-bold">No products found matching your search.</p>
+                  <div className="text-center py-16 bg-stitch-card rounded-3xl border border-stitch-border">
+                    <ShoppingBag className="w-12 h-12 text-stitch-muted mx-auto mb-3" />
+                    <p className="text-stitch-muted font-bold">No products found matching your search.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8">
                     {filteredProducts.map((product: any) => (
-                    <div 
-                      key={product.id} 
-                      className="bg-brand-light border border-slate-800/60 rounded-3xl overflow-hidden relative group hover:border-brand-yellow/30 transition-all duration-300"
+                    <div
+                      key={product.id}
+                      className="bg-stitch-card border border-stitch-border rounded-3xl overflow-hidden relative group hover:border-stitch-accent/30 transition-all duration-300"
                     >
                       {/* Product Image Area */}
-                      <div className="aspect-square relative overflow-hidden bg-slate-900">
+                      <div className="aspect-square relative overflow-hidden bg-stitch-surface">
                         {getProductDiscount(product) > 0 && (
-                          <div className="absolute top-0 left-0 bg-brand-pink text-white text-xs font-black px-3 py-1.5 rounded-br-2xl shadow-lg z-20 flex items-center gap-1">
+                          <div className="absolute top-0 left-0 bg-stitch-accent text-stitch-accent-ink text-xs font-black px-3 py-1.5 rounded-br-2xl shadow-lg z-20 flex items-center gap-1">
                             <span>🔥</span> {getProductDiscount(product)}% OFF
                           </div>
                         )}
-                        <img 
-                          alt={product.name} 
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                        <img
+                          alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           src={product.image_url}
                           onError={(e) => {
                             // Fallback default burger placeholder
                             (e.target as HTMLImageElement).src = "https://lh3.googleusercontent.com/aida-public/AB6AXuCIiya8Cbx_CdyZFIhVoboYMFkd2vfkN2hNvIBC6MwktpbKWWK4XVpoYLZEK6XF8rcaVTA6WKdoKFxr4wEo9vWFC6IzgvT4w8esgqz1lYyl1UwVY688mJQV9T5YVs_dgZYDIHY4zavtQh609odDannRlv2zZMAjpEue35Zpt7bYUFTRhhj7gzZBZmAQgpnQ0diZpLOw54wg6AEE4oNU4Oqi6EmSwayeNFkVrt2X69ckCqsBJzyk5opi0fXNiweo3dgOgiTVTPrsCYU";
                           }}
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-brand-dark/95 via-brand-dark/40 to-transparent"></div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-stitch-bg/95 via-stitch-bg/40 to-transparent"></div>
                       </div>
 
                       {/* Overlap content */}
                       <div className="absolute bottom-0 left-0 right-0 p-5 flex justify-between items-end">
                         <div className="flex-1 pr-3">
-                          <h3 className="text-white font-black text-lg sm:text-xl tracking-tight mb-1">{product.name}</h3>
-                          <p className="text-slate-400 text-xs line-clamp-1 mb-2 leading-snug">{product.description}</p>
+                          <h3 className="text-stitch-ink font-black text-lg sm:text-xl tracking-tight mb-1">{product.name}</h3>
+                          <p className="text-stitch-muted text-xs line-clamp-1 mb-2 leading-snug">{product.description}</p>
                         </div>
                         <div className="flex items-end justify-between mt-4 relative z-10">
                           <div>
-                            <p className="text-sm text-slate-400 font-bold tracking-widest uppercase mb-1">{product.category}</p>
+                            <p className="text-sm text-stitch-muted font-bold tracking-widest uppercase mb-1">{product.category}</p>
                             <div className="flex items-baseline gap-2">
                               {product.variants && product.variants.length > 0 ? (
-                                <p className="text-xl font-black text-brand-yellow">Choose Size</p>
+                                <p className="text-xl font-black text-stitch-accent">Choose Size</p>
                               ) : (
-                                <p className="text-2xl font-black text-brand-yellow">
+                                <p className="text-2xl font-black text-stitch-accent">
                                   Rs. {getProductDiscount(product) > 0 ? (product.priceRs * (1 - getProductDiscount(product)/100)).toFixed(0) : product.priceRs}
                                 </p>
                               )}
                               {getProductDiscount(product) > 0 && !(product.variants && product.variants.length > 0) && (
-                                <p className="text-slate-500 text-sm line-through">Rs. {product.priceRs}</p>
+                                <p className="text-stitch-muted text-sm line-through">Rs. {product.priceRs}</p>
                               )}
                             </div>
                           </div>
-                          <button 
+                          <button
                             onClick={() => {
                               if (product.variants && product.variants.length > 0) {
                                 setPendingVariantProduct(product);
@@ -942,7 +943,7 @@ export default function StitchLanding({
                                 addToCart(product);
                               }
                             }}
-                            className="w-11 h-11 bg-white hover:bg-brand-yellow text-brand-dark rounded-full flex items-center justify-center transition shadow-lg shrink-0"
+                            className="w-11 h-11 bg-stitch-panel hover:bg-stitch-accent text-stitch-ink hover:text-stitch-accent-ink rounded-full flex items-center justify-center transition shadow-lg shrink-0"
                             aria-label={`Add ${product.name} to cart`}
                           >
                             <Plus className="w-5 h-5 stroke-[3px]" />
@@ -1285,25 +1286,25 @@ export default function StitchLanding({
       </main>
 
       {/* ================= STICKY FOOTER ================= */}
-      <footer className="bg-brand-light pt-12 pb-6 border-t border-gray-800">
+      <footer className="bg-stitch-panel pt-12 pb-6 border-t border-stitch-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-10">
-            
+
             {/* Brand Info */}
             <div>
-              <h3 className="text-brand-yellow font-black text-xl mb-4">{`${settings?.siteTitle || 'D4U Restaurant'}`}</h3>
-              <p className="text-slate-400 text-sm leading-relaxed mb-6 whitespace-pre-wrap">
+              <h3 className="text-stitch-accent font-black text-xl mb-4">{`${settings?.siteTitle || 'D4U Restaurant'}`}</h3>
+              <p className="text-stitch-muted text-sm leading-relaxed mb-6 whitespace-pre-wrap">
                 {`${settings?.aboutText || 'The future of fast-casual dining. Premium culinary quality fused with state-of-the-art POS ordering mechanisms.'}`}
               </p>
               <div className="flex space-x-4">
-                {settings?.facebookUrl && <a className="text-slate-400 hover:text-white transition" href={settings.facebookUrl} target="_blank" aria-label="Facebook"><Globe className="w-5 h-5" /></a>}
-                {settings?.instagramUrl && <a className="text-slate-400 hover:text-white transition" href={settings.instagramUrl} target="_blank" aria-label="Instagram"><Share2 className="w-5 h-5" /></a>}
-                {settings?.twitterUrl && <a className="text-slate-400 hover:text-white transition" href={settings.twitterUrl} target="_blank" aria-label="Twitter"><Share2 className="w-5 h-5" /></a>}
-                {settings?.youtubeUrl && <a className="text-slate-400 hover:text-white transition" href={settings.youtubeUrl} target="_blank" aria-label="YouTube"><Share2 className="w-5 h-5" /></a>}
+                {settings?.facebookUrl && <a className="text-stitch-muted hover:text-stitch-ink transition" href={settings.facebookUrl} target="_blank" aria-label="Facebook"><Globe className="w-5 h-5" /></a>}
+                {settings?.instagramUrl && <a className="text-stitch-muted hover:text-stitch-ink transition" href={settings.instagramUrl} target="_blank" aria-label="Instagram"><Share2 className="w-5 h-5" /></a>}
+                {settings?.twitterUrl && <a className="text-stitch-muted hover:text-stitch-ink transition" href={settings.twitterUrl} target="_blank" aria-label="Twitter"><Share2 className="w-5 h-5" /></a>}
+                {settings?.youtubeUrl && <a className="text-stitch-muted hover:text-stitch-ink transition" href={settings.youtubeUrl} target="_blank" aria-label="YouTube"><Share2 className="w-5 h-5" /></a>}
                 {(!settings?.facebookUrl && !settings?.instagramUrl) && (
                   <>
-                    <a className="text-slate-400 hover:text-white transition" href="#" aria-label="Website Link"><Globe className="w-5 h-5" /></a>
-                    <a className="text-slate-400 hover:text-white transition" href="#" aria-label="Share Link"><Share2 className="w-5 h-5" /></a>
+                    <a className="text-stitch-muted hover:text-stitch-ink transition" href="#" aria-label="Website Link"><Globe className="w-5 h-5" /></a>
+                    <a className="text-stitch-muted hover:text-stitch-ink transition" href="#" aria-label="Share Link"><Share2 className="w-5 h-5" /></a>
                   </>
                 )}
               </div>
@@ -1311,39 +1312,39 @@ export default function StitchLanding({
 
             {/* Links columns */}
             <div>
-              <h4 className="text-white font-black mb-4 uppercase text-xs tracking-widest">Contact Us</h4>
+              <h4 className="text-stitch-ink font-black mb-4 uppercase text-xs tracking-widest">Contact Us</h4>
               <ul className="space-y-2 text-sm">
-                {settings?.address && <li className="text-slate-400">{settings.address}</li>}
-                {settings?.contactPhone && <li className="text-slate-400">{settings.contactPhone}</li>}
-                {settings?.contactEmail && <li className="text-slate-400">{settings.contactEmail}</li>}
+                {settings?.address && <li className="text-stitch-muted">{settings.address}</li>}
+                {settings?.contactPhone && <li className="text-stitch-muted">{settings.contactPhone}</li>}
+                {settings?.contactEmail && <li className="text-stitch-muted">{settings.contactEmail}</li>}
                 {(!settings?.address && !settings?.contactPhone && !settings?.contactEmail) && (
                   <>
-                    <li><a className="text-slate-400 hover:text-white transition" href="#">Our GOURMET Menu</a></li>
-                    <li><a className="text-slate-400 hover:text-white transition" href="#">Bespoke Locations</a></li>
+                    <li><a className="text-stitch-muted hover:text-stitch-ink transition" href="#">Our GOURMET Menu</a></li>
+                    <li><a className="text-stitch-muted hover:text-stitch-ink transition" href="#">Bespoke Locations</a></li>
                   </>
                 )}
               </ul>
             </div>
 
             <div>
-              <h4 className="text-white font-black mb-4 uppercase text-xs tracking-widest">Company</h4>
+              <h4 className="text-stitch-ink font-black mb-4 uppercase text-xs tracking-widest">Company</h4>
               {settings?.companyText ? (
-                <p className="text-slate-400 text-sm whitespace-pre-wrap">{`${settings.companyText}`}</p>
+                <p className="text-stitch-muted text-sm whitespace-pre-wrap">{`${settings.companyText}`}</p>
               ) : (
                 <ul className="space-y-2 text-sm">
-                  <li><a className="text-slate-400 hover:text-white transition" href="#">Our Culinary Journey</a></li>
-                  <li><a className="text-slate-400 hover:text-white transition" href="#">Corporate Sustainability</a></li>
-                  <li><a className="text-slate-400 hover:text-white transition" href="#">Kitchen Careers</a></li>
-                  <li><a className="text-slate-400 hover:text-white transition" href="#">Intellectual Privacy</a></li>
+                  <li><a className="text-stitch-muted hover:text-stitch-ink transition" href="#">Our Culinary Journey</a></li>
+                  <li><a className="text-stitch-muted hover:text-stitch-ink transition" href="#">Corporate Sustainability</a></li>
+                  <li><a className="text-stitch-muted hover:text-stitch-ink transition" href="#">Kitchen Careers</a></li>
+                  <li><a className="text-stitch-muted hover:text-stitch-ink transition" href="#">Intellectual Privacy</a></li>
                 </ul>
               )}
             </div>
 
             {/* Newsletter form */}
             <div>
-              <h4 className="text-white font-black mb-4 uppercase text-xs tracking-widest">Join The D4U</h4>
-              <p className="text-slate-400 text-sm mb-4 leading-normal">Subscribe for exclusive chef specials and priority reservations.</p>
-              <form 
+              <h4 className="text-stitch-ink font-black mb-4 uppercase text-xs tracking-widest">Join The D4U</h4>
+              <p className="text-stitch-muted text-sm mb-4 leading-normal">Subscribe for exclusive chef specials and priority reservations.</p>
+              <form
                 onSubmit={async (e) => {
                   e.preventDefault();
                   const target = e.target as typeof e.target & { email: { value: string } };
@@ -1358,17 +1359,17 @@ export default function StitchLanding({
                   } catch (err) {
                     triggerToast("Failed to subscribe. Please try again.", "error");
                   }
-                }} 
+                }}
                 className="flex"
               >
-                <input 
+                <input
                   name="email"
-                  className="bg-slate-900 border border-slate-800 text-white text-sm rounded-l-xl px-4 py-2.5 w-full focus:outline-none focus:border-brand-yellow" 
-                  placeholder="Enter email address" 
+                  className="bg-stitch-surface border border-stitch-border text-stitch-ink text-sm rounded-l-xl px-4 py-2.5 w-full focus:outline-none focus:border-stitch-accent"
+                  placeholder="Enter email address"
                   type="email"
                   required
                 />
-                <button className="bg-brand-yellow hover:bg-brand-yellowHover text-brand-dark font-black text-sm px-5 py-2.5 rounded-r-xl transition" type="submit">
+                <button className="bg-stitch-accent hover:bg-stitch-accent-hover text-stitch-accent-ink font-black text-sm px-5 py-2.5 rounded-r-xl transition" type="submit">
                   JOIN
                 </button>
               </form>
@@ -1376,10 +1377,10 @@ export default function StitchLanding({
           </div>
         </div>
 
-        {/* Bottom Yellow Bar */}
-        <div className="bg-brand-yellow py-3.5 relative mt-8">
+        {/* Bottom Accent Bar */}
+        <div className="bg-stitch-accent py-3.5 relative mt-8">
           <div className="max-w-7xl mx-auto px-4 flex justify-center items-center">
-            <div className="text-[#0c1322] text-xs font-black tracking-wide">
+            <div className="text-stitch-accent-ink text-xs font-black tracking-wide">
               © 2026 D4U Restaurant Group. Inspired by the bold. Built for the gourmet.
             </div>
           </div>
@@ -1390,21 +1391,21 @@ export default function StitchLanding({
 
       {/* ================= DRAWER: SHOPPING CART SLIDEOVER ================= */}
       {isCartOpen && (
-        <div className="fixed inset-0 z-[100] flex justify-end bg-brand-dark/70 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex justify-end bg-stitch-bg/70 backdrop-blur-sm">
           {/* Backdrop Click Dismiss */}
           <div className="absolute inset-0" onClick={() => setIsCartOpen(false)}></div>
-          
-          <div className="relative w-full max-w-md bg-slate-900 h-full shadow-2xl flex flex-col justify-between z-10 border-l border-slate-800">
-            
+
+          <div className="relative w-full max-w-md bg-stitch-panel h-full shadow-2xl flex flex-col justify-between z-10 border-l border-stitch-border">
+
             {/* Header */}
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-5 border-b border-stitch-border flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <ShoppingCart className="w-5 h-5 text-brand-yellow" />
-                <h3 className="font-black text-lg text-white">Your Basket</h3>
+                <ShoppingCart className="w-5 h-5 text-stitch-accent" />
+                <h3 className="font-black text-lg text-stitch-ink">Your Basket</h3>
               </div>
-              <button 
+              <button
                 onClick={() => setIsCartOpen(false)}
-                className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition"
+                className="text-stitch-muted hover:text-stitch-ink p-2 rounded-full hover:bg-stitch-surface transition"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1414,38 +1415,38 @@ export default function StitchLanding({
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               {cart.length === 0 ? (
                 <div className="text-center py-20">
-                  <ShoppingBag className="w-12 h-12 text-slate-700 mx-auto mb-3 animate-pulse" />
-                  <p className="text-slate-400 font-bold">Your cart is empty.</p>
-                  <p className="text-xs text-slate-500 mt-1">Start adding delicious food from our menu!</p>
+                  <ShoppingBag className="w-12 h-12 text-stitch-muted mx-auto mb-3 animate-pulse" />
+                  <p className="text-stitch-muted font-bold">Your cart is empty.</p>
+                  <p className="text-xs text-stitch-muted mt-1">Start adding delicious food from our menu!</p>
                 </div>
               ) : (
                 cart.map(item => (
-                  <div key={item.product.id} className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 flex flex-col gap-3">
+                  <div key={item.product.id} className="bg-stitch-surface/60 p-4 rounded-2xl border border-stitch-border flex flex-col gap-3">
                     <div className="flex justify-between items-start gap-4">
                       <div>
-                        <h4 className="font-extrabold text-sm text-slate-100">{item.product.name}</h4>
-                        <p className="text-brand-yellow text-xs font-bold font-mono mt-1">${item.product.price.toFixed(2)} each</p>
+                        <h4 className="font-extrabold text-sm text-stitch-ink">{item.product.name}</h4>
+                        <p className="text-stitch-accent text-xs font-bold font-mono mt-1">${item.product.price.toFixed(2)} each</p>
                       </div>
-                      
+
                       {/* Quantity Controls */}
-                      <div className="flex items-center bg-slate-900 border border-slate-800 rounded-full px-2.5 py-1">
-                        <button onClick={() => adjustQuantity(item.product.id, -1)} className="text-slate-400 hover:text-white p-1">
+                      <div className="flex items-center bg-stitch-surface border border-stitch-border rounded-full px-2.5 py-1">
+                        <button onClick={() => adjustQuantity(item.product.id, -1)} className="text-stitch-muted hover:text-stitch-ink p-1">
                           <Minus className="w-3.5 h-3.5" />
                         </button>
-                        <span className="text-slate-100 text-xs font-bold px-2">{item.quantity}</span>
-                        <button onClick={() => adjustQuantity(item.product.id, 1)} className="text-slate-400 hover:text-white p-1">
+                        <span className="text-stitch-ink text-xs font-bold px-2">{item.quantity}</span>
+                        <button onClick={() => adjustQuantity(item.product.id, 1)} className="text-stitch-muted hover:text-stitch-ink p-1">
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
 
                     {/* Special instruction input */}
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       placeholder="Special instructions (e.g. no onions)..."
                       value={item.specialInstructions}
                       onChange={(e) => addSpecialInstruction(item.product.id, e.target.value)}
-                      className="bg-slate-900 border border-slate-800/80 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-brand-yellow"
+                      className="bg-stitch-surface border border-stitch-border rounded-lg px-3 py-1.5 text-xs text-stitch-ink focus:outline-none focus:border-stitch-accent"
                     />
                   </div>
                 ))
@@ -1454,56 +1455,56 @@ export default function StitchLanding({
 
             {/* Calculations & Checkout */}
             {cart.length > 0 && (
-              <div className="p-5 border-t border-slate-800 bg-slate-950/40 space-y-4">
+              <div className="p-5 border-t border-stitch-border bg-stitch-surface/40 space-y-4">
                 {/* Add Ons Button */}
-                <div className="p-4 sm:p-6 bg-brand-light border-t border-slate-800/50">
-                    <button 
+                <div className="p-4 sm:p-6 bg-stitch-card border-t border-stitch-border">
+                    <button
                       onClick={() => setModalType('ADD_ONS')}
-                      className="w-full py-2.5 mb-4 border-2 border-dashed border-brand-yellow text-brand-yellow rounded-xl font-black hover:bg-brand-yellow hover:text-brand-dark transition flex items-center justify-center gap-2"
+                      className="w-full py-2.5 mb-4 border-2 border-dashed border-stitch-accent text-stitch-accent rounded-xl font-black hover:bg-stitch-accent hover:text-stitch-accent-ink transition flex items-center justify-center gap-2"
                     >
                       <Plus className="w-5 h-5" /> Add ons
                     </button>
                 </div>
                 {/* Promo Code Info */}
                 {appliedCoupon && (
-                  <div className="flex justify-between items-center bg-brand-yellow/5 border border-brand-yellow/20 px-3 py-2 rounded-xl text-xs">
-                    <span className="text-brand-yellow font-black">Coupon Applied: {appliedCoupon.code}</span>
-                    <button onClick={() => setAppliedCoupon(null)} className="text-slate-400 hover:text-rose-400 font-bold">Remove</button>
+                  <div className="flex justify-between items-center bg-stitch-accent/5 border border-stitch-accent/20 px-3 py-2 rounded-xl text-xs">
+                    <span className="text-stitch-accent font-black">Coupon Applied: {appliedCoupon.code}</span>
+                    <button onClick={() => setAppliedCoupon(null)} className="text-stitch-muted hover:text-stitch-danger font-bold">Remove</button>
                   </div>
                 )}
 
                 {/* Bill Breakdown */}
                 <div className="space-y-2 text-xs">
-                  <div className="flex justify-between text-slate-400">
+                  <div className="flex justify-between text-stitch-muted">
                     <span>Subtotal</span>
                     <span>${getSubtotal().toFixed(2)}</span>
                   </div>
                   {getDiscountAmount() > 0 && (
-                    <div className="flex justify-between text-brand-pink font-bold">
+                    <div className="flex justify-between text-stitch-accent font-bold">
                       <span>Discount</span>
                       <span>-${getDiscountAmount().toFixed(2)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-slate-400">
+                  <div className="flex justify-between text-stitch-muted">
                     <span>GST / Sales Tax (13%)</span>
                     <span>${getTax().toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-slate-400">
+                  <div className="flex justify-between text-stitch-muted">
                     <span>Delivery Fee</span>
                     <span>{getDeliveryFee() === 0 ? "FREE" : `$${getDeliveryFee().toFixed(2)}`}</span>
                   </div>
-                  <div className="flex justify-between text-base font-black text-white pt-2 border-t border-slate-800">
+                  <div className="flex justify-between text-base font-black text-stitch-ink pt-2 border-t border-stitch-border">
                     <span>Grand Total</span>
                     <span>${getGrandTotal().toFixed(2)}</span>
                   </div>
                 </div>
 
-                <button 
+                <button
                   onClick={() => {
                     setIsCartOpen(false);
                     setIsCheckoutOpen(true);
                   }}
-                  className="w-full bg-brand-yellow hover:bg-brand-yellowHover text-brand-dark font-black py-4 rounded-xl text-sm transition tracking-wider uppercase transform active:scale-95 text-center flex justify-center items-center gap-2"
+                  className="w-full bg-stitch-accent hover:bg-stitch-accent-hover text-stitch-accent-ink font-black py-4 rounded-xl text-sm transition tracking-wider uppercase transform active:scale-95 text-center flex justify-center items-center gap-2 accent-glow"
                 >
                   Checkout Now <ArrowRight className="w-4 h-4" />
                 </button>
@@ -1516,18 +1517,18 @@ export default function StitchLanding({
       {/* ================= MODAL: TRACK ORDER ================= */}
       {isTrackModalOpen && (
         <div className="fixed inset-0 z-[250] flex justify-end">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsTrackModalOpen(false)} />
-          <aside className="relative w-full max-w-sm bg-[#191f2f] border-l border-slate-800 flex flex-col h-full shadow-2xl animate-slide-in-right overflow-y-auto custom-scrollbar">
+          <div className="absolute inset-0 bg-stitch-bg/60 backdrop-blur-sm" onClick={() => setIsTrackModalOpen(false)} />
+          <aside className="relative w-full max-w-sm bg-stitch-panel border-l border-stitch-border flex flex-col h-full shadow-2xl animate-slide-in-right overflow-y-auto custom-scrollbar">
             {/* Header */}
-            <div className="flex justify-between items-center p-6 border-b border-slate-800 shrink-0">
+            <div className="flex justify-between items-center p-6 border-b border-stitch-border shrink-0">
               <div>
-                <h3 className="text-xl font-black text-white flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-[#4edea3]" />
+                <h3 className="text-xl font-black text-stitch-ink flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-stitch-success" />
                   Track Order
                 </h3>
-                <p className="text-xs text-[#d3c5ac] mt-1">Enter Order ID</p>
+                <p className="text-xs text-stitch-muted mt-1">Enter Order ID</p>
               </div>
-              <button onClick={() => setIsTrackModalOpen(false)} className="text-slate-500 hover:text-white p-2">
+              <button onClick={() => setIsTrackModalOpen(false)} className="text-stitch-muted hover:text-stitch-ink p-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1555,10 +1556,10 @@ export default function StitchLanding({
                     type="text"
                     value={trackInput}
                     onChange={(e) => setTrackInput(e.target.value)}
-                    className="flex-1 bg-slate-900 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 outline-none focus:border-[#4edea3] transition-colors"
+                    className="flex-1 bg-stitch-surface border border-stitch-border text-stitch-ink text-sm rounded-xl px-4 py-3 outline-none focus:border-stitch-success transition-colors"
                     placeholder="e.g. 1033 or 0300..."
                   />
-                  <button type="submit" className="bg-[#4edea3] hover:bg-emerald-400 text-slate-950 px-5 rounded-xl font-bold transition-colors">
+                  <button type="submit" className="bg-stitch-success hover:opacity-90 text-stitch-bg px-5 rounded-xl font-bold transition-colors">
                     Find
                   </button>
                 </div>
@@ -1567,13 +1568,13 @@ export default function StitchLanding({
               {orderTracking && orderTracking.status !== 'Unknown' && (
                 <div className="space-y-4">
                   {/* Order found details */}
-                  <div className="bg-[#141b2b] rounded-2xl border border-slate-800 p-4 space-y-3">
+                  <div className="bg-stitch-surface rounded-2xl border border-stitch-border p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="font-black text-white text-base">Order #{orderTracking.id}</p>
-                        <p className="text-[10px] text-[#d3c5ac]">{(orderTracking as any).customer} · {(orderTracking as any).timePlaced}</p>
+                        <p className="font-black text-stitch-ink text-base">Order #{orderTracking.id}</p>
+                        <p className="text-[10px] text-stitch-muted">{(orderTracking as any).customer} · {(orderTracking as any).timePlaced}</p>
                       </div>
-                      <span className="text-xs font-black text-[#fbbf24]">${(orderTracking as any).totalAmount}</span>
+                      <span className="text-xs font-black text-stitch-accent">${(orderTracking as any).totalAmount}</span>
                     </div>
                   </div>
 
@@ -1603,15 +1604,15 @@ export default function StitchLanding({
                         { label: 'Completed', sub: currentStep >= 6 ? 'Settled ✓' : 'Pending...', done: currentStep >= 6 },
                       ].map((step, i) => (
                         <div key={i} className="flex items-start gap-3 relative">
-                          {i < 6 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
-                          <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
-                            step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
+                          {i < 6 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-stitch-success' : 'bg-stitch-border'}`}></div>}
+                          <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-stitch-panel ${
+                            step.done ? 'border-stitch-success text-stitch-success' : 'border-stitch-border text-transparent'
                           }`}>
-                            {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
+                            {step.done && <CheckCircle2 className="w-3 h-3 fill-stitch-success text-stitch-panel" />}
                           </div>
                           <div>
-                            <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
-                            <p className="text-[9px] text-[#d3c5ac]">{step.sub}</p>
+                            <p className={`text-[10px] font-bold ${step.done ? 'text-stitch-ink' : 'text-stitch-muted'}`}>{step.label}</p>
+                            <p className="text-[9px] text-stitch-muted">{step.sub}</p>
                         </div>
                       </div>
                     ));
@@ -1619,18 +1620,18 @@ export default function StitchLanding({
                   </div>
 
                   {orderTracking.status === 'DISPATCHED' && (
-                    <div className="bg-[#141b2b] border border-[#4edea3]/30 rounded-xl overflow-hidden mt-4">
-                      <div className="bg-[#4edea3]/10 px-4 py-2 flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-[#4edea3] animate-ping" />
-                        <span className="text-[10px] font-black uppercase text-[#4edea3]">Rider is approaching!</span>
+                    <div className="bg-stitch-surface border border-stitch-success/30 rounded-xl overflow-hidden mt-4">
+                      <div className="bg-stitch-success/10 px-4 py-2 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-stitch-success animate-ping" />
+                        <span className="text-[10px] font-black uppercase text-stitch-success">Rider is approaching!</span>
                       </div>
                     </div>
                   )}
 
                   {(orderTracking.status === 'PAID' || orderTracking.status === 'SETTLED') && (
-                    <div className="bg-[#141b2b] border border-amber-500/30 rounded-xl p-4 mt-4 text-center">
-                      <h4 className="text-sm font-black text-[#4edea3] mb-1">Thanks for ordering!</h4>
-                      <p className="text-[10px] text-slate-400">Your food was delivered.</p>
+                    <div className="bg-stitch-surface border border-stitch-success/30 rounded-xl p-4 mt-4 text-center">
+                      <h4 className="text-sm font-black text-stitch-success mb-1">Thanks for ordering!</h4>
+                      <p className="text-[10px] text-stitch-muted">Your food was delivered.</p>
                     </div>
                   )}
                 </div>
@@ -1745,16 +1746,16 @@ export default function StitchLanding({
 
       {/* ================= MODAL: POS CHECKOUT FLOW ================= */}
       {isCheckoutOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center px-4 bg-brand-dark/80 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-[0_20px_50px_rgba(0,0,0,0.8)] relative p-6 sm:p-8">
-            <button 
+        <div className="fixed inset-0 z-[110] flex items-center justify-center px-4 bg-stitch-bg/80 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-stitch-panel border border-stitch-border rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl relative p-6 sm:p-8">
+            <button
               onClick={() => setIsCheckoutOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800"
+              className="absolute top-4 right-4 text-stitch-muted hover:text-stitch-ink p-2 rounded-full hover:bg-stitch-surface"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-2xl font-black text-white mb-6">Complete Your Order</h3>
+            <h3 className="text-2xl font-black text-stitch-ink mb-6">Complete Your Order</h3>
 
             <form onSubmit={handlePlaceOrder} className="space-y-4">
               {/* Service Type Selection */}
@@ -1765,9 +1766,9 @@ export default function StitchLanding({
                     type="button"
                     onClick={() => setDeliveryType(type as any)}
                     className={`py-2 text-xs font-black rounded-lg border transition ${
-                      deliveryType === type 
-                        ? 'bg-brand-yellow text-brand-dark border-brand-yellow' 
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                      deliveryType === type
+                        ? 'bg-stitch-accent text-stitch-accent-ink border-stitch-accent'
+                        : 'bg-stitch-surface border-stitch-border text-stitch-muted hover:text-stitch-ink'
                     }`}
                   >
                     {type}
@@ -1777,57 +1778,57 @@ export default function StitchLanding({
 
               {/* Customer Info */}
               <div className="space-y-1">
-                <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Customer Name</label>
-                <input 
-                  type="text" 
+                <label className="text-[10px] font-black tracking-widest text-stitch-muted uppercase">Customer Name</label>
+                <input
+                  type="text"
                   placeholder="e.g. John Doe"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-yellow"
+                  className="w-full bg-stitch-surface border border-stitch-border rounded-xl px-4 py-3 text-sm text-stitch-ink focus:outline-none focus:border-stitch-accent"
                   required
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Contact Phone</label>
-                <input 
-                  type="tel" 
+                <label className="text-[10px] font-black tracking-widest text-stitch-muted uppercase">Contact Phone</label>
+                <input
+                  type="tel"
                   placeholder="e.g. +1 (555) 123-4567"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-yellow"
+                  className="w-full bg-stitch-surface border border-stitch-border rounded-xl px-4 py-3 text-sm text-stitch-ink focus:outline-none focus:border-stitch-accent"
                   required
                 />
               </div>
 
               {deliveryType === 'DELIVERY' ? (
                 <div className="space-y-1 animate-fade-in">
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Delivery Address</label>
-                  <textarea 
+                  <label className="text-[10px] font-black tracking-widest text-stitch-muted uppercase">Delivery Address</label>
+                  <textarea
                     rows={2}
                     placeholder="Enter absolute drop-off street details..."
                     value={customerAddress}
                     onChange={(e) => setCustomerAddress(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-yellow resize-none"
+                    className="w-full bg-stitch-surface border border-stitch-border rounded-xl px-4 py-3 text-sm text-stitch-ink focus:outline-none focus:border-stitch-accent resize-none"
                     required
                   ></textarea>
                 </div>
               ) : (
                 <div className="space-y-1 animate-fade-in">
-                  <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Table Number / Note</label>
-                  <input 
-                    type="text" 
+                  <label className="text-[10px] font-black tracking-widest text-stitch-muted uppercase">Table Number / Note</label>
+                  <input
+                    type="text"
                     placeholder="e.g. Table #5 or Counter pickup"
                     value={tableNumber}
                     onChange={(e) => setTableNumber(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand-yellow"
+                    className="w-full bg-stitch-surface border border-stitch-border rounded-xl px-4 py-3 text-sm text-stitch-ink focus:outline-none focus:border-stitch-accent"
                   />
                 </div>
               )}
 
               {/* Payment Methods */}
               <div className="space-y-1">
-                <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Payment Method</label>
+                <label className="text-[10px] font-black tracking-widest text-stitch-muted uppercase">Payment Method</label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { key: 'CASH', label: 'Cash Payment' },
@@ -1840,9 +1841,9 @@ export default function StitchLanding({
                       type="button"
                       onClick={() => setPaymentMethod(method.key as any)}
                       className={`py-3 text-xs font-bold rounded-xl border text-center transition ${
-                        paymentMethod === method.key 
-                          ? 'bg-brand-yellow text-brand-dark border-brand-yellow font-black' 
-                          : 'bg-slate-950 border-slate-800 text-slate-400'
+                        paymentMethod === method.key
+                          ? 'bg-stitch-accent text-stitch-accent-ink border-stitch-accent font-black'
+                          : 'bg-stitch-surface border-stitch-border text-stitch-muted'
                       }`}
                     >
                       {method.label}
@@ -1852,17 +1853,17 @@ export default function StitchLanding({
               </div>
 
               {/* Confirm Bill summary */}
-              <div className="bg-slate-950/50 rounded-2xl p-4 border border-slate-800 text-xs space-y-1">
-                <div className="flex justify-between text-slate-400">
+              <div className="bg-stitch-surface/50 rounded-2xl p-4 border border-stitch-border text-xs space-y-1">
+                <div className="flex justify-between text-stitch-muted">
                   <span>Tax & Delivery Fee included</span>
-                  <span className="font-bold text-white">${getGrandTotal().toFixed(2)}</span>
+                  <span className="font-bold text-stitch-ink">${getGrandTotal().toFixed(2)}</span>
                 </div>
               </div>
 
-              <button 
+              <button
                 type="submit"
                 disabled={isSubmittingOrder}
-                className="w-full bg-brand-yellow text-brand-dark hover:bg-brand-yellowHover font-black py-4 rounded-xl transition flex justify-center items-center gap-2 shadow-lg disabled:opacity-50 transform hover:scale-[1.02] uppercase tracking-wider text-sm mt-4"
+                className="w-full bg-stitch-accent text-stitch-accent-ink hover:bg-stitch-accent-hover font-black py-4 rounded-xl transition flex justify-center items-center gap-2 shadow-lg disabled:opacity-50 transform hover:scale-[1.02] uppercase tracking-wider text-sm mt-4 accent-glow"
               >
                 {isSubmittingOrder ? (
                   <>

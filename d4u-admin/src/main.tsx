@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { AdminProvider } from './context/AdminContext'
+import { initStitchTheme } from './theme'
 
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
@@ -18,6 +19,8 @@ window.fetch = async (...args) => {
   }
   return response;
 };
+
+initStitchTheme();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

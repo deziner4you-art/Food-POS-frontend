@@ -168,22 +168,22 @@ export default function KioskMode({
   };
 
   return (
-    <div id="kiosk-layout-container" className="h-screen flex flex-col bg-[#0c1322] text-[#dce2f7] select-none overflow-hidden font-sans">
+    <div id="kiosk-layout-container" className="h-screen flex flex-col bg-[var(--stitch-bg, #090d16)] text-[#dce2f7] select-none overflow-hidden font-sans">
       {/* Top Header */}
-      <header id="kiosk-header" className="h-24 bg-[#0c1322]/80 backdrop-blur-md border-b border-[#4f4633]/30 px-8 flex items-center justify-between sticky top-0 z-40">
+      <header id="kiosk-header" className="h-24 bg-[var(--stitch-bg, #090d16)]/80 backdrop-blur-md border-b border-[#4f4633]/30 px-8 flex items-center justify-between sticky top-0 z-40">
         <div id="kiosk-brand" className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-[#fbbf24] rounded-xl flex items-center justify-center text-[#6c4f00]">
+          <div className="w-12 h-12 bg-[var(--stitch-accent, #d4af37)] rounded-xl flex items-center justify-center text-[#6c4f00]">
             <Utensils className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
-            <h1 className="font-headline-lg text-2xl font-extrabold tracking-tight uppercase text-[#ffe1a7] leading-none">D4U GOURMET</h1>
+            <h1 className="font-headline-lg text-2xl font-extrabold tracking-tight uppercase text-[var(--stitch-accent, #d4af37)] leading-none">D4U GOURMET</h1>
             <p className="text-[10px] text-[#d3c5ac] tracking-[0.2em] font-extrabold mt-1">KITCHEN & GRILL</p>
           </div>
         </div>
 
         {/* Categories Bar */}
         <nav id="kiosk-top-nav" className="hidden lg:flex items-center gap-8">
-          <span className="text-[#ffe1a7] font-extrabold border-b-2 border-[#ffe1a7] pb-1 font-body-md cursor-pointer">MENU</span>
+          <span className="text-[var(--stitch-accent, #d4af37)] font-extrabold border-b-2 border-[var(--stitch-accent, #d4af37)] pb-1 font-body-md cursor-pointer">MENU</span>
           <span className="text-[#d3c5ac] hover:text-[#dce2f7] font-extrabold transition-colors font-body-md cursor-pointer">DEALS</span>
           <span className="text-[#d3c5ac] hover:text-[#dce2f7] font-extrabold transition-colors font-body-md cursor-pointer">LOCATIONS</span>
           <span className="text-[#d3c5ac] hover:text-[#dce2f7] font-extrabold transition-colors font-body-md cursor-pointer">MY REWARDS</span>
@@ -192,9 +192,9 @@ export default function KioskMode({
         {/* Language and Table info */}
         <div id="kiosk-status" className="flex items-center gap-6">
           {trackedOrderId && (
-            <div className="flex items-center gap-2 bg-[#141b2b] border border-[#4edea3]/40 px-3 py-1.5 rounded-full">
-              <span className="w-2 h-2 rounded-full bg-[#4edea3] animate-pulse" />
-              <span className="text-xs font-black text-[#4edea3]">
+            <div className="flex items-center gap-2 bg-[var(--stitch-surface, #161e2e)] border border-[var(--stitch-accent, #d4af37)]/40 px-3 py-1.5 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-[var(--stitch-accent, #d4af37)] animate-pulse" />
+              <span className="text-xs font-black text-[var(--stitch-accent, #d4af37)]">
                 Order #{trackedOrderId} - {trackedOrder?.kdsStatus || 'PENDING'}
               </span>
             </div>
@@ -213,21 +213,21 @@ export default function KioskMode({
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') setIsEditingTable(false);
                   }}
-                  className="w-12 bg-[#191f2f] border border-[#ffe1a7]/30 text-center rounded text-sm text-[#4edea3] focus:outline-none"
+                  className="w-12 bg-[var(--stitch-card, #121824)] border border-[var(--stitch-accent, #d4af37)]/30 text-center rounded text-sm text-[var(--stitch-accent, #d4af37)] focus:outline-none"
                   autoFocus
                 />
               </div>
             ) : (
               <p 
                 onClick={() => setIsEditingTable(true)} 
-                className="font-bold text-[#4edea3] cursor-pointer hover:underline text-base"
+                className="font-bold text-[var(--stitch-accent, #d4af37)] cursor-pointer hover:underline text-base"
                 title="Click to change Table Number"
               >
                 Table #{tableNumber}
               </p>
             )}
           </div>
-          <button className="w-12 h-12 rounded-full bg-[#191f2f] hover:bg-[#232a3a] flex items-center justify-center text-[#dce2f7] transition-all">
+          <button className="w-12 h-12 rounded-full bg-[var(--stitch-card, #121824)] hover:bg-[#232a3a] flex items-center justify-center text-[#dce2f7] transition-all">
             <Globe className="w-5 h-5" />
           </button>
         </div>
@@ -237,7 +237,7 @@ export default function KioskMode({
       <div id="kiosk-main-content-panel" className="flex-1 flex overflow-hidden">
         
         {/* Left main grid/carousel area */}
-        <main id="kiosk-menu-flow" className="flex-1 overflow-y-auto custom-scrollbar bg-[#0c1322] pb-12">
+        <main id="kiosk-menu-flow" className="flex-1 overflow-y-auto custom-scrollbar bg-[var(--stitch-bg, #090d16)] pb-12">
           
           {/* Customer Favorites Carousel */}
           <section id="kiosk-section-favorites" className="mt-8 px-8">
@@ -246,13 +246,13 @@ export default function KioskMode({
               <div className="flex gap-2">
                 <button 
                   onClick={() => scrollFavorites('left')}
-                  className="w-10 h-10 rounded-full border border-[#4f4633]/50 flex items-center justify-center hover:bg-[#191f2f]/80 active:scale-90 transition-all text-slate-300"
+                  className="w-10 h-10 rounded-full border border-[#4f4633]/50 flex items-center justify-center hover:bg-[var(--stitch-card, #121824)]/80 active:scale-90 transition-all text-stitch-ink"
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
                 <button 
                   onClick={() => scrollFavorites('right')}
-                  className="w-10 h-10 rounded-full border border-[#4f4633]/50 flex items-center justify-center hover:bg-[#191f2f]/80 active:scale-90 transition-all text-slate-300"
+                  className="w-10 h-10 rounded-full border border-[#4f4633]/50 flex items-center justify-center hover:bg-[var(--stitch-card, #121824)]/80 active:scale-90 transition-all text-stitch-ink"
                 >
                   <ChevronRight className="w-5 h-5" />
                 </button>
@@ -277,13 +277,13 @@ export default function KioskMode({
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-transparent p-6 flex flex-col justify-end">
                     <span className={`font-bold text-[10px] px-3 py-1 rounded-full w-fit mb-3 uppercase tracking-widest ${
-                      fav.tag === 'Bestseller' ? 'bg-[#ffe1a7] text-slate-950' : 'bg-[#4edea3] text-slate-950'
+                      fav.tag === 'Bestseller' ? 'bg-[var(--stitch-accent, #d4af37)] text-stitch-bg' : 'bg-[var(--stitch-accent, #d4af37)] text-stitch-bg'
                     }`}>
                       {fav.tag}
                     </span>
                     <h3 className="text-2xl font-black mb-1 text-white">{fav.name}</h3>
                     <p className="text-[#dce2f7]/80 text-xs mb-3 font-medium line-clamp-1">{fav.description}</p>
-                    <span className="text-xl font-bold text-[#ffe1a7]">Rs. {fav.priceRs.toLocaleString()}</span>
+                    <span className="text-xl font-bold text-[var(--stitch-accent, #d4af37)]">Rs. {fav.priceRs.toLocaleString()}</span>
                   </div>
                 </div>
               ))}
@@ -301,7 +301,7 @@ export default function KioskMode({
                     onClick={() => setActiveCategory(cat)}
                     className={`w-full text-left px-5 py-3.5 rounded-2xl font-bold transition-all whitespace-nowrap text-sm uppercase tracking-wider ${
                       isActive
-                        ? 'bg-[#ffe1a7] text-[#402d00] shadow-xl shadow-amber-400/10 scale-[1.02]'
+                        ? 'bg-[var(--stitch-accent, #d4af37)] text-[#402d00] shadow-xl shadow-amber-400/10 scale-[1.02]'
                         : 'bg-[#2e3545] text-[#dce2f7] hover:bg-[#232a3a]'
                     }`}
                   >
@@ -317,7 +317,7 @@ export default function KioskMode({
               {filteredFoodItems.map((item) => (
                 <div 
                   key={`grid-${item.id}`}
-                  className="group bg-[#141b2b] rounded-2xl overflow-hidden border border-[#4f4633]/20 hover:border-[#ffe1a7]/40 transition-all duration-300 flex flex-col shadow-lg hover:shadow-xl"
+                  className="group bg-[var(--stitch-surface, #161e2e)] rounded-2xl overflow-hidden border border-[#4f4633]/20 hover:border-[var(--stitch-accent, #d4af37)]/40 transition-all duration-300 flex flex-col shadow-lg hover:shadow-xl"
                 >
                   <div className="h-60 overflow-hidden relative">
                     <img 
@@ -331,12 +331,12 @@ export default function KioskMode({
                         e.stopPropagation();
                         onAddToCart(item);
                       }}
-                      className="absolute top-4 right-4 w-11 h-11 bg-black/40 backdrop-blur-md hover:bg-[#ffe1a7] hover:text-slate-950 text-white rounded-full flex items-center justify-center transition-all shadow"
+                      className="absolute top-4 right-4 w-11 h-11 bg-black/40 backdrop-blur-md hover:bg-[var(--stitch-accent, #d4af37)] hover:text-stitch-bg text-white rounded-full flex items-center justify-center transition-all shadow"
                     >
                       <Plus className="w-5 h-5 stroke-[2.5]" />
                     </button>
                     {item.tag && (
-                      <span className="absolute top-4 left-4 text-[9px] bg-amber-500 text-slate-950 font-bold px-2 py-1 rounded-md uppercase tracking-wider">
+                      <span className="absolute top-4 left-4 text-[9px] bg-stitch-accent text-stitch-bg font-bold px-2 py-1 rounded-md uppercase tracking-wider">
                         {item.tag}
                       </span>
                     )}
@@ -344,12 +344,12 @@ export default function KioskMode({
                   <div className="p-5 flex-1 flex flex-col">
                     <div className="flex justify-between items-start mb-2 gap-2">
                       <h3 className="text-lg font-bold text-white line-clamp-1">{item.name}</h3>
-                      <span className="text-base font-bold text-[#ffe1a7] shrink-0">Rs. {item.priceRs.toLocaleString()}</span>
+                      <span className="text-base font-bold text-[var(--stitch-accent, #d4af37)] shrink-0">Rs. {item.priceRs.toLocaleString()}</span>
                     </div>
                     <p className="text-[#d3c5ac] text-xs mb-6 line-clamp-2 flex-1">{item.description}</p>
                     <button 
                       onClick={() => onAddToCart(item)}
-                      className="w-full py-3 bg-[#2e3545] rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[#ffe1a7] hover:text-[#402d00] transition-all"
+                      className="w-full py-3 bg-[#2e3545] rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[var(--stitch-accent, #d4af37)] hover:text-[#402d00] transition-all"
                     >
                       Add to Basket
                     </button>
@@ -367,7 +367,7 @@ export default function KioskMode({
           <div className="p-6 border-b border-[#4f4633]/30">
             <div className="flex justify-between items-center mb-1">
               <h2 className="text-2xl font-black uppercase tracking-tight">Your Basket</h2>
-              <span className="bg-[#ffe1a7]/10 text-[#ffe1a7] px-3.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
+              <span className="bg-[var(--stitch-accent, #d4af37)]/10 text-[var(--stitch-accent, #d4af37)] px-3.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
                 {cart.reduce((sum, i) => sum + i.quantity, 0)} Items
               </span>
             </div>
@@ -384,8 +384,8 @@ export default function KioskMode({
               </div>
             ) : (
               cart.map((item) => (
-                <div key={`cart-${item.foodItem.id}`} className="flex gap-4 items-center bg-[#141b2b]/40 p-3 rounded-xl border border-slate-800/60">
-                  <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-slate-900 border border-slate-800">
+                <div key={`cart-${item.foodItem.id}`} className="flex gap-4 items-center bg-[var(--stitch-surface, #161e2e)]/40 p-3 rounded-xl border border-stitch-border/60">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-slate-900 border border-stitch-border">
                     <img 
                       className="w-full h-full object-cover image-no-referrer" 
                       src={item.foodItem.image} 
@@ -404,22 +404,22 @@ export default function KioskMode({
                       </button>
                     </div>
                     <div className="flex justify-between items-center mt-1">
-                      <div className="flex items-center gap-3 bg-[#191f2f] px-2.5 py-1 rounded-full border border-slate-700/30">
+                      <div className="flex items-center gap-3 bg-[var(--stitch-card, #121824)] px-2.5 py-1 rounded-full border border-stitch-border/30">
                         <button 
                           onClick={() => onDecreaseQuantity(item.foodItem.id)}
-                          className="w-5 h-5 flex items-center justify-center text-[#d3c5ac] hover:text-[#ffe1a7] active:scale-75 transition-all"
+                          className="w-5 h-5 flex items-center justify-center text-[#d3c5ac] hover:text-[var(--stitch-accent, #d4af37)] active:scale-75 transition-all"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
                         <span className="font-bold text-xs text-white w-3 text-center">{item.quantity}</span>
                         <button 
                           onClick={() => onIncreaseQuantity(item.foodItem.id)}
-                          className="w-5 h-5 flex items-center justify-center text-[#d3c5ac] hover:text-[#ffe1a7] active:scale-75 transition-all"
+                          className="w-5 h-5 flex items-center justify-center text-[#d3c5ac] hover:text-[var(--stitch-accent, #d4af37)] active:scale-75 transition-all"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
                       </div>
-                      <span className="font-bold text-sm text-[#4edea3]">Rs. {(item.foodItem.priceRs * item.quantity).toLocaleString()}</span>
+                      <span className="font-bold text-sm text-[var(--stitch-accent, #d4af37)]">Rs. {(item.foodItem.priceRs * item.quantity).toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -428,7 +428,7 @@ export default function KioskMode({
           </div>
 
           {/* Checkout section */}
-          <div className="p-6 bg-[#141b2b] border-t border-[#4f4633]/30 space-y-5">
+          <div className="p-6 bg-[var(--stitch-surface, #161e2e)] border-t border-[#4f4633]/30 space-y-5">
             <div className="space-y-2.5">
               <div className="flex justify-between text-[#d3c5ac]">
                 <span className="text-xs font-bold uppercase tracking-widest">Sub Total</span>
@@ -440,7 +440,7 @@ export default function KioskMode({
               </div>
               <div className="flex justify-between items-center pt-3 border-t border-[#4f4633]/20">
                 <span className="text-lg font-extrabold uppercase tracking-tight text-white">Total</span>
-                <span className="text-2xl font-black text-[#ffe1a7]">Rs. {total.toLocaleString()}.00</span>
+                <span className="text-2xl font-black text-[var(--stitch-accent, #d4af37)]">Rs. {total.toLocaleString()}.00</span>
               </div>
             </div>
 
@@ -448,7 +448,7 @@ export default function KioskMode({
               <button 
                 onClick={handleCheckout}
                 disabled={cart.length === 0}
-                className={`w-full h-16 bg-[#4edea3] text-[#003824] font-black uppercase text-base rounded-2xl shadow-xl shadow-emerald-950/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
+                className={`w-full h-16 bg-[var(--stitch-accent, #d4af37)] text-[#003824] font-black uppercase text-base rounded-2xl shadow-xl shadow-emerald-950/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
                   cart.length === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:brightness-105 cursor-pointer'
                 }`}
               >
@@ -484,7 +484,7 @@ export default function KioskMode({
           <span>{currentTime}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-[#4edea3] animate-pulse"></span>
+          <span className="w-2 h-2 rounded-full bg-[var(--stitch-accent, #d4af37)] animate-pulse"></span>
           CONNECTED - KIOSK #01
         </div>
       </footer>
@@ -492,19 +492,19 @@ export default function KioskMode({
       {/* Payment Success Modal Dialog */}
       {paymentSuccess && (
         <div id="payment-success-modal" className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-[#141b2b] border border-amber-500/30 max-w-sm w-full rounded-3xl p-6 text-center space-y-6 shadow-2xl">
-            <div className="w-16 h-16 bg-emerald-500/10 border-2 border-[#4edea3] rounded-full flex items-center justify-center mx-auto text-[#4edea3]">
+          <div className="bg-[var(--stitch-surface, #161e2e)] border border-amber-500/30 max-w-sm w-full rounded-3xl p-6 text-center space-y-6 shadow-2xl">
+            <div className="w-16 h-16 bg-emerald-500/10 border-2 border-[var(--stitch-accent, #d4af37)] rounded-full flex items-center justify-center mx-auto text-[var(--stitch-accent, #d4af37)]">
               <Check className="w-8 h-8 stroke-[3]" />
             </div>
             
             <div className="space-y-2">
-              <h3 className="text-2xl font-black uppercase text-amber-100">Order Placed!</h3>
+              <h3 className="text-2xl font-black uppercase text-stitch-ink">Order Placed!</h3>
               <p className="text-xs text-[#d3c5ac]">Your receipt has been compiled at Table #{tableNumber}</p>
             </div>
 
             {/* Receipt Summary Box */}
-            <div className="bg-[#070e1d] rounded-xl p-4 text-left font-mono text-[11px] text-[#ffe1a7] space-y-2 border border-slate-800">
-              <div className="flex justify-between font-bold border-b border-slate-800 pb-1.5 text-slate-400">
+            <div className="bg-[#070e1d] rounded-xl p-4 text-left font-mono text-[11px] text-[var(--stitch-accent, #d4af37)] space-y-2 border border-stitch-border">
+              <div className="flex justify-between font-bold border-b border-stitch-border pb-1.5 text-stitch-muted">
                 <span>ITEM</span>
                 <span>QTY / PRICE</span>
               </div>
@@ -516,12 +516,12 @@ export default function KioskMode({
                   </div>
                 ))}
               </div>
-              <div className="border-t border-slate-800 pt-1.5 space-y-1">
+              <div className="border-t border-stitch-border pt-1.5 space-y-1">
                 <div className="flex justify-between text-slate-500">
                   <span>Service Charge:</span>
                   <span>Rs 60.00</span>
                 </div>
-                <div className="flex justify-between font-bold text-sm text-[#4edea3]">
+                <div className="flex justify-between font-bold text-sm text-[var(--stitch-accent, #d4af37)]">
                   <span>TOTAL:</span>
                   <span>Rs {total.toLocaleString()}.00</span>
                 </div>
@@ -535,7 +535,7 @@ export default function KioskMode({
             <button
               id="btn-complete-order"
               onClick={finalizeOrder}
-              className="w-full py-4 bg-[#ffe1a7] text-slate-950 font-extrabold uppercase rounded-2xl active:scale-95 transition-all text-xs tracking-wider shadow"
+              className="w-full py-4 bg-[var(--stitch-accent, #d4af37)] text-stitch-bg font-extrabold uppercase rounded-2xl active:scale-95 transition-all text-xs tracking-wider shadow"
             >
               Order Received / Serve Mode
             </button>
@@ -545,3 +545,4 @@ export default function KioskMode({
     </div>
   );
 }
+

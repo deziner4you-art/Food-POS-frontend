@@ -1,0 +1,176 @@
+/*
+ * Stitch Design System — Theme Engine
+ *
+ * Every theme block below must define the same 16 custom properties.
+ * Adding a 7th theme means adding one more `[data-theme="..."]` block with
+ * all 16 — nothing else in this file changes, and no component ever
+ * hardcodes a color: everything reads through --color-stitch-* below.
+ */
+
+@theme {
+  --font-display: "Montserrat", sans-serif;
+}
+
+:root,
+[data-theme='gold-luxury'] {
+  color-scheme: dark;
+  --stitch-bg: #0C0C0E;
+  --stitch-panel: #121215;
+  --stitch-card: #16130B;
+  --stitch-card-rgb: 22, 19, 11;
+  --stitch-surface: #1A1A1D;
+  --stitch-surface-rgb: 26, 26, 29;
+  --stitch-border: rgba(255, 255, 255, 0.10);
+  --stitch-ink: #EAE1D4;
+  --stitch-muted: #A8A29E;
+  --stitch-accent: #D4AF37;
+  --stitch-accent-hover: #FFE088;
+  --stitch-accent-deep: #8C6D1F;
+  --stitch-accent-ink: #000000;
+  --stitch-accent-rgb: 212, 175, 55;
+  --stitch-success: #34D399;
+  --stitch-danger: #FB7185;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --stitch-bg: #F7F5F2;
+  --stitch-panel: #FFFFFF;
+  --stitch-card: #FFFFFF;
+  --stitch-card-rgb: 255, 255, 255;
+  --stitch-surface: #F1EEE9;
+  --stitch-surface-rgb: 241, 238, 233;
+  --stitch-border: rgba(0, 0, 0, 0.08);
+  --stitch-ink: #1C1B18;
+  --stitch-muted: #6B675F;
+  --stitch-accent: #B8860B;
+  --stitch-accent-hover: #C9971A;
+  --stitch-accent-deep: #8C6608;
+  --stitch-accent-ink: #FFFFFF;
+  --stitch-accent-rgb: 184, 134, 11;
+  --stitch-success: #059669;
+  --stitch-danger: #DC2626;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --stitch-bg: #0F1115;
+  --stitch-panel: #16181D;
+  --stitch-card: #1B1E24;
+  --stitch-card-rgb: 27, 30, 36;
+  --stitch-surface: #21252C;
+  --stitch-surface-rgb: 33, 37, 44;
+  --stitch-border: rgba(255, 255, 255, 0.08);
+  --stitch-ink: #E5E7EB;
+  --stitch-muted: #9CA3AF;
+  --stitch-accent: #6366F1;
+  --stitch-accent-hover: #818CF8;
+  --stitch-accent-deep: #4338CA;
+  --stitch-accent-ink: #FFFFFF;
+  --stitch-accent-rgb: 99, 102, 241;
+  --stitch-success: #34D399;
+  --stitch-danger: #FB7185;
+}
+
+[data-theme='blue-professional'] {
+  color-scheme: dark;
+  --stitch-bg: #0B1220;
+  --stitch-panel: #111A2E;
+  --stitch-card: #142238;
+  --stitch-card-rgb: 20, 34, 56;
+  --stitch-surface: #1A2C46;
+  --stitch-surface-rgb: 26, 44, 70;
+  --stitch-border: rgba(255, 255, 255, 0.10);
+  --stitch-ink: #E8EEF7;
+  --stitch-muted: #94A3B8;
+  --stitch-accent: #2563EB;
+  --stitch-accent-hover: #3B82F6;
+  --stitch-accent-deep: #1E3A8A;
+  --stitch-accent-ink: #FFFFFF;
+  --stitch-accent-rgb: 37, 99, 235;
+  --stitch-success: #22C55E;
+  --stitch-danger: #EF4444;
+}
+
+[data-theme='green-nature'] {
+  color-scheme: dark;
+  --stitch-bg: #0B140F;
+  --stitch-panel: #101B14;
+  --stitch-card: #14231A;
+  --stitch-card-rgb: 20, 35, 26;
+  --stitch-surface: #1A2E22;
+  --stitch-surface-rgb: 26, 46, 34;
+  --stitch-border: rgba(255, 255, 255, 0.10);
+  --stitch-ink: #E7F3EA;
+  --stitch-muted: #94B3A0;
+  --stitch-accent: #16A34A;
+  --stitch-accent-hover: #22C55E;
+  --stitch-accent-deep: #14532D;
+  --stitch-accent-ink: #FFFFFF;
+  --stitch-accent-rgb: 22, 163, 74;
+  --stitch-success: #4ADE80;
+  --stitch-danger: #F87171;
+}
+
+[data-theme='red-premium'] {
+  color-scheme: dark;
+  --stitch-bg: #140A0A;
+  --stitch-panel: #1C0F0F;
+  --stitch-card: #241313;
+  --stitch-card-rgb: 36, 19, 19;
+  --stitch-surface: #2E1717;
+  --stitch-surface-rgb: 46, 23, 23;
+  --stitch-border: rgba(255, 255, 255, 0.10);
+  --stitch-ink: #F5E6E6;
+  --stitch-muted: #C79A9A;
+  --stitch-accent: #B3122A;
+  --stitch-accent-hover: #D81C3A;
+  --stitch-accent-deep: #7A0C1E;
+  --stitch-accent-ink: #FFFFFF;
+  --stitch-accent-rgb: 179, 18, 42;
+  --stitch-success: #34D399;
+  --stitch-danger: #FCA5A5;
+}
+
+/* Tailwind v4 "inline" theme mapping: generated utilities (bg-stitch-accent,
+   text-stitch-ink, border-stitch-border, etc.) reference these variables
+   indirectly, so switching [data-theme] on <html> re-themes every utility
+   without a rebuild. */
+@theme inline {
+  --color-stitch-bg: var(--stitch-bg);
+  --color-stitch-panel: var(--stitch-panel);
+  --color-stitch-card: var(--stitch-card);
+  --color-stitch-surface: var(--stitch-surface);
+  --color-stitch-border: var(--stitch-border);
+  --color-stitch-ink: var(--stitch-ink);
+  --color-stitch-muted: var(--stitch-muted);
+  --color-stitch-accent: var(--stitch-accent);
+  --color-stitch-accent-hover: var(--stitch-accent-hover);
+  --color-stitch-accent-deep: var(--stitch-accent-deep);
+  --color-stitch-accent-ink: var(--stitch-accent-ink);
+  --color-stitch-success: var(--stitch-success);
+  --color-stitch-danger: var(--stitch-danger);
+}
+
+.glass-panel {
+  background: rgba(var(--stitch-surface-rgb), 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--stitch-border);
+}
+
+.glass-card {
+  background: rgba(var(--stitch-card-rgb), 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(var(--stitch-accent-rgb), 0.15);
+}
+
+.accent-glow {
+  box-shadow: 0 0 25px -5px rgba(var(--stitch-accent-rgb), 0.25);
+}
+
+.accent-glow-hover:hover {
+  box-shadow: 0 10px 30px -5px rgba(var(--stitch-accent-rgb), 0.3);
+  transform: translateY(-2px);
+}

@@ -19,21 +19,15 @@ export default function App() {
   const [settings, setSettings] = useState<any>(null);
 
   const [viewMode, setViewMode] = useState<'landing' | 'kiosk' | 'mobile'>(() => {
-    const w = window.innerWidth;
-    if (w <= 640) return 'mobile';
-    if (w <= 1024) return 'kiosk';
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    if (mode === 'mobile') return 'mobile';
+    if (mode === 'kiosk') return 'kiosk';
     return 'landing';
   });
 
   useEffect(() => {
     document.title = 'D4U Restaurant — Online Ordering';
-    const onResize = () => {
-      const w = window.innerWidth;
-      if (w <= 640) setViewMode('mobile');
-      else if (w <= 1024) setViewMode('kiosk');
-      else setViewMode('landing');
-    };
-    window.addEventListener('resize', onResize);
 
     // Fetch Stores
     const fetchStores = async () => {
@@ -43,8 +37,6 @@ export default function App() {
       } catch (err) { console.error('Failed to fetch stores:', err); }
     };
     fetchStores();
-
-    return () => window.removeEventListener('resize', onResize);
   }, []);
 
   useEffect(() => {
@@ -89,7 +81,7 @@ export default function App() {
                 image: p.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80',
                 category: p.__catName,
                 categoryGroup: p.__groupName,
-                tag: 'New',
+                tag: undefined,
                 preparationTime: '10 mins',
                 calories: 500,
                 variants: p.variants || [],

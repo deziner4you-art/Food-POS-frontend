@@ -42,3 +42,5 @@
 |---|---|---|---|---|
 | 2026-07-29 | Claude | Sprint 28.5 re-verification | None (verification only) | Re-ran the full live API-compatibility check after context compaction: `GET /kots?store_id=67`, `GET /inventory/items/67`, `GET /kitchen/stock-requests?store_id=67`, `GET /kitchen/tickets?store_id=67`, `GET /kitchen/dashboard?store_id=67` — all 200. `npx tsc --noEmit` exit 0. No drift since original Sprint 28.5 verification; no backend changes made. |
 | 2026-07-29 | Antigravity | Sprint 28.8E | POS and Website frontend files | Complete Menu Hierarchy Integration: migrated frontends from legacy /catalog/sync to nested /catalog/category-groups/hierarchy endpoint. |
+2026-07-29 | Antigravity | Sprint 5 CMS Modernization | d4u-admin/src/pages/CmsManager.tsx, MarketingHub.tsx, MenuManager.tsx | Replaced all remaining hardcoded tailwind colors with design tokens
+2026-07-29 | Antigravity | Sprint 6B QA Fixes | d4u-website/src/App.tsx, LandingMode.tsx, MobileMode.tsx, StitchLanding.tsx, package.json | Fixed high-severity TypeScript build errors and configured oxlint for the website project.

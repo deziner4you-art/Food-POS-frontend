@@ -604,13 +604,13 @@ export default function MarketingHub() {
     <>
     <div className="animate-fade-in max-w-7xl w-full mx-auto space-y-6">
       <div id="campaign-form-top" className="mb-8">
-        <h2 className="text-3xl font-black text-white flex items-center gap-3">
-          <Megaphone className="text-[#ec4899]" size={32} /> Marketing & Campaigns
+        <h2 className="text-3xl font-black text-stitch-ink flex items-center gap-3">
+          <Megaphone className="text-stitch-accent" size={32} /> Marketing & Campaigns
         </h2>
-        <p className="text-slate-400 text-sm mt-1">Create deals and push them to POS, Website, and Social Media instantly.</p>
+        <p className="text-stitch-muted text-sm mt-1">Create deals and push them to POS, Website, and Social Media instantly.</p>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-1">
+      <div className="flex flex-wrap gap-2 border-b border-stitch-border pb-1">
         {([
           ['create', editingId ? '✏️ Edit Deal' : 'Create Campaign', Tag],
           ['campaigns', 'Active Campaigns', Megaphone],
@@ -623,8 +623,8 @@ export default function MarketingHub() {
             onClick={() => setActiveTab(key)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-sm font-bold transition-colors border-b-2 ${
               activeTab === key
-                ? 'text-[#ec4899] border-[#ec4899] bg-[#ec4899]/10'
-                : 'text-slate-400 border-transparent hover:text-white hover:bg-slate-800'
+                ? 'text-stitch-accent border-stitch-accent bg-stitch-accent/10'
+                : 'text-stitch-muted border-transparent hover:text-stitch-ink hover:bg-stitch-surface'
             }`}
           >
             <Icon size={16} /> {label}
@@ -635,17 +635,17 @@ export default function MarketingHub() {
       {activeTab === 'create' && (
       <form onSubmit={handleSubmit} className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Deal Creator / Editor Form */}
-        <div className={`flex flex-col border rounded-2xl p-6 transition-all ${editingId ? 'bg-slate-800 border-amber-500/50 ring-2 ring-amber-500/20' : 'bg-[#1e293b] border-slate-700/50'}`}>
+        <div className={`flex flex-col border rounded-2xl p-6 transition-all ${editingId ? 'bg-stitch-card border-stitch-accent/50 ring-2 ring-stitch-accent/20' : 'bg-stitch-panel border-stitch-border'}`}>
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <Tag size={20} className={editingId ? 'text-amber-400' : 'text-[#3b82f6]'} />
+            <h3 className="text-xl font-bold text-stitch-ink flex items-center gap-2">
+              <Tag size={20} className={editingId ? 'text-stitch-accent' : 'text-stitch-accent'} />
               {editingId ? '✏️ Edit Deal' : 'Create New Deal'}
             </h3>
             {editingId && (
               <button
                 type="button"
                 onClick={handleCancelEdit}
-                className="text-xs font-bold text-slate-400 hover:text-white bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition-all"
+                className="text-xs font-bold text-stitch-muted hover:text-stitch-ink bg-stitch-surface hover:bg-stitch-card px-3 py-1.5 rounded-lg transition-all"
               >
                 ✕ Cancel Edit
               </button>
@@ -654,31 +654,31 @@ export default function MarketingHub() {
 
           <div className="space-y-5">
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Campaign Title</label>
+              <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Campaign Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Summer Weekend BOGO"
-                className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm"
+                className="w-full bg-stitch-surface border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink focus:outline-none focus:border-stitch-accent transition-colors text-sm"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Description</label>
+              <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Details for the customer..."
-                className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors h-20 resize-none text-sm"
+                className="w-full bg-stitch-surface border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink focus:outline-none focus:border-stitch-accent transition-colors h-20 resize-none text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Banner Image (Optional)</label>
+              <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Banner Image (Optional)</label>
               <div className="relative">
-                <ImagePlus size={16} className="absolute left-4 top-3.5 text-slate-500" />
+                <ImagePlus size={16} className="absolute left-4 top-3.5 text-stitch-muted" />
                 <input
                   type="file"
                   accept="image/*"
@@ -687,14 +687,14 @@ export default function MarketingHub() {
                       setImageFile(e.target.files[0]);
                     }
                   }}
-                  className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg pl-10 pr-3 py-1.5 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-[#ec4899] file:text-white hover:file:bg-pink-600 cursor-pointer"
+                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg pl-10 pr-3 py-1.5 text-stitch-ink focus:outline-none focus:border-stitch-accent transition-colors text-sm file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-stitch-accent file:text-stitch-accent-ink hover:file:bg-stitch-accent-hover cursor-pointer"
                 />
               </div>
-              <p className="text-xs text-slate-500 mt-1">Recommended size: 1080x1440 (Vertical). Will be displayed on TV Board and POS.</p>
+              <p className="text-xs text-stitch-muted mt-1">Recommended size: 1080x1440 (Vertical). Will be displayed on TV Board and POS.</p>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Campaign Type</label>
+              <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Campaign Type</label>
               <div className="flex flex-wrap gap-2">
                 {([
                   ['PERCENTAGE', 'Percentage Discount'],
@@ -711,8 +711,8 @@ export default function MarketingHub() {
                       key={value}
                       title={isAllowed ? undefined : 'Not included in this branch\'s current package — upgrade to unlock'}
                       className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border ${
-                        !isAllowed ? 'opacity-40 cursor-not-allowed bg-[#0f172a] text-slate-500 border-slate-800' :
-                        campaignType === value ? 'bg-[#ec4899] text-white border-[#ec4899] cursor-pointer' : 'bg-[#0f172a] text-slate-400 border-slate-700/70 cursor-pointer'
+                        !isAllowed ? 'opacity-40 cursor-not-allowed bg-stitch-surface text-stitch-muted border-stitch-border' :
+                        campaignType === value ? 'bg-stitch-accent text-stitch-accent-ink border-stitch-accent cursor-pointer' : 'bg-stitch-surface text-stitch-muted border-stitch-border cursor-pointer'
                       }`}
                     >
                       <input type="radio" className="hidden" disabled={!isAllowed} checked={campaignType === value} onChange={() => isAllowed && setCampaignType(value)} />
@@ -725,9 +725,9 @@ export default function MarketingHub() {
 
             {campaignType === 'PERCENTAGE' && (
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Discount Percentage (%)</label>
+                <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Discount Percentage (%)</label>
                 <div className="relative">
-                  <Percent size={16} className="absolute left-4 top-3.5 text-slate-500" />
+                  <Percent size={16} className="absolute left-4 top-3.5 text-stitch-muted" />
                   <input
                     type="number"
                     value={discountPct}
@@ -735,7 +735,7 @@ export default function MarketingHub() {
                     placeholder="20"
                     max="100"
                     min="1"
-                    className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg pl-10 pr-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm"
+                    className="w-full bg-stitch-surface border border-stitch-border rounded-lg pl-10 pr-3 py-2 text-stitch-ink focus:outline-none focus:border-stitch-accent transition-colors text-sm"
                     required
                   />
                 </div>
@@ -744,75 +744,75 @@ export default function MarketingHub() {
 
             {campaignType === 'FLAT' && (
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Flat Discount Amount (Rs.)</label>
+                <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Flat Discount Amount (Rs.)</label>
                 <input
                   type="number"
                   value={flatDiscountAmount}
                   onChange={(e) => setFlatDiscountAmount(e.target.value)}
                   placeholder="200"
                   min="1"
-                  className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm"
+                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink focus:outline-none focus:border-stitch-accent transition-colors text-sm"
                   required
                 />
               </div>
             )}
 
             {campaignType === 'BOGO' && (
-              <div className="bg-[#0f172a] border border-slate-700/70 rounded-lg p-4 space-y-3">
+              <div className="bg-stitch-surface border border-stitch-border rounded-lg p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Buy Product</label>
-                    <select value={buyProductId} onChange={(e) => setBuyProductId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required>
+                    <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Buy Product</label>
+                    <select value={buyProductId} onChange={(e) => setBuyProductId(e.target.value)} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" required>
                       <option value="">Select product...</option>
                       {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Required Quantity</label>
-                    <input type="number" min="1" value={buyQty} onChange={(e) => setBuyQty(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                    <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Required Quantity</label>
+                    <input type="number" min="1" value={buyQty} onChange={(e) => setBuyQty(e.target.value)} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Get Product</label>
-                    <select value={getProductId} onChange={(e) => setGetProductId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required>
+                    <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Get Product</label>
+                    <select value={getProductId} onChange={(e) => setGetProductId(e.target.value)} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" required>
                       <option value="">Select product...</option>
                       {products.filter((p: any) => String(p.id) !== buyProductId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Reward Quantity</label>
-                    <input type="number" min="1" value={rewardQty} onChange={(e) => setRewardQty(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                    <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Reward Quantity</label>
+                    <input type="number" min="1" value={rewardQty} onChange={(e) => setRewardQty(e.target.value)} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 items-end">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Reward Type</label>
-                    <select value={rewardType} onChange={(e) => setRewardType(e.target.value as 'FREE' | 'PERCENTAGE')} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm">
+                    <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Reward Type</label>
+                    <select value={rewardType} onChange={(e) => setRewardType(e.target.value as 'FREE' | 'PERCENTAGE')} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm">
                       <option value="FREE">Free</option>
                       <option value="PERCENTAGE">Percentage Discount</option>
                     </select>
                   </div>
                   {rewardType === 'PERCENTAGE' && (
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Discount % on Get Product</label>
-                      <input type="number" min="1" max="100" value={discountPct} onChange={(e) => setDiscountPct(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                      <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Discount % on Get Product</label>
+                      <input type="number" min="1" max="100" value={discountPct} onChange={(e) => setDiscountPct(e.target.value)} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" />
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-slate-500">e.g. Buy 2 Shawarmas, Get 1 Pepsi Free — auto-applies at checkout when both items are in the cart.</p>
+                <p className="text-xs text-stitch-muted">e.g. Buy 2 Shawarmas, Get 1 Pepsi Free — auto-applies at checkout when both items are in the cart.</p>
               </div>
             )}
 
             {['BUNDLE', 'COMBO'].includes(campaignType) && (
-              <div className="bg-[#0f172a] border border-slate-700/70 rounded-lg p-4 space-y-3">
+              <div className="bg-stitch-surface border border-stitch-border rounded-lg p-4 space-y-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bundle Products (e.g. Burger + Fries + Drink)</label>
+                  <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Bundle Products (e.g. Burger + Fries + Drink)</label>
                   <select
                     multiple
                     value={bundleProductIds.map(String)}
                     onChange={(e) => setBundleProductIds(Array.from(e.target.selectedOptions).map(o => Number(o.value)))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm h-32 font-mono"
+                    className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm h-32 font-mono"
                   >
                     {products.map((p: any) => (
                       <option key={p.id} value={p.id}>
@@ -820,7 +820,7 @@ export default function MarketingHub() {
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-slate-500 mt-1">Ctrl/Cmd-click to select multiple products.</p>
+                  <p className="text-xs text-stitch-muted mt-1">Ctrl/Cmd-click to select multiple products.</p>
                 </div>
                 {bundleProductIds.length > 0 && (() => {
                   const selectedProducts = products.filter((p: any) => bundleProductIds.includes(p.id));
@@ -829,22 +829,22 @@ export default function MarketingHub() {
                   const bundlePriceNum = Number(bundlePrice) || 0;
                   const bundleMargin = bundlePriceNum > 0 ? (((bundlePriceNum - totalCost) / bundlePriceNum) * 100).toFixed(1) : null;
                   return (
-                    <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs space-y-1">
-                      <div className="flex justify-between text-slate-300">
+                    <div className="bg-stitch-panel border border-stitch-border rounded-lg p-3 text-xs space-y-1">
+                      <div className="flex justify-between text-stitch-muted">
                         <span>Selected items — combined selling price:</span>
-                        <span className="font-bold text-white">Rs. {totalSell.toFixed(0)}</span>
+                        <span className="font-bold text-stitch-ink">Rs. {totalSell.toFixed(0)}</span>
                       </div>
-                      <div className="flex justify-between text-slate-400">
+                      <div className="flex justify-between text-stitch-muted">
                         <span>Combined cost:</span>
                         <span className="font-bold">Rs. {totalCost.toFixed(0)}</span>
                       </div>
                       {bundlePriceNum > 0 && (
                         <>
-                          <div className="flex justify-between text-amber-400">
+                          <div className="flex justify-between text-stitch-accent">
                             <span>Discount vs buying separately:</span>
                             <span className="font-bold">Rs. {Math.max(0, totalSell - bundlePriceNum).toFixed(0)}</span>
                           </div>
-                          <div className="flex justify-between text-emerald-400">
+                          <div className="flex justify-between text-stitch-success">
                             <span>Your margin at this bundle price:</span>
                             <span className="font-bold">{bundleMargin}%</span>
                           </div>
@@ -854,37 +854,37 @@ export default function MarketingHub() {
                   );
                 })()}
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Fixed Bundle Price (Rs.)</label>
-                  <input type="number" min="1" value={bundlePrice} onChange={(e) => setBundlePrice(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required />
+                  <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Fixed Bundle Price (Rs.)</label>
+                  <input type="number" min="1" value={bundlePrice} onChange={(e) => setBundlePrice(e.target.value)} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" required />
                 </div>
-                <p className="text-xs text-slate-500">Auto-detected when all selected products are in the cart together — the line total becomes the fixed bundle price.</p>
+                <p className="text-xs text-stitch-muted">Auto-detected when all selected products are in the cart together — the line total becomes the fixed bundle price.</p>
               </div>
             )}
 
             {campaignType === 'FREE_GIFT' && (
-              <div className="bg-[#0f172a] border border-slate-700/70 rounded-lg p-4 space-y-3">
+              <div className="bg-stitch-surface border border-stitch-border rounded-lg p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Minimum Spend (Rs.)</label>
-                    <input type="number" min="1" value={minSpend} onChange={(e) => setMinSpend(e.target.value)} placeholder="3000" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required />
+                    <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Minimum Spend (Rs.)</label>
+                    <input type="number" min="1" value={minSpend} onChange={(e) => setMinSpend(e.target.value)} placeholder="3000" className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" required />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Free Gift Product</label>
-                    <select value={giftProductId} onChange={(e) => setGiftProductId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" required>
+                    <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Free Gift Product</label>
+                    <select value={giftProductId} onChange={(e) => setGiftProductId(e.target.value)} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" required>
                       <option value="">Select product...</option>
                       {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </div>
                 </div>
-                <p className="text-xs text-slate-500">e.g. Spend Rs.3000, get a free Dessert — the gift automatically appears once the cart qualifies.</p>
+                <p className="text-xs text-stitch-muted">e.g. Spend Rs.3000, get a free Dessert — the gift automatically appears once the cart qualifies.</p>
               </div>
             )}
 
-            <div className="bg-[#0f172a] border border-slate-700/70 rounded-lg p-4 space-y-3">
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Active Time Window (Optional — Happy Hours)</label>
+            <div className="bg-stitch-surface border border-stitch-border rounded-lg p-4 space-y-3">
+              <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider">Active Time Window (Optional — Happy Hours)</label>
               <div className="flex flex-wrap gap-2">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <label key={day} className={`text-xs font-bold px-2.5 py-1 rounded-lg border cursor-pointer ${activeDays.includes(day) ? 'bg-amber-500 text-black border-amber-500' : 'bg-slate-900 text-slate-400 border-slate-700'}`}>
+                  <label key={day} className={`text-xs font-bold px-2.5 py-1 rounded-lg border cursor-pointer ${activeDays.includes(day) ? 'bg-stitch-accent text-stitch-accent-ink border-stitch-accent' : 'bg-stitch-panel text-stitch-muted border-stitch-border'}`}>
                     <input type="checkbox" className="hidden" checked={activeDays.includes(day)} onChange={() => setActiveDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])} />
                     {day}
                   </label>
@@ -892,53 +892,53 @@ export default function MarketingHub() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">Start Time</label>
-                  <input type="time" value={activeTimeStart} onChange={(e) => setActiveTimeStart(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                  <label className="block text-xs text-stitch-muted mb-1">Start Time</label>
+                  <input type="time" value={activeTimeStart} onChange={(e) => setActiveTimeStart(e.target.value)} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">End Time</label>
-                  <input type="time" value={activeTimeEnd} onChange={(e) => setActiveTimeEnd(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm" />
+                  <label className="block text-xs text-stitch-muted mb-1">End Time</label>
+                  <input type="time" value={activeTimeEnd} onChange={(e) => setActiveTimeEnd(e.target.value)} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm" />
                 </div>
               </div>
-              <label className="flex items-center gap-2 text-sm font-bold text-white cursor-pointer">
-                <input type="checkbox" checked={showCountdown} onChange={(e) => setShowCountdown(e.target.checked)} className="accent-amber-500 w-4 h-4" />
+              <label className="flex items-center gap-2 text-sm font-bold text-stitch-ink cursor-pointer">
+                <input type="checkbox" checked={showCountdown} onChange={(e) => setShowCountdown(e.target.checked)} className="accent-stitch-accent w-4 h-4" />
                 Show countdown timer to customers
               </label>
-              <p className="text-xs text-slate-500">Leave blank for no time restriction — the campaign runs for its whole scheduled duration. e.g. days=Fri,Sat + 2pm-5pm for a weekend happy hour.</p>
+              <p className="text-xs text-stitch-muted">Leave blank for no time restriction — the campaign runs for its whole scheduled duration. e.g. days=Fri,Sat + 2pm-5pm for a weekend happy hour.</p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Priority</label>
-                <input type="number" value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#ec4899] transition-colors text-sm" />
-                <p className="text-xs text-slate-500 mt-1">Higher priority wins when multiple campaigns match the same item.</p>
+                <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Priority</label>
+                <input type="number" value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full bg-stitch-surface border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink focus:outline-none focus:border-stitch-accent transition-colors text-sm" />
+                <p className="text-xs text-stitch-muted mt-1">Higher priority wins when multiple campaigns match the same item.</p>
               </div>
               <div className="flex items-end pb-2">
-                <label className="flex items-center gap-2 text-sm font-bold text-white cursor-pointer">
-                  <input type="checkbox" checked={allowStacking} onChange={(e) => setAllowStacking(e.target.checked)} className="accent-[#ec4899] w-4 h-4" />
+                <label className="flex items-center gap-2 text-sm font-bold text-stitch-ink cursor-pointer">
+                  <input type="checkbox" checked={allowStacking} onChange={(e) => setAllowStacking(e.target.checked)} className="accent-stitch-accent w-4 h-4" />
                   Allow stacking with other campaigns
                 </label>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Target Branches, Categories & Items</label>
-              <div className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg p-2 text-white max-h-48 overflow-y-auto flex flex-col gap-1">
+              <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Target Branches, Categories & Items</label>
+              <div className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-2 text-stitch-ink max-h-48 overflow-y-auto flex flex-col gap-1">
                 {(() => {
                   const displayStores = isBranchEntered && selectedBranchId ? branches.filter(s => s.id === Number(selectedBranchId)) : branches;
                   return displayStores.length === 0 ? (
-                    <span className="text-sm text-slate-500">No branches found.</span>
+                    <span className="text-sm text-stitch-muted">No branches found.</span>
                   ) : displayStores.map(s => {
                   const isStoreExpanded = expandedStores.includes(s.id);
                   return (
                   <div key={`store-${s.id}`} className="flex flex-col">
-                    <div className="flex items-center gap-2 hover:bg-slate-800 p-1.5 rounded">
-                      <button type="button" onClick={() => setExpandedStores(prev => isStoreExpanded ? prev.filter(id => id !== s.id) : [...prev, s.id])} className="p-1 hover:bg-slate-700 rounded text-slate-400">
+                    <div className="flex items-center gap-2 hover:bg-stitch-surface p-1.5 rounded">
+                      <button type="button" onClick={() => setExpandedStores(prev => isStoreExpanded ? prev.filter(id => id !== s.id) : [...prev, s.id])} className="p-1 hover:bg-stitch-card rounded text-stitch-muted">
                         {isStoreExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </button>
                       <label className="flex items-center gap-2 cursor-pointer flex-1">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           checked={targetStoreIds.includes(s.id)}
                           onChange={(e) => {
                             const validCats = categories.filter(c => !['extra toppings', 'add-ons', 'addons'].includes((c.name || '').toLowerCase()));
@@ -957,24 +957,24 @@ export default function MarketingHub() {
                               setTargetProductIds(prev => prev.filter(id => !pIds.includes(id)));
                             }
                           }}
-                          className="accent-[#ec4899]"
+                          className="accent-stitch-accent"
                         />
                         <span className="text-sm font-bold">{s.name}</span>
                       </label>
                     </div>
                     {isStoreExpanded && (
-                      <div className="ml-6 pl-2 border-l border-slate-700/50 flex flex-col gap-1 mt-1">
+                      <div className="ml-6 pl-2 border-l border-stitch-border flex flex-col gap-1 mt-1">
                         {categories.filter(c => !['extra toppings', 'add-ons', 'addons'].includes((c.name || '').toLowerCase())).map(c => {
                           const isCatExpanded = expandedCategories.includes(c.id);
                           return (
                           <div key={`cat-${c.id}`} className="flex flex-col">
-                            <div className="flex items-center gap-2 hover:bg-slate-800 p-1.5 rounded">
-                              <button type="button" onClick={() => setExpandedCategories(prev => isCatExpanded ? prev.filter(id => id !== c.id) : [...prev, c.id])} className="p-1 hover:bg-slate-700 rounded text-slate-400">
+                            <div className="flex items-center gap-2 hover:bg-stitch-surface p-1.5 rounded">
+                              <button type="button" onClick={() => setExpandedCategories(prev => isCatExpanded ? prev.filter(id => id !== c.id) : [...prev, c.id])} className="p-1 hover:bg-stitch-card rounded text-stitch-muted">
                                 {isCatExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                               </button>
                               <label className="flex items-center gap-2 cursor-pointer flex-1">
-                                <input 
-                                  type="checkbox" 
+                                <input
+                                  type="checkbox"
                                   checked={targetCategoryIds.includes(c.id)}
                                   onChange={(e) => {
                                     const pIds = products.filter(p => p.categories?.some((cat: any) => cat.id === c.id)).map(p => p.id);
@@ -987,25 +987,25 @@ export default function MarketingHub() {
                                       setTargetProductIds(prev => prev.filter(id => !pIds.includes(id)));
                                     }
                                   }}
-                                  className="accent-amber-500"
+                                  className="accent-stitch-accent"
                                 />
-                                <span className="text-sm text-slate-300">{c.name}</span>
+                                <span className="text-sm text-stitch-muted">{c.name}</span>
                               </label>
                             </div>
                             {isCatExpanded && (
-                              <div className="ml-6 pl-2 border-l border-slate-700/50 flex flex-col gap-1 mt-1">
+                              <div className="ml-6 pl-2 border-l border-stitch-border flex flex-col gap-1 mt-1">
                                 {products.filter(p => p.categories?.some((cat: any) => cat.id === c.id)).map(p => (
-                                  <label key={`prod-${p.id}`} className="flex items-center gap-2 hover:bg-slate-800 p-1.5 rounded cursor-pointer">
-                                    <input 
-                                      type="checkbox" 
+                                  <label key={`prod-${p.id}`} className="flex items-center gap-2 hover:bg-stitch-surface p-1.5 rounded cursor-pointer">
+                                    <input
+                                      type="checkbox"
                                       checked={targetProductIds.includes(p.id)}
                                       onChange={(e) => {
                                         if (e.target.checked) setTargetProductIds([...targetProductIds, p.id]);
                                         else setTargetProductIds(targetProductIds.filter(id => id !== p.id));
                                       }}
-                                      className="accent-blue-500 ml-4"
+                                      className="accent-stitch-accent ml-4"
                                     />
-                                    <span className="text-sm text-slate-400">{p.name}</span>
+                                    <span className="text-sm text-stitch-muted">{p.name}</span>
                                   </label>
                                 ))}
                               </div>
@@ -1018,63 +1018,63 @@ export default function MarketingHub() {
                   )})}
                 )()}
               </div>
-              <p className="text-[11px] text-slate-500 mt-2 font-medium">If no branch/category/item is selected, the deal applies globally.</p>
+              <p className="text-[11px] text-stitch-muted mt-2 font-medium">If no branch/category/item is selected, the deal applies globally.</p>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col p-6 bg-[#1e293b] border border-slate-700/50 rounded-2xl">
+        <div className="flex flex-col p-6 bg-stitch-panel border border-stitch-border rounded-2xl">
           <div className="flex-1">
             <label className="flex items-center gap-3 cursor-pointer mb-6">
-              <input type="checkbox" checked={isScheduled} onChange={e => setIsScheduled(e.target.checked)} className="w-4 h-4 rounded-sm accent-white" />
-              <span className="text-sm font-bold text-white">Schedule for later (Automated)</span>
+              <input type="checkbox" checked={isScheduled} onChange={e => setIsScheduled(e.target.checked)} className="w-4 h-4 rounded-sm accent-stitch-accent" />
+              <span className="text-sm font-bold text-stitch-ink">Schedule for later (Automated)</span>
             </label>
 
             {isScheduled && (
               <div className="grid grid-cols-2 gap-4 animate-fade-in mb-6">
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-2">Start Date</label>
-                  <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#8b5cf6] text-sm" required={isScheduled} />
+                  <label className="block text-xs font-bold text-stitch-muted mb-2">Start Date</label>
+                  <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-stitch-surface border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink focus:outline-none focus:border-stitch-accent text-sm" required={isScheduled} />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-2">End Date</label>
-                  <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-[#0f172a] border border-slate-700/70 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#8b5cf6] text-sm" required={isScheduled} />
+                  <label className="block text-xs font-bold text-stitch-muted mb-2">End Date</label>
+                  <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-stitch-surface border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink focus:outline-none focus:border-stitch-accent text-sm" required={isScheduled} />
                 </div>
               </div>
             )}
 
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Publish To</label>
+            <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-3">Publish To</label>
             <div className="flex flex-col gap-2.5 mb-8">
-              <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-[#4edea3] transition-colors">
-                <input type="checkbox" checked={publishWeb} onChange={(e) => setPublishWeb(e.target.checked)} className="w-4 h-4 rounded-sm accent-[#4edea3]" />
-                <div className="flex items-center gap-2"><Globe size={16} className="text-[#4edea3]" /> <span className="text-sm font-bold text-white">Website</span></div>
-              </label>
-              
-              <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-[#fbbf24] transition-colors">
-                <input type="checkbox" checked={publishPos} onChange={(e) => setPublishPos(e.target.checked)} className="w-4 h-4 rounded-sm accent-[#fbbf24]" />
-                <div className="flex items-center gap-2"><Store size={16} className="text-[#fbbf24]" /> <span className="text-sm font-bold text-white">POS System</span></div>
+              <label className="flex items-center gap-3 bg-stitch-surface px-4 py-2.5 rounded-lg border border-stitch-border cursor-pointer hover:border-stitch-accent transition-colors">
+                <input type="checkbox" checked={publishWeb} onChange={(e) => setPublishWeb(e.target.checked)} className="w-4 h-4 rounded-sm accent-stitch-accent" />
+                <div className="flex items-center gap-2"><Globe size={16} className="text-stitch-accent" /> <span className="text-sm font-bold text-stitch-ink">Website</span></div>
               </label>
 
-              <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-purple-400 transition-colors">
-                <input type="checkbox" checked={publishTv} onChange={(e) => setPublishTv(e.target.checked)} className="w-4 h-4 rounded-sm accent-purple-400" />
-                <div className="flex items-center gap-2 text-white font-bold text-sm">
-                  <Megaphone size={16} className="text-purple-400" /> TV Board
+              <label className="flex items-center gap-3 bg-stitch-surface px-4 py-2.5 rounded-lg border border-stitch-border cursor-pointer hover:border-[#fbbf24] transition-colors">
+                <input type="checkbox" checked={publishPos} onChange={(e) => setPublishPos(e.target.checked)} className="w-4 h-4 rounded-sm accent-[#fbbf24]" />
+                <div className="flex items-center gap-2"><Store size={16} className="text-[#fbbf24]" /> <span className="text-sm font-bold text-stitch-ink">POS System</span></div>
+              </label>
+
+              <label className="flex items-center gap-3 bg-stitch-surface px-4 py-2.5 rounded-lg border border-stitch-border cursor-pointer hover:border-stitch-accent transition-colors">
+                <input type="checkbox" checked={publishTv} onChange={(e) => setPublishTv(e.target.checked)} className="w-4 h-4 rounded-sm accent-stitch-accent" />
+                <div className="flex items-center gap-2 text-stitch-ink font-bold text-sm">
+                  <Megaphone size={16} className="text-stitch-accent" /> TV Board
                 </div>
               </label>
-              
+
               {(igLinked || true) && (
-                <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-[#ec4899] transition-colors">
-                  <input type="checkbox" checked={publishInstagram} onChange={(e) => setPublishInstagram(e.target.checked)} className="w-4 h-4 rounded-sm accent-[#ec4899]" />
-                  <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <label className="flex items-center gap-3 bg-stitch-surface px-4 py-2.5 rounded-lg border border-stitch-border cursor-pointer hover:border-stitch-accent transition-colors">
+                  <input type="checkbox" checked={publishInstagram} onChange={(e) => setPublishInstagram(e.target.checked)} className="w-4 h-4 rounded-sm accent-stitch-accent" />
+                  <div className="flex items-center gap-2 text-stitch-ink font-bold text-sm">
                     <InstagramIcon size={16} /> Instagram
                   </div>
                 </label>
               )}
 
               {(fbLinked || true) && (
-                <label className="flex items-center gap-3 bg-[#0f172a] px-4 py-2.5 rounded-lg border border-slate-700/70 cursor-pointer hover:border-[#3b82f6] transition-colors">
-                  <input type="checkbox" checked={publishFacebook} onChange={(e) => setPublishFacebook(e.target.checked)} className="w-4 h-4 rounded-sm accent-[#3b82f6]" />
-                  <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <label className="flex items-center gap-3 bg-stitch-surface px-4 py-2.5 rounded-lg border border-stitch-border cursor-pointer hover:border-stitch-accent transition-colors">
+                  <input type="checkbox" checked={publishFacebook} onChange={(e) => setPublishFacebook(e.target.checked)} className="w-4 h-4 rounded-sm accent-stitch-accent" />
+                  <div className="flex items-center gap-2 text-stitch-ink font-bold text-sm">
                     <FacebookIcon size={16} /> Facebook
                   </div>
                 </label>
@@ -1084,7 +1084,7 @@ export default function MarketingHub() {
             {successMsg && (() => {
               const isError = /fail|error|not included|required|denied/i.test(successMsg);
               return (
-                <div className={`p-3 mb-4 rounded-xl text-sm font-bold flex items-center gap-2 ${isError ? 'bg-red-500/20 border border-red-500/50 text-red-400' : 'bg-[#4edea3]/20 border border-[#4edea3]/50 text-[#4edea3]'}`}>
+                <div className={`p-3 mb-4 rounded-xl text-sm font-bold flex items-center gap-2 ${isError ? 'bg-stitch-danger/20 border border-stitch-danger/50 text-stitch-danger' : 'bg-stitch-success/20 border border-stitch-success/50 text-stitch-success'}`}>
                   {isError ? <X size={18} /> : <CheckCircle size={18} />} {successMsg}
                 </div>
               );
@@ -1093,18 +1093,18 @@ export default function MarketingHub() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className={`w-full font-bold py-3 rounded-xl shadow-lg transition-all text-white mt-auto ${
-                editingId 
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:opacity-90' 
-                  : 'bg-gradient-to-r from-[#d946ef] to-[#8b5cf6] hover:opacity-90'
+              className={`w-full font-bold py-3 rounded-xl shadow-lg transition-all mt-auto ${
+                editingId
+                  ? 'bg-gradient-to-r from-stitch-accent-deep to-stitch-accent hover:opacity-90 text-white'
+                  : 'bg-stitch-accent hover:bg-stitch-accent-hover text-stitch-accent-ink accent-glow-hover'
               }`}
             >
-              {isSubmitting 
-                ? (editingId ? 'Updating...' : 'Publishing...') 
-                : isScheduled 
-                  ? 'Schedule Deal ⏳' 
-                  : editingId 
-                    ? '💾 Update Deal' 
+              {isSubmitting
+                ? (editingId ? 'Updating...' : 'Publishing...')
+                : isScheduled
+                  ? 'Schedule Deal ⏳'
+                  : editingId
+                    ? '💾 Update Deal'
                     : 'Launch Campaign 🚀'
               }
             </button>
@@ -1115,22 +1115,22 @@ export default function MarketingHub() {
 
       {activeTab === 'social' && (
         <div className="max-w-2xl">
-          <div className="p-6 bg-[#1e293b] border border-slate-700/50 rounded-2xl">
-            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-              <Share2 size={20} className="text-[#3b82f6]" /> Social Media Integration
+          <div className="p-6 bg-stitch-panel border border-stitch-border rounded-2xl">
+            <h3 className="text-lg font-bold text-stitch-ink mb-4 flex items-center gap-2">
+              <Share2 size={20} className="text-stitch-accent" /> Social Media Integration
             </h3>
-            <p className="text-sm text-slate-400 mb-6">Link your branch's social media accounts to auto-post campaigns and deals.</p>
+            <p className="text-sm text-stitch-muted mb-6">Link your branch's social media accounts to auto-post campaigns and deals.</p>
             <div className="grid grid-cols-2 gap-4">
-              <button 
+              <button
                 onClick={handleFacebookConnect}
-                className={`flex items-center justify-between p-4 rounded-xl border font-bold transition-all ${fbLinked ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                className={`flex items-center justify-between p-4 rounded-xl border font-bold transition-all ${fbLinked ? 'bg-stitch-accent/20 border-stitch-accent text-stitch-accent' : 'bg-stitch-surface border-stitch-border text-stitch-muted hover:border-stitch-accent/50'}`}
               >
                 <div className="flex items-center gap-2"><FacebookIcon size={20} /> Facebook Page</div>
-                {fbLinked ? <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded">Linked</span> : <span className="text-xs">Connect</span>}
+                {fbLinked ? <span className="text-xs bg-stitch-accent text-white px-2 py-1 rounded">Linked</span> : <span className="text-xs">Connect</span>}
               </button>
-              <button 
+              <button
                 onClick={handleInstagramConnect}
-                className={`flex items-center justify-between p-4 rounded-xl border font-bold transition-all ${igLinked ? 'bg-pink-500/20 border-pink-500 text-pink-400' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                className={`flex items-center justify-between p-4 rounded-xl border font-bold transition-all ${igLinked ? 'bg-pink-500/20 border-pink-500 text-pink-400' : 'bg-stitch-surface border-stitch-border text-stitch-muted hover:border-stitch-accent/50'}`}
               >
                 <div className="flex items-center gap-2"><InstagramIcon size={20} /> Instagram Account</div>
                 {igLinked ? <span className="text-xs bg-pink-500 text-white px-2 py-1 rounded">Linked</span> : <span className="text-xs">Connect</span>}
@@ -1142,12 +1142,12 @@ export default function MarketingHub() {
 
       {activeTab === 'analytics' && (
         <div>
-          <div className="p-6 bg-[#1e293b] border border-slate-700/50 rounded-2xl">
+          <div className="p-6 bg-stitch-panel border border-stitch-border rounded-2xl">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Share2 size={20} className="text-[#4edea3]" /> Marketing Overview
+              <h3 className="text-lg font-bold text-stitch-ink flex items-center gap-2">
+                <Share2 size={20} className="text-stitch-accent" /> Marketing Overview
               </h3>
-              <select value={kpiPreset} onChange={(e) => setKpiPreset(e.target.value)} className="bg-slate-900 border border-slate-700 text-xs text-slate-400 p-1.5 rounded outline-none">
+              <select value={kpiPreset} onChange={(e) => setKpiPreset(e.target.value)} className="bg-stitch-surface border border-stitch-border text-xs text-stitch-muted p-1.5 rounded outline-none">
                 <option value="today">Today</option>
                 <option value="yesterday">Yesterday</option>
                 <option value="this_week">This Week</option>
@@ -1160,122 +1160,122 @@ export default function MarketingHub() {
 
             {kpiPreset === 'custom' && (
               <div className="flex gap-3 mb-4">
-                <input type="date" value={kpiFrom} onChange={(e) => setKpiFrom(e.target.value)} className="bg-slate-900 border border-slate-700 text-xs text-white p-2 rounded outline-none" />
-                <input type="date" value={kpiTo} onChange={(e) => setKpiTo(e.target.value)} className="bg-slate-900 border border-slate-700 text-xs text-white p-2 rounded outline-none" />
+                <input type="date" value={kpiFrom} onChange={(e) => setKpiFrom(e.target.value)} className="bg-stitch-surface border border-stitch-border text-xs text-stitch-ink p-2 rounded outline-none" />
+                <input type="date" value={kpiTo} onChange={(e) => setKpiTo(e.target.value)} className="bg-stitch-surface border border-stitch-border text-xs text-stitch-ink p-2 rounded outline-none" />
               </div>
             )}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                  <Megaphone size={16} className="text-indigo-400" />
+              <div className="bg-stitch-surface p-4 rounded-xl border border-stitch-border flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-stitch-accent/10 border border-stitch-accent/20 flex items-center justify-center">
+                  <Megaphone size={16} className="text-stitch-accent" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">{kpis?.activeCampaigns ?? totalCampaigns}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Active Campaigns</div>
+                  <div className="text-2xl font-black text-stitch-ink">{kpis?.activeCampaigns ?? totalCampaigns}</div>
+                  <div className="text-[10px] text-stitch-muted uppercase tracking-wider mt-1">Active Campaigns</div>
                 </div>
               </div>
 
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-                  <Users size={16} className="text-blue-400" />
+              <div className="bg-stitch-surface p-4 rounded-xl border border-stitch-border flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-stitch-accent/10 border border-stitch-accent/20 flex items-center justify-center">
+                  <Users size={16} className="text-stitch-accent" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">{kpis?.impressions || 0}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Impressions</div>
+                  <div className="text-2xl font-black text-stitch-ink">{kpis?.impressions || 0}</div>
+                  <div className="text-[10px] text-stitch-muted uppercase tracking-wider mt-1">Impressions</div>
                 </div>
               </div>
 
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-pink-500/10 border border-pink-500/20 flex items-center justify-center">
-                  <Target size={16} className="text-pink-400" />
+              <div className="bg-stitch-surface p-4 rounded-xl border border-stitch-border flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-stitch-accent/10 border border-stitch-accent/20 flex items-center justify-center">
+                  <Target size={16} className="text-stitch-accent" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">{kpis?.orders ?? kpis?.totalOrders ?? 0}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Orders</div>
+                  <div className="text-2xl font-black text-stitch-ink">{kpis?.orders ?? kpis?.totalOrders ?? 0}</div>
+                  <div className="text-[10px] text-stitch-muted uppercase tracking-wider mt-1">Orders</div>
                 </div>
               </div>
 
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                  <TrendingUp size={16} className="text-emerald-400" />
+              <div className="bg-stitch-surface p-4 rounded-xl border border-stitch-border flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-stitch-success/10 border border-stitch-success/20 flex items-center justify-center">
+                  <TrendingUp size={16} className="text-stitch-success" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">Rs.{kpis?.revenue ?? kpis?.totalRevenue ?? 0}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Revenue Generated</div>
+                  <div className="text-2xl font-black text-stitch-ink">Rs.{kpis?.revenue ?? kpis?.totalRevenue ?? 0}</div>
+                  <div className="text-[10px] text-stitch-muted uppercase tracking-wider mt-1">Revenue Generated</div>
                 </div>
               </div>
 
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-                  <Tag size={16} className="text-amber-400" />
+              <div className="bg-stitch-surface p-4 rounded-xl border border-stitch-border flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-stitch-accent/10 border border-stitch-accent/20 flex items-center justify-center">
+                  <Tag size={16} className="text-stitch-accent" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">{kpis?.unitsSold ?? 0}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Units Sold (approx.)</div>
+                  <div className="text-2xl font-black text-stitch-ink">{kpis?.unitsSold ?? 0}</div>
+                  <div className="text-[10px] text-stitch-muted uppercase tracking-wider mt-1">Units Sold (approx.)</div>
                 </div>
               </div>
 
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-                  <Percent size={16} className="text-red-400" />
+              <div className="bg-stitch-surface p-4 rounded-xl border border-stitch-border flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-stitch-danger/10 border border-stitch-danger/20 flex items-center justify-center">
+                  <Percent size={16} className="text-stitch-danger" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">Rs.{kpis?.discountGiven ?? 0}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Discount Given</div>
+                  <div className="text-2xl font-black text-stitch-ink">Rs.{kpis?.discountGiven ?? 0}</div>
+                  <div className="text-[10px] text-stitch-muted uppercase tracking-wider mt-1">Discount Given</div>
                 </div>
               </div>
 
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                  <Activity size={16} className="text-purple-400" />
+              <div className="bg-stitch-surface p-4 rounded-xl border border-stitch-border flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-stitch-accent/10 border border-stitch-accent/20 flex items-center justify-center">
+                  <Activity size={16} className="text-stitch-accent" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">Rs.{kpis?.averageOrderValue ?? kpis?.aov ?? 0}</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Avg Order Value</div>
+                  <div className="text-2xl font-black text-stitch-ink">Rs.{kpis?.averageOrderValue ?? kpis?.aov ?? 0}</div>
+                  <div className="text-[10px] text-stitch-muted uppercase tracking-wider mt-1">Avg Order Value</div>
                 </div>
               </div>
 
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
-                  <MousePointer2 size={16} className="text-teal-400" />
+              <div className="bg-stitch-surface p-4 rounded-xl border border-stitch-border flex flex-col justify-center items-center text-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-stitch-accent/10 border border-stitch-accent/20 flex items-center justify-center">
+                  <MousePointer2 size={16} className="text-stitch-accent" />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-white">{kpis?.conversionRate || 0}%</div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">Conv Rate</div>
+                  <div className="text-2xl font-black text-stitch-ink">{kpis?.conversionRate || 0}%</div>
+                  <div className="text-[10px] text-stitch-muted uppercase tracking-wider mt-1">Conv Rate</div>
                 </div>
               </div>
             </div>
 
             {kpis?.topCampaign && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-700/50">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Top Campaign</div>
-                  <div className="text-sm font-bold text-white mt-1">{kpis.topCampaign.title}</div>
+                <div className="bg-stitch-surface p-3 rounded-xl border border-stitch-border">
+                  <div className="text-[10px] text-stitch-muted uppercase tracking-wider">Top Campaign</div>
+                  <div className="text-sm font-bold text-stitch-ink mt-1">{kpis.topCampaign.title}</div>
                 </div>
                 {kpis.topCategory && (
-                  <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-700/50">
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Top Category</div>
-                    <div className="text-sm font-bold text-white mt-1">{kpis.topCategory}</div>
+                  <div className="bg-stitch-surface p-3 rounded-xl border border-stitch-border">
+                    <div className="text-[10px] text-stitch-muted uppercase tracking-wider">Top Category</div>
+                    <div className="text-sm font-bold text-stitch-ink mt-1">{kpis.topCategory}</div>
                   </div>
                 )}
                 {kpis.topProduct && (
-                  <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-700/50">
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Top Product</div>
-                    <div className="text-sm font-bold text-white mt-1">{kpis.topProduct}</div>
+                  <div className="bg-stitch-surface p-3 rounded-xl border border-stitch-border">
+                    <div className="text-[10px] text-stitch-muted uppercase tracking-wider">Top Product</div>
+                    <div className="text-sm font-bold text-stitch-ink mt-1">{kpis.topProduct}</div>
                   </div>
                 )}
               </div>
             )}
 
             {kpis?.bogo && (kpis.bogo.orders > 0 || kpis.bogo.freeItemsIssued > 0) && (
-              <div className="bg-[#0f172a] p-4 rounded-xl border border-amber-500/30">
-                <div className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3">BOGO Performance</div>
+              <div className="bg-stitch-surface p-4 rounded-xl border border-stitch-accent/30">
+                <div className="text-xs font-bold text-stitch-accent uppercase tracking-wider mb-3">BOGO Performance</div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-                  <div><div className="text-xl font-black text-white">{kpis.bogo.orders}</div><div className="text-[10px] text-slate-500 uppercase">BOGO Orders</div></div>
-                  <div><div className="text-xl font-black text-white">{kpis.bogo.freeItemsIssued}</div><div className="text-[10px] text-slate-500 uppercase">Free Items Issued</div></div>
-                  <div><div className="text-xl font-black text-white">Rs.{kpis.bogo.rewardValue}</div><div className="text-[10px] text-slate-500 uppercase">Reward Value</div></div>
-                  <div><div className="text-sm font-black text-white">{kpis.bogo.topCampaign?.title || 'N/A'}</div><div className="text-[10px] text-slate-500 uppercase">Top BOGO Campaign</div></div>
+                  <div><div className="text-xl font-black text-stitch-ink">{kpis.bogo.orders}</div><div className="text-[10px] text-stitch-muted uppercase">BOGO Orders</div></div>
+                  <div><div className="text-xl font-black text-stitch-ink">{kpis.bogo.freeItemsIssued}</div><div className="text-[10px] text-stitch-muted uppercase">Free Items Issued</div></div>
+                  <div><div className="text-xl font-black text-stitch-ink">Rs.{kpis.bogo.rewardValue}</div><div className="text-[10px] text-stitch-muted uppercase">Reward Value</div></div>
+                  <div><div className="text-sm font-black text-stitch-ink">{kpis.bogo.topCampaign?.title || 'N/A'}</div><div className="text-[10px] text-stitch-muted uppercase">Top BOGO Campaign</div></div>
                 </div>
               </div>
             )}
@@ -1287,13 +1287,13 @@ export default function MarketingHub() {
       <>
       <div className="w-full">
         <div className="flex justify-between items-end mb-6">
-          <h3 className="text-xl font-bold text-white flex items-center gap-2">
-            <Share2 size={20} className="text-[#4edea3]" /> Active Campaigns
+          <h3 className="text-xl font-bold text-stitch-ink flex items-center gap-2">
+            <Share2 size={20} className="text-stitch-accent" /> Active Campaigns
           </h3>
           <button
             type="button"
             onClick={() => setActiveTab('create')}
-            className="text-sm font-bold bg-gradient-to-r from-[#d946ef] to-[#8b5cf6] hover:opacity-90 text-white px-4 py-2 rounded-lg transition-colors"
+            className="text-sm font-bold bg-stitch-accent hover:bg-stitch-accent-hover text-stitch-accent-ink px-4 py-2 rounded-lg transition-colors accent-glow-hover"
           >
             + New Campaign
           </button>
@@ -1301,90 +1301,90 @@ export default function MarketingHub() {
         <div className="max-h-[800px] overflow-y-auto pr-2 pb-4 custom-scrollbar">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {campaigns.length === 0 ? (
-              <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 text-center text-slate-500">
+              <div className="bg-stitch-card border border-stitch-border rounded-2xl p-8 text-center text-stitch-muted">
                 <Megaphone size={48} className="mx-auto mb-4 opacity-20" />
                 <p>No active campaigns found.</p>
               </div>
             ) : (
               campaigns.map((camp) => (
                 <div key={camp.id} className={`border rounded-2xl p-5 shadow-lg relative overflow-hidden transition-all ${
-                  editingId === camp.id 
-                    ? 'bg-slate-800 border-amber-500/70 ring-2 ring-amber-500/30' 
-                    : camp.is_paused 
-                      ? 'bg-slate-800/50 border-slate-700 opacity-60' 
-                      : 'bg-slate-800 border-slate-700'
+                  editingId === camp.id
+                    ? 'bg-stitch-card border-stitch-accent/70 ring-2 ring-stitch-accent/30'
+                    : camp.is_paused
+                      ? 'bg-stitch-card/50 border-stitch-border opacity-60'
+                      : 'bg-stitch-card border-stitch-border'
                 }`}>
                   {/* Top-right badge */}
-                  <div className={`absolute top-0 right-0 text-white text-[10px] font-black px-3 py-1 rounded-bl-lg ${camp.is_paused ? 'bg-slate-500' : 'bg-[#ec4899]'}`}>
+                  <div className={`absolute top-0 right-0 text-stitch-accent-ink text-[10px] font-black px-3 py-1 rounded-bl-lg ${camp.is_paused ? 'bg-stitch-muted' : 'bg-stitch-accent'}`}>
                     {camp.is_paused ? 'PAUSED' : `${camp.discount_pct}% OFF`}
                   </div>
                   {editingId === camp.id && (
-                    <div className="absolute top-0 left-0 bg-amber-500 text-black text-[10px] font-black px-3 py-1 rounded-br-lg">
+                    <div className="absolute top-0 left-0 bg-stitch-accent text-stitch-accent-ink text-[10px] font-black px-3 py-1 rounded-br-lg">
                       EDITING
                     </div>
                   )}
-                  <h4 className={`text-lg font-black mt-1 ${camp.is_paused ? 'text-slate-400' : 'text-white'}`}>{camp.title}</h4>
-                  {camp.description && <p className="text-sm text-slate-400 mt-1">{camp.description}</p>}
-                  
+                  <h4 className={`text-lg font-black mt-1 ${camp.is_paused ? 'text-stitch-muted' : 'text-stitch-ink'}`}>{camp.title}</h4>
+                  {camp.description && <p className="text-sm text-stitch-muted mt-1">{camp.description}</p>}
+
                   {camp.image_url && (
-                    <div className="mt-3 w-full h-24 bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
+                    <div className="mt-3 w-full h-24 bg-stitch-surface rounded-lg overflow-hidden border border-stitch-border">
                       <img src={`${BACKEND_URL}${camp.image_url}`} alt={camp.title} className="w-full h-full object-cover opacity-80" />
                     </div>
                   )}
-                  
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
+
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-stitch-border">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-bold text-slate-500">LIVE ON:</span>
-                      {camp.published_web && <span title="Website"><Globe size={14} className="text-[#4edea3]" /></span>}
+                      <span className="text-xs font-bold text-stitch-muted">LIVE ON:</span>
+                      {camp.published_web && <span title="Website"><Globe size={14} className="text-stitch-accent" /></span>}
                       {camp.published_pos && <span title="POS System"><Store size={14} className="text-[#fbbf24]" /></span>}
-                      {camp.published_tv && <span title="TV Board"><Megaphone size={14} className="text-purple-400" /></span>}
+                      {camp.published_tv && <span title="TV Board"><Megaphone size={14} className="text-stitch-accent" /></span>}
                       {camp.published_facebook && <div className="text-[#3b82f6]" title="Facebook"><FacebookIcon size={14} /></div>}
                       {camp.published_instagram && <div className="text-[#ec4899]" title="Instagram"><InstagramIcon size={14} /></div>}
                     </div>
                     <div className="flex gap-2">
                       {/* Pause / Resume button with color feedback */}
-                      <button 
-                        onClick={() => handleTogglePause(camp)} 
+                      <button
+                        onClick={() => handleTogglePause(camp)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                          camp.is_paused 
-                            ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30' 
-                            : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 border border-yellow-500/30'
+                          camp.is_paused
+                            ? 'bg-stitch-success/20 text-stitch-success hover:bg-stitch-success/30 border border-stitch-success/30'
+                            : 'bg-stitch-accent/20 text-stitch-accent hover:bg-stitch-accent/30 border border-stitch-accent/30'
                         }`}
                         title={camp.is_paused ? 'Resume Campaign' : 'Pause Campaign'}
                       >
-                        {camp.is_paused 
+                        {camp.is_paused
                           ? <><PlayCircle size={14} /> Resume</>
                           : <><PauseCircle size={14} /> Pause</>
                         }
                       </button>
-                      <button 
-                        onClick={() => handleEdit(camp)} 
+                      <button
+                        onClick={() => handleEdit(camp)}
                         className={`p-2 rounded-lg transition-colors ${
-                          editingId === camp.id 
-                            ? 'bg-amber-500/30 text-amber-400 border border-amber-500/30' 
-                            : 'bg-slate-700 hover:bg-blue-500/20 text-slate-300 hover:text-blue-400'
-                        }`} 
+                          editingId === camp.id
+                            ? 'bg-stitch-accent/30 text-stitch-accent border border-stitch-accent/30'
+                            : 'bg-stitch-surface hover:bg-stitch-accent/20 text-stitch-muted hover:text-stitch-accent'
+                        }`}
                         title="Edit"
                       >
                         <Edit2 size={16} />
                       </button>
                       <button
                         onClick={() => handleShowHistory(camp)}
-                        className="p-2 bg-slate-700 hover:bg-purple-500/20 text-slate-300 hover:text-purple-400 rounded-lg transition-colors"
+                        className="p-2 bg-stitch-surface hover:bg-stitch-accent/20 text-stitch-muted hover:text-stitch-accent rounded-lg transition-colors"
                         title="History & Versions"
                       >
                         <History size={16} />
                       </button>
                       <button
                         onClick={() => handleClone(camp)}
-                        className="p-2 bg-slate-700 hover:bg-teal-500/20 text-slate-300 hover:text-teal-400 rounded-lg transition-colors"
+                        className="p-2 bg-stitch-surface hover:bg-stitch-accent/20 text-stitch-muted hover:text-stitch-accent rounded-lg transition-colors"
                         title="Clone to this branch (paused)"
                       >
                         <Copy size={16} />
                       </button>
                       <button
                         onClick={() => handleDelete(camp.id)}
-                        className="p-2 bg-slate-700 hover:bg-red-500/20 text-slate-300 hover:text-red-400 rounded-lg transition-colors"
+                        className="p-2 bg-stitch-surface hover:bg-stitch-danger/20 text-stitch-muted hover:text-stitch-danger rounded-lg transition-colors"
                         title="Archive (soft delete)"
                       >
                         <Trash2 size={16} />
@@ -1400,76 +1400,76 @@ export default function MarketingHub() {
       
       {scheduledCampaigns.length > 0 && (
             <div className="mt-12">
-              <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                <Percent size={20} className="text-[#8b5cf6]" /> Upcoming Scheduled Deals
+              <h3 className="text-xl font-bold text-stitch-ink mb-6 flex items-center gap-2">
+                <Percent size={20} className="text-stitch-accent" /> Upcoming Scheduled Deals
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
                 {scheduledCampaigns.map((camp) => (
                   <div key={camp.id} className={`border rounded-2xl p-5 shadow-lg relative overflow-hidden transition-all ${
                     editingId === camp.id && isScheduled
-                      ? 'bg-slate-800 border-amber-500/70 ring-2 ring-amber-500/30' 
-                      : !camp.is_active 
-                        ? 'bg-slate-800/50 border-slate-700 opacity-60' 
-                        : 'bg-slate-800 border-slate-700 opacity-80'
+                      ? 'bg-stitch-card border-stitch-accent/70 ring-2 ring-stitch-accent/30'
+                      : !camp.is_active
+                        ? 'bg-stitch-card/50 border-stitch-border opacity-60'
+                        : 'bg-stitch-card border-stitch-border opacity-80'
                   }`}>
                     {/* Top-right badge */}
-                    <div className={`absolute top-0 right-0 text-white text-[10px] font-black px-3 py-1 rounded-bl-lg ${!camp.is_active ? 'bg-slate-500' : 'bg-[#8b5cf6]'}`}>
+                    <div className={`absolute top-0 right-0 text-stitch-accent-ink text-[10px] font-black px-3 py-1 rounded-bl-lg ${!camp.is_active ? 'bg-stitch-muted' : 'bg-stitch-accent'}`}>
                       {!camp.is_active ? 'PAUSED' : `${camp.discount_pct}% OFF`}
                     </div>
                     {editingId === camp.id && isScheduled && (
-                      <div className="absolute top-0 left-0 bg-amber-500 text-black text-[10px] font-black px-3 py-1 rounded-br-lg">
+                      <div className="absolute top-0 left-0 bg-stitch-accent text-stitch-accent-ink text-[10px] font-black px-3 py-1 rounded-br-lg">
                         EDITING
                       </div>
                     )}
-                    <h4 className={`text-lg font-black mt-1 ${!camp.is_active ? 'text-slate-400' : 'text-white'}`}>{camp.title}</h4>
-                    <p className="text-sm text-slate-400 mt-1">
-                      Scheduled to start at: <strong className="text-white">{new Date(camp.start_date).toLocaleString()}</strong>
+                    <h4 className={`text-lg font-black mt-1 ${!camp.is_active ? 'text-stitch-muted' : 'text-stitch-ink'}`}>{camp.title}</h4>
+                    <p className="text-sm text-stitch-muted mt-1">
+                      Scheduled to start at: <strong className="text-stitch-ink">{new Date(camp.start_date).toLocaleString()}</strong>
                     </p>
 
                     {camp.image_url && (
-                      <div className="mt-3 w-full h-24 bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
+                      <div className="mt-3 w-full h-24 bg-stitch-surface rounded-lg overflow-hidden border border-stitch-border">
                         <img src={`${BACKEND_URL}${camp.image_url}`} alt={camp.title} className="w-full h-full object-cover opacity-80" />
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-stitch-border">
                       <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-slate-500">WILL PUBLISH TO:</span>
-                        {camp.published_web && <span title="Website"><Globe size={14} className="text-[#4edea3]" /></span>}
+                        <span className="text-xs font-bold text-stitch-muted">WILL PUBLISH TO:</span>
+                        {camp.published_web && <span title="Website"><Globe size={14} className="text-stitch-accent" /></span>}
                         {camp.published_pos && <span title="POS System"><Store size={14} className="text-[#fbbf24]" /></span>}
-                        {camp.published_tv && <span title="TV Board"><Megaphone size={14} className="text-purple-400" /></span>}
+                        {camp.published_tv && <span title="TV Board"><Megaphone size={14} className="text-stitch-accent" /></span>}
                         {camp.published_facebook && <div className="text-[#3b82f6]" title="Facebook"><FacebookIcon size={14} /></div>}
                         {camp.published_instagram && <div className="text-[#ec4899]" title="Instagram"><InstagramIcon size={14} /></div>}
                       </div>
                       <div className="flex gap-2">
-                        <button 
-                          onClick={() => handleTogglePause(camp, true)} 
+                        <button
+                          onClick={() => handleTogglePause(camp, true)}
                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            !camp.is_active 
-                              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30' 
-                              : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 border border-yellow-500/30'
+                            !camp.is_active
+                              ? 'bg-stitch-success/20 text-stitch-success hover:bg-stitch-success/30 border border-stitch-success/30'
+                              : 'bg-stitch-accent/20 text-stitch-accent hover:bg-stitch-accent/30 border border-stitch-accent/30'
                           }`}
                           title={!camp.is_active ? 'Resume Schedule' : 'Pause Schedule'}
                         >
-                          {!camp.is_active 
+                          {!camp.is_active
                             ? <><PlayCircle size={14} /> Resume</>
                             : <><PauseCircle size={14} /> Pause</>
                           }
                         </button>
-                        <button 
-                          onClick={() => handleEditSchedule(camp)} 
+                        <button
+                          onClick={() => handleEditSchedule(camp)}
                           className={`p-2 rounded-lg transition-colors ${
                             editingId === camp.id && isScheduled
-                              ? 'bg-amber-500/30 text-amber-400 border border-amber-500/30' 
-                              : 'bg-slate-700 hover:bg-blue-500/20 text-slate-300 hover:text-blue-400'
-                          }`} 
+                              ? 'bg-stitch-accent/30 text-stitch-accent border border-stitch-accent/30'
+                              : 'bg-stitch-surface hover:bg-stitch-accent/20 text-stitch-muted hover:text-stitch-accent'
+                          }`}
                           title="Edit Schedule"
                         >
                           <Edit2 size={16} />
                         </button>
-                        <button 
-                          onClick={() => handleDelete(camp.id, 'SCHEDULED')} 
-                          className="p-2 bg-slate-700 hover:bg-red-500/20 text-slate-300 hover:text-red-400 rounded-lg transition-colors" 
+                        <button
+                          onClick={() => handleDelete(camp.id, 'SCHEDULED')}
+                          className="p-2 bg-stitch-surface hover:bg-stitch-danger/20 text-stitch-muted hover:text-stitch-danger rounded-lg transition-colors"
                           title="Delete Schedule"
                         >
                           <Trash2 size={16} />
@@ -1487,19 +1487,19 @@ export default function MarketingHub() {
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 max-w-sm w-full shadow-2xl">
-            <h3 className="text-xl font-black text-white mb-2">Delete Campaign?</h3>
-            <p className="text-slate-400 text-sm mb-6">This action cannot be undone. The campaign will be removed from all platforms.</p>
+          <div className="bg-stitch-panel border border-stitch-border rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+            <h3 className="text-xl font-black text-stitch-ink mb-2">Delete Campaign?</h3>
+            <p className="text-stitch-muted text-sm mb-6">This action cannot be undone. The campaign will be removed from all platforms.</p>
             <div className="flex gap-4">
               <button
                 onClick={() => setDeleteConfirmId(null)}
-                className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-colors"
+                className="flex-1 py-3 bg-stitch-surface hover:bg-stitch-card text-stitch-ink font-bold rounded-xl transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmDelete}
-                className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors"
+                className="flex-1 py-3 bg-stitch-danger hover:opacity-90 text-white font-bold rounded-xl transition-colors"
               >
                 Delete
               </button>
@@ -1509,30 +1509,30 @@ export default function MarketingHub() {
       )}
         {showPageModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-800 rounded-3xl w-full max-w-md overflow-hidden border border-slate-700 shadow-2xl">
-              <div className="p-6 border-b border-slate-700">
-                <h2 className="text-xl font-black text-white">Select {oauthPlatform === 'facebook' ? 'Facebook Page' : 'Instagram Account'}</h2>
-                <p className="text-sm text-slate-400 mt-1">Choose the account to link with this branch.</p>
+            <div className="bg-stitch-panel rounded-3xl w-full max-w-md overflow-hidden border border-stitch-border shadow-2xl">
+              <div className="p-6 border-b border-stitch-border">
+                <h2 className="text-xl font-black text-stitch-ink">Select {oauthPlatform === 'facebook' ? 'Facebook Page' : 'Instagram Account'}</h2>
+                <p className="text-sm text-stitch-muted mt-1">Choose the account to link with this branch.</p>
               </div>
               <div className="p-6 space-y-3">
                 {oauthPlatform === 'facebook' && fbPages.map(page => (
-                  <button key={page.id} onClick={() => handleSelectPage(page)} className="w-full text-left p-4 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-blue-500/10 hover:border-blue-500 transition-colors">
-                    <div className="font-bold text-white">{page.name}</div>
-                    <div className="text-xs text-slate-500 mt-1">ID: {page.id}</div>
+                  <button key={page.id} onClick={() => handleSelectPage(page)} className="w-full text-left p-4 rounded-xl border border-stitch-border bg-stitch-surface/50 hover:bg-stitch-accent/10 hover:border-stitch-accent transition-colors">
+                    <div className="font-bold text-stitch-ink">{page.name}</div>
+                    <div className="text-xs text-stitch-muted mt-1">ID: {page.id}</div>
                   </button>
                 ))}
                 {oauthPlatform === 'instagram' && igAccounts.map(account => (
-                  <button key={account.id} onClick={() => handleSelectPage(account)} className="w-full text-left p-4 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-pink-500/10 hover:border-pink-500 transition-colors">
-                    <div className="font-bold text-white">{account.username}</div>
-                    <div className="text-xs text-slate-500 mt-1">ID: {account.id}</div>
+                  <button key={account.id} onClick={() => handleSelectPage(account)} className="w-full text-left p-4 rounded-xl border border-stitch-border bg-stitch-surface/50 hover:bg-pink-500/10 hover:border-pink-500 transition-colors">
+                    <div className="font-bold text-stitch-ink">{account.username}</div>
+                    <div className="text-xs text-stitch-muted mt-1">ID: {account.id}</div>
                   </button>
                 ))}
                 {((oauthPlatform === 'facebook' && fbPages.length === 0) || (oauthPlatform === 'instagram' && igAccounts.length === 0)) && (
-                  <p className="text-slate-400 text-sm text-center py-4">No accounts found.</p>
+                  <p className="text-stitch-muted text-sm text-center py-4">No accounts found.</p>
                 )}
               </div>
-              <div className="p-6 border-t border-slate-700 bg-slate-900/50 flex justify-end">
-                <button onClick={() => setShowPageModal(false)} className="px-6 py-2.5 rounded-full font-bold text-slate-300 hover:text-white transition-colors">Cancel</button>
+              <div className="p-6 border-t border-stitch-border bg-stitch-surface/50 flex justify-end">
+                <button onClick={() => setShowPageModal(false)} className="px-6 py-2.5 rounded-full font-bold text-stitch-muted hover:text-stitch-ink transition-colors">Cancel</button>
               </div>
             </div>
           </div>
@@ -1541,40 +1541,40 @@ export default function MarketingHub() {
         {/* MARKETING-003 §10/§11 — Campaign History (audit log) + Versioning/Rollback */}
         {historyModal && (
           <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setHistoryModal(null)}>
-            <div className="bg-slate-800 rounded-2xl border border-slate-700 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="p-6 border-b border-slate-700 flex items-center justify-between sticky top-0 bg-slate-800">
+            <div className="bg-stitch-panel rounded-2xl border border-stitch-border max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="p-6 border-b border-stitch-border flex items-center justify-between sticky top-0 bg-stitch-panel">
                 <div>
-                  <h2 className="text-xl font-black text-white">History — {historyModal.campaign.title}</h2>
-                  <p className="text-sm text-slate-400 mt-1">Every lifecycle action, plus rollback to a prior version.</p>
+                  <h2 className="text-xl font-black text-stitch-ink">History — {historyModal.campaign.title}</h2>
+                  <p className="text-sm text-stitch-muted mt-1">Every lifecycle action, plus rollback to a prior version.</p>
                 </div>
-                <button onClick={() => setHistoryModal(null)} className="text-slate-400 hover:text-white"><X size={20} /></button>
+                <button onClick={() => setHistoryModal(null)} className="text-stitch-muted hover:text-stitch-ink"><X size={20} /></button>
               </div>
               <div className="p-6 space-y-6">
                 <div>
-                  <h3 className="text-sm font-black text-slate-300 uppercase tracking-wider mb-3">Audit Log</h3>
+                  <h3 className="text-sm font-black text-stitch-muted uppercase tracking-wider mb-3">Audit Log</h3>
                   <div className="space-y-2">
-                    {historyModal.logs.length === 0 && <p className="text-slate-500 text-sm">No history yet.</p>}
+                    {historyModal.logs.length === 0 && <p className="text-stitch-muted text-sm">No history yet.</p>}
                     {historyModal.logs.map((log: any) => (
-                      <div key={log.id} className="flex items-center justify-between bg-slate-900/50 rounded-lg px-4 py-2 text-sm">
+                      <div key={log.id} className="flex items-center justify-between bg-stitch-surface/50 rounded-lg px-4 py-2 text-sm">
                         <div>
-                          <span className="font-bold text-white">{log.action}</span>
-                          {log.new_value && <span className="text-slate-400 ml-2">{log.new_value}</span>}
+                          <span className="font-bold text-stitch-ink">{log.action}</span>
+                          {log.new_value && <span className="text-stitch-muted ml-2">{log.new_value}</span>}
                         </div>
-                        <span className="text-xs text-slate-500">{new Date(log.createdAt).toLocaleString()}</span>
+                        <span className="text-xs text-stitch-muted">{new Date(log.createdAt).toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-300 uppercase tracking-wider mb-3">Versions</h3>
+                  <h3 className="text-sm font-black text-stitch-muted uppercase tracking-wider mb-3">Versions</h3>
                   <div className="space-y-2">
-                    {historyModal.versions.length === 0 && <p className="text-slate-500 text-sm">No prior versions — this campaign hasn't been edited yet.</p>}
+                    {historyModal.versions.length === 0 && <p className="text-stitch-muted text-sm">No prior versions — this campaign hasn't been edited yet.</p>}
                     {historyModal.versions.map((v: any) => (
-                      <div key={v.id} className="flex items-center justify-between bg-slate-900/50 rounded-lg px-4 py-2 text-sm">
-                        <span className="text-white">Version {v.version} — {new Date(v.createdAt).toLocaleString()}</span>
+                      <div key={v.id} className="flex items-center justify-between bg-stitch-surface/50 rounded-lg px-4 py-2 text-sm">
+                        <span className="text-stitch-ink">Version {v.version} — {new Date(v.createdAt).toLocaleString()}</span>
                         <button
                           onClick={() => handleRollback(historyModal.campaign.id, v.version)}
-                          className="text-xs font-bold text-amber-400 hover:text-amber-300"
+                          className="text-xs font-bold text-stitch-accent hover:text-stitch-accent-hover"
                         >
                           Rollback to this
                         </button>
@@ -1590,3 +1590,4 @@ export default function MarketingHub() {
     </>
   );
 }
+

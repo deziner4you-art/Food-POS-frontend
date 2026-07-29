@@ -51,7 +51,7 @@ export default function MobileMode({
   React.useEffect(() => {
     if (CATEGORIES.length > 0 && !activeCategory) {
       setActiveCategory(CATEGORIES[0]);
-    } else if (CATEGORIES.length > 0 && !CATEGORIES.includes(activeCategory)) {
+    } else if (CATEGORIES.length > 0 && !(CATEGORIES as string[]).includes(activeCategory)) {
       setActiveCategory(CATEGORIES[0]);
     }
   }, [CATEGORIES.join(','), activeCategory]);
@@ -312,45 +312,45 @@ export default function MobileMode({
   };
 
   return (
-    <div id="mobile-canvas-frame" className="relative w-full h-screen max-h-screen bg-[#0c1322] text-[#dce2f7] flex flex-col overflow-hidden font-sans">
+    <div id="mobile-canvas-frame" className="relative w-full h-screen max-h-screen bg-[var(--stitch-bg, #090d16)] text-[#dce2f7] flex flex-col overflow-hidden font-sans">
       
       {/* Dynamic Status Bar/Top Decorator Spacing */}
       <div className="pt-2"></div>
 
       {/* Top Header */}
-      <header id="mobile-app-header" className="pt-4 pb-4 px-6 bg-[#0c1322]/90 backdrop-blur-md sticky top-0 z-40 border-b border-slate-800/50">
+      <header id="mobile-app-header" className="pt-4 pb-4 px-6 bg-[var(--stitch-bg, #090d16)]/90 backdrop-blur-md sticky top-0 z-40 border-b border-stitch-border/50">
         <div className="flex justify-end mb-2">
-           <button onClick={() => { setIsTrackOpen(true); setTrackResult(null); setTrackError(''); setTrackId(''); setTrackPhone(''); }} className="flex items-center gap-2 border border-[#4edea3] text-[#4edea3] rounded-full px-4 py-1 hover:bg-[#4edea3]/10 transition-colors">
+           <button onClick={() => { setIsTrackOpen(true); setTrackResult(null); setTrackError(''); setTrackId(''); setTrackPhone(''); }} className="flex items-center gap-2 border border-[var(--stitch-accent, #d4af37)] text-[var(--stitch-accent, #d4af37)] rounded-full px-4 py-1 hover:bg-[var(--stitch-accent, #d4af37)]/10 transition-colors">
              <MapPin className="w-4 h-4" />
              <span className="font-bold text-sm">Track Order</span>
            </button>
         </div>
         <div className="flex justify-between items-center mb-4 mt-1">
           <div className="flex items-center gap-2">
-            <h1 className="font-headline-md text-2xl font-black text-[#ffe1a7] tracking-tight">D4U - {storeName}</h1>
+            <h1 className="font-headline-md text-2xl font-black text-[var(--stitch-accent, #d4af37)] tracking-tight">D4U - {storeName}</h1>
             {trackedOrderId && (
-              <div className="flex items-center gap-1.5 bg-[#141b2b] border border-[#4edea3]/40 px-2 py-1 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-pulse" />
-                <span className="text-[10px] font-black text-[#4edea3]">#{trackedOrderId} {trackedOrder?.kdsStatus || 'PENDING'}</span>
+              <div className="flex items-center gap-1.5 bg-[var(--stitch-surface, #161e2e)] border border-[var(--stitch-accent, #d4af37)]/40 px-2 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--stitch-accent, #d4af37)] animate-pulse" />
+                <span className="text-[10px] font-black text-[var(--stitch-accent, #d4af37)]">#{trackedOrderId} {trackedOrder?.kdsStatus || 'PENDING'}</span>
               </div>
             )}
           </div>
           <div className="flex gap-3">
             <button 
               onClick={() => setIsCartOpen(true)}
-              className="relative w-10 h-10 flex items-center justify-center rounded-full bg-[#191f2f] active:scale-95 transition-transform"
+              className="relative w-10 h-10 flex items-center justify-center rounded-full bg-[var(--stitch-card, #121824)] active:scale-95 transition-transform"
             >
               <ShoppingCart className="w-4 h-4 text-[#dce2f7]" />
               {totalItemCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-[#fbbf24] text-slate-950 font-black text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-[#0c1322]">
+                <span className="absolute -top-1 -right-1 bg-[var(--stitch-accent, #d4af37)] text-stitch-bg font-black text-[9px] w-5 h-5 flex items-center justify-center rounded-full border-2 border-[var(--stitch-bg, #090d16)]">
                   {totalItemCount}
                 </span>
               )}
             </button>
             <button 
               onClick={loggedInUser ? handleOpenProfile : () => setIsAuthModalOpen(true)}
-              className="w-10 h-10 flex items-center justify-center rounded-full bg-[#191f2f] active:scale-95 transition-transform">
-              <User className={`w-4 h-4 ${loggedInUser ? 'text-brand-yellow' : 'text-[#dce2f7]'}`} />
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--stitch-card, #121824)] active:scale-95 transition-transform">
+              <User className={`w-4 h-4 ${loggedInUser ? 'text-stitch-accent' : 'text-[#dce2f7]'}`} />
             </button>
           </div>
         </div>
@@ -362,7 +362,7 @@ export default function MobileMode({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-11 bg-[#191f2f] border border-[#4f4633]/30 rounded-xl pl-11 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#ffe1a7]"
+            className="w-full h-11 bg-[var(--stitch-card, #121824)] border border-[#4f4633]/30 rounded-xl pl-11 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--stitch-accent, #d4af37)]"
             placeholder="Search our delicious feeds... Hungry?"
           />
         </div>
@@ -385,9 +385,9 @@ export default function MobileMode({
                     className="flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer"
                   >
                     <div className={`w-16 h-16 rounded-full p-[2px] transition-all duration-300 ${
-                      isActive ? 'bg-gradient-to-tr from-[#ffe1a7] via-[#fbbf24] to-[#f9bd22] scale-105 shadow-md shadow-amber-400/10' : 'border border-slate-700/50'
+                      isActive ? 'bg-gradient-to-tr from-[var(--stitch-accent, #d4af37)] via-[var(--stitch-accent, #d4af37)] to-[#f9bd22] scale-105 shadow-md shadow-amber-400/10' : 'border border-stitch-border/50'
                     }`}>
-                      <div className="w-full h-full rounded-full bg-[#0c1322] p-[3px] overflow-hidden">
+                      <div className="w-full h-full rounded-full bg-[var(--stitch-bg, #090d16)] p-[3px] overflow-hidden">
                         {matchingItem?.image ? (
                           <img 
                             className="w-full h-full rounded-full object-cover image-no-referrer" 
@@ -401,7 +401,7 @@ export default function MobileMode({
                       </div>
                     </div>
                     <span className={`text-[10px] uppercase font-bold tracking-widest max-w-[70px] truncate text-center ${
-                      isActive ? 'text-[#ffe1a7]' : 'text-[#d3c5ac]'
+                      isActive ? 'text-[var(--stitch-accent, #d4af37)]' : 'text-[#d3c5ac]'
                     }`}>
                       {groupName}
                     </span>
@@ -426,9 +426,9 @@ export default function MobileMode({
                 className="flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer"
               >
                 <div className={`w-16 h-16 rounded-full p-[2px] transition-all duration-300 ${
-                  isActive ? 'bg-gradient-to-tr from-[#ffe1a7] via-[#fbbf24] to-[#f9bd22] scale-105 shadow-md shadow-amber-400/10' : 'border border-slate-700/50'
+                  isActive ? 'bg-gradient-to-tr from-[var(--stitch-accent, #d4af37)] via-[var(--stitch-accent, #d4af37)] to-[#f9bd22] scale-105 shadow-md shadow-amber-400/10' : 'border border-stitch-border/50'
                 }`}>
-                  <div className="w-full h-full rounded-full bg-[#0c1322] p-[3px] overflow-hidden">
+                  <div className="w-full h-full rounded-full bg-[var(--stitch-bg, #090d16)] p-[3px] overflow-hidden">
                     {matchingItem?.image ? (
                       <img 
                         className="w-full h-full rounded-full object-cover image-no-referrer" 
@@ -442,7 +442,7 @@ export default function MobileMode({
                   </div>
                 </div>
                 <span className={`text-[10px] uppercase font-bold tracking-widest max-w-[70px] truncate text-center ${
-                  isActive ? 'text-[#ffe1a7]' : 'text-[#d3c5ac]'
+                  isActive ? 'text-[var(--stitch-accent, #d4af37)]' : 'text-[#d3c5ac]'
                 }`}>
                   {categoryName}
                 </span>
@@ -460,20 +460,20 @@ export default function MobileMode({
             </div>
             <div className="flex overflow-x-auto gap-4 pb-4 custom-scrollbar snap-x">
               {campaigns.map(camp => (
-                <div key={camp.id} className="snap-center shrink-0 w-[85%] bg-[#191f2f] border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+                <div key={camp.id} className="snap-center shrink-0 w-[85%] bg-[var(--stitch-card, #121824)] border border-stitch-border rounded-2xl overflow-hidden shadow-xl">
                   {camp.image_url && (
-                    <img src={`${BACKEND_URL}${camp.image_url}`} alt={camp.title} className="w-full h-32 object-cover border-b border-slate-700" />
+                    <img src={`${BACKEND_URL}${camp.image_url}`} alt={camp.title} className="w-full h-32 object-cover border-b border-stitch-border" />
                   )}
                   <div className="p-4">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[#ec4899] font-black text-sm">{camp.discount_pct}% OFF</span>
                       <h3 className="text-white font-bold text-base truncate">{camp.title}</h3>
                     </div>
-                    <p className="text-slate-400 text-xs line-clamp-2 mb-3">{camp.description}</p>
+                    <p className="text-stitch-muted text-xs line-clamp-2 mb-3">{camp.description}</p>
                     {camp.target_products && camp.target_products.length > 0 && (
                       <div className="flex gap-2 overflow-x-auto pb-1">
                         {camp.target_products.slice(0, 3).map((p: any) => (
-                           <div key={p.id} className="flex-shrink-0 bg-slate-800 rounded-lg p-1.5 flex items-center gap-2 border border-slate-700 w-32">
+                           <div key={p.id} className="flex-shrink-0 bg-slate-800 rounded-lg p-1.5 flex items-center gap-2 border border-stitch-border w-32">
                              {p.image_url ? (
                                <img src={p.image_url.startsWith('http') ? p.image_url : `${BACKEND_URL}${p.image_url}`} className="w-8 h-8 rounded object-cover" />
                              ) : (
@@ -512,7 +512,7 @@ export default function MobileMode({
               return (
                 <div 
                   key={`item-${item.id}`}
-                  className="group relative bg-[#191f2f] rounded-2xl overflow-hidden shadow-lg border border-slate-800/40 hover:border-slate-700/50 transition-all duration-300"
+                  className="group relative bg-[var(--stitch-card, #121824)] rounded-2xl overflow-hidden shadow-lg border border-stitch-border/40 hover:border-stitch-border/50 transition-all duration-300"
                 >
                   <div className="aspect-[4/3] relative">
                     <img 
@@ -522,7 +522,7 @@ export default function MobileMode({
                       referrerPolicy="no-referrer"
                     />
                     <div className="absolute top-4 right-4 bg-slate-950/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/5">
-                      <span className="text-[9px] font-bold tracking-widest text-[#ffe1a7] uppercase">
+                      <span className="text-[9px] font-bold tracking-widest text-[var(--stitch-accent, #d4af37)] uppercase">
                         {item.tag || 'POPULAR'}
                       </span>
                     </div>
@@ -534,15 +534,15 @@ export default function MobileMode({
                         <h3 className="font-bold text-base text-white">{item.name}</h3>
                         <p className="text-xs text-[#d3c5ac] line-clamp-1 mt-0.5">{item.description}</p>
                       </div>
-                      <span className="text-lg font-black text-[#ffe1a7] shrink-0">${item.priceUSD.toFixed(2)}</span>
+                      <span className="text-lg font-black text-[var(--stitch-accent, #d4af37)] shrink-0">${item.priceUSD.toFixed(2)}</span>
                     </div>
 
                     <button 
                       onClick={() => handleAddWithFeedback(item)}
                       className={`w-full h-11 rounded-xl text-xs font-bold uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 mt-4 ${
                         isAdded 
-                          ? 'bg-[#4edea3] text-slate-950' 
-                          : 'bg-[#ffe1a7] text-slate-950 hover:brightness-105'
+                          ? 'bg-[var(--stitch-accent, #d4af37)] text-stitch-bg' 
+                          : 'bg-[var(--stitch-accent, #d4af37)] text-stitch-bg hover:brightness-105'
                       }`}
                     >
                       {isAdded ? (
@@ -569,10 +569,10 @@ export default function MobileMode({
       {/* Checkout Sidebar Draw Overload */}
       {isCartOpen && (
         <div id="mobile-cart-drawer-backdrop" className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex flex-col justify-end">
-          <div id="mobile-cart-sliding-container" className="bg-[#191f2f] max-h-[80%] rounded-t-[32px] border-t border-[#4f4633]/30 flex flex-col shadow-2xl p-6">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+          <div id="mobile-cart-sliding-container" className="bg-[var(--stitch-card, #121824)] max-h-[80%] rounded-t-[32px] border-t border-[#4f4633]/30 flex flex-col shadow-2xl p-6">
+            <div className="flex justify-between items-center pb-4 border-b border-stitch-border">
               <div>
-                <h3 className="text-lg font-extrabold text-[#ffe1a7]">Your Basket</h3>
+                <h3 className="text-lg font-extrabold text-[var(--stitch-accent, #d4af37)]">Your Basket</h3>
                 <p className="text-[10px] text-[#d3c5ac]">Table 12 • Custom Mobile Session</p>
               </div>
               <button 
@@ -592,7 +592,7 @@ export default function MobileMode({
                 </div>
               ) : (
                 cart.map((item) => (
-                  <div key={`mob-cart-${item.foodItem.id}`} className="flex gap-3 bg-[#141b2b] p-3 rounded-xl border border-slate-800">
+                  <div key={`mob-cart-${item.foodItem.id}`} className="flex gap-3 bg-[var(--stitch-surface, #161e2e)] p-3 rounded-xl border border-stitch-border">
                     <div className="w-14 h-14 rounded-lg overflow-hidden bg-slate-950 shrink-0">
                       <img 
                         className="w-full h-full object-cover image-no-referrer" 
@@ -609,15 +609,15 @@ export default function MobileMode({
                         <div className="flex items-center gap-3 bg-slate-800 rounded-full px-2 py-0.5">
                           <button 
                             onClick={() => onDecreaseQuantity(item.foodItem.id)}
-                            className="text-[#ffe1a7] text-xs font-bold"
+                            className="text-[var(--stitch-accent, #d4af37)] text-xs font-bold"
                           >-</button>
                           <span className="text-xs font-black text-white">{item.quantity}</span>
                           <button 
                             onClick={() => onIncreaseQuantity(item.foodItem.id)}
-                            className="text-[#ffe1a7] text-xs font-bold"
+                            className="text-[var(--stitch-accent, #d4af37)] text-xs font-bold"
                           >+</button>
                         </div>
-                        <span className="text-xs font-black text-[#4edea3]">${(item.foodItem.priceUSD * item.quantity).toFixed(2)}</span>
+                        <span className="text-xs font-black text-[var(--stitch-accent, #d4af37)]">${(item.foodItem.priceUSD * item.quantity).toFixed(2)}</span>
                       </div>
                     </div>
                   </div>
@@ -626,16 +626,16 @@ export default function MobileMode({
             </div>
 
             {/* Delivery Details Form */}
-            <div className="pt-4 border-t border-slate-800 space-y-3">
-              <h4 className="text-sm font-bold text-[#ffe1a7]">Delivery Details</h4>
-              <input type="text" placeholder="Full Name *" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-2 text-sm text-white outline-none" />
-              <input type="tel" placeholder="Mobile Number *" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-2 text-sm text-white outline-none" />
-              <textarea placeholder="Complete Delivery Address *" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-2 text-sm text-white outline-none resize-none" rows={2} />
+            <div className="pt-4 border-t border-stitch-border space-y-3">
+              <h4 className="text-sm font-bold text-[var(--stitch-accent, #d4af37)]">Delivery Details</h4>
+              <input type="text" placeholder="Full Name *" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-[var(--stitch-surface, #161e2e)] border border-stitch-border focus:border-[var(--stitch-accent, #d4af37)] rounded-xl px-4 py-2 text-sm text-white outline-none" />
+              <input type="tel" placeholder="Mobile Number *" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full bg-[var(--stitch-surface, #161e2e)] border border-stitch-border focus:border-[var(--stitch-accent, #d4af37)] rounded-xl px-4 py-2 text-sm text-white outline-none" />
+              <textarea placeholder="Complete Delivery Address *" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} className="w-full bg-[var(--stitch-surface, #161e2e)] border border-stitch-border focus:border-[var(--stitch-accent, #d4af37)] rounded-xl px-4 py-2 text-sm text-white outline-none resize-none" rows={2} />
               {checkoutError && <p className="text-xs text-red-400 font-bold leading-tight">{checkoutError}</p>}
             </div>
 
             {/* Payment footer */}
-            <div className="pt-4 border-t border-slate-800 space-y-4">
+            <div className="pt-4 border-t border-stitch-border space-y-4">
               <div className="space-y-1">
                 <div className="flex justify-between text-xs text-[#d3c5ac]">
                   <span>Subtotal</span>
@@ -645,16 +645,16 @@ export default function MobileMode({
                   <span>Tax (8%)</span>
                   <span>${taxUSD.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between items-center pt-2 border-t border-slate-800 text-sm font-black text-white">
+                <div className="flex justify-between items-center pt-2 border-t border-stitch-border text-sm font-black text-white">
                   <span>Grand Total</span>
-                  <span className="text-lg text-[#fbbf24]">${totalUSD.toFixed(2)}</span>
+                  <span className="text-lg text-[var(--stitch-accent, #d4af37)]">${totalUSD.toFixed(2)}</span>
                 </div>
               </div>
 
               <button 
                 onClick={executeCheckout}
                 disabled={cart.length === 0}
-                className="w-full h-12 bg-[#fbbf24] hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs active:scale-95 transition-all flex items-center justify-center gap-2"
+                className="w-full h-12 bg-[var(--stitch-accent, #d4af37)] hover:bg-amber-400 text-stitch-bg font-extrabold rounded-xl text-xs active:scale-95 transition-all flex items-center justify-center gap-2"
               >
                 {isCheckingOut ? (
                   <span className="flex items-center gap-1.5 text-xs">
@@ -679,7 +679,7 @@ export default function MobileMode({
           onClick={() => setIsCartOpen(true)}
           className="fixed bottom-20 left-4 right-4 z-40 animate-bounce cursor-pointer flex justify-center max-w-sm mx-auto"
         >
-          <div className="bg-[#fbbf24] text-slate-950 px-5 py-3 rounded-2xl shadow-xl flex items-center justify-between w-full">
+          <div className="bg-[var(--stitch-accent, #d4af37)] text-stitch-bg px-5 py-3 rounded-2xl shadow-xl flex items-center justify-between w-full">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-slate-950/15 rounded-lg flex items-center justify-center font-black text-sm">
                 {totalItemCount}
@@ -689,7 +689,7 @@ export default function MobileMode({
                 <p className="text-sm font-black mt-0.5">${subtotalUSD.toFixed(2)}</p>
               </div>
             </div>
-            <button className="bg-slate-950 text-[#fbbf24] px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1">
+            <button className="bg-slate-950 text-[var(--stitch-accent, #d4af37)] px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1">
               Check Out
               <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
             </button>
@@ -698,11 +698,11 @@ export default function MobileMode({
       )}
 
       {/* Dynamic bottom iOS tab navigation mock */}
-      <nav className="absolute bottom-0 left-0 w-full bg-[#070e1d] border-t border-slate-800/60 h-16 flex justify-around items-center px-4 pb-safe z-40">
+      <nav className="absolute bottom-0 left-0 w-full bg-[#070e1d] border-t border-stitch-border/60 h-16 flex justify-around items-center px-4 pb-safe z-40">
         <button 
           onClick={() => setActiveNav('home')}
           className={`flex flex-col items-center justify-center px-3 py-1 rounded-xl active:scale-90 transition-all ${
-            activeNav === 'home' ? 'bg-[#ffe1a7] text-slate-950 font-bold' : 'text-[#d3c5ac]'
+            activeNav === 'home' ? 'bg-[var(--stitch-accent, #d4af37)] text-stitch-bg font-bold' : 'text-[#d3c5ac]'
           }`}
         >
           <Home className="w-4 h-4" />
@@ -712,7 +712,7 @@ export default function MobileMode({
         <button 
           onClick={() => setActiveNav('search')}
           className={`flex flex-col items-center justify-center px-3 py-1 rounded-xl active:scale-90 transition-all ${
-            activeNav === 'search' ? 'bg-[#ffe1a7] text-slate-950 font-bold' : 'text-[#d3c5ac]'
+            activeNav === 'search' ? 'bg-[var(--stitch-accent, #d4af37)] text-stitch-bg font-bold' : 'text-[#d3c5ac]'
           }`}
         >
           <Search className="w-4 h-4" />
@@ -722,7 +722,7 @@ export default function MobileMode({
         <button 
           onClick={() => setIsCartOpen(true)}
           className={`flex flex-col items-center justify-center px-3 py-1 rounded-xl active:scale-90 transition-all ${
-            activeNav === 'orders' ? 'bg-[#ffe1a7] text-slate-950 font-bold' : 'text-[#d3c5ac]'
+            activeNav === 'orders' ? 'bg-[var(--stitch-accent, #d4af37)] text-stitch-bg font-bold' : 'text-[#d3c5ac]'
           }`}
         >
           <ReceiptText className="w-4 h-4" />
@@ -733,12 +733,12 @@ export default function MobileMode({
       {/* Checkout Finished Confirmed modal overlay */}
       {checkoutComplete && (
         <div className="absolute inset-0 z-[1001] bg-slate-950/90 flex flex-col items-center justify-center text-center p-6 space-y-6 animate-fade-in">
-          <div className="w-20 h-20 bg-emerald-500/10 border-2 border-[#4edea3] rounded-full flex items-center justify-center text-[#4edea3]">
+          <div className="w-20 h-20 bg-emerald-500/10 border-2 border-[var(--stitch-accent, #d4af37)] rounded-full flex items-center justify-center text-[var(--stitch-accent, #d4af37)]">
             <CheckCircle className="w-10 h-10 stroke-[2.5] animate-bounce" />
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-xl font-black text-[#ffe1a7] uppercase tracking-tight">Enjoy Cooking!</h3>
+            <h3 className="text-xl font-black text-[var(--stitch-accent, #d4af37)] uppercase tracking-tight">Enjoy Cooking!</h3>
             <p className="text-xs text-[#d3c5ac] px-4 leading-relaxed">
               Your server will carry out your D4U order immediately. Order registered successfully under Session ID #DD-893!
             </p>
@@ -753,13 +753,13 @@ export default function MobileMode({
                 setTrackError('');
                 setIsTrackOpen(true);
               }}
-              className="w-full py-3.5 bg-[#4edea3] hover:bg-emerald-400 text-slate-950 rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all"
+              className="w-full py-3.5 bg-[var(--stitch-accent, #d4af37)] hover:bg-emerald-400 text-stitch-bg rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all"
             >
               Track Your Order
             </button>
             <button
               onClick={closeCheckoutFlow}
-              className="w-full py-3 border border-[#ffe1a7] text-[#ffe1a7] rounded-xl font-bold text-xs uppercase tracking-widest active:scale-95 transition-all hover:bg-[#ffe1a7]/10"
+              className="w-full py-3 border border-[var(--stitch-accent, #d4af37)] text-[var(--stitch-accent, #d4af37)] rounded-xl font-bold text-xs uppercase tracking-widest active:scale-95 transition-all hover:bg-[var(--stitch-accent, #d4af37)]/10"
             >
               Go back to feeds
             </button>
@@ -770,11 +770,11 @@ export default function MobileMode({
       {/* Guest Track Order Modal */}
       {isTrackOpen && (
         <div className="fixed inset-0 z-[1002] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="bg-[#191f2f] border border-slate-700 rounded-[28px] p-6 max-w-sm w-full mx-4 shadow-2xl overflow-y-auto max-h-[90vh]">
+          <div className="bg-[var(--stitch-card, #121824)] border border-stitch-border rounded-[28px] p-6 max-w-sm w-full mx-4 shadow-2xl overflow-y-auto max-h-[90vh]">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-lg font-black text-white flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-[#4edea3]" />
+                  <MapPin className="w-5 h-5 text-[var(--stitch-accent, #d4af37)]" />
                   Track Your Order
                 </h3>
                 <p className="text-[10px] text-[#d3c5ac] mt-0.5">Enter Order ID or Phone</p>
@@ -792,7 +792,7 @@ export default function MobileMode({
                     value={trackId}
                     onChange={e => setTrackId(e.target.value)}
                     placeholder="e.g. 1033 or 0300..."
-                    className="w-full bg-[#141b2b] border border-slate-700 focus:border-[#4edea3] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors"
+                    className="w-full bg-[var(--stitch-surface, #161e2e)] border border-stitch-border focus:border-[var(--stitch-accent, #d4af37)] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors"
                     autoFocus
                   />
                 </div>
@@ -800,20 +800,20 @@ export default function MobileMode({
                 <button
                   type="submit"
                   disabled={trackLoading}
-                  className="w-full py-3.5 bg-[#4edea3] hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs uppercase tracking-widest rounded-xl transition-all"
+                  className="w-full py-3.5 bg-[var(--stitch-accent, #d4af37)] hover:bg-emerald-400 disabled:opacity-50 text-stitch-bg font-black text-xs uppercase tracking-widest rounded-xl transition-all"
                 >
                   {trackLoading ? 'Searching...' : 'Find My Order'}
                 </button>
               </form>
             ) : (
               <div className="space-y-4">
-                <div className="bg-[#141b2b] rounded-2xl border border-slate-800 p-4 space-y-3">
+                <div className="bg-[var(--stitch-surface, #161e2e)] rounded-2xl border border-stitch-border p-4 space-y-3">
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="font-black text-white text-base">Order #{trackResult.id}</p>
                       <p className="text-[10px] text-[#d3c5ac]">{trackResult.customer} · {trackResult.timePlaced}</p>
                     </div>
-                    <span className="text-xs font-black text-[#fbbf24]">${trackResult.totalAmount}</span>
+                    <span className="text-xs font-black text-[var(--stitch-accent, #d4af37)]">${trackResult.totalAmount}</span>
                   </div>
                   <p className="text-[10px] text-[#d3c5ac] leading-relaxed line-clamp-3">{trackResult.items}</p>
                   <div className="space-y-3">
@@ -842,11 +842,11 @@ export default function MobileMode({
                       { label: 'Completed', sub: currentStep >= 6 ? 'Settled ✓' : 'Pending...', done: currentStep >= 6 },
                     ].map((step, i) => (
                       <div key={i} className="flex items-start gap-3 relative">
-                        {i < 6 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[#4edea3]' : 'bg-slate-700'}`}></div>}
-                        <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[#191f2f] ${
-                          step.done ? 'border-[#4edea3] text-[#4edea3]' : 'border-slate-700 text-transparent'
+                        {i < 6 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${step.done ? 'bg-[var(--stitch-accent, #d4af37)]' : 'bg-slate-700'}`}></div>}
+                        <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-[var(--stitch-card, #121824)] ${
+                          step.done ? 'border-[var(--stitch-accent, #d4af37)] text-[var(--stitch-accent, #d4af37)]' : 'border-stitch-border text-transparent'
                         }`}>
-                          {step.done && <CheckCircle2 className="w-3 h-3 fill-[#4edea3] text-[#191f2f]" />}
+                          {step.done && <CheckCircle2 className="w-3 h-3 fill-[var(--stitch-accent, #d4af37)] text-[var(--stitch-card, #121824)]" />}
                         </div>
                         <div>
                           <p className={`text-[10px] font-bold ${step.done ? 'text-white' : 'text-slate-500'}`}>{step.label}</p>
@@ -858,17 +858,17 @@ export default function MobileMode({
                 </div>
 
                 {trackResult.status === 'DISPATCHED' && trackResult.delivery && (
-                  <div className="bg-[#141b2b] border border-[#4edea3]/30 rounded-xl overflow-hidden mt-4">
-                    <div className="bg-[#4edea3]/10 px-4 py-2 flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-[#4edea3] animate-ping" />
-                      <span className="text-[10px] font-black uppercase text-[#4edea3]">Rider is approaching!</span>
+                  <div className="bg-[var(--stitch-surface, #161e2e)] border border-[var(--stitch-accent, #d4af37)]/30 rounded-xl overflow-hidden mt-4">
+                    <div className="bg-[var(--stitch-accent, #d4af37)]/10 px-4 py-2 flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-[var(--stitch-accent, #d4af37)] animate-ping" />
+                      <span className="text-[10px] font-black uppercase text-[var(--stitch-accent, #d4af37)]">Rider is approaching!</span>
                     </div>
                     <div className="relative h-32 bg-slate-900 w-full overflow-hidden flex items-center justify-center">
                       {/* Fake Radar Map Animation */}
-                      <div className="absolute inset-0 border-[0.5px] border-slate-800" style={{ backgroundSize: '20px 20px', backgroundImage: 'linear-gradient(to right, #1e293b 1px, transparent 1px), linear-gradient(to bottom, #1e293b 1px, transparent 1px)' }} />
-                      <div className="w-32 h-32 border border-[#4edea3]/20 rounded-full animate-ping absolute" />
-                      <div className="w-16 h-16 border border-[#4edea3]/40 rounded-full animate-ping absolute" />
-                      <div className="w-4 h-4 bg-[#4edea3] rounded-full z-10 shadow-[0_0_15px_#4edea3] relative flex items-center justify-center">
+                      <div className="absolute inset-0 border-[0.5px] border-stitch-border" style={{ backgroundSize: '20px 20px', backgroundImage: 'linear-gradient(to right, #1e293b 1px, transparent 1px), linear-gradient(to bottom, #1e293b 1px, transparent 1px)' }} />
+                      <div className="w-32 h-32 border border-[var(--stitch-accent, #d4af37)]/20 rounded-full animate-ping absolute" />
+                      <div className="w-16 h-16 border border-[var(--stitch-accent, #d4af37)]/40 rounded-full animate-ping absolute" />
+                      <div className="w-4 h-4 bg-[var(--stitch-accent, #d4af37)] rounded-full z-10 shadow-[0_0_15px_var(--stitch-accent, #d4af37)] relative flex items-center justify-center">
                         <div className="absolute -top-6 bg-white text-slate-900 text-[8px] font-bold px-2 py-0.5 rounded whitespace-nowrap">Rider</div>
                       </div>
                     </div>
@@ -876,21 +876,21 @@ export default function MobileMode({
                 )}
 
                 {(trackResult.status === 'PAID' || trackResult.status === 'SETTLED') && (
-                  <div className="bg-[#141b2b] border border-amber-500/30 rounded-xl p-4 mt-4 text-center">
+                  <div className="bg-[var(--stitch-surface, #161e2e)] border border-amber-500/30 rounded-xl p-4 mt-4 text-center">
                     {trackResult.feedback || feedbackSubmitted ? (
                       <div>
-                        <h4 className="text-sm font-black text-[#4edea3] mb-1">Thanks for your feedback!</h4>
+                        <h4 className="text-sm font-black text-[var(--stitch-accent, #d4af37)] mb-1">Thanks for your feedback!</h4>
                         <div className="flex justify-center gap-1 my-2">
                           {[1, 2, 3, 4, 5].map(star => (
                             <svg key={star} className={`w-5 h-5 ${(trackResult.feedback?.rating || feedbackRating) >= star ? 'text-amber-400' : 'text-slate-600'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
                           ))}
                         </div>
-                        <p className="text-[10px] text-slate-400">"{trackResult.feedback?.comment || feedbackComment}"</p>
+                        <p className="text-[10px] text-stitch-muted">"{trackResult.feedback?.comment || feedbackComment}"</p>
                       </div>
                     ) : (
                       <div>
                         <h4 className="text-sm font-black text-white mb-1">How was your delivery?</h4>
-                        <p className="text-[10px] text-slate-400 mb-3">Rate your experience to help us improve</p>
+                        <p className="text-[10px] text-stitch-muted mb-3">Rate your experience to help us improve</p>
                         <div className="flex justify-center gap-2 mb-3">
                           {[1, 2, 3, 4, 5].map(star => (
                             <button key={star} onClick={() => setFeedbackRating(star)} className="focus:outline-none">
@@ -902,13 +902,13 @@ export default function MobileMode({
                           placeholder="Leave a comment (optional)..."
                           value={feedbackComment}
                           onChange={e => setFeedbackComment(e.target.value)}
-                          className="w-full bg-[#191f2f] border border-slate-700 rounded-xl px-3 py-2 text-[10px] text-white resize-none outline-none focus:border-amber-400 mb-3"
+                          className="w-full bg-[var(--stitch-card, #121824)] border border-stitch-border rounded-xl px-3 py-2 text-[10px] text-white resize-none outline-none focus:border-amber-400 mb-3"
                           rows={2}
                         />
                         <button
                           onClick={handleSubmitFeedback}
                           disabled={!feedbackRating || isSubmittingFeedback}
-                          className="w-full py-2 bg-[#fbbf24] hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+                          className="w-full py-2 bg-[var(--stitch-accent, #d4af37)] hover:bg-amber-400 disabled:opacity-50 text-stitch-bg font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
                         >
                           {isSubmittingFeedback ? 'Submitting...' : 'Submit Feedback'}
                         </button>
@@ -921,13 +921,13 @@ export default function MobileMode({
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={() => { setTrackResult(null); setTrackId(''); setTrackPhone(''); }}
-                    className="flex-1 py-2.5 border border-slate-700 hover:border-slate-500 text-[#d3c5ac] font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all"
+                    className="flex-1 py-2.5 border border-stitch-border hover:border-slate-500 text-[#d3c5ac] font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all"
                   >
                     Search Again
                   </button>
                   <button
                     onClick={() => setIsTrackOpen(false)}
-                    className="flex-1 py-2.5 bg-[#fbbf24] hover:bg-amber-400 text-slate-950 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+                    className="flex-1 py-2.5 bg-[var(--stitch-accent, #d4af37)] hover:bg-amber-400 text-stitch-bg font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
                   >
                     Close
                   </button>
@@ -940,10 +940,10 @@ export default function MobileMode({
       {/* ================= MODAL: AUTH / LOGIN ================= */}
       {isAuthModalOpen && (
         <div className="fixed inset-0 z-[1005] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#191f2f] border border-slate-800 rounded-3xl w-full max-w-sm overflow-hidden flex flex-col relative shadow-2xl animate-fade-in">
-            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-[#141b2b]">
+          <div className="bg-[var(--stitch-card, #121824)] border border-stitch-border rounded-3xl w-full max-w-sm overflow-hidden flex flex-col relative shadow-2xl animate-fade-in">
+            <div className="p-6 border-b border-stitch-border flex justify-between items-center bg-[var(--stitch-surface, #161e2e)]">
               <h3 className="text-xl font-black text-white flex items-center gap-2">
-                <User className="text-brand-yellow w-5 h-5" /> 
+                <User className="text-stitch-accent w-5 h-5" /> 
                 {showRegisterFields ? 'Create Account' : 'Welcome Back'}
               </h3>
               <button onClick={() => { setIsAuthModalOpen(false); setShowRegisterFields(false); }} className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition">
@@ -954,24 +954,24 @@ export default function MobileMode({
               {authError && <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg text-center">{authError}</div>}
               
               {!showRegisterFields ? (
-                <p className="text-sm text-slate-400 text-center mb-6">Enter your phone number to login or create an account.</p>
+                <p className="text-sm text-stitch-muted text-center mb-6">Enter your phone number to login or create an account.</p>
               ) : (
-                <p className="text-sm text-slate-400 text-center mb-6">Looks like you are new! Enter your name to continue.</p>
+                <p className="text-sm text-stitch-muted text-center mb-6">Looks like you are new! Enter your name to continue.</p>
               )}
 
               <form onSubmit={handleLogin} className="space-y-4">
                 {showRegisterFields && (
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Full Name</label>
-                    <input type="text" value={authName} onChange={e => setAuthName(e.target.value)} required className="w-full bg-[#0a0f18] text-white rounded-xl px-4 py-3 border border-slate-700 focus:border-brand-yellow outline-none transition" placeholder="John Doe" />
+                    <label className="block text-xs font-bold text-stitch-muted mb-1 uppercase tracking-wider">Full Name</label>
+                    <input type="text" value={authName} onChange={e => setAuthName(e.target.value)} required className="w-full bg-[#0a0f18] text-white rounded-xl px-4 py-3 border border-stitch-border focus:border-brand-yellow outline-none transition" placeholder="John Doe" />
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Phone Number</label>
-                  <input type="tel" value={authPhone} onChange={e => setAuthPhone(e.target.value)} required disabled={showRegisterFields} className="w-full bg-[#0a0f18] text-white rounded-xl px-4 py-3 border border-slate-700 focus:border-brand-yellow outline-none transition disabled:opacity-50" placeholder="0300..." />
+                  <label className="block text-xs font-bold text-stitch-muted mb-1 uppercase tracking-wider">Phone Number</label>
+                  <input type="tel" value={authPhone} onChange={e => setAuthPhone(e.target.value)} required disabled={showRegisterFields} className="w-full bg-[#0a0f18] text-white rounded-xl px-4 py-3 border border-stitch-border focus:border-brand-yellow outline-none transition disabled:opacity-50" placeholder="0300..." />
                 </div>
 
-                <button type="submit" disabled={isAuthLoading} className="w-full mt-4 bg-brand-yellow hover:bg-yellow-400 text-black font-black py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 transition disabled:opacity-50">
+                <button type="submit" disabled={isAuthLoading} className="w-full mt-4 bg-stitch-accent hover:bg-yellow-400 text-black font-black py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 transition disabled:opacity-50">
                   {isAuthLoading ? 'Loading...' : (showRegisterFields ? 'Create Account' : 'Continue')}
                 </button>
               </form>
@@ -983,14 +983,14 @@ export default function MobileMode({
       {/* ================= MODAL: MY PROFILE ================= */}
       {isProfileModalOpen && loggedInUser && (
         <div className="fixed inset-0 z-[1005] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#191f2f] border border-slate-800 rounded-3xl w-full max-w-md h-[85vh] overflow-hidden flex flex-col relative shadow-2xl animate-fade-in">
-            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-[#141b2b]">
+          <div className="bg-[var(--stitch-card, #121824)] border border-stitch-border rounded-3xl w-full max-w-md h-[85vh] overflow-hidden flex flex-col relative shadow-2xl animate-fade-in">
+            <div className="p-6 border-b border-stitch-border flex justify-between items-center bg-[var(--stitch-surface, #161e2e)]">
               <div>
                 <h3 className="text-2xl font-black text-white flex items-center gap-3">
-                  <User className="text-brand-yellow w-6 h-6" /> 
+                  <User className="text-stitch-accent w-6 h-6" /> 
                   {loggedInUser.name}
                 </h3>
-                <p className="text-sm text-brand-yellow font-bold mt-1">{loggedInUser.loyalty_points || 0} Loyalty Points</p>
+                <p className="text-sm text-stitch-accent font-bold mt-1">{loggedInUser.loyalty_points || 0} Loyalty Points</p>
               </div>
               <div className="flex items-center gap-3">
                 <button onClick={handleLogout} className="text-xs font-bold text-red-400 hover:text-red-300 px-3 py-1.5 border border-red-500/30 rounded-lg hover:bg-red-500/10 transition">Logout</button>
@@ -1006,22 +1006,22 @@ export default function MobileMode({
                 <div className="text-center p-10 text-slate-500">No orders found.</div>
               ) : (
                 profileHistory.map((order: any, idx) => (
-                  <div key={idx} className="bg-[#141b2b] border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row justify-between gap-4">
+                  <div key={idx} className="bg-[var(--stitch-surface, #161e2e)] border border-stitch-border rounded-xl p-4 flex flex-col sm:flex-row justify-between gap-4">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-black bg-slate-800 text-slate-300 px-2 py-0.5 rounded uppercase">
+                        <span className="text-xs font-black bg-slate-800 text-stitch-ink px-2 py-0.5 rounded uppercase">
                           {order.type || (order.source === 'Website' ? 'Online' : 'POS')}
                         </span>
                         <span className="text-white font-bold text-sm">Order #{order.id || order.orderId}</span>
                       </div>
-                      <p className="text-xs text-slate-400">{new Date(order.createdAt).toLocaleDateString()} at {new Date(order.createdAt).toLocaleTimeString()}</p>
+                      <p className="text-xs text-stitch-muted">{new Date(order.createdAt).toLocaleDateString()} at {new Date(order.createdAt).toLocaleTimeString()}</p>
                       {order.items && typeof order.items === 'string' && (
-                        <p className="text-sm text-slate-300 mt-2 line-clamp-1">{order.items}</p>
+                        <p className="text-sm text-stitch-ink mt-2 line-clamp-1">{order.items}</p>
                       )}
                     </div>
                     <div className="text-right flex flex-col justify-between">
-                      <span className="text-brand-yellow font-black">Rs {order.totalAmount || order.total}</span>
-                      <span className={`text-xs font-bold ${order.status === 'PAID' || order.status === 'SETTLED' || order.status === 'DELIVERED' ? 'text-green-400' : 'text-slate-400'}`}>
+                      <span className="text-stitch-accent font-black">Rs {order.totalAmount || order.total}</span>
+                      <span className={`text-xs font-bold ${order.status === 'PAID' || order.status === 'SETTLED' || order.status === 'DELIVERED' ? 'text-green-400' : 'text-stitch-muted'}`}>
                         {order.status || 'COMPLETED'}
                       </span>
                     </div>
@@ -1035,3 +1035,4 @@ export default function MobileMode({
     </div>
   );
 }
+

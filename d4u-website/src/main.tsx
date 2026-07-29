@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { initStitchTheme } from './theme';
 
 import { Toaster } from 'react-hot-toast';
 
@@ -16,6 +17,8 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
     return this.props.children;
   }
 }
+
+initStitchTheme();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
