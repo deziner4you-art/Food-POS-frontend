@@ -2,20 +2,20 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Header from '../components/shared/Header';
 import Footer from '../components/shared/Footer';
-import CartDrawer from '../components/shared/CartDrawer';
+import { CartDrawer } from '../components/shared/CartDrawer';
 import { useStore } from '../context/StoreContext';
-import type { Coupon } from '../utils/cartMath';
+import type { Promotion } from '../types';
 
 export interface PublicOutletContext {
-  appliedCoupon: Coupon | null;
-  setAppliedCoupon: (c: Coupon | null) => void;
+  appliedCoupon: Promotion | null;
+  setAppliedCoupon: (c: Promotion | null) => void;
   activeOrder: any;
   setActiveOrder: (o: any) => void;
 }
 
 export default function PublicLayout() {
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<Promotion | null>(null);
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const { settings, kioskMode } = useStore();
 
@@ -31,7 +31,12 @@ export default function PublicLayout() {
 
       {!kioskMode && <Footer />}
 
-      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} appliedCoupon={appliedCoupon} onRemoveCoupon={() => setAppliedCoupon(null)} />
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        appliedPromo={appliedCoupon}
+        onRemovePromo={() => setAppliedCoupon(null)}
+      />
 
       {!kioskMode && settings?.whatsappNumber && (
         <a
@@ -48,3 +53,6 @@ export default function PublicLayout() {
     </div>
   );
 }
+
+
+

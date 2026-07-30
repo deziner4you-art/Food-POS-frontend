@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 const socket = io(BACKEND_URL);
-import type { FoodItem, CartItem } from '../types';
+import type { FoodItem, CartItem } from './legacyTypes';
 import { ShoppingBag, Star, Info, LayoutGrid, Sparkles, MapPin, Search, ArrowRight, Home, CreditCard, ChevronDown, Check, ChevronUp, Plus, Minus, UserCircle, LogOut, ShoppingCart, User, PlusCircle, CheckCircle, ReceiptText, X, UtensilsCrossed, CheckCircle2 } from 'lucide-react';
 
 interface MobileModeProps {

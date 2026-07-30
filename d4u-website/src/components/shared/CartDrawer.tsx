@@ -1,68 +1,139 @@
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Minus, Plus, ShoppingBag, X } from 'lucide-react';
+import type { Promotion } from '../../types';
 import { useStore } from '../../context/StoreContext';
-import { getDeliveryFee, getDiscountAmount, getGrandTotal, getSubtotal, getTax, type Coupon } from '../../utils/cartMath';
+import { getDeliveryFee, getDiscountAmount, getGrandTotal, getSubtotal, getTax } from '../../utils/cartMath';
+import {
+  X,
+  ShoppingBag,
+  Plus,
+  Minus,
+  Trash2,
+  ArrowRight,
+  Sparkles
+} from 'lucide-react';
 
-export default function CartDrawer({
-  isOpen,
-  onClose,
-  appliedCoupon,
-  onRemoveCoupon,
-}: {
+interface CartDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  appliedCoupon: Coupon | null;
-  onRemoveCoupon: () => void;
-}) {
-  const { cart, increaseQuantity, decreaseQuantity } = useStore();
+  appliedPromo: Promotion | null;
+  onRemovePromo: () => void;
+}
+
+export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, appliedPromo, onRemovePromo }) => {
+  const { cart, increaseQuantity, decreaseQuantity, removeFromCart } = useStore();
   const navigate = useNavigate();
 
   if (!isOpen) return null;
 
   const subtotal = getSubtotal(cart);
-  const discount = getDiscountAmount(cart, appliedCoupon);
-  const tax = getTax(cart, appliedCoupon);
-  const deliveryFee = getDeliveryFee(cart, 'DELIVERY');
-  const grandTotal = getGrandTotal(cart, appliedCoupon, 'DELIVERY');
+  const discountAmount = getDiscountAmount(cart, appliedPromo);
+  const deliveryFee = getDeliveryFee(cart, 'delivery');
+  const tax = getTax(cart, appliedPromo);
+  const grandTotal = getGrandTotal(cart, appliedPromo, 'delivery');
 
   return (
-    <div className="fixed inset-0 z-[100] flex justify-end bg-stitch-bg/70 backdrop-blur-sm">
-      <div className="absolute inset-0" onClick={onClose}></div>
-
-      <div className="relative w-full max-w-md bg-stitch-panel h-full shadow-2xl flex flex-col justify-between z-10 border-l border-stitch-border">
-        <div className="p-5 border-b border-stitch-border flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-md animate-fade-in">
+      <div className="bg-[#121215] border-l border-white/10 w-full max-w-md h-full flex flex-col justify-between shadow-2xl relative">
+        {/* Cart Header */}
+        <div className="p-4 sm:p-6 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-stitch-accent" />
-            <h3 className="font-black text-lg text-stitch-ink">Your Basket</h3>
+            <div className="w-9 h-9 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37]">
+              <ShoppingBag className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white font-display">Your Order Cart</h2>
+              <p className="text-xs text-gray-400">
+                {cart.length} {cart.length === 1 ? 'item' : 'items'} selected
+              </p>
+            </div>
           </div>
-          <button onClick={onClose} className="text-stitch-muted hover:text-stitch-ink p-2 rounded-full hover:bg-stitch-surface transition">
-            <X className="w-5 h-5" />
+
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        {/* Cart Items List */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {cart.length === 0 ? (
-            <div className="text-center py-20">
-              <ShoppingBag className="w-12 h-12 text-stitch-muted mx-auto mb-3 animate-pulse" />
-              <p className="text-stitch-muted font-bold">Your cart is empty.</p>
-              <p className="text-xs text-stitch-muted mt-1">Start adding delicious food from our menu!</p>
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
+              <div className="w-16 h-16 rounded-full bg-[#1A1A1D] border border-white/10 flex items-center justify-center text-gray-500">
+                <ShoppingBag className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-bold text-white font-display">Your cart is empty</h3>
+              <p className="text-xs text-gray-400 max-w-xs">Browse the menu and add something delicious!</p>
+              <button
+                onClick={onClose}
+                className="mt-2 bg-[#D4AF37] text-black text-xs font-extrabold px-6 py-2.5 rounded-full gold-glow"
+              >
+                Browse Menu
+              </button>
             </div>
           ) : (
             cart.map((item) => (
-              <div key={item.foodItem.id} className="bg-stitch-surface/60 p-4 rounded-2xl border border-stitch-border flex flex-col gap-3">
-                <div className="flex justify-between items-start gap-4">
-                  <div>
-                    <h4 className="font-extrabold text-sm text-stitch-ink">{item.foodItem.name}</h4>
-                    <p className="text-stitch-accent text-xs font-bold font-mono mt-1">${item.foodItem.priceUSD.toFixed(2)} each</p>
+              <div
+                key={item.cartItemId}
+                className="bg-[#1A1A1D] border border-white/10 rounded-2xl p-3 flex gap-3 relative group"
+              >
+                <img
+                  src={item.product.imageUrl}
+                  alt={item.product.name}
+                  className="w-16 h-16 rounded-xl object-cover flex-shrink-0"
+                />
+
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <h4 className="text-xs font-bold text-white truncate font-display">
+                      {item.product.name}
+                    </h4>
+                    <button
+                      onClick={() => removeFromCart(item.cartItemId)}
+                      className="text-gray-500 hover:text-rose-400 transition-colors p-1"
+                      title="Remove Item"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <div className="flex items-center bg-stitch-surface border border-stitch-border rounded-full px-2.5 py-1">
-                    <button onClick={() => decreaseQuantity(item.foodItem.id)} className="text-stitch-muted hover:text-stitch-ink p-1">
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="text-stitch-ink text-xs font-bold px-2">{item.quantity}</span>
-                    <button onClick={() => increaseQuantity(item.foodItem.id)} className="text-stitch-muted hover:text-stitch-ink p-1">
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
+
+                  {(Object.values(item.selectedModifiers || {}).flat().length > 0) && (
+                    <div className="text-[10px] text-gray-400 leading-tight">
+                      {Object.values(item.selectedModifiers || {})
+                        .flat()
+                        .map((m: any) => m.name)
+                        .join(', ')}
+                    </div>
+                  )}
+
+                  {item.specialInstructions && (
+                    <div className="text-[10px] text-[#D4AF37] italic truncate">
+                      "{item.specialInstructions}"
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs font-extrabold text-[#D4AF37]">
+                      ${item.totalPrice.toFixed(2)}
+                    </span>
+
+                    <div className="flex items-center gap-2 bg-[#121215] border border-white/10 rounded-lg p-1">
+                      <button
+                        onClick={() => decreaseQuantity(item.cartItemId)}
+                        className="w-5 h-5 rounded hover:bg-white/10 text-gray-300 flex items-center justify-center"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <span className="text-xs font-bold text-white px-1">{item.quantity}</span>
+                      <button
+                        onClick={() => increaseQuantity(item.cartItemId)}
+                        className="w-5 h-5 rounded hover:bg-white/10 text-gray-300 flex items-center justify-center"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -70,37 +141,50 @@ export default function CartDrawer({
           )}
         </div>
 
+        {/* Footer Summary */}
         {cart.length > 0 && (
-          <div className="p-5 border-t border-stitch-border bg-stitch-surface/40 space-y-4">
-            {appliedCoupon && (
-              <div className="flex justify-between items-center bg-stitch-accent/5 border border-stitch-accent/20 px-3 py-2 rounded-xl text-xs">
-                <span className="text-stitch-accent font-black">Coupon Applied: {appliedCoupon.code}</span>
-                <button onClick={onRemoveCoupon} className="text-stitch-muted hover:text-stitch-danger font-bold">Remove</button>
+          <div className="p-4 sm:p-6 border-t border-white/10 bg-[#0C0C0E] space-y-4">
+            {appliedPromo && (
+              <div className="bg-[#D4AF37]/10 border border-[#D4AF37]/40 rounded-xl p-2.5 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-[#D4AF37]">
+                  <Sparkles className="w-4 h-4" />
+                  <span className="font-bold">Promo '{appliedPromo.code}' Applied!</span>
+                </div>
+                <button onClick={onRemovePromo} className="text-gray-400 hover:text-white text-[11px] underline">
+                  Remove
+                </button>
               </div>
             )}
 
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between text-stitch-muted">
+            {/* Price Breakdown — real D4U tax/delivery rules, not Stitch's demo math */}
+            <div className="space-y-1.5 text-xs text-gray-300">
+              <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span>${subtotal.toFixed(2)}</span>
+                <span className="font-semibold text-white">${subtotal.toFixed(2)}</span>
               </div>
-              {discount > 0 && (
-                <div className="flex justify-between text-stitch-accent font-bold">
-                  <span>Discount</span>
-                  <span>-${discount.toFixed(2)}</span>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-[#D4AF37]">
+                  <span>Promo Discount</span>
+                  <span className="font-bold">-${discountAmount.toFixed(2)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-stitch-muted">
-                <span>GST / Sales Tax (13%)</span>
-                <span>${tax.toFixed(2)}</span>
+              <div className="flex justify-between">
+                <span>Estimated Delivery</span>
+                <span className="font-semibold text-white">
+                  {deliveryFee === 0 ? (
+                    <span className="text-emerald-400">FREE ($15+ order)</span>
+                  ) : (
+                    `$${deliveryFee.toFixed(2)}`
+                  )}
+                </span>
               </div>
-              <div className="flex justify-between text-stitch-muted">
-                <span>Delivery Fee</span>
-                <span>{deliveryFee === 0 ? 'FREE' : `$${deliveryFee.toFixed(2)}`}</span>
+              <div className="flex justify-between">
+                <span>Estimated Tax (13%)</span>
+                <span className="font-semibold text-white">${tax.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-base font-black text-stitch-ink pt-2 border-t border-stitch-border">
+              <div className="flex justify-between text-sm font-extrabold text-white pt-2 border-t border-white/10 font-display">
                 <span>Grand Total</span>
-                <span>${grandTotal.toFixed(2)}</span>
+                <span className="text-[#D4AF37] text-base">${grandTotal.toFixed(2)}</span>
               </div>
             </div>
 
@@ -109,13 +193,13 @@ export default function CartDrawer({
                 onClose();
                 navigate('/checkout');
               }}
-              className="w-full bg-stitch-accent hover:bg-stitch-accent-hover text-stitch-accent-ink font-black py-4 rounded-xl text-sm transition tracking-wider uppercase transform active:scale-95 text-center flex justify-center items-center gap-2 accent-glow"
+              className="w-full bg-[#D4AF37] text-black font-extrabold py-3.5 rounded-xl hover:bg-[#ffe088] transition-all flex items-center justify-center gap-2 gold-glow text-sm"
             >
-              Checkout Now <ArrowRight className="w-4 h-4" />
+              Proceed To Checkout <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         )}
       </div>
     </div>
   );
-}
+};
