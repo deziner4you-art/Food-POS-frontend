@@ -6,6 +6,9 @@ const SECTION_TITLES: Record<CmsTab, string> = {
   BANNERS: 'Hero & Banners',
   SETTINGS: 'Site Settings',
   MODULES: 'System Modules',
+  SEO: 'SEO',
+  PAGES: 'Pages',
+  MEDIA: 'Media Library',
 };
 
 interface CmsShellProps {

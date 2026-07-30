@@ -56,6 +56,7 @@ export default function BannerCard({
           <div
             className="absolute top-2 right-2 w-7 h-7 rounded-md bg-black/40 backdrop-blur flex items-center justify-center text-stitch-ink cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
             title="Drag to reorder"
+            aria-hidden="true"
           >
             <GripVertical size={14} />
           </div>
@@ -73,15 +74,17 @@ export default function BannerCard({
               onClick={onEdit}
               className="text-stitch-accent hover:text-stitch-accent-hover bg-stitch-accent/10 p-2 rounded-lg transition-colors"
               title="Edit banner"
+              aria-label={`Edit banner: ${banner.title || 'Untitled Banner'}`}
             >
-              <Pencil size={16} />
+              <Pencil size={16} aria-hidden="true" />
             </button>
             <button
               onClick={onDelete}
               className="text-stitch-danger hover:text-stitch-danger/80 bg-stitch-danger/10 p-2 rounded-lg transition-colors"
               title="Delete banner"
+              aria-label={`Delete banner: ${banner.title || 'Untitled Banner'}`}
             >
-              <Trash2 size={16} />
+              <Trash2 size={16} aria-hidden="true" />
             </button>
           </div>
         </div>

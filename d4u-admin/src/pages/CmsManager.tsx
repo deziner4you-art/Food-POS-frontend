@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Search, FileText, Images } from 'lucide-react';
 import { customAlert, customConfirm } from '../utils/alerts';
 import { useAdminContext } from '../context/AdminContext';
 import CmsShell from '../components/cms/CmsShell';
@@ -7,6 +8,7 @@ import BannerGrid from '../components/cms/banner/BannerGrid';
 import BannerUploadModal from '../components/cms/banner/BannerUploadModal';
 import SettingsForm from '../components/cms/settings/SettingsForm';
 import ModuleToggleList from '../components/cms/modules/ModuleToggleList';
+import ComingSoonSection from '../components/cms/ComingSoonSection';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -324,6 +326,30 @@ export default function CmsManager() {
 
       {activeTab === 'MODULES' && (
         <ModuleToggleList modules={MODULE_DEFINITIONS} settings={settings} onToggle={handleToggleModule} />
+      )}
+
+      {activeTab === 'SEO' && (
+        <ComingSoonSection
+          title="SEO"
+          description="Meta titles, descriptions, and social previews aren't connected to a backend yet."
+          icon={Search}
+        />
+      )}
+
+      {activeTab === 'PAGES' && (
+        <ComingSoonSection
+          title="Pages"
+          description="A general page editor isn't connected to a backend yet."
+          icon={FileText}
+        />
+      )}
+
+      {activeTab === 'MEDIA' && (
+        <ComingSoonSection
+          title="Media Library"
+          description="A reusable asset library isn't connected to a backend yet."
+          icon={Images}
+        />
       )}
 
       {/* Upload / Edit Modal */}

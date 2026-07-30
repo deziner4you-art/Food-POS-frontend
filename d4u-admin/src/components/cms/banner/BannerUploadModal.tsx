@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { ChangeEvent, FormEvent, RefObject } from 'react';
 
 interface BannerFormState {
@@ -37,10 +38,27 @@ export default function BannerUploadModal({
 }: BannerUploadModalProps) {
   const isEdit = mode === 'edit';
 
+  // Accessibility polish only — presentation/keyboard behavior, no change
+  // to what create/edit actually does.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 bg-stitch-bg/80 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="glass-panel rounded-2xl p-6 w-full max-w-md animate-scale-up">
-        <h3 className="text-xl font-bold text-stitch-ink mb-4">{isEdit ? 'Edit Banner' : 'Upload Banner'}</h3>
+      <div
+        className="glass-panel rounded-2xl p-6 w-full max-w-md animate-scale-up"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="banner-modal-title"
+      >
+        <h3 id="banner-modal-title" className="text-xl font-bold text-stitch-ink mb-4">
+          {isEdit ? 'Edit Banner' : 'Upload Banner'}
+        </h3>
         <form onSubmit={onSubmit} className="space-y-4">
           {isEdit ? (
             <div>
@@ -111,8 +129,9 @@ export default function BannerUploadModal({
                   className="sr-only peer"
                   checked={bannerForm.isActive}
                   onChange={(e) => setBannerForm({ ...bannerForm, isActive: e.target.checked })}
+                  aria-label="Active on website"
                 />
-                <div className="w-11 h-6 bg-stitch-muted/30 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-stitch-ink after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-stitch-ink after:border-stitch-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-stitch-accent"></div>
+                <div className="w-11 h-6 bg-stitch-muted/30 peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-stitch-accent peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-stitch-surface rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-stitch-ink after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-stitch-ink after:border-stitch-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-stitch-accent"></div>
               </label>
             </div>
           )}
