@@ -5,11 +5,13 @@ export interface FoodItem {
   priceRs: number;
   description: string;
   image: string;
-  category: 'Burgers' | 'Pizzas' | 'Sides' | 'Drinks' | 'Desserts';
-  tag?: 'Bestseller' | 'New Arrival' | 'Limited Edition' | "CHEF'S SPECIAL" | 'VEGETARIAN' | 'BEST SELLER';
+  category: string;
+  tag?: string;
   preparationTime?: string;
   calories?: number;
   categoryGroup?: string;
+  variants?: any[];
+  categories?: any[];
 }
 
 export interface CartItem {
@@ -18,4 +20,19 @@ export interface CartItem {
   customization?: string;
 }
 
-export type ViewMode = 'landing';
+export type ViewMode = 'landing' | 'kiosk' | 'mobile';
+
+export interface StoreSummary {
+  id: number;
+  name: string;
+  [key: string]: any;
+}
+
+export interface CustomerProfile {
+  id: number;
+  name: string;
+  phone: string;
+  loyalty_points?: number;
+  [key: string]: any;
+}
+

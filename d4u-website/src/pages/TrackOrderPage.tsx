@@ -1,0 +1,125 @@
+import { useEffect, useState } from 'react';
+import { CheckCircle2, MapPin } from 'lucide-react';
+import { useStore } from '../context/StoreContext';
+import { BACKEND_URL } from '../hooks/useStoreData';
+
+const STATUS_INDEX: Record<string, number> = {
+  ONLINE_ORDER_RECEIVED: 0,
+  CONFIRMED: 1,
+  KITCHEN_PREPARING: 2,
+  READY: 3,
+  RIDER_ARRIVED: 3,
+  PRINT_BILL: 3,
+  DISPATCHED: 3,
+  OUT_FOR_DELIVERY: 4,
+  DELIVERED: 5,
+  WAITING_CASH_SETTLEMENT: 5,
+  SETTLED: 6,
+};
+
+export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
+  const { orderUpdate } = useStore();
+  const [trackInput, setTrackInput] = useState(activeOrder?.id ? String(activeOrder.id) : '');
+  const [result, setResult] = useState<any>(activeOrder || null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // Live status push — ported from legacy/MobileMode.tsx, which already had
+  // this working ahead of the old desktop implementation.
+  useEffect(() => {
+    if (orderUpdate && result && (orderUpdate.id === result.id || orderUpdate.id == result.id)) {
+      setResult((prev: any) => ({ ...prev, status: orderUpdate.status, ...orderUpdate }));
+    }
+  }, [orderUpdate]);
+
+  const handleTrack = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const input = trackInput.trim();
+    if (!input) { setError('Order ID or phone is required'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const isPhone = input.length > 5 || input.startsWith('0') || input.startsWith('+');
+      const res = await fetch(isPhone ? `${BACKEND_URL}/online-orders?phone=${encodeURIComponent(input)}` : `${BACKEND_URL}/online-orders/${input}`);
+      if (!res.ok) { setError('Order not found.'); setLoading(false); return; }
+      const data = await res.json();
+      const found = Array.isArray(data) ? data.sort((a, b) => b.id - a.id)[0] : data;
+      if (!found) { setError('No orders found.'); setLoading(false); return; }
+      setResult(found);
+    } catch {
+      setError('Failed to connect to server.');
+    }
+    setLoading(false);
+  };
+
+  const currentStep = result ? (STATUS_INDEX[result.status] ?? 0) : 0;
+  const steps = [
+    { label: 'Order Placed', sub: 'Received' },
+    { label: 'Confirmed by Restaurant', sub: currentStep >= 1 ? 'Accepted' : 'Waiting for cashier...' },
+    { label: 'In Kitchen', sub: currentStep >= 2 ? 'Working on it' : 'Waiting...' },
+    { label: 'Ready', sub: currentStep >= 3 ? 'Food is packed!' : 'Pending...' },
+    { label: 'Out For Delivery', sub: currentStep >= 4 ? 'Rider on the way' : 'Waiting for rider...' },
+    { label: 'Delivered', sub: currentStep >= 5 ? 'Arrived' : 'Pending...' },
+    { label: 'Completed', sub: currentStep >= 6 ? 'Settled' : 'Pending...' },
+  ];
+
+  return (
+    <div className="max-w-lg mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <div className="bg-stitch-panel border border-stitch-border rounded-3xl p-6 space-y-6">
+        <h3 className="text-xl font-black text-stitch-ink flex items-center gap-2">
+          <MapPin className="w-5 h-5 text-stitch-success" /> Track Your Order
+        </h3>
+
+        {!result ? (
+          <form onSubmit={handleTrack} className="space-y-3">
+            <input
+              type="text"
+              value={trackInput}
+              onChange={(e) => setTrackInput(e.target.value)}
+              placeholder="e.g. 1033 or 0300..."
+              className="w-full bg-stitch-surface border border-stitch-border text-stitch-ink text-sm rounded-xl px-4 py-3 outline-none focus:border-stitch-success transition-colors"
+            />
+            {error && <p className="text-xs text-stitch-danger font-bold">{error}</p>}
+            <button type="submit" disabled={loading} className="w-full bg-stitch-success text-stitch-bg px-5 py-3 rounded-xl font-bold transition-colors disabled:opacity-50">
+              {loading ? 'Searching...' : 'Find My Order'}
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            <div className="bg-stitch-surface rounded-2xl border border-stitch-border p-4">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="font-black text-stitch-ink text-base">Order #{result.id}</p>
+                  <p className="text-[10px] text-stitch-muted">{result.customer} · {result.timePlaced}</p>
+                </div>
+                <span className="text-xs font-black text-stitch-accent">${result.totalAmount}</span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {steps.map((step, i) => {
+                const done = currentStep >= i;
+                return (
+                  <div key={i} className="flex items-start gap-3 relative">
+                    {i < steps.length - 1 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${done ? 'bg-stitch-success' : 'bg-stitch-border'}`}></div>}
+                    <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-stitch-panel ${done ? 'border-stitch-success text-stitch-success' : 'border-stitch-border text-transparent'}`}>
+                      {done && <CheckCircle2 className="w-3 h-3 fill-stitch-success text-stitch-panel" />}
+                    </div>
+                    <div>
+                      <p className={`text-[10px] font-bold ${done ? 'text-stitch-ink' : 'text-stitch-muted'}`}>{step.label}</p>
+                      <p className="text-[9px] text-stitch-muted">{step.sub}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button onClick={() => { setResult(null); setTrackInput(''); }} className="w-full py-2.5 border border-stitch-border hover:border-stitch-accent/50 text-stitch-muted font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all">
+              Search Again
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
