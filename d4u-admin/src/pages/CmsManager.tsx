@@ -1,15 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutTemplate, ImagePlus, Trash2, Save, Globe, CheckCircle } from 'lucide-react';
+import { LayoutTemplate, ImagePlus, Trash2, Globe } from 'lucide-react';
 import { customAlert, customConfirm } from '../utils/alerts';
 import { useAdminContext } from '../context/AdminContext';
+import CmsShell from '../components/cms/CmsShell';
+import type { CmsTab } from '../components/cms/CmsSectionNav';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 export default function CmsManager() {
   const { branches, brands, selectedBranchId, setSelectedBranchId, activeBrandId } = useAdminContext();
 
-  const [activeTab, setActiveTab] = useState<'BANNERS' | 'SETTINGS' | 'MODULES'>('BANNERS');
-  
+  const [activeTab, setActiveTab] = useState<CmsTab>('BANNERS');
+  // Snapshot of the last-fetched/last-saved settings, used only to derive
+  // isDirty for the sticky save bar — a ref (not state) so it never triggers
+  // its own re-render; the render already happens when `settings` changes.
+  const settingsSnapshotRef = useRef<any>(null);
+
   // Banners State
   const [banners, setBanners] = useState<any[]>([]);
   const [showBannerModal, setShowBannerModal] = useState(false);
@@ -41,7 +47,11 @@ export default function CmsManager() {
     if (!selectedBranchId) return;
     try {
       const res = await fetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`);
-      if (res.ok) setSettings(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(data);
+        settingsSnapshotRef.current = data;
+      }
     } catch (e) {
       console.error('Failed to fetch settings', e);
     }
@@ -115,6 +125,7 @@ export default function CmsManager() {
         body: JSON.stringify(cleanSettings)
       });
       if (res.ok) {
+        settingsSnapshotRef.current = cleanSettings;
         setSuccessMsg('Settings Saved Successfully!');
         setTimeout(() => setSuccessMsg(''), 3000);
       }
@@ -124,60 +135,36 @@ export default function CmsManager() {
     setIsSavingSettings(false);
   };
 
-  return (
-    <div className="animate-fade-in flex flex-col h-[calc(100vh-160px)]">
-      
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex gap-4">
-          <button 
-            onClick={() => setActiveTab('BANNERS')}
-            className={`px-6 py-3 rounded-xl font-bold transition-colors ${activeTab === 'BANNERS' ? 'bg-stitch-accent text-stitch-accent-ink' : 'bg-stitch-panel text-stitch-muted hover:bg-stitch-surface'}`}
-          >
-            Website Banners
-          </button>
-          <button 
-            onClick={() => setActiveTab('SETTINGS')}
-            className={`px-6 py-3 rounded-xl font-bold transition-colors ${activeTab === 'SETTINGS' ? 'bg-stitch-accent text-stitch-accent-ink' : 'bg-stitch-panel text-stitch-muted hover:bg-stitch-surface'}`}
-          >
-            Site Settings
-          </button>
-          <button 
-            onClick={() => setActiveTab('MODULES')}
-            className={`px-6 py-3 rounded-xl font-bold transition-colors ${activeTab === 'MODULES' ? 'bg-stitch-accent text-stitch-accent-ink' : 'bg-stitch-panel text-stitch-muted hover:bg-stitch-surface'}`}
-          >
-            System Modules
-          </button>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="bg-stitch-panel px-4 py-2 rounded-xl flex items-center gap-2 border border-stitch-border">
-            <span className="text-stitch-muted font-bold text-sm">Branch:</span>
-            <select
-              value={selectedBranchId || 0}
-              onChange={handleBranchChange}
-              className="bg-stitch-panel text-stitch-ink outline-none font-bold"
-            >
-              <option value={0} className="bg-stitch-panel text-stitch-ink">All Branches (Global)</option>
-              {(activeBrandId ? brands.find(b => b.id === activeBrandId)?.stores || [] : branches).map(b => (
-                <option key={b.id} value={b.id} className="bg-stitch-panel text-stitch-ink">{b.name}</option>
-              ))}
-            </select>
-          </div>
-          {successMsg && (
-            <div className="bg-stitch-success/20 text-stitch-success border border-stitch-success/50 px-4 py-2 rounded-xl text-sm font-bold animate-fade-in flex items-center gap-2">
-              <CheckCircle size={16} /> {successMsg}
-            </div>
-          )}
-          <button
-            onClick={handleSaveSettings}
-            disabled={isSavingSettings}
-            className="flex items-center gap-2 bg-stitch-success hover:bg-stitch-success/80 text-stitch-ink px-6 py-3 rounded-xl font-bold transition-colors disabled:opacity-50"
-          >
-            <Save size={18} /> {isSavingSettings ? 'Saving...' : 'Save All Settings'}
-          </button>
-        </div>
-      </div>
+  // Dirty flag for the sticky save bar — derived at render time from the
+  // ref snapshot above, not stored as its own state.
+  const isDirty = JSON.stringify(settings) !== JSON.stringify(settingsSnapshotRef.current);
 
+  const branchSelector = (
+    <div className="bg-stitch-panel px-4 py-2 rounded-xl flex items-center gap-2 border border-stitch-border">
+      <span className="text-stitch-muted font-bold text-sm">Branch:</span>
+      <select
+        value={selectedBranchId || 0}
+        onChange={handleBranchChange}
+        className="bg-stitch-panel text-stitch-ink outline-none font-bold"
+      >
+        <option value={0} className="bg-stitch-panel text-stitch-ink">All Branches (Global)</option>
+        {(activeBrandId ? brands.find(b => b.id === activeBrandId)?.stores || [] : branches).map(b => (
+          <option key={b.id} value={b.id} className="bg-stitch-panel text-stitch-ink">{b.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+
+  return (
+    <CmsShell
+      activeTab={activeTab}
+      onChangeTab={setActiveTab}
+      branchSelector={branchSelector}
+      isDirty={isDirty}
+      isSaving={isSavingSettings}
+      successMsg={successMsg}
+      onSave={handleSaveSettings}
+    >
       {activeTab === 'BANNERS' && (
         <div className="flex-1 overflow-y-auto">
           <div className="flex justify-between items-center mb-6">
@@ -409,10 +396,14 @@ export default function CmsManager() {
                     onChange={(e) => {
                       const newSettings = { ...settings, [module.id]: e.target.checked };
                       setSettings(newSettings);
-                      
+                      // This toggle auto-saves immediately below, so the snapshot
+                      // moves with it — otherwise the sticky save bar would show
+                      // "unsaved changes" for a change that's already persisted.
+                      settingsSnapshotRef.current = newSettings;
+
                       // Remove Prisma relations and read-only fields before sending
                       const { id, brand_id, updatedAt, brand, ...cleanSettings } = newSettings;
-                      
+
                       // Auto-save when toggled
                       fetch(`${BACKEND_URL}/cms/settings/1`, {
                         method: 'PATCH',
@@ -488,6 +479,6 @@ export default function CmsManager() {
           </div>
         </div>
       )}
-    </div>
+    </CmsShell>
   );
 }
