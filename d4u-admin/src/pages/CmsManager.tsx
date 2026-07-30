@@ -171,7 +171,7 @@ export default function CmsManager() {
           <button
             onClick={handleSaveSettings}
             disabled={isSavingSettings}
-            className="flex items-center gap-2 bg-stitch-success hover:bg-stitch-success/80 text-white px-6 py-3 rounded-xl font-bold transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 bg-stitch-success hover:bg-stitch-success/80 text-stitch-ink px-6 py-3 rounded-xl font-bold transition-colors disabled:opacity-50"
           >
             <Save size={18} /> {isSavingSettings ? 'Saving...' : 'Save All Settings'}
           </button>
@@ -421,7 +421,7 @@ export default function CmsManager() {
                       });
                     }}
                   />
-                  <div className="w-11 h-6 bg-stitch-muted/30 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stitch-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-stitch-accent"></div>
+                  <div className="w-11 h-6 bg-stitch-muted/30 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-stitch-ink after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-stitch-ink after:border-stitch-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-stitch-accent"></div>
                 </label>
               </div>
             ))}
@@ -431,7 +431,7 @@ export default function CmsManager() {
 
       {/* Upload Modal */}
       {showBannerModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-stitch-bg/80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="glass-panel rounded-2xl p-6 w-full max-w-md animate-scale-up">
             <h3 className="text-xl font-bold text-stitch-ink mb-4">Upload Banner</h3>
             <form onSubmit={handleBannerSubmit} className="space-y-4">

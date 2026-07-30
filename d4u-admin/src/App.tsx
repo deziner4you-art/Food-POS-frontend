@@ -78,12 +78,12 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
   }
 
   return (
-    <div className="flex h-screen bg-slate-900 overflow-hidden">
+    <div className="flex h-screen bg-stitch-bg overflow-hidden">
       {/* Sidebar */}
-      <div className={`${isSidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 bg-slate-900 border-r border-slate-800 p-4 flex flex-col gap-2 relative`}>
+      <div className={`${isSidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 bg-stitch-panel border-r border-stitch-border p-4 flex flex-col gap-2 relative`}>
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="absolute -right-3 top-8 bg-slate-800 text-slate-300 border border-slate-700 rounded-full p-1 hover:text-white hover:bg-slate-700 z-10"
+          className="absolute -right-3 top-8 bg-stitch-card text-stitch-muted border border-stitch-border rounded-full p-1 hover:text-stitch-ink hover:bg-stitch-surface z-10"
         >
           {isSidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
         </button>
@@ -113,7 +113,7 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
             <h2 className={`font-black text-white whitespace-nowrap ${isSidebarOpen ? 'text-2xl' : 'text-sm'}`}>
               {isSidebarOpen ? 'D4U Admin' : 'D4U'}
             </h2>
-            {isSidebarOpen && <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">Head Office HQ</p>}
+            {isSidebarOpen && <p className="text-xs text-stitch-muted mt-1 whitespace-nowrap">Head Office HQ</p>}
           </div>
         )}
 
@@ -124,7 +124,7 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
             <Link 
               key={item.path}
               to={item.path}
-              className={`flex items-center ${isSidebarOpen ? 'gap-3 px-4 py-4' : 'justify-center py-4 px-0'} w-full rounded-xl font-bold transition-all ${isActive ? `${item.bg} ${item.color}` : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+              className={`flex items-center ${isSidebarOpen ? 'gap-3 px-4 py-4' : 'justify-center py-4 px-0'} w-full rounded-xl font-bold transition-all ${isActive ? `${item.bg} ${item.color}` : 'text-stitch-muted hover:bg-stitch-surface hover:text-stitch-ink'}`}
               title={!isSidebarOpen ? item.label : ''}
             >
               <Icon size={20} className="min-w-[20px]" /> 
@@ -133,12 +133,12 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
           )
         })}
 
-        <div className="mt-auto pt-4 border-t border-slate-800">
+        <div className="mt-auto pt-4 border-t border-stitch-border">
           <div className={`flex items-center ${isSidebarOpen ? 'justify-between px-4' : 'justify-center'} py-2`}>
             {isSidebarOpen && (
               <div className="flex flex-col overflow-hidden">
                 <span className="text-white font-bold text-sm whitespace-nowrap text-ellipsis">{user?.name || 'Admin'}</span>
-                <span className="text-slate-500 text-xs whitespace-nowrap text-ellipsis">{user?.role || 'System'}</span>
+                <span className="text-stitch-muted text-xs whitespace-nowrap text-ellipsis">{user?.role || 'System'}</span>
               </div>
             )}
             <button onClick={onLogout} className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors" title="Logout">
@@ -149,7 +149,7 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col bg-slate-900 overflow-hidden relative">
+      <div className="flex-1 flex flex-col bg-stitch-bg overflow-hidden relative">
         <GlobalHeader user={user} onLogout={onLogout} />
         <div className="flex-1 overflow-y-auto p-8 relative">
           {children}
