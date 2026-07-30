@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutTemplate, ImagePlus, Trash2, Globe } from 'lucide-react';
+import { Globe } from 'lucide-react';
 import { customAlert, customConfirm } from '../utils/alerts';
 import { useAdminContext } from '../context/AdminContext';
 import CmsShell from '../components/cms/CmsShell';
 import type { CmsTab } from '../components/cms/CmsSectionNav';
+import BannerGrid from '../components/cms/banner/BannerGrid';
+import BannerUploadModal from '../components/cms/banner/BannerUploadModal';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -18,7 +20,9 @@ export default function CmsManager() {
 
   // Banners State
   const [banners, setBanners] = useState<any[]>([]);
+  const [bannersLoading, setBannersLoading] = useState(true);
   const [showBannerModal, setShowBannerModal] = useState(false);
+  const [editingBanner, setEditingBanner] = useState<any | null>(null);
   const [bannerForm, setBannerForm] = useState({ title: '', subtitle: '', linkUrl: '', buttonText: '', isActive: true, displayOrder: 0 });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -35,11 +39,14 @@ export default function CmsManager() {
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
 
   const fetchBanners = async () => {
+    setBannersLoading(true);
     try {
       const res = await fetch(`${BACKEND_URL}/cms/banners`);
       if (res.ok) setBanners(await res.json());
     } catch (e) {
       console.error('Failed to fetch banners', e);
+    } finally {
+      setBannersLoading(false);
     }
   };
 
@@ -71,8 +78,66 @@ export default function CmsManager() {
     setSelectedBranchId(id);
   };
 
+  const resetBannerForm = () => {
+    setBannerForm({ title: '', subtitle: '', linkUrl: '', buttonText: '', isActive: true, displayOrder: 0 });
+    setSelectedFile(null);
+    setBannerPreview(null);
+  };
+
+  const closeBannerModal = () => {
+    setShowBannerModal(false);
+    setEditingBanner(null);
+    resetBannerForm();
+  };
+
+  const openCreateBannerModal = () => {
+    setEditingBanner(null);
+    resetBannerForm();
+    setShowBannerModal(true);
+  };
+
+  const openEditBannerModal = (banner: any) => {
+    setEditingBanner(banner);
+    setBannerForm({
+      title: banner.title || '',
+      subtitle: banner.subtitle || '',
+      linkUrl: banner.linkUrl || '',
+      buttonText: banner.buttonText || '',
+      isActive: banner.isActive,
+      displayOrder: banner.displayOrder || 0,
+    });
+    setSelectedFile(null);
+    setBannerPreview(null);
+    setShowBannerModal(true);
+  };
+
   const handleBannerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Edit mode — the update endpoint takes plain JSON (no FileInterceptor
+    // on the backend route), so this only ever patches text/status fields,
+    // never the image itself.
+    if (editingBanner) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/cms/banners/${editingBanner.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: bannerForm.title,
+            subtitle: bannerForm.subtitle,
+            isActive: bannerForm.isActive,
+          }),
+        });
+        if (res.ok) {
+          closeBannerModal();
+          fetchBanners();
+        }
+      } catch (e) {
+        console.error('Failed to update banner', e);
+      }
+      return;
+    }
+
     if (!selectedFile) return customAlert('Please select an image file first.');
 
     const formData = new FormData();
@@ -91,9 +156,7 @@ export default function CmsManager() {
         body: formData
       });
       if (res.ok) {
-        setShowBannerModal(false);
-        setBannerForm({ title: '', subtitle: '', linkUrl: '', buttonText: '', isActive: true, displayOrder: 0 });
-        setSelectedFile(null);
+        closeBannerModal();
         fetchBanners();
       }
     } catch (e) {
@@ -108,6 +171,36 @@ export default function CmsManager() {
       fetchBanners();
     } catch (e) {
       console.error('Failed to delete banner', e);
+    }
+  };
+
+  // Reorder via drag-and-drop in BannerGrid: apply the new order optimistically,
+  // then persist only the banners whose displayOrder actually changed through
+  // the existing update endpoint (no new endpoint, no DTO change).
+  const handleReorderBanners = async (reordered: any[]) => {
+    const previous = banners;
+    setBanners(reordered);
+
+    const changed = reordered
+      .map((b, index) => ({ id: b.id, displayOrder: index, prevOrder: b.displayOrder }))
+      .filter((b) => b.displayOrder !== b.prevOrder);
+
+    if (changed.length === 0) return;
+
+    try {
+      await Promise.all(
+        changed.map((b) =>
+          fetch(`${BACKEND_URL}/cms/banners/${b.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ displayOrder: b.displayOrder }),
+          })
+        )
+      );
+      fetchBanners();
+    } catch (e) {
+      console.error('Failed to reorder banners', e);
+      setBanners(previous);
     }
   };
 
@@ -166,48 +259,15 @@ export default function CmsManager() {
       onSave={handleSaveSettings}
     >
       {activeTab === 'BANNERS' && (
-        <div className="flex-1 overflow-y-auto">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-stitch-ink flex items-center gap-2">
-              <LayoutTemplate className="text-stitch-accent" /> Promotional Sliders
-            </h3>
-            <button
-              onClick={() => setShowBannerModal(true)}
-              className="flex items-center gap-2 bg-stitch-accent hover:bg-stitch-accent-hover accent-glow-hover text-stitch-accent-ink px-4 py-2 rounded-lg font-bold transition-colors"
-            >
-              <ImagePlus size={18} /> Add Banner
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {banners.map(banner => (
-              <div key={banner.id} className="bg-stitch-card border border-stitch-border rounded-xl overflow-hidden group">
-                <div className="h-48 bg-stitch-surface relative overflow-hidden">
-                  <img src={`${BACKEND_URL}${banner.imageUrl}`} alt={banner.title} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                  {!banner.isActive && (
-                    <div className="absolute top-2 right-2 bg-stitch-surface/80 backdrop-blur text-stitch-muted text-xs font-bold px-2 py-1 rounded">Disabled</div>
-                  )}
-                </div>
-                <div className="p-4">
-                  <h4 className="font-bold text-stitch-ink text-lg truncate">{banner.title || 'Untitled Banner'}</h4>
-                  <p className="text-sm text-stitch-muted mb-4 truncate">{banner.subtitle || 'No subtitle'}</p>
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-mono bg-stitch-surface px-2 py-1 rounded text-stitch-muted">Order: {banner.displayOrder}</span>
-                    <button onClick={() => handleDeleteBanner(banner.id)} className="text-stitch-danger hover:text-stitch-danger/80 bg-stitch-danger/10 p-2 rounded-lg transition-colors">
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {banners.length === 0 && (
-              <div className="col-span-full text-center p-12 border border-dashed border-stitch-border rounded-xl text-stitch-muted">
-                <LayoutTemplate size={48} className="mx-auto mb-4 opacity-30" />
-                No banners added. Click "Add Banner" to upload one.
-              </div>
-            )}
-          </div>
-        </div>
+        <BannerGrid
+          banners={banners}
+          loading={bannersLoading}
+          backendUrl={BACKEND_URL}
+          onAddClick={openCreateBannerModal}
+          onEdit={openEditBannerModal}
+          onDelete={handleDeleteBanner}
+          onReorder={handleReorderBanners}
+        />
       )}
 
       {activeTab === 'SETTINGS' && (
@@ -420,64 +480,21 @@ export default function CmsManager() {
         </div>
       )}
 
-      {/* Upload Modal */}
+      {/* Upload / Edit Modal */}
       {showBannerModal && (
-        <div className="fixed inset-0 bg-stitch-bg/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="glass-panel rounded-2xl p-6 w-full max-w-md animate-scale-up">
-            <h3 className="text-xl font-bold text-stitch-ink mb-4">Upload Banner</h3>
-            <form onSubmit={handleBannerSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Banner Image (16:9 Recommended)</label>
-                <input 
-                  required
-                  type="file" 
-                  accept="image/*"
-                  ref={fileInputRef}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] || null;
-                    setSelectedFile(file);
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (e) => setBannerPreview(e.target?.result as string);
-                      reader.readAsDataURL(file);
-                    } else {
-                      setBannerPreview(null);
-                    }
-                  }}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-2 text-stitch-ink file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-stitch-accent/10 file:text-stitch-accent hover:file:bg-stitch-accent/20"
-                />
-                {bannerPreview && (
-                  <div className="mt-4 rounded-xl overflow-hidden border border-stitch-border">
-                    <img src={bannerPreview} alt="Preview" className="w-full h-auto object-cover" />
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Title (Optional)</label>
-                <input 
-                  type="text" 
-                  value={bannerForm.title} 
-                  onChange={e => setBannerForm({...bannerForm, title: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Subtitle (Optional)</label>
-                <input 
-                  type="text" 
-                  value={bannerForm.subtitle} 
-                  onChange={e => setBannerForm({...bannerForm, subtitle: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowBannerModal(false)} className="flex-1 py-3 rounded-lg font-bold text-stitch-muted bg-stitch-surface hover:bg-stitch-border">Cancel</button>
-                <button type="submit" className="flex-1 py-3 rounded-lg font-bold text-stitch-accent-ink bg-stitch-accent hover:bg-stitch-accent-hover accent-glow-hover">Upload & Save</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <BannerUploadModal
+          mode={editingBanner ? 'edit' : 'create'}
+          bannerForm={bannerForm}
+          setBannerForm={setBannerForm}
+          selectedFile={selectedFile}
+          setSelectedFile={setSelectedFile}
+          bannerPreview={bannerPreview}
+          setBannerPreview={setBannerPreview}
+          existingImageSrc={editingBanner ? `${BACKEND_URL}${editingBanner.imageUrl}` : undefined}
+          fileInputRef={fileInputRef}
+          onClose={closeBannerModal}
+          onSubmit={handleBannerSubmit}
+        />
       )}
     </CmsShell>
   );
