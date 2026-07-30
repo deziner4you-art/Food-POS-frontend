@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Globe } from 'lucide-react';
 import { customAlert, customConfirm } from '../utils/alerts';
 import { useAdminContext } from '../context/AdminContext';
 import CmsShell from '../components/cms/CmsShell';
 import type { CmsTab } from '../components/cms/CmsSectionNav';
 import BannerGrid from '../components/cms/banner/BannerGrid';
 import BannerUploadModal from '../components/cms/banner/BannerUploadModal';
+import SettingsForm from '../components/cms/settings/SettingsForm';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -28,12 +28,16 @@ export default function CmsManager() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Settings & Modules State
-  const [settings, setSettings] = useState<any>({ 
+  // tiktokUrl/linkedinUrl/pinterestUrl/threadsUrl removed entirely — they
+  // were never part of UpdateSettingsDto/CmsSettings, so they never
+  // persisted; keeping them in state would just keep sending dead data.
+  const [settings, setSettings] = useState<any>({
     siteTitle: '', contactPhone: '', contactEmail: '', address: '', googleMapUrl: '',
     facebookUrl: '', instagramUrl: '', whatsappNumber: '',
-    twitterUrl: '', youtubeUrl: '', tiktokUrl: '', linkedinUrl: '', pinterestUrl: '', threadsUrl: '',
+    twitterUrl: '', youtubeUrl: '', aboutText: '', companyText: '',
     module_auth_enabled: false, module_kds_enabled: true, module_loyalty_enabled: false, module_payments_enabled: false
   });
+  const [settingsLoading, setSettingsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
@@ -52,6 +56,7 @@ export default function CmsManager() {
 
   const fetchSettings = async () => {
     if (!selectedBranchId) return;
+    setSettingsLoading(true);
     try {
       const res = await fetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`);
       if (res.ok) {
@@ -61,7 +66,13 @@ export default function CmsManager() {
       }
     } catch (e) {
       console.error('Failed to fetch settings', e);
+    } finally {
+      setSettingsLoading(false);
     }
+  };
+
+  const handleSettingsFieldChange = (field: string, value: string) => {
+    setSettings({ ...settings, [field]: value });
   };
 
   // activeBrandId is now derived in AdminContext
@@ -271,162 +282,13 @@ export default function CmsManager() {
       )}
 
       {activeTab === 'SETTINGS' && (
-        <div className="flex-1 overflow-y-auto bg-stitch-panel border border-stitch-border rounded-xl p-8 max-w-3xl">
-          <h3 className="text-xl font-bold text-stitch-ink flex items-center gap-2 mb-6">
-            <Globe className="text-stitch-accent" /> Global Site Settings
-          </h3>
-          <form onSubmit={handleSaveSettings} className="space-y-6">
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Site Title</label>
-                <input 
-                  type="text" 
-                  value={settings?.siteTitle || ''} 
-                  onChange={e => setSettings({...settings, siteTitle: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Contact Phone</label>
-                <input 
-                  type="text" 
-                  value={settings?.contactPhone || ''} 
-                  onChange={e => setSettings({...settings, contactPhone: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">WhatsApp Number</label>
-                <input 
-                  type="text" 
-                  value={settings?.whatsappNumber || ''} 
-                  onChange={e => setSettings({...settings, whatsappNumber: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Contact Email</label>
-                <input 
-                  type="email" 
-                  value={settings?.contactEmail || ''} 
-                  onChange={e => setSettings({...settings, contactEmail: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div className="col-span-1">
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Physical Address</label>
-                <input 
-                  type="text" 
-                  value={settings?.address || ''} 
-                  onChange={e => setSettings({...settings, address: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div className="col-span-1">
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Google Map PIN (Embed URL)</label>
-                <input 
-                  type="text" 
-                  value={settings?.googleMapUrl || ''} 
-                  onChange={e => setSettings({...settings, googleMapUrl: e.target.value})}
-                  placeholder="https://maps.google.com/..."
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Facebook URL</label>
-                <input 
-                  type="text" 
-                  value={settings?.facebookUrl || ''} 
-                  onChange={e => setSettings({...settings, facebookUrl: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Instagram URL</label>
-                <input 
-                  type="text" 
-                  value={settings?.instagramUrl || ''} 
-                  onChange={e => setSettings({...settings, instagramUrl: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Threads URL</label>
-                <input 
-                  type="text" 
-                  value={settings?.threadsUrl || ''} 
-                  onChange={e => setSettings({...settings, threadsUrl: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">YouTube URL</label>
-                <input 
-                  type="text" 
-                  value={settings?.youtubeUrl || ''} 
-                  onChange={e => setSettings({...settings, youtubeUrl: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">TikTok URL</label>
-                <input 
-                  type="text" 
-                  value={settings?.tiktokUrl || ''} 
-                  onChange={e => setSettings({...settings, tiktokUrl: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Twitter (X) URL</label>
-                <input 
-                  type="text" 
-                  value={settings?.twitterUrl || ''} 
-                  onChange={e => setSettings({...settings, twitterUrl: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">LinkedIn URL</label>
-                <input 
-                  type="text" 
-                  value={settings?.linkedinUrl || ''} 
-                  onChange={e => setSettings({...settings, linkedinUrl: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-stitch-muted mb-1">Pinterest URL</label>
-                <input 
-                  type="text" 
-                  value={settings?.pinterestUrl || ''} 
-                  onChange={e => setSettings({...settings, pinterestUrl: e.target.value})}
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent"
-                />
-              </div>
-            </div>
-            <div className="mt-6">
-              <label className="block text-xs font-bold text-stitch-muted mb-1">About Text (Footer)</label>
-              <textarea 
-                value={settings?.aboutText || ''} 
-                onChange={e => setSettings({...settings, aboutText: e.target.value})}
-                rows={3}
-                className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent custom-scrollbar"
-                placeholder="The future of fast-casual dining..."
-              />
-            </div>
-            <div className="mt-6">
-              <label className="block text-xs font-bold text-stitch-muted mb-1">Company Info (Footer Links/Text)</label>
-              <textarea 
-                value={settings?.companyText || ''} 
-                onChange={e => setSettings({...settings, companyText: e.target.value})}
-                rows={3}
-                className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent custom-scrollbar"
-                placeholder="Our Culinary Journey..."
-              />
-            </div>
-          </form>
-        </div>
+        <SettingsForm
+          settings={settings}
+          errors={{}}
+          loading={settingsLoading}
+          onFieldChange={handleSettingsFieldChange}
+          onSubmit={handleSaveSettings}
+        />
       )}
 
       {activeTab === 'MODULES' && (
