@@ -6,8 +6,19 @@ import type { CmsTab } from '../components/cms/CmsSectionNav';
 import BannerGrid from '../components/cms/banner/BannerGrid';
 import BannerUploadModal from '../components/cms/banner/BannerUploadModal';
 import SettingsForm from '../components/cms/settings/SettingsForm';
+import ModuleToggleList from '../components/cms/modules/ModuleToggleList';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+
+// Static feature-flag definitions — same labels/descriptions/keys the
+// Modules tab has always used, just named so they can be passed as a
+// prop instead of living inline inside the JSX.
+const MODULE_DEFINITIONS = [
+  { id: 'module_auth_enabled', label: 'Enforce Authentication (Login)', description: 'Requires Admin, Cashiers, and Riders to log in with a password.' },
+  { id: 'module_kds_enabled', label: 'Kitchen Display System (KDS)', description: 'Enables the dedicated Kitchen Chef tracking screen.' },
+  { id: 'module_loyalty_enabled', label: 'Customer Loyalty & Accounts', description: 'Allows customers to sign up on the website and earn rewards.' },
+  { id: 'module_payments_enabled', label: 'Online Card Payments', description: 'Enables Stripe/PayPal checkout on the customer website.' },
+];
 
 export default function CmsManager() {
   const { branches, brands, selectedBranchId, setSelectedBranchId, activeBrandId } = useAdminContext();
@@ -73,6 +84,26 @@ export default function CmsManager() {
 
   const handleSettingsFieldChange = (field: string, value: string) => {
     setSettings({ ...settings, [field]: value });
+  };
+
+  // Extracted verbatim from the previous inline onChange — same auto-save-
+  // on-toggle behavior, same hardcoded store_id=1 (pre-existing, unrelated
+  // quirk, not touched), same snapshot sync so the sticky save bar doesn't
+  // show "unsaved changes" for a toggle that already persisted.
+  const handleToggleModule = (moduleId: string, checked: boolean) => {
+    const newSettings = { ...settings, [moduleId]: checked };
+    setSettings(newSettings);
+    settingsSnapshotRef.current = newSettings;
+
+    // Remove Prisma relations and read-only fields before sending
+    const { id, brand_id, updatedAt, brand, ...cleanSettings } = newSettings;
+
+    // Auto-save when toggled
+    fetch(`${BACKEND_URL}/cms/settings/1`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanSettings)
+    });
   };
 
   // activeBrandId is now derived in AdminContext
@@ -292,54 +323,7 @@ export default function CmsManager() {
       )}
 
       {activeTab === 'MODULES' && (
-        <div className="flex-1 overflow-y-auto bg-stitch-panel border border-stitch-border rounded-xl p-8 max-w-3xl">
-          <h3 className="text-xl font-bold text-stitch-ink flex items-center gap-2 mb-2">
-            System Feature Flags
-          </h3>
-          <p className="text-sm text-stitch-muted mb-8">Toggle major functionalities on or off across your entire restaurant system instantly.</p>
-          
-          <div className="space-y-6">
-            {[
-              { id: 'module_auth_enabled', label: 'Enforce Authentication (Login)', desc: 'Requires Admin, Cashiers, and Riders to log in with a password.' },
-              { id: 'module_kds_enabled', label: 'Kitchen Display System (KDS)', desc: 'Enables the dedicated Kitchen Chef tracking screen.' },
-              { id: 'module_loyalty_enabled', label: 'Customer Loyalty & Accounts', desc: 'Allows customers to sign up on the website and earn rewards.' },
-              { id: 'module_payments_enabled', label: 'Online Card Payments', desc: 'Enables Stripe/PayPal checkout on the customer website.' }
-            ].map(module => (
-              <div key={module.id} className="flex items-center justify-between p-4 bg-stitch-surface border border-stitch-border rounded-xl">
-                <div>
-                  <h4 className="font-bold text-stitch-ink mb-1">{module.label}</h4>
-                  <p className="text-xs text-stitch-muted">{module.desc}</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only peer"
-                    checked={settings[module.id] || false}
-                    onChange={(e) => {
-                      const newSettings = { ...settings, [module.id]: e.target.checked };
-                      setSettings(newSettings);
-                      // This toggle auto-saves immediately below, so the snapshot
-                      // moves with it — otherwise the sticky save bar would show
-                      // "unsaved changes" for a change that's already persisted.
-                      settingsSnapshotRef.current = newSettings;
-
-                      // Remove Prisma relations and read-only fields before sending
-                      const { id, brand_id, updatedAt, brand, ...cleanSettings } = newSettings;
-
-                      // Auto-save when toggled
-                      fetch(`${BACKEND_URL}/cms/settings/1`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(cleanSettings)
-                      });
-                    }}
-                  />
-                  <div className="w-11 h-6 bg-stitch-muted/30 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-stitch-ink after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-stitch-ink after:border-stitch-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-stitch-accent"></div>
-                </label>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ModuleToggleList modules={MODULE_DEFINITIONS} settings={settings} onToggle={handleToggleModule} />
       )}
 
       {/* Upload / Edit Modal */}
