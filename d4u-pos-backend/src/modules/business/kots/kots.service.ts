@@ -11,8 +11,29 @@ export class KotsService {
   ) {}
 
   // KDS اسکرین کے لیے — تمام Active KOTs
-  async getActiveKots(store_id: number) {
-    const where: any = { status: { in: ['NEW', 'PREPARING'] } };
+  //
+  // "Active" has always meant NEW/PREPARING here (still needs kitchen
+  // attention) — matches KitchenDashboardService's own separate NEW/PREPARING
+  // vs READY query split. That's the correct default and stays unchanged.
+  //
+  // includeReady is additive and opt-in: KDS/TV Board also need to *display*
+  // recently-completed tickets, which this endpoint never provided, so every
+  // resync silently wiped the Ready column seconds after a ticket appeared in
+  // it. There is no terminal KOT status beyond READY (updateKotStatus only
+  // ever accepts PREPARING/READY/CANCELLED) — READY stays READY forever in
+  // the DB — so a status-based cutoff isn't available. Bounding by time
+  // instead, matching the identical 5-minute window both frontends already
+  // apply client-side, keeps the response itself bounded rather than growing
+  // unboundedly while relying on the UI to hide the excess.
+  async getActiveKots(store_id: number, includeReady: boolean = false) {
+    const where: any = includeReady
+      ? {
+          OR: [
+            { status: { in: ['NEW', 'PREPARING'] } },
+            { status: 'READY', readyAt: { gte: new Date(Date.now() - 5 * 60 * 1000) } },
+          ],
+        }
+      : { status: { in: ['NEW', 'PREPARING'] } };
     if (store_id && !isNaN(store_id)) {
       where.store_id = store_id;
     }

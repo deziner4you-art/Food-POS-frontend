@@ -16,11 +16,17 @@ export class KotsController {
   constructor(private readonly service: KotsService) {}
 
   // GET /kots?store_id=1 — KDS اسکرین (active tickets)
+  // includeReady=true additionally returns READY tickets from the last 5
+  // minutes — opt-in, default omitted (false) preserves the exact prior
+  // response for any caller not passing it.
   @RequirePermissions('sales.view')
   @Get()
-  getActiveKots(@Query('store_id') store_id: string) {
+  getActiveKots(
+    @Query('store_id') store_id: string,
+    @Query('includeReady') includeReady?: string,
+  ) {
     console.log(`[GET] Active KOTs — Store: ${store_id}`);
-    return this.service.getActiveKots(Number(store_id));
+    return this.service.getActiveKots(Number(store_id), includeReady === 'true');
   }
 
   // GET /kots/history?store_id=1&business_day_id=5
