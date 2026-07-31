@@ -87,7 +87,7 @@ export default function TvBoard() {
   const syncKots = async () => {
     try {
       const sid = storeId || 1;
-      const res = await apiFetch(`/kots?store_id=${sid}`, { auth: true });
+      const res = await apiFetch(`/kots?store_id=${sid}&includeReady=true`, { auth: true });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {

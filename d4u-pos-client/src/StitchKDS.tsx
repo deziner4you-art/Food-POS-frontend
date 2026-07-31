@@ -209,7 +209,7 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
   const syncKOTs = async () => {
     try {
       const storeId = currentUser?.store_id || 1;
-      const res = await apiFetch(`/kots?store_id=${storeId}`, { auth: true });
+      const res = await apiFetch(`/kots?store_id=${storeId}&includeReady=true`, { auth: true });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
