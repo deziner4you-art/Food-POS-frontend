@@ -160,16 +160,32 @@ export default function App() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const { toast } = require('react-hot-toast');
-        const errorMessage = res.status >= 400 && res.status < 500
-          ? `Status update to ${bridgeStatus} not accepted yet. Please try again.`
-          : (data.message || `Order #${activeOrder.id} status update failed.`);
+        
+        let humanAction = "be updated";
+        if (bridgeStatus === 'RIDER_ARRIVED') humanAction = "be marked as arrived";
+        if (bridgeStatus === 'OUT_FOR_DELIVERY') humanAction = "start delivery";
+        if (bridgeStatus === 'DELIVERED') humanAction = "be marked delivered";
+        if (bridgeStatus === 'WAITING_CASH_SETTLEMENT') humanAction = "be sent for settlement";
+
+        let errorMessage = data.message || `Order #${activeOrder.id} could not ${humanAction}.`;
+
+        if (res.status >= 400 && res.status < 500) {
+          if (bridgeStatus === 'RIDER_ARRIVED') {
+            errorMessage = "The kitchen hasn't marked this order as READY yet. Please wait for the food to be prepared.";
+          } else {
+            errorMessage = `Action not permitted yet. Please complete previous steps first.`;
+          }
+        } else if (res.status >= 500) {
+          errorMessage = `Server error while trying to ${humanAction}. Please check your connection and try again.`;
+        }
+
         toast.error(errorMessage);
         return false;
       }
       return true;
     } catch {
       const { toast } = require('react-hot-toast');
-      toast.error(`Network error — Order #${activeOrder.id} status was NOT updated to ${bridgeStatus}.`);
+      toast.error(`Network error — Order #${activeOrder.id} could not be updated. Please check your internet connection.`);
       return false;
     }
   };
