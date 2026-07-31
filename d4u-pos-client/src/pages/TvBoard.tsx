@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { io } from 'socket.io-client';
 import { BACKEND_URL } from '../config/backend';
+import { apiFetch } from '../pos/api';
 
 export default function TvBoard() {
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -46,13 +47,11 @@ export default function TvBoard() {
   const fetchCampaigns = () => {
     // MARKETING-003 §1/§2: store-scoped, routed through the shared
     // CampaignResolverService (channel=tv) — replaces the previous global,
-    // client-side-filtered fetch.
-    const token = user?.token;
-    const headers: any = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
+    // client-side-filtered fetch. apiFetch reads the real d4u_pos_token key
+    // internally — the previous user?.token read was always empty, since
+    // the token has never been stored on the d4u_main_user object.
     if (storeId) {
-      fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}&channel=tv`, { headers })
+      apiFetch(`/marketing/campaign?store_id=${storeId}&channel=tv`, { auth: true })
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) setCampaigns(data);
@@ -60,7 +59,7 @@ export default function TvBoard() {
         })
         .catch(console.error);
     } else {
-      fetch(`${BACKEND_URL}/marketing/campaign`, { headers })
+      apiFetch(`/marketing/campaign`, { auth: true })
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) setCampaigns(data.filter((c: any) => c.published_tv || c.published_pos));
@@ -71,8 +70,8 @@ export default function TvBoard() {
 
     // "Upcoming" tier — SCHEDULED campaigns bound for this store's TV, shown
     // after the live rotation so staff/customers can see what's coming next.
-    const listUrl = storeId ? `${BACKEND_URL}/marketing/campaign?store_id=${storeId}` : `${BACKEND_URL}/marketing/campaign`;
-    fetch(listUrl, { headers })
+    const listUrl = storeId ? `/marketing/campaign?store_id=${storeId}` : `/marketing/campaign`;
+    apiFetch(listUrl, { auth: true })
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setUpcoming(data.filter((c: any) => c.status === 'SCHEDULED' && c.published_tv));
@@ -81,29 +80,74 @@ export default function TvBoard() {
       .catch(console.error);
   };
 
+  // Fetches the current PREPARING/READY KOTs from the real backend and
+  // mirrors StitchKDS.tsx's syncKOTs() so TV Board is a real data source in
+  // its own right rather than a passive reader of whatever the Kitchen
+  // Display screen happened to already sync into the shared Dexie table.
+  const syncKots = async () => {
+    try {
+      const sid = storeId || 1;
+      const res = await apiFetch(`/kots?store_id=${sid}`, { auth: true });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          await db.kots.clear();
+          const mapped = data.map((k: any) => ({
+            id: k.id,
+            orderId: k.order_id,
+            type: k.order?.orderType || 'Walk-in',
+            customer: k.order?.customer?.name || '',
+            customerPhone: k.order?.customer?.phone || '',
+            items: k.items ? JSON.stringify(k.items) : '[]',
+            notes: k.notes,
+            timePlaced: new Date(k.createdAt).toLocaleTimeString(),
+            prepTimeMinutes: k.prep_time_minutes || 10,
+            status: k.status,
+            startTime: k.start_time ? new Date(k.start_time).toISOString() : '',
+            totalAmount: k.order?.total_amount || 0,
+            paymentMethod: k.order?.payment_method || 'CASH',
+            printCount: 0,
+          }));
+          await db.kots.bulkAdd(mapped);
+        }
+      }
+    } catch (e) {
+      console.error('[TvBoard] Failed to sync KOTs from backend:', e);
+    }
+  };
+
   useEffect(() => {
     fetchCampaigns();
+    syncKots();
 
     // Socket Setup
     const socket = io(BACKEND_URL);
     socket.on('connect', () => {
       try {
-        const user = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
-        if (user && user.store_id) {
-          socket.emit('join_store', { store_id: user.store_id });
+        const u = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
+        if (u && u.store_id) {
+          socket.emit('join_store', { store_id: u.store_id });
         }
       } catch (e) {}
     });
-    
+
     socket.on('marketing_update', () => {
       console.log('Marketing Update Received!');
       fetchCampaigns();
+    });
+
+    // AppGateway.broadcast() is a strict room-scoped emit — without the
+    // join_store above this would never arrive. Mirrors the identical fix
+    // already shipped for StitchKDS.tsx this session.
+    socket.on('kds_update', () => {
+      syncKots();
     });
 
     // Refresh every 10 seconds to clean up stale READY orders
     const timer = setInterval(() => setCurrentTime(Date.now()), 10000);
     return () => {
       clearInterval(timer);
+      socket.off('kds_update');
       socket.disconnect();
     };
   }, []);
