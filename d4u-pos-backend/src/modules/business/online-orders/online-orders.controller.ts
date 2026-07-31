@@ -20,17 +20,23 @@ import {
 export class OnlineOrdersController {
   constructor(private readonly service: OnlineOrdersService) {}
 
+  // activeOnly=true additionally returns orders past PENDING (accepted,
+  // in kitchen, out for delivery, etc.) up to but excluding SETTLED —
+  // opt-in, default omitted (false) preserves the exact prior response
+  // for any caller not passing it. See getAllOnlineOrders.
   @RequirePermissions('sales.view')
   @Get()
   getOrders(
     @Query('phone') phone?: string,
     @Query('store_id') store_id?: string,
+    @Query('activeOnly') activeOnly?: string,
   ) {
     if (phone) {
       return this.service.getOrdersByPhone(phone);
     }
     return this.service.getAllOnlineOrders(
       store_id ? Number(store_id) : undefined,
+      activeOnly === 'true',
     );
   }
 

@@ -104,8 +104,18 @@ export class OnlineOrdersService {
     });
   }
 
-  async getAllOnlineOrders(store_id?: number) {
-    const whereClause: any = { status: 'PENDING' };
+  // activeOnly is additive and opt-in, defaulting to false so every existing
+  // caller (the Incoming Online Orders panel) gets the exact same PENDING-only
+  // response as before. It exists to let the POS client rehydrate its
+  // Active Deliveries list on page load — those orders have already moved
+  // past PENDING (the cashier accepted them), so the default query can't see
+  // them. SETTLED is excluded too since that's the one terminal status this
+  // flow reaches (see docs/issues/backward-status-transitions.md — there is
+  // no CANCELLED equivalent for OnlineOrder).
+  async getAllOnlineOrders(store_id?: number, activeOnly: boolean = false) {
+    const whereClause: any = activeOnly
+      ? { status: { notIn: ['PENDING', 'SETTLED'] } }
+      : { status: 'PENDING' };
     if (store_id) {
       whereClause.store_id = store_id;
     }
