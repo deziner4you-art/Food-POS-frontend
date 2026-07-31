@@ -74,7 +74,11 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           store_id: storeId,
-          customerName: customerName || 'Online Guest',
+          // Backend's CreateOnlineOrderDto declares `customer`, not
+          // `customerName` — the previous field name was silently stripped
+          // by the global ValidationPipe's whitelist, so every order landed
+          // as "Online Guest" regardless of what the customer actually typed.
+          customer: customerName || 'Online Guest',
           customerPhone: customerPhone || '',
           customerAddress: finalAddress,
           items: cart.map((item) => ({
