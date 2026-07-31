@@ -146,8 +146,8 @@ export default function App() {
     return () => clearInterval(timer);
   }, [status, activePath, simSpeed, activeOrder]);
 
-  const updateBridgeStatus = async (bridgeStatus: string) => {
-    if (!activeOrder) return;
+  const updateBridgeStatus = async (bridgeStatus: string): Promise<boolean> => {
+    if (!activeOrder) return false;
     try {
       const res = await fetch(`${BACKEND_URL}/online-orders/${activeOrder.id}`, {
         method: 'PATCH',
@@ -160,11 +160,17 @@ export default function App() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const { toast } = require('react-hot-toast');
-        toast.error(data.message || `Order #${activeOrder.id} status update to ${bridgeStatus} failed.`);
+        const errorMessage = res.status >= 400 && res.status < 500
+          ? `Status update to ${bridgeStatus} not accepted yet. Please try again.`
+          : (data.message || `Order #${activeOrder.id} status update failed.`);
+        toast.error(errorMessage);
+        return false;
       }
+      return true;
     } catch {
       const { toast } = require('react-hot-toast');
       toast.error(`Network error — Order #${activeOrder.id} status was NOT updated to ${bridgeStatus}.`);
+      return false;
     }
   };
 
@@ -261,15 +267,18 @@ export default function App() {
   };
 
   const handleArriveAtRestaurant = async () => {
+    const success = await updateBridgeStatus('RIDER_ARRIVED');
+    if (!success) return;
     setStatus('ARRIVED_REST');
     setDriverCoords({ x: activeOrder!.restaurantX, y: activeOrder!.restaurantY });
     setActivePath([]);
     setCurrentPathIndex(0);
-    await updateBridgeStatus('RIDER_ARRIVED');
   };
 
   const handleConfirmPickedUp = async () => {
     if (!activeOrder) return;
+    const success = await updateBridgeStatus('OUT_FOR_DELIVERY');
+    if (!success) return;
     const tripPath = generateGridPath(
       activeOrder.restaurantX, activeOrder.restaurantY,
       activeOrder.customerX, activeOrder.customerY,
@@ -279,16 +288,18 @@ export default function App() {
     setCurrentPathIndex(0);
     setDriverCoords(tripPath[0]);
     setStatus('PICKED_UP');
-    await updateBridgeStatus('OUT_FOR_DELIVERY');
   };
 
   const handleMarkDelivered = async () => {
+    const successDelivered = await updateBridgeStatus('DELIVERED'); 
+    if (!successDelivered) return;
+    const successSettlement = await updateBridgeStatus('WAITING_CASH_SETTLEMENT');
+    if (!successSettlement) return;
+    
     setStatus('DELIVERED'); // Keep internal status as DELIVERED to show the settlement UI
     setDriverCoords({ x: activeOrder!.customerX, y: activeOrder!.customerY });
     setActivePath([]);
     setCurrentPathIndex(0);
-    await updateBridgeStatus('DELIVERED'); 
-    await updateBridgeStatus('WAITING_CASH_SETTLEMENT');
   };
 
   const handleCompleteRestReset = (feedback: { tip: number }) => {
