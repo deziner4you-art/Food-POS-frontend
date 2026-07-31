@@ -110,7 +110,10 @@ export default function App() {
           'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}`,
         },
         body: JSON.stringify({ orderId: activeOrder.id, storeId: activeOrder.store_id || 1, lat: driverCoords.y, lng: driverCoords.x })
-      }).catch(() => {});
+      }).catch(() => {
+        const { toast } = require('react-hot-toast');
+        toast.error('Failed to sync GPS location with backend.');
+      });
     }
   }, [driverCoords, activeOrder]);
 
@@ -257,11 +260,12 @@ export default function App() {
     setCurrentPathIndex(0);
   };
 
-  const handleArriveAtRestaurant = () => {
+  const handleArriveAtRestaurant = async () => {
     setStatus('ARRIVED_REST');
     setDriverCoords({ x: activeOrder!.restaurantX, y: activeOrder!.restaurantY });
     setActivePath([]);
     setCurrentPathIndex(0);
+    await updateBridgeStatus('RIDER_ARRIVED');
   };
 
   const handleConfirmPickedUp = async () => {
