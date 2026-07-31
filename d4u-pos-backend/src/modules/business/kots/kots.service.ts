@@ -5,6 +5,16 @@ import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
 
 @Injectable()
 export class KotsService {
+  // How long a READY ticket keeps appearing in getActiveKots(includeReady:
+  // true) before it ages out of the response. Bounds the endpoint's payload
+  // size in the absence of any terminal KOT status beyond READY (see the
+  // comment on getActiveKots) -- without a cutoff, every ticket ever marked
+  // READY would stay in every KDS/TV Board resync forever. Matches the
+  // identical window both frontends already apply client-side for display.
+  // Value is a product decision, not an engineering one -- do not change
+  // without Product Owner sign-off.
+  private static readonly READY_TICKET_WINDOW_MS = 5 * 60 * 1000;
+
   constructor(
     private prisma: PrismaService,
     private gateway: AppGateway,
@@ -30,7 +40,7 @@ export class KotsService {
       ? {
           OR: [
             { status: { in: ['NEW', 'PREPARING'] } },
-            { status: 'READY', readyAt: { gte: new Date(Date.now() - 5 * 60 * 1000) } },
+            { status: 'READY', readyAt: { gte: new Date(Date.now() - KotsService.READY_TICKET_WINDOW_MS) } },
           ],
         }
       : { status: { in: ['NEW', 'PREPARING'] } };
