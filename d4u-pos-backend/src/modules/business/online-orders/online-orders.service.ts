@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { PricingService } from '../pos-orders/pricing.service';
@@ -153,95 +154,71 @@ export class OnlineOrdersService {
    * shape exactly, but reuses the price already locked in at placement
    * time (calculatePricing already ran once in createOrder above) rather
    * than repricing.
+   *
+   * Must run inside the caller's transaction (see updateOrderStatus) and
+   * must not catch its own errors — a ticket-creation failure needs to roll
+   * back the OnlineOrder status change too, not leave the order silently
+   * CONFIRMED with no Order/KOT for the kitchen to act on. Returns the
+   * created Order (with items) so the caller can broadcast kds_update once
+   * the transaction has actually committed.
    */
-  private async createKitchenTicketForOnlineOrder(onlineOrder: any) {
-    try {
-      let itemsArr: any[] = [];
-      try {
-        itemsArr = JSON.parse(onlineOrder.items || '[]');
-      } catch (e) {
-        console.error(`[ONLINE ORDER → KOT] Order #${onlineOrder.id} has unparseable items, skipping ticket creation:`, e);
-        return;
-      }
+  private async createKitchenTicketForOnlineOrder(tx: Prisma.TransactionClient, onlineOrder: any) {
+    const itemsArr = JSON.parse(onlineOrder.items || '[]');
 
-      const targetDay = await this.prisma.businessDay.findFirst({
-        where: { store_id: onlineOrder.store_id, status: 'OPEN' },
-        orderBy: { id: 'desc' },
-      });
+    const targetDay = await tx.businessDay.findFirst({
+      where: { store_id: onlineOrder.store_id, status: 'OPEN' },
+      orderBy: { id: 'desc' },
+    });
 
-      const newOrder = await this.prisma.$transaction(async (tx) => {
-        const order = await tx.order.create({
-          data: {
-            store_id: onlineOrder.store_id,
-            business_day_id: targetDay?.id ?? null,
-            created_by: 1, // System — confirmed via the online-order pipeline, not a specific cashier login
-            business_date: targetDay?.dayStart ?? new Date(),
-            total_amount: parseFloat(onlineOrder.totalAmount) || 0,
-            discount: 0,
-            status: 'PENDING',
-            order_source: 'ONLINE',
-            payment_method: 'CASH',
-            payment_status: 'PENDING_COD',
-            delivery_address: onlineOrder.customerAddress,
-            items: {
-              // CheckoutView.tsx (the live website checkout) sends
-              // {product_id, quantity}; only the quarantined legacy
-              // StitchLanding.tsx still sends {id, qty} — accept either so a
-              // real cart never resolves to product_id 0 and FK-violates.
-              create: itemsArr.map((i: any) => ({
-                product_id: parseInt(i.product_id ?? i.id) || 0,
-                quantity: i.quantity ?? i.qty ?? 1,
-                price: parseFloat(i.price) || 0,
-                special_inst: i.special_inst || '',
-              })),
-            },
-          },
-          include: { items: { include: { product: true } } },
-        });
+    const order = await tx.order.create({
+      data: {
+        store_id: onlineOrder.store_id,
+        business_day_id: targetDay?.id ?? null,
+        created_by: 1, // System — confirmed via the online-order pipeline, not a specific cashier login
+        business_date: targetDay?.dayStart ?? new Date(),
+        total_amount: parseFloat(onlineOrder.totalAmount) || 0,
+        discount: 0,
+        status: 'PENDING',
+        order_source: 'ONLINE',
+        payment_method: 'CASH',
+        payment_status: 'PENDING_COD',
+        delivery_address: onlineOrder.customerAddress,
+        items: {
+          // CheckoutView.tsx (the live website checkout) sends
+          // {product_id, quantity}; only the quarantined legacy
+          // StitchLanding.tsx still sends {id, qty} — accept either so a
+          // real cart never resolves to product_id 0 and FK-violates.
+          create: itemsArr.map((i: any) => ({
+            product_id: parseInt(i.product_id ?? i.id) || 0,
+            quantity: i.quantity ?? i.qty ?? 1,
+            price: parseFloat(i.price) || 0,
+            special_inst: i.special_inst || '',
+          })),
+        },
+      },
+      include: { items: { include: { product: true } } },
+    });
 
-        const kotItems = order.items.map((i) => ({
-          name: i.product?.name || 'Unknown item',
-          qty: i.quantity,
-          price: i.price,
-          specialInst: i.special_inst ?? '',
-          product_id: i.product_id,
-          kitchen_station_id: i.product?.kitchen_station_id ?? null,
-        }));
+    const kotItems = order.items.map((i) => ({
+      name: i.product?.name || 'Unknown item',
+      qty: i.quantity,
+      price: i.price,
+      specialInst: i.special_inst ?? '',
+      product_id: i.product_id,
+      kitchen_station_id: i.product?.kitchen_station_id ?? null,
+    }));
 
-        await tx.kOT.create({
-          data: {
-            store_id: onlineOrder.store_id,
-            order_id: order.id,
-            business_day_id: targetDay?.id ?? null,
-            items: kotItems,
-            status: 'NEW',
-          },
-        });
+    await tx.kOT.create({
+      data: {
+        store_id: onlineOrder.store_id,
+        order_id: order.id,
+        business_day_id: targetDay?.id ?? null,
+        items: kotItems,
+        status: 'NEW',
+      },
+    });
 
-        return order;
-      });
-
-      await this.prisma.onlineOrder.update({
-        where: { id: onlineOrder.id },
-        data: { posOrderId: newOrder.id },
-      });
-
-      console.log(`[ONLINE ORDER → KOT] Created Order #${newOrder.id} + KOT for OnlineOrder #${onlineOrder.id}`);
-      // KDS (StitchKDS.tsx) only ever listens for 'kds_update' to trigger its
-      // resync (same event KotsService.updateKotStatus broadcasts on
-      // PREPARING/READY) — broadcasting 'new_kot' here was a dead event
-      // nothing in any frontend subscribes to, so a freshly-created ticket
-      // never appeared on an already-open KDS screen.
-      this.gateway.broadcast(
-        'kds_update',
-        { order_id: newOrder.id, store_id: onlineOrder.store_id, items: newOrder.items },
-        `store_${onlineOrder.store_id}`,
-      );
-    } catch (e) {
-      // Never let a kitchen-ticket failure block the order status update
-      // itself — the customer/cashier flow must not break because of this.
-      console.error(`[ONLINE ORDER → KOT] Failed to create kitchen ticket for OnlineOrder #${onlineOrder.id}:`, e);
-    }
+    return order;
   }
 
   async updateOrderStatus(id: number, data: any, userStoreId?: number) {
@@ -319,33 +296,90 @@ export class OnlineOrdersService {
       }
       // ---------------------------------
 
-      const updated = await this.prisma.onlineOrder.update({
-        where: { id },
-        data: updateData,
-      });
+      // First time this order reaches CONFIRMED, it also needs a real
+      // kitchen ticket (see createKitchenTicketForOnlineOrder). That step
+      // used to run after the status update had already committed and
+      // swallowed its own errors — a failure there left the OnlineOrder
+      // silently CONFIRMED with no Order/KOT behind it: gone from Incoming
+      // (no longer PENDING), never on KDS, no way for the cashier to even
+      // know it happened. existingOrder.posOrderId (not updated.posOrderId)
+      // is the right check — this decision is conceptually based on state
+      // *before* this call, though a fresh read of the same row would agree.
+      const willCreateKitchenTicket = updateData.status === 'CONFIRMED' && !existingOrder.posOrderId;
 
-      // Log the transition
-      if (updateData.status && updateData.status !== existingOrder.status) {
-        await this.prisma.orderEventLog.create({
-          data: {
-            orderId: updated.id.toString(),
-            storeId: updated.store_id,
-            userId: 0, // system or extract from context
-            oldStatus: existingOrder.status,
-            newStatus: updateData.status,
-            reason: data.notes || 'State transitioned'
-          }
+      let updated: any;
+      let kitchenOrder: any = null;
+
+      if (willCreateKitchenTicket) {
+        // Status update, event log, and kitchen ticket creation (Order + KOT
+        // + posOrderId link) all happen in one transaction — any failure in
+        // any of them rolls back all of them, so the order stays exactly
+        // PENDING and visible in Incoming, and this method throws instead of
+        // returning success.
+        const txResult = await this.prisma.$transaction(async (tx) => {
+          const result = await tx.onlineOrder.update({
+            where: { id },
+            data: updateData,
+          });
+
+          await tx.orderEventLog.create({
+            data: {
+              orderId: result.id.toString(),
+              storeId: result.store_id,
+              userId: 0, // system or extract from context
+              oldStatus: existingOrder.status,
+              newStatus: updateData.status,
+              reason: data.notes || 'State transitioned'
+            }
+          });
+
+          const order = await this.createKitchenTicketForOnlineOrder(tx, result);
+
+          const finalResult = await tx.onlineOrder.update({
+            where: { id: result.id },
+            data: { posOrderId: order.id },
+          });
+
+          return { onlineOrder: finalResult, order };
         });
+
+        updated = txResult.onlineOrder;
+        kitchenOrder = txResult.order;
+      } else {
+        updated = await this.prisma.onlineOrder.update({
+          where: { id },
+          data: updateData,
+        });
+
+        // Log the transition
+        if (updateData.status && updateData.status !== existingOrder.status) {
+          await this.prisma.orderEventLog.create({
+            data: {
+              orderId: updated.id.toString(),
+              storeId: updated.store_id,
+              userId: 0, // system or extract from context
+              oldStatus: existingOrder.status,
+              newStatus: updateData.status,
+              reason: data.notes || 'State transitioned'
+            }
+          });
+        }
       }
 
-      // First time this order reaches CONFIRMED, give it a real kitchen
-      // ticket so Accept/In Kitchen/Ready are driven by an actual chef
-      // action, not a client PATCH string. existingOrder.posOrderId (not
-      // updated.posOrderId) is the right check — updated is a fresh read of
-      // this same row, so both would agree, but existingOrder is the value
-      // this decision is conceptually based on (state *before* this call).
-      if (updateData.status === 'CONFIRMED' && !existingOrder.posOrderId) {
-        await this.createKitchenTicketForOnlineOrder(updated);
+      if (kitchenOrder) {
+        // Only broadcast once the transaction above has actually committed —
+        // never announce a ticket that might have just been rolled back.
+        console.log(`[ONLINE ORDER → KOT] Created Order #${kitchenOrder.id} + KOT for OnlineOrder #${updated.id}`);
+        // KDS (StitchKDS.tsx) only ever listens for 'kds_update' to trigger its
+        // resync (same event KotsService.updateKotStatus broadcasts on
+        // PREPARING/READY) — broadcasting 'new_kot' here was a dead event
+        // nothing in any frontend subscribes to, so a freshly-created ticket
+        // never appeared on an already-open KDS screen.
+        this.gateway.broadcast(
+          'kds_update',
+          { order_id: kitchenOrder.id, store_id: updated.store_id, items: kitchenOrder.items },
+          `store_${updated.store_id}`,
+        );
       }
 
       // Recipe Stock Deduction Logic
