@@ -59,6 +59,18 @@ An unrecognized `sort_by` or `sort_dir` value 400s (via the shared `resolveOrder
 
 Columns, in order: `product_name, sku, barcode, menu_collection, category_group, category, modifier_groups, recipe, kitchen_station, printer_group, kds_group, availability_rule, price, cost, margin, tax, status, description, image_url`. Multi-valued cells (`category`, `modifier_groups`) are `;`-joined, matching the pre-existing convention. Writes a `PRODUCTS_CSV_EXPORTED` audit row.
 
+---
+
+# Section 5 — Website CMS: SEO Meta Management (Phase 2)
+
+Extends the `CmsSettings` resource or `/cms/settings/:store_id` endpoint (`src/modules/business/cms/cms.{service,controller}.ts`) to store per-branch SEO meta tags, canonical URL, and JSON-LD schema.
+
+| Endpoint | Method | Body | Response | Permission | Errors |
+|---|---|---|---|---|---|
+| `/cms/seo/:store_id` | GET | None | `{ store_id, meta_title, meta_description, canonical_url, json_ld_schema }` | Public / `cms.view` | 404 if store doesn't exist |
+| `/cms/seo/:store_id` | PATCH | `{ meta_title?, meta_description?, canonical_url?, json_ld_schema? }` | `{ success: true, settings }` | `cms.update` | 400 on invalid payload |
+
+
 ## CSV Import — `POST /catalog/products/import?store_id=` (unchanged route/params)
 
 **Behavior change from pre-28.8D:** every referenced Category, Category Group, Modifier Group, Availability Rule, Recipe, and Kitchen Station must already exist (matched by exact name, scoped to the store) — a row referencing one that doesn't exist returns a validation error for that row (`results[].action: 'error'`) and creates nothing. **No master data is ever auto-created.** This replaces the old behavior, where a missing Category was silently created. `Printer Group`/`KDS Group` have no master-data table (free-text columns) so they're passed through as-is with no existence check. If both `category_group` and `category` are given, the resolved category must actually belong to that group, or the row errors.

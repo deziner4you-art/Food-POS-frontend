@@ -11,7 +11,12 @@ export default function TvBoard() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
-  const user = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
+  let user: any = null;
+  try {
+    user = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
+  } catch (e) {
+    console.error('[TvBoard] Corrupt d4u_main_user in localStorage, ignoring:', e);
+  }
   const storeName = user?.store_name || user?.store?.name || 'HQ';
   const storeId = user?.store_id;
 
@@ -42,24 +47,37 @@ export default function TvBoard() {
     // MARKETING-003 §1/§2: store-scoped, routed through the shared
     // CampaignResolverService (channel=tv) — replaces the previous global,
     // client-side-filtered fetch.
+    const token = user?.token;
+    const headers: any = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     if (storeId) {
-      fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}&channel=tv`)
+      fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}&channel=tv`, { headers })
         .then(res => res.json())
-        .then(setCampaigns)
+        .then(data => {
+          if (Array.isArray(data)) setCampaigns(data);
+          else { console.error('Invalid campaigns data:', data); setCampaigns([]); }
+        })
         .catch(console.error);
     } else {
-      fetch(`${BACKEND_URL}/marketing/campaign`)
+      fetch(`${BACKEND_URL}/marketing/campaign`, { headers })
         .then(res => res.json())
-        .then(data => setCampaigns(data.filter((c: any) => c.published_tv || c.published_pos)))
+        .then(data => {
+          if (Array.isArray(data)) setCampaigns(data.filter((c: any) => c.published_tv || c.published_pos));
+          else { console.error('Invalid campaigns data:', data); setCampaigns([]); }
+        })
         .catch(console.error);
     }
 
     // "Upcoming" tier — SCHEDULED campaigns bound for this store's TV, shown
     // after the live rotation so staff/customers can see what's coming next.
     const listUrl = storeId ? `${BACKEND_URL}/marketing/campaign?store_id=${storeId}` : `${BACKEND_URL}/marketing/campaign`;
-    fetch(listUrl)
+    fetch(listUrl, { headers })
       .then(res => res.json())
-      .then(data => setUpcoming(data.filter((c: any) => c.status === 'SCHEDULED' && c.published_tv)))
+      .then(data => {
+        if (Array.isArray(data)) setUpcoming(data.filter((c: any) => c.status === 'SCHEDULED' && c.published_tv));
+        else { console.error('Invalid upcoming data:', data); setUpcoming([]); }
+      })
       .catch(console.error);
   };
 

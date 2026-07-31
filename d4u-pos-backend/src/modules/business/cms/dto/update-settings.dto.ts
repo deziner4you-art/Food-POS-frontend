@@ -64,4 +64,11 @@ export class UpdateSettingsDto {
   @IsBoolean()
   @IsOptional()
   module_payments_enabled?: boolean;
+
+  // Raw PIN as typed by the admin — the service hashes it before storing
+  // into inventoryUnlockPinHash. Omitted/empty means "leave the existing
+  // PIN unchanged," never "clear it" (matches how a password field works).
+  @IsString()
+  @IsOptional()
+  inventoryUnlockPin?: string;
 }

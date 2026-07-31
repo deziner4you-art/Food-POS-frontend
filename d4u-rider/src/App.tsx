@@ -105,7 +105,10 @@ export default function App() {
     if (activeOrder && driverCoords) {
       fetch(`${BACKEND_URL}/rider/gps`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}`,
+        },
         body: JSON.stringify({ orderId: activeOrder.id, storeId: activeOrder.store_id || 1, lat: driverCoords.y, lng: driverCoords.x })
       }).catch(() => {});
     }
@@ -143,12 +146,23 @@ export default function App() {
   const updateBridgeStatus = async (bridgeStatus: string) => {
     if (!activeOrder) return;
     try {
-      await fetch(`${BACKEND_URL}/online-orders/${activeOrder.id}`, {
+      const res = await fetch(`${BACKEND_URL}/online-orders/${activeOrder.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}`,
+        },
         body: JSON.stringify({ status: bridgeStatus })
       });
-    } catch {}
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const { toast } = require('react-hot-toast');
+        toast.error(data.message || `Order #${activeOrder.id} status update to ${bridgeStatus} failed.`);
+      }
+    } catch {
+      const { toast } = require('react-hot-toast');
+      toast.error(`Network error — Order #${activeOrder.id} status was NOT updated to ${bridgeStatus}.`);
+    }
   };
 
   // --- REAL-TIME SOCKET CONNECTION ---
@@ -250,7 +264,7 @@ export default function App() {
     setCurrentPathIndex(0);
   };
 
-  const handleConfirmPickedUp = () => {
+  const handleConfirmPickedUp = async () => {
     if (!activeOrder) return;
     const tripPath = generateGridPath(
       activeOrder.restaurantX, activeOrder.restaurantY,
@@ -261,7 +275,7 @@ export default function App() {
     setCurrentPathIndex(0);
     setDriverCoords(tripPath[0]);
     setStatus('PICKED_UP');
-    // updateBridgeStatus('PICKED_UP'); // Managed by POS DISPATCHED -> OUT_FOR_DELIVERY
+    await updateBridgeStatus('OUT_FOR_DELIVERY');
   };
 
   const handleMarkDelivered = async () => {

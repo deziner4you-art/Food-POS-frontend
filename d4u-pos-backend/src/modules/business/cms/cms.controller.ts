@@ -20,6 +20,7 @@ import {
   UpdateBannerDto,
   UpdateSettingsDto,
   SubscribeDto,
+  VerifyInventoryPinDto,
 } from './dto';
 
 @Controller('cms')
@@ -114,5 +115,18 @@ export class CmsController {
   @Post('subscribe')
   subscribe(@Body() body: SubscribeDto) {
     return this.cmsService.subscribeNewsletter(body.store_id, body.email);
+  }
+
+  // Gated with the same permission Chef Login already requires (a logged-in
+  // KDS terminal), rather than introducing a brand-new permission key just
+  // for this. Only ever returns a boolean — never the PIN or its hash.
+  @RequirePermissions('kitchen.sessions.create')
+  @Post('settings/:storeId/verify-inventory-pin')
+  async verifyInventoryPin(
+    @Param('storeId', ParseIntPipe) storeId: number,
+    @Body() body: VerifyInventoryPinDto,
+  ) {
+    const valid = await this.cmsService.verifyInventoryPin(storeId, body.pin);
+    return { valid };
   }
 }

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { LOYALTY_POINT_VALUE } from '../customers/loyalty.constants';
 
@@ -83,7 +84,14 @@ export class CmsService {
     // Echoes the single backend source of truth for the loyalty conversion
     // rate so the POS client never has to hardcode it (reuses this existing
     // settings response instead of adding a new endpoint/UI).
-    return { ...settings, loyalty_point_value: LOYALTY_POINT_VALUE };
+    // inventoryUnlockPinHash is never sent to any client, public or admin —
+    // only whether one is currently set.
+    const { inventoryUnlockPinHash, ...safeSettings } = settings as any;
+    return {
+      ...safeSettings,
+      hasInventoryUnlockPin: !!inventoryUnlockPinHash,
+      loyalty_point_value: LOYALTY_POINT_VALUE,
+    };
   }
 
   async updateSettings(store_id: number, data: any) {
@@ -107,8 +115,21 @@ export class CmsService {
         module_kds_enabled: data.module_kds_enabled,
         module_loyalty_enabled: data.module_loyalty_enabled,
         module_payments_enabled: data.module_payments_enabled,
+        // Blank/omitted = leave the existing PIN unchanged (password-field
+        // semantics) — undefined tells Prisma to skip this field entirely,
+        // never to null it out.
+        inventoryUnlockPinHash: data.inventoryUnlockPin
+          ? await bcrypt.hash(data.inventoryUnlockPin, 10)
+          : undefined,
       },
     });
+  }
+
+  /** Verifies a KDS Inventory Unlock PIN for a branch — never returns the hash or PIN itself. */
+  async verifyInventoryPin(store_id: number, pin: string): Promise<boolean> {
+    const settings = await this.prisma.cmsSettings.findFirst({ where: { store_id } });
+    if (!settings?.inventoryUnlockPinHash) return false;
+    return bcrypt.compare(pin, settings.inventoryUnlockPinHash);
   }
 
   async subscribeNewsletter(store_id: number, email: string) {

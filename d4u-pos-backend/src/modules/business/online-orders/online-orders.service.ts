@@ -142,6 +142,108 @@ export class OnlineOrdersService {
     return order;
   }
 
+  /**
+   * Gives a website order a real kitchen ticket (Order + KOT) the first
+   * time it's confirmed, instead of kdsStatus being a string nobody in the
+   * kitchen actually drives. Once this exists, the order flows through the
+   * exact same Accept/Preparing/Ready pipeline (and rider-notification
+   * bridge, KotsService.updateKotStatus) that POS-created delivery orders
+   * already use — see KotsService for the matching PREPARING/READY →
+   * OnlineOrder sync. Mirrors PosOrdersService.createOrder's Order+KOT
+   * shape exactly, but reuses the price already locked in at placement
+   * time (calculatePricing already ran once in createOrder above) rather
+   * than repricing.
+   */
+  private async createKitchenTicketForOnlineOrder(onlineOrder: any) {
+    try {
+      let itemsArr: any[] = [];
+      try {
+        itemsArr = JSON.parse(onlineOrder.items || '[]');
+      } catch (e) {
+        console.error(`[ONLINE ORDER → KOT] Order #${onlineOrder.id} has unparseable items, skipping ticket creation:`, e);
+        return;
+      }
+
+      const targetDay = await this.prisma.businessDay.findFirst({
+        where: { store_id: onlineOrder.store_id, status: 'OPEN' },
+        orderBy: { id: 'desc' },
+      });
+
+      const newOrder = await this.prisma.$transaction(async (tx) => {
+        const order = await tx.order.create({
+          data: {
+            store_id: onlineOrder.store_id,
+            business_day_id: targetDay?.id ?? null,
+            created_by: 1, // System — confirmed via the online-order pipeline, not a specific cashier login
+            business_date: targetDay?.dayStart ?? new Date(),
+            total_amount: parseFloat(onlineOrder.totalAmount) || 0,
+            discount: 0,
+            status: 'PENDING',
+            order_source: 'ONLINE',
+            payment_method: 'CASH',
+            payment_status: 'PENDING_COD',
+            delivery_address: onlineOrder.customerAddress,
+            items: {
+              // CheckoutView.tsx (the live website checkout) sends
+              // {product_id, quantity}; only the quarantined legacy
+              // StitchLanding.tsx still sends {id, qty} — accept either so a
+              // real cart never resolves to product_id 0 and FK-violates.
+              create: itemsArr.map((i: any) => ({
+                product_id: parseInt(i.product_id ?? i.id) || 0,
+                quantity: i.quantity ?? i.qty ?? 1,
+                price: parseFloat(i.price) || 0,
+                special_inst: i.special_inst || '',
+              })),
+            },
+          },
+          include: { items: { include: { product: true } } },
+        });
+
+        const kotItems = order.items.map((i) => ({
+          name: i.product?.name || 'Unknown item',
+          qty: i.quantity,
+          price: i.price,
+          specialInst: i.special_inst ?? '',
+          product_id: i.product_id,
+          kitchen_station_id: i.product?.kitchen_station_id ?? null,
+        }));
+
+        await tx.kOT.create({
+          data: {
+            store_id: onlineOrder.store_id,
+            order_id: order.id,
+            business_day_id: targetDay?.id ?? null,
+            items: kotItems,
+            status: 'NEW',
+          },
+        });
+
+        return order;
+      });
+
+      await this.prisma.onlineOrder.update({
+        where: { id: onlineOrder.id },
+        data: { posOrderId: newOrder.id },
+      });
+
+      console.log(`[ONLINE ORDER → KOT] Created Order #${newOrder.id} + KOT for OnlineOrder #${onlineOrder.id}`);
+      // KDS (StitchKDS.tsx) only ever listens for 'kds_update' to trigger its
+      // resync (same event KotsService.updateKotStatus broadcasts on
+      // PREPARING/READY) — broadcasting 'new_kot' here was a dead event
+      // nothing in any frontend subscribes to, so a freshly-created ticket
+      // never appeared on an already-open KDS screen.
+      this.gateway.broadcast(
+        'kds_update',
+        { order_id: newOrder.id, store_id: onlineOrder.store_id, items: newOrder.items },
+        `store_${onlineOrder.store_id}`,
+      );
+    } catch (e) {
+      // Never let a kitchen-ticket failure block the order status update
+      // itself — the customer/cashier flow must not break because of this.
+      console.error(`[ONLINE ORDER → KOT] Failed to create kitchen ticket for OnlineOrder #${onlineOrder.id}:`, e);
+    }
+  }
+
   async updateOrderStatus(id: number, data: any, userStoreId?: number) {
     const allowedKeys = [
       'orderId',
@@ -236,6 +338,16 @@ export class OnlineOrdersService {
         });
       }
 
+      // First time this order reaches CONFIRMED, give it a real kitchen
+      // ticket so Accept/In Kitchen/Ready are driven by an actual chef
+      // action, not a client PATCH string. existingOrder.posOrderId (not
+      // updated.posOrderId) is the right check — updated is a fresh read of
+      // this same row, so both would agree, but existingOrder is the value
+      // this decision is conceptually based on (state *before* this call).
+      if (updateData.status === 'CONFIRMED' && !existingOrder.posOrderId) {
+        await this.createKitchenTicketForOnlineOrder(updated);
+      }
+
       // Recipe Stock Deduction Logic
       if (
         (data.status === 'SETTLED' || data.status === 'PAID') &&
@@ -321,30 +433,46 @@ export class OnlineOrdersService {
               itemsArr = JSON.parse(updated.items || '[]');
             } catch (e) {}
 
-            // Create the official POS Order
-            await this.prisma.order.create({
-              data: {
-                store_id: updated.store_id,
-                business_day_id: targetDay.id,
-                created_by: 1, // System / Admin
-                business_date: targetDay.dayStart,
-                total_amount: total_amount,
-                discount: 0,
-                status: 'COMPLETED',
-                order_source: 'ONLINE',
-                payment_method: 'CASH',
-                payment_status: 'PAID',
-                delivery_address: updated.customerAddress,
-                items: {
-                  create: itemsArr.map((i: any) => ({
-                    product_id: parseInt(i.id) || 0,
-                    quantity: i.qty || 1,
-                    price: parseFloat(i.price) || 0,
-                    special_inst: i.special_inst || '',
-                  })),
+            // This order may already have a real Order (created when it was
+            // first CONFIRMED — see createKitchenTicketForOnlineOrder above).
+            // Update that one instead of creating a second, duplicate Order
+            // for the same real-world sale; only orders that somehow reach
+            // settlement without ever passing through CONFIRMED (edge case)
+            // fall back to the original backdated-Order creation.
+            if (updated.posOrderId) {
+              await this.prisma.order.update({
+                where: { id: updated.posOrderId },
+                data: {
+                  status: 'COMPLETED',
+                  payment_status: 'PAID',
                 },
-              },
-            });
+              });
+            } else {
+              // Create the official POS Order
+              await this.prisma.order.create({
+                data: {
+                  store_id: updated.store_id,
+                  business_day_id: targetDay.id,
+                  created_by: 1, // System / Admin
+                  business_date: targetDay.dayStart,
+                  total_amount: total_amount,
+                  discount: 0,
+                  status: 'COMPLETED',
+                  order_source: 'ONLINE',
+                  payment_method: 'CASH',
+                  payment_status: 'PAID',
+                  delivery_address: updated.customerAddress,
+                  items: {
+                    create: itemsArr.map((i: any) => ({
+                      product_id: parseInt(i.id) || 0,
+                      quantity: i.qty || 1,
+                      price: parseFloat(i.price) || 0,
+                      special_inst: i.special_inst || '',
+                    })),
+                  },
+                },
+              });
+            }
 
             // If the target day is ALREADY CLOSED, we retroactively update its totals
             if (targetDay.status === 'CLOSED') {

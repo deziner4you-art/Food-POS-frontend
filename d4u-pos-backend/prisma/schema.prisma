@@ -885,6 +885,7 @@ model Order {
   rider       User?        @relation("RiderOrders", fields: [rider_id], references: [id])
   items       OrderItem[]
   kot         KOT?
+  onlineOrder OnlineOrder?
   createdAt   DateTime     @default(now())
 }
 
@@ -1069,6 +1070,14 @@ model OnlineOrder {
   feedback         Json?
   delivery         Json?
   createdAt        DateTime @default(now())
+
+  // Links to the real kitchen ticket created when this online order is
+  // first confirmed — lets it flow through the exact same Accept/
+  // Preparing/Ready pipeline (and rider-notification bridge) POS delivery
+  // orders already use, instead of kdsStatus being a string nobody in the
+  // kitchen actually drives. Nullable: not set until CONFIRMED.
+  posOrderId Int?   @unique
+  posOrder   Order? @relation(fields: [posOrderId], references: [id])
 }
 
 // -------------------------------------------------------------
@@ -1259,6 +1268,13 @@ model CmsSettings {
   module_kds_enabled      Boolean @default(true)
   module_loyalty_enabled  Boolean @default(false)
   module_payments_enabled Boolean @default(false)
+
+  // KDS Inventory Unlock — a per-branch PIN, separate from individual
+  // manager accounts' own hashedPin (User.hashedPin), that lets any
+  // manager physically at this branch unlock the Inventory tab on the
+  // Kitchen Display. Hashed with bcrypt, same as User.hashedPin — never
+  // stored or returned as plaintext.
+  inventoryUnlockPinHash String?
 
   updatedAt DateTime @updatedAt
 

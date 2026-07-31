@@ -8,6 +8,9 @@ interface HeaderProps {
   onLogout?: () => void;
   branchName?: string;
   isEmergencyStop: boolean;
+  isAdminUnlocked?: boolean;
+  activeTab?: string;
+  onLockInventory?: () => void;
 }
 
 
@@ -17,7 +20,10 @@ export default function Header({
   onRefresh,
   onLogout,
   branchName,
-  isEmergencyStop
+  isEmergencyStop,
+  isAdminUnlocked,
+  activeTab,
+  onLockInventory
 }: HeaderProps) {
   const [localTime, setLocalTime] = useState<string>('00:00:00');
 
@@ -37,7 +43,7 @@ export default function Header({
     <header className="h-20 flex items-center justify-between px-8 border-b border-[#4f4633]/30 bg-[#191f2f] shadow-md z-10 shrink-0">
       <div className="flex items-center gap-6">
         <h1 className="font-display font-bold text-2xl text-[#dce2f7] select-none flex items-center gap-2">
-          <span>Kitchen Display System {branchName ? `- ${branchName}` : ''}</span>
+          <span>KDS {branchName ? `- ${branchName}` : ''}</span>
           {isEmergencyStop && (
             <span className="flex items-center gap-1.5 px-3 py-1 bg-brand-red/10 border border-brand-red/30 rounded-full text-xs font-mono font-bold text-brand-red animate-pulse">
               <ShieldAlert className="w-3.5 h-3.5" />
@@ -67,6 +73,15 @@ export default function Header({
       <div className="flex items-center gap-5">
         {/* Action controls for previewing & testing */}
         <div className="flex gap-2">
+          {activeTab === 'inventory' && isAdminUnlocked && onLockInventory && (
+            <button
+              onClick={onLockInventory}
+              className="flex items-center gap-2 px-3.5 py-1.5 border border-red-500/50 hover:bg-red-900/40 rounded-lg text-xs font-mono font-bold text-red-500 transition-all cursor-pointer"
+              title="Lock Inventory"
+            >
+              <span>LOCK</span>
+            </button>
+          )}
           {onLogout && (
             <button
               onClick={onLogout}

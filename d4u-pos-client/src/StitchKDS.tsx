@@ -37,6 +37,25 @@ const DEFAULT_SETTINGS: StationSettings = {
 };
 
 export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?: any, onLogout?: () => void }) {
+  // Resolves the real branch name the same way App.tsx's main POS header
+  // does (GET /stores, match on store_id) — this previously showed a raw
+  // "Branch {id}" placeholder instead of the actual store name.
+  const [branchName, setBranchName] = useState<string | undefined>(
+    currentUser?.store_id ? `Branch ${currentUser.store_id}` : undefined
+  );
+
+  useEffect(() => {
+    if (!currentUser?.store_id) return;
+    apiFetch('/stores')
+      .then((res) => res.json())
+      .then((data) => {
+        const stores = Array.isArray(data) ? data : (data.value || data.stores || []);
+        const s = stores.find((x: any) => x.id === currentUser.store_id);
+        if (s) setBranchName(s.name);
+      })
+      .catch(console.error);
+  }, [currentUser?.store_id]);
+
   const [activeTab, setActiveTab] = useState<Tab>('kitchen');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isEmergencyStop, setIsEmergencyStop] = useState<boolean>(false);
@@ -49,6 +68,42 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
   const [pinError, setPinError] = useState('');
   const [isUnlocking, setIsUnlocking] = useState(false);
 
+  // Inventory Unlock — a separate per-branch PIN from the Chef PIN above:
+  // any manager at this branch can unlock Inventory without it also
+  // logging them in as "the chef" for this station.
+  const [isInventoryUnlocked, setIsInventoryUnlocked] = useState<boolean>(false);
+  const [showInventoryPinModal, setShowInventoryPinModal] = useState<boolean>(false);
+  const [inventoryPinCode, setInventoryPinCode] = useState('');
+  const [inventoryPinError, setInventoryPinError] = useState('');
+  const [isVerifyingInventoryPin, setIsVerifyingInventoryPin] = useState(false);
+
+  const handleInventoryPinUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsVerifyingInventoryPin(true);
+    setInventoryPinError('');
+    try {
+      const storeId = currentUser?.store_id || 1;
+      const res = await apiFetch(`/cms/settings/${storeId}/verify-inventory-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: inventoryPinCode }),
+        auth: true,
+      });
+      const data = await res.json();
+      if (res.ok && data.valid) {
+        setIsInventoryUnlocked(true);
+        setShowInventoryPinModal(false);
+        setInventoryPinCode('');
+      } else {
+        setInventoryPinError('Invalid Inventory PIN');
+      }
+    } catch (err) {
+      setInventoryPinError('Network error connecting to auth server.');
+    } finally {
+      setIsVerifyingInventoryPin(false);
+    }
+  };
+
   const handleChefLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUnlocking(true);
@@ -57,7 +112,8 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
       const res = await apiFetch(`/kitchen/chef-auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pinCode, device_name: 'KDS Terminal' })
+        body: JSON.stringify({ pin: pinCode, device_name: 'KDS Terminal' }),
+        auth: true
       });
       const data = await res.json();
       if (res.ok && data.access_token) {
@@ -87,6 +143,7 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     localStorage.removeItem('chef_token');
     localStorage.removeItem('chef_session_id');
     setIsAdminUnlocked(false);
+    setIsInventoryUnlocked(false);
   };
   const [logs, setLogs] = useState<LogEvent[]>([]);
 
@@ -192,13 +249,24 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
   };
 
   useEffect(() => {
+    // This socket connects but was never joining the store's broadcast room
+    // — AppGateway.broadcast() uses server.to(`store_${id}`).emit(...), a
+    // strict room-scoped emit, so without join_store this screen could
+    // never receive kds_update/order_updated regardless of event name.
+    // Only ever refreshed via the initial syncKOTs() call and the manual
+    // Reset button.
+    const storeId = currentUser?.store_id || 1;
+    const joinRoom = () => socket.emit('join_store', { store_id: storeId });
+    if (socket.connected) joinRoom();
+    socket.on('connect', joinRoom);
     socket.on('kds_update', () => {
       syncKOTs();
     });
     return () => {
+      socket.off('connect', joinRoom);
       socket.off('kds_update');
     };
-  }, []);
+  }, [currentUser?.store_id]);
   
   // Real-time ticking state
   const [nowTick, setNowTick] = useState<number>(Date.now());
@@ -613,8 +681,11 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
           readyCount={readyOrdersCount}
           onRefresh={handleResetData}
           onLogout={onLogout}
-          branchName={currentUser?.store_id ? `Branch ${currentUser.store_id}` : undefined}
+          branchName={branchName}
           isEmergencyStop={isEmergencyStop}
+          isAdminUnlocked={isAdminUnlocked}
+          activeTab={activeTab}
+          onLockInventory={handleChefLogout}
         />
 
         {isLoading ? (
@@ -655,12 +726,12 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
             )}
 
             {activeTab === 'inventory' && (
-              <InventoryView 
+              <InventoryView
                 ingredients={ingredients}
                 onUpdateInventory={handleUpdateInventoryUnit}
                 onRestockAll={handleRestockAll}
-                readOnly={!isAdminUnlocked}
-                onRequestUnlock={() => setShowPinModal(true)}
+                readOnly={!isInventoryUnlocked}
+                onRequestUnlock={() => setShowInventoryPinModal(true)}
                 onStockRequest={handleStockRequest}
                 onInventoryUnlock={handleInventoryUnlock}
                 unavailableRecipes={unavailableRecipes}
@@ -778,6 +849,57 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
                     className="w-full bg-brand-yellow hover:bg-brand-yellowHover text-brand-dark font-black py-3 rounded-xl uppercase tracking-wider transition disabled:opacity-50"
                   >
                     {isUnlocking ? 'Verifying...' : 'Unlock'}
+                  </button>
+                </form>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Inventory Unlock PIN Modal — separate from Chef Login above */}
+        <AnimatePresence>
+          {showInventoryPinModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.95 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.95 }}
+                className="bg-[#141b2b] border border-[#2e3545] rounded-2xl p-6 md:p-8 max-w-sm w-full shadow-2xl relative"
+              >
+                <button
+                  onClick={() => { setShowInventoryPinModal(false); setInventoryPinError(''); setInventoryPinCode(''); }}
+                  className="absolute top-4 right-4 text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+                <div className="text-center mb-6">
+                  <ShieldAlert className="w-12 h-12 text-brand-yellow mx-auto mb-3" />
+                  <h3 className="text-xl font-display font-bold text-white">Inventory Unlock</h3>
+                  <p className="text-xs text-slate-400 mt-1">Enter the branch Inventory PIN to unlock stock levels</p>
+                </div>
+                <form onSubmit={handleInventoryPinUnlock} className="space-y-4">
+                  <div>
+                    <input
+                      type="password"
+                      placeholder="Enter PIN"
+                      value={inventoryPinCode}
+                      onChange={e => setInventoryPinCode(e.target.value)}
+                      className="w-full bg-[#0c1322] border border-[#2e3545] text-white rounded-xl px-4 py-3 focus:outline-none focus:border-brand-yellow transition"
+                      required
+                    />
+                  </div>
+                  {inventoryPinError && <div className="text-xs text-brand-red text-center font-bold">{inventoryPinError}</div>}
+                  <button
+                    type="submit"
+                    disabled={isVerifyingInventoryPin}
+                    className="w-full bg-brand-yellow hover:bg-brand-yellowHover text-brand-dark font-black py-3 rounded-xl uppercase tracking-wider transition disabled:opacity-50"
+                  >
+                    {isVerifyingInventoryPin ? 'Verifying...' : 'Unlock'}
                   </button>
                 </form>
               </motion.div>

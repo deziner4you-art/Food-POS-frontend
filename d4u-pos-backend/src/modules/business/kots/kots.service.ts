@@ -92,6 +92,26 @@ export class KotsService {
       }
     }
 
+    // Website orders that were given a real kitchen ticket at CONFIRMED
+    // time (see OnlineOrdersService.createKitchenTicketForOnlineOrder) —
+    // mirror PREPARING/READY back onto the actual OnlineOrder row and
+    // broadcast THAT, not formatPosOrderForRider(fullOrder): the latter
+    // stamps the POS Order's own id, not the OnlineOrder's, which would
+    // silently break TrackOrderPage/Rider App's id-based matching.
+    if ((status === 'PREPARING' || status === 'READY') && kot.order?.order_source === 'ONLINE') {
+      const linkedOnlineOrder = await this.prisma.onlineOrder.findUnique({
+        where: { posOrderId: kot.order_id },
+      });
+      if (linkedOnlineOrder) {
+        const newStatus = status === 'PREPARING' ? 'KITCHEN_PREPARING' : 'READY';
+        const updatedOnlineOrder = await this.prisma.onlineOrder.update({
+          where: { id: linkedOnlineOrder.id },
+          data: { status: newStatus, kdsStatus: status },
+        });
+        this.gateway.broadcast('order_updated', updatedOnlineOrder, `store_${kot.store_id}`);
+      }
+    }
+
     return { success: true, kot };
   }
 

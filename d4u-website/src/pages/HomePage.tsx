@@ -102,12 +102,12 @@ export const HomePage: React.FC<HomePageProps> = ({
         {/* Background Image Slide Transition */}
         {activeSlide && (
           <div
-            className="absolute inset-0 bg-cover bg-center transition-all duration-1000 transform scale-105 opacity-25"
+            className="absolute inset-0 bg-cover bg-center transition-all duration-1000 transform scale-105 opacity-60"
             style={{ backgroundImage: `url(${activeSlide.desktopImageUrl})` }}
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0C0C0E] via-[#0C0C0E]/90 to-transparent z-10" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0C0C0E] via-transparent to-[#0C0C0E]/60 z-10" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0C0C0E]/90 via-[#0C0C0E]/50 to-transparent z-10" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0C0C0E]/80 via-transparent to-[#0C0C0E]/40 z-10" />
 
         <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-12 relative z-20 w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           {/* Hero Content Left (7 cols) */}

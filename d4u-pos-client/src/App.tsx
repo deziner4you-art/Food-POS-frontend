@@ -910,18 +910,22 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       if (newlyReady.length > 0) {
         newlyReady.forEach(async kot => {
           if (kot.type === 'Delivery') {
+            let bridgeOk = true;
             if (kot.bridgeOrderId) {
               try {
-                await fetch(`${BACKEND_URL}/online-orders/${kot.bridgeOrderId}`, {
+                const res = await fetch(`${BACKEND_URL}/online-orders/${kot.bridgeOrderId}`, {
                   method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
                   body: JSON.stringify({ status: 'READY', kdsStatus: 'READY' })
                 });
+                bridgeOk = res.ok;
               } catch (e) {
-                console.error(e);
+                bridgeOk = false;
               }
             }
-            setToast({ message: `Kitchen has completed Order #${kot.orderId}`, type: 'success' });
+            setToast(bridgeOk
+              ? { message: `Kitchen has completed Order #${kot.orderId}`, type: 'success' }
+              : { message: `Order #${kot.orderId} is ready locally but the online tracker was NOT updated.`, type: 'error' });
             setActiveDeliveries(prev => prev.map(d => d.id === kot.orderId ? { ...d, status: 'READY', rider: 'Waiting for Rider' } : d));
           } else {
             setToast({ message: `KOT Order #${kot.orderId} is READY for ${kot.type}!`, type: 'success' });
@@ -935,35 +939,41 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         newlyPreparing.forEach(async kot => {
           if (kot.type === 'Delivery' && kot.bridgeOrderId) {
             try {
-              await fetch(`${BACKEND_URL}/online-orders/${kot.bridgeOrderId}`, {
+              const res = await fetch(`${BACKEND_URL}/online-orders/${kot.bridgeOrderId}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  kdsStatus: 'ACCEPTED', 
-                  estimatedReadyAt: new Date(new Date(kot.startTime).getTime() + (kot.prepTimeMinutes * 60000)).toISOString() 
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+                body: JSON.stringify({
+                  kdsStatus: 'ACCEPTED',
+                  estimatedReadyAt: new Date(new Date(kot.startTime).getTime() + (kot.prepTimeMinutes * 60000)).toISOString()
                 })
               });
-              
-              setActiveDeliveries(prev => {
-                const existing = prev.find(d => d.id === kot.orderId);
-                if (existing) {
-                  return prev.map(d => d.id === kot.orderId ? { ...d, status: 'PREPARING', rider: `Chef Prep: ${kot.prepTimeMinutes}m` } : d);
-                }
-                return [...prev, {
-                  id: kot.orderId,
-                  bridgeOrderId: kot.bridgeOrderId,
-                  customer: kot.customer || 'Guest',
-                  address: kot.customerAddress || 'Pending Address...',
-                  status: 'PREPARING',
-                  rider: `Chef Prep: ${kot.prepTimeMinutes}m`,
-                  cod: kot.totalAmount || 0,
-                  riderDistance: 'N/A',
-                  lat: '50%',
-                  lng: '50%'
-                }];
-              });
-              setToast({ message: `Order #${kot.orderId} is Preparing in KDS!`, type: 'info' });
-            } catch {}
+
+              if (res.ok) {
+                setActiveDeliveries(prev => {
+                  const existing = prev.find(d => d.id === kot.orderId);
+                  if (existing) {
+                    return prev.map(d => d.id === kot.orderId ? { ...d, status: 'PREPARING', rider: `Chef Prep: ${kot.prepTimeMinutes}m` } : d);
+                  }
+                  return [...prev, {
+                    id: kot.orderId,
+                    bridgeOrderId: kot.bridgeOrderId,
+                    customer: kot.customer || 'Guest',
+                    address: kot.customerAddress || 'Pending Address...',
+                    status: 'PREPARING',
+                    rider: `Chef Prep: ${kot.prepTimeMinutes}m`,
+                    cod: kot.totalAmount || 0,
+                    riderDistance: 'N/A',
+                    lat: '50%',
+                    lng: '50%'
+                  }];
+                });
+                setToast({ message: `Order #${kot.orderId} is Preparing in KDS!`, type: 'info' });
+              } else {
+                setToast({ message: `Order #${kot.orderId} started preparing, but the online tracker was NOT updated.`, type: 'error' });
+              }
+            } catch {
+              setToast({ message: `Order #${kot.orderId} started preparing, but the online tracker was NOT updated (network error).`, type: 'error' });
+            }
           }
         });
       }
@@ -1118,21 +1128,39 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       customerAddress: order.customerAddress || 'No Address Provided',
     };
 
-    const kotId = await db.kots.add(newKot);
-
-    // Patch bridge: kdsStatus → NEW_KOT
+    // Patch bridge: kdsStatus → NEW_KOT. The backend creates the real
+    // kitchen-facing Order+KOT from this (see
+    // OnlineOrdersService.createKitchenTicketForOnlineOrder) — that row,
+    // synced via GET /kots + the 'kds_update' broadcast, is what the KDS
+    // screen renders. newKot below is a local, unpersisted object used only
+    // for this receipt printout and the POS's own Delivery-tab card; it
+    // must NOT be written to db.kots, since Dexie is shared across every
+    // tab/route on this origin (including /kitchen) and a persisted local
+    // row here would show up on the real KDS as a phantom duplicate ticket
+    // with no backend counterpart to sync against.
+    let bridgeSucceeded = false;
     try {
-        await fetch(`${BACKEND_URL}/online-orders/${order.id}`, {
+      const res = await fetch(`${BACKEND_URL}/online-orders/${order.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
         body: JSON.stringify({ kdsStatus: 'NEW_KOT' })
       });
-      // Immediately remove from local UI so it disappears from Online tab
-      setBackendOnlineOrders(prev => prev.filter(o => o.id !== order.id));
-    } catch { /* bridge offline */ }
+      if (res.ok) {
+        bridgeSucceeded = true;
+        // Immediately remove from local UI so it disappears from Online tab
+        setBackendOnlineOrders(prev => prev.filter(o => o.id !== order.id));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setToast({ message: data.message || `Order #${order.id} was NOT sent to the kitchen. It will remain in Online Orders — please try Accept again.`, type: 'error' });
+      }
+    } catch {
+      setToast({ message: `Order #${order.id} was NOT sent to the kitchen (network error). It will remain in Online Orders — please try Accept again.`, type: 'error' });
+    }
 
-    // Trigger KOT print
-    triggerKotPrint({ ...newKot, id: kotId });
+    if (!bridgeSucceeded) return;
+
+    // Trigger KOT print (local receipt only — id is for the printout, not a Dexie row)
+    triggerKotPrint({ ...newKot, id: Date.now() });
 
     const products = await db.products.toArray();
     const parsedCart = (order.items || '').split(',').map((part: string) => {
@@ -1341,15 +1369,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   }, [customerPhone]);
 
   if (window.location.pathname === '/kitchen') {
-    return <KitchenDisplay />;
+    // Was rendering with no props at all, so the branch name never had a
+    // store_id to resolve from and Chef PIN login had no logged-in user's
+    // token to authenticate with — POSApp already has both right here.
+    return <KitchenDisplay currentUser={currentUser} onLogout={onLogout} />;
   }
   
   if (window.location.pathname === '/tv') {
     return <TVDisplay />;
-  }
-
-  if (window.location.pathname === '/tv-board') {
-    return <TvBoard />;
   }
 
   // Real-time GPS sync handled globally by WebSockets above
@@ -2344,12 +2371,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                  const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
-                                    headers: { 'Content-Type': 'application/json' },
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
                                     body: JSON.stringify({ status: 'RIDER_ARRIVED' })
                                   });
-                                } catch {}
+                                  if (!res.ok) {
+                                    const data = await res.json().catch(() => ({}));
+                                    setToast({ message: data.message || `Failed to mark Order #${del.bridgeOrderId} as Rider Arrived.`, type: 'error' });
+                                  }
+                                } catch {
+                                  setToast({ message: `Network error — could not mark Order #${del.bridgeOrderId} as Rider Arrived.`, type: 'error' });
+                                }
                               }}
                             >
                               Rider Arrived
@@ -2362,12 +2395,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                 const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(del.items);
                                 setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
                                 try {
-                                  await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                  const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
-                                    headers: { 'Content-Type': 'application/json' },
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
                                     body: JSON.stringify({ status: 'PRINT_BILL' })
                                   });
-                                } catch {}
+                                  if (!res.ok) {
+                                    const data = await res.json().catch(() => ({}));
+                                    setToast({ message: data.message || `Bill printed, but Order #${del.bridgeOrderId} status was NOT updated on the server.`, type: 'error' });
+                                  }
+                                } catch {
+                                  setToast({ message: `Bill printed, but Order #${del.bridgeOrderId} status was NOT updated (network error).`, type: 'error' });
+                                }
                               }}
                             >
                               <Printer size={18} /> Print Bill
@@ -2378,14 +2417,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-
-                                  await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                  const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ status: 'DISPATCHED' }) // the backend can trigger OUT_FOR_DELIVERY later or immediately
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+                                    body: JSON.stringify({ status: 'DISPATCHED' }) // rider confirming pickup in the Rider app advances this to OUT_FOR_DELIVERY
                                   });
-                                  setToast({ message: 'Order Dispatched to Delivery App!', type: 'success' });
-                                } catch {}
+                                  if (res.ok) {
+                                    setToast({ message: 'Order Dispatched to Delivery App!', type: 'success' });
+                                  } else {
+                                    const data = await res.json().catch(() => ({}));
+                                    setToast({ message: data.message || `Failed to dispatch Order #${del.bridgeOrderId}.`, type: 'error' });
+                                  }
+                                } catch {
+                                  setToast({ message: `Network error — could not dispatch Order #${del.bridgeOrderId}.`, type: 'error' });
+                                }
                               }}
                             >
                               Dispatch Order
@@ -2400,15 +2445,22 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               <button className="btn-action btn-order" style={{ padding: '8px 16px', fontSize: '0.75rem', width: 'auto', flex: 'none' }}
                                 onClick={async () => {
                                   try {
-                                    await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                    const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
                                       method: 'PATCH',
-                                      headers: { 'Content-Type': 'application/json' },
+                                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
                                       body: JSON.stringify({ status: 'SETTLED' })
                                     });
-                                    setActiveDeliveries(prev => prev.filter(o => o.id !== del.id));
-                                    setPendingLastDaySettlements(prev => prev.filter(o => o.bridgeOrderId !== del.bridgeOrderId));
-                                    setToast({ message: 'Cash Settled & Ledger Updated!', type: 'success' });
-                                  } catch {}
+                                    if (res.ok) {
+                                      setActiveDeliveries(prev => prev.filter(o => o.id !== del.id));
+                                      setPendingLastDaySettlements(prev => prev.filter(o => o.bridgeOrderId !== del.bridgeOrderId));
+                                      setToast({ message: 'Cash Settled & Ledger Updated!', type: 'success' });
+                                    } else {
+                                      const data = await res.json().catch(() => ({}));
+                                      setToast({ message: data.message || `Failed to settle Order #${del.bridgeOrderId}. It remains pending.`, type: 'error' });
+                                    }
+                                  } catch {
+                                    setToast({ message: `Network error — Order #${del.bridgeOrderId} was NOT settled. It remains pending.`, type: 'error' });
+                                  }
                                 }}>
                                 Settle Cash
                               </button>
@@ -2441,14 +2493,21 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         <button className="btn-action bg-red-600 text-white" style={{ padding: '8px 16px', fontSize: '0.75rem', width: 'auto', flex: 'none', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
                           onClick={async () => {
                             try {
-                              await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                              const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
                                 method: 'PATCH',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
                                 body: JSON.stringify({ status: 'SETTLED' })
                               });
-                              setPendingLastDaySettlements(prev => prev.filter(o => o.bridgeOrderId !== del.bridgeOrderId));
-                              setToast({ message: 'Cash Settled & Ledger Updated for Yesterday!', type: 'success' });
-                            } catch {}
+                              if (res.ok) {
+                                setPendingLastDaySettlements(prev => prev.filter(o => o.bridgeOrderId !== del.bridgeOrderId));
+                                setToast({ message: 'Cash Settled & Ledger Updated for Yesterday!', type: 'success' });
+                              } else {
+                                const data = await res.json().catch(() => ({}));
+                                setToast({ message: data.message || `Failed to settle Order #${del.bridgeOrderId}. It remains pending.`, type: 'error' });
+                              }
+                            } catch {
+                              setToast({ message: `Network error — Order #${del.bridgeOrderId} was NOT settled. It remains pending.`, type: 'error' });
+                            }
                           }}>
                           Settle Cash
                         </button>
@@ -4533,7 +4592,14 @@ export default function App() {
 
   const activeUser = loggedInUser || (import.meta.env.DEV ? { id: 1, name: 'Bypass Access', store_id: 1, role: 'Admin' } : null);
 
-
+  // TV Board is passive signage — it has no cash drawer and doesn't belong
+  // to any cashier's shift, so it must not sit behind Day Start/Cash In.
+  // Bypasses the same role-blind gate below that Chef already bypasses for
+  // KDS (App.tsx ~4620), just role-agnostic since any logged-in staff
+  // member's store_id is equally valid for a read-only display.
+  if (window.location.pathname === '/tv-board') {
+    return <TvBoard />;
+  }
 
   if (activeUser.role === 'Chef') {
     if (!settings.module_kds_enabled) {

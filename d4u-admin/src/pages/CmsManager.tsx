@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, FileText, Images } from 'lucide-react';
 import { customAlert, customConfirm } from '../utils/alerts';
+import { apiFetch, BACKEND_URL } from '../utils/api';
 import { useAdminContext } from '../context/AdminContext';
 import CmsShell from '../components/cms/CmsShell';
 import type { CmsTab } from '../components/cms/CmsSectionNav';
@@ -8,9 +9,8 @@ import BannerGrid from '../components/cms/banner/BannerGrid';
 import BannerUploadModal from '../components/cms/banner/BannerUploadModal';
 import SettingsForm from '../components/cms/settings/SettingsForm';
 import ModuleToggleList from '../components/cms/modules/ModuleToggleList';
+import InventoryPinCard from '../components/cms/modules/InventoryPinCard';
 import ComingSoonSection from '../components/cms/ComingSoonSection';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
 // Static feature-flag definitions — same labels/descriptions/keys the
 // Modules tab has always used, just named so they can be passed as a
@@ -48,7 +48,8 @@ export default function CmsManager() {
     siteTitle: '', contactPhone: '', contactEmail: '', address: '', googleMapUrl: '',
     facebookUrl: '', instagramUrl: '', whatsappNumber: '',
     twitterUrl: '', youtubeUrl: '', aboutText: '', companyText: '',
-    module_auth_enabled: false, module_kds_enabled: true, module_loyalty_enabled: false, module_payments_enabled: false
+    module_auth_enabled: false, module_kds_enabled: true, module_loyalty_enabled: false, module_payments_enabled: false,
+    hasInventoryUnlockPin: false
   });
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -58,7 +59,7 @@ export default function CmsManager() {
   const fetchBanners = async () => {
     setBannersLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/cms/banners`);
+      const res = await apiFetch(`${BACKEND_URL}/cms/banners`);
       if (res.ok) setBanners(await res.json());
     } catch (e) {
       console.error('Failed to fetch banners', e);
@@ -71,7 +72,7 @@ export default function CmsManager() {
     if (!selectedBranchId) return;
     setSettingsLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`);
+      const res = await apiFetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`);
       if (res.ok) {
         const data = await res.json();
         setSettings(data);
@@ -98,14 +99,42 @@ export default function CmsManager() {
     settingsSnapshotRef.current = newSettings;
 
     // Remove Prisma relations and read-only fields before sending
-    const { id, brand_id, updatedAt, brand, ...cleanSettings } = newSettings;
+    const { id, brand_id, store_id, updatedAt, brand, store, ...cleanSettings } = newSettings;
 
-    // Auto-save when toggled
-    fetch(`${BACKEND_URL}/cms/settings/1`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cleanSettings)
-    });
+    // Auto-save when toggled to the currently selected branch
+    if (selectedBranchId) {
+      apiFetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanSettings)
+      });
+    }
+  };
+
+  // Sends only the new PIN, scoped to whichever branch is currently
+  // selected — not the general settings object, so this can never
+  // accidentally overwrite unrelated fields (or, unlike handleToggleModule
+  // above, silently write to the wrong branch).
+  const handleSaveInventoryPin = async (pin: string): Promise<boolean> => {
+    if (!selectedBranchId) {
+      customAlert('Please select a branch first.');
+      return false;
+    }
+    try {
+      const res = await apiFetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inventoryUnlockPin: pin }),
+      });
+      if (res.ok) {
+        fetchSettings();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('Failed to save inventory unlock PIN', e);
+      return false;
+    }
   };
 
   // activeBrandId is now derived in AdminContext
@@ -163,7 +192,7 @@ export default function CmsManager() {
     // never the image itself.
     if (editingBanner) {
       try {
-        const res = await fetch(`${BACKEND_URL}/cms/banners/${editingBanner.id}`, {
+        const res = await apiFetch(`${BACKEND_URL}/cms/banners/${editingBanner.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -195,7 +224,7 @@ export default function CmsManager() {
     formData.append('brand_id', '1');
 
     try {
-      const res = await fetch(`${BACKEND_URL}/cms/banners`, {
+      const res = await apiFetch(`${BACKEND_URL}/cms/banners`, {
         method: 'POST',
         body: formData
       });
@@ -211,7 +240,7 @@ export default function CmsManager() {
   const handleDeleteBanner = async (id: number) => {
     if (!(await customConfirm('Delete this banner?'))) return;
     try {
-      await fetch(`${BACKEND_URL}/cms/banners/${id}`, { method: 'DELETE' });
+      await apiFetch(`${BACKEND_URL}/cms/banners/${id}`, { method: 'DELETE' });
       fetchBanners();
     } catch (e) {
       console.error('Failed to delete banner', e);
@@ -234,7 +263,7 @@ export default function CmsManager() {
     try {
       await Promise.all(
         changed.map((b) =>
-          fetch(`${BACKEND_URL}/cms/banners/${b.id}`, {
+          apiFetch(`${BACKEND_URL}/cms/banners/${b.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ displayOrder: b.displayOrder }),
@@ -255,8 +284,8 @@ export default function CmsManager() {
     try {
       // Remove Prisma relations and read-only fields before sending
       const { id, brand_id, store_id, updatedAt, brand, store, ...cleanSettings } = settings;
-      
-      const res = await fetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`, {
+
+      const res = await apiFetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cleanSettings)
@@ -325,7 +354,10 @@ export default function CmsManager() {
       )}
 
       {activeTab === 'MODULES' && (
-        <ModuleToggleList modules={MODULE_DEFINITIONS} settings={settings} onToggle={handleToggleModule} />
+        <div className="flex-1 overflow-y-auto space-y-6">
+          <ModuleToggleList modules={MODULE_DEFINITIONS} settings={settings} onToggle={handleToggleModule} />
+          <InventoryPinCard hasPin={!!settings?.hasInventoryUnlockPin} onSave={handleSaveInventoryPin} />
+        </div>
       )}
 
       {activeTab === 'SEO' && (
