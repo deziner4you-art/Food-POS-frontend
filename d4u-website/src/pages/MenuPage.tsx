@@ -9,15 +9,10 @@ import {
   Search,
   Flame,
   Star,
-  Sparkles,
-  SlidersHorizontal,
   Grid,
   List,
-  ChevronDown,
-  ChevronRight,
   UtensilsCrossed,
   Layers,
-  Check
 } from 'lucide-react';
 
 interface MenuPageProps {
@@ -49,15 +44,6 @@ export const MenuPage: React.FC<MenuPageProps> = ({
   const [menuSearch, setMenuSearch] = useState('');
   const [sortBy, setSortBy] = useState<'popular' | 'price_low' | 'price_high' | 'rating'>('popular');
   const [viewLayout, setViewLayout] = useState<'grid' | 'list'>('grid');
-  const [expandedGroupIds, setExpandedGroupIds] = useState<{ [id: string]: boolean }>({
-    'cg-desi-bbq': true,
-    'cg-fast-food': true,
-    'cg-beverages-desserts': true,
-  });
-
-  const toggleGroupExpand = (groupId: string) => {
-    setExpandedGroupIds((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
-  };
 
   // Filter products based on hierarchy selection
   const filteredProducts = products.filter((p) => {
@@ -164,6 +150,75 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         </div>
       </div>
 
+      {/* CATEGORY GROUP ROW -- top-level browsing: pick a group, then a category
+          appears below it, then the product grid on the right reflects both. */}
+      <div className="bg-[#121215] border border-white/10 rounded-2xl p-4 mb-6 space-y-4">
+        <div>
+          <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+            <span>Category Group</span>
+            <span className="text-[#D4AF37] text-[10px] normal-case tracking-normal">Synced KDS</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {categoryGroups.map((group) => {
+              const isGroupActive = selectedGroupFilter === group.id;
+              return (
+                <button
+                  key={group.id}
+                  onClick={() => {
+                    setSelectedGroupFilter(isGroupActive ? null : group.id);
+                    setSelectedCategoryFilter(null);
+                    setSpecialFilter('all');
+                  }}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+                    isGroupActive
+                      ? 'bg-[#D4AF37] text-black gold-glow'
+                      : 'bg-[#1A1A1D] text-gray-300 border border-white/10 hover:border-[#D4AF37]/40 hover:text-white'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  {group.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {activeGroupObj && (
+          <div className="pt-3 border-t border-white/10">
+            <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+              Category — {activeGroupObj.name}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {activeGroupObj.categories.filter((cat) => (cat.itemCount || 0) > 0).length === 0 ? (
+                <span className="text-xs text-gray-500">No categories in this group yet.</span>
+              ) : (
+                activeGroupObj.categories
+                  .filter((cat) => (cat.itemCount || 0) > 0)
+                  .map((cat) => {
+                    const isCatActive = selectedCategoryFilter === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => {
+                          setSelectedCategoryFilter(isCatActive ? null : cat.id);
+                          setSpecialFilter('all');
+                        }}
+                        className={`px-3.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                          isCatActive
+                            ? 'bg-[#D4AF37] text-black shadow'
+                            : 'bg-[#1A1A1D] text-gray-400 border border-white/10 hover:text-white hover:border-[#D4AF37]/40'
+                        }`}
+                      >
+                        {cat.name} <span className="opacity-70">({cat.itemCount})</span>
+                      </button>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* LEFT POS SIDEBAR (3 cols) */}
         <div className="lg:col-span-3 space-y-6">
@@ -245,84 +300,6 @@ export const MenuPage: React.FC<MenuPageProps> = ({
               </button>
             </div>
 
-            {/* POS CATEGORY HIERARCHY TREE */}
-            <div className="space-y-3">
-              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
-                <span>POS Hierarchy</span>
-                <span className="text-[#D4AF37] text-[10px]">Synced KDS</span>
-              </div>
-
-              {categoryGroups.map((group) => {
-                const groupCategories = group.categories || [];
-                const isExpanded = expandedGroupIds[group.id];
-                const isGroupActive = selectedGroupFilter === group.id && !selectedCategoryFilter;
-
-                return (
-                  <div key={group.id} className="space-y-1">
-                    {/* Category Group Parent */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => toggleGroupExpand(group.id)}
-                        className="p-1 text-gray-400 hover:text-white"
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="w-3.5 h-3.5" />
-                        ) : (
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setSelectedGroupFilter(group.id);
-                          setSelectedCategoryFilter(null);
-                          setSpecialFilter('all');
-                        }}
-                        className={`flex-1 text-left px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center justify-between transition-colors ${
-                          isGroupActive
-                            ? 'bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37]'
-                            : 'text-white hover:bg-white/5'
-                        }`}
-                      >
-                        <span className="truncate">{group.name}</span>
-                        <Layers className="w-3 h-3 text-gray-500" />
-                      </button>
-                    </div>
-
-                    {/* Sub-Categories List */}
-                    {isExpanded && (
-                      <div className="pl-6 space-y-1 border-l border-white/10 ml-3.5">
-                        {groupCategories.map((cat) => {
-                          const isCatActive = selectedCategoryFilter === cat.id;
-                          const catProductCount = products.filter((p) => p.categoryId === cat.id).length;
-
-                          if (catProductCount === 0) return null; // Never show empty categories!
-
-                          return (
-                            <button
-                              key={cat.id}
-                              onClick={() => {
-                                setSelectedCategoryFilter(cat.id);
-                                setSelectedGroupFilter(group.id);
-                                setSpecialFilter('all');
-                              }}
-                              className={`w-full text-left px-2.5 py-1 rounded-md text-[11px] flex items-center justify-between transition-colors ${
-                                isCatActive
-                                  ? 'bg-[#D4AF37] text-black font-extrabold shadow'
-                                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-                              }`}
-                            >
-                              <span className="truncate">{cat.name}</span>
-                              <span className="text-[9px] opacity-80">{catProductCount}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
           </div>
         </div>
 
