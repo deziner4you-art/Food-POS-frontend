@@ -1062,6 +1062,13 @@ model OnlineOrder {
   customerAddress  String   @default("")
   items            String // JSON string of items ordered or raw text description
   totalAmount      String
+  // Customer's stated preference at checkout (CASH/CARD/COD/WALLET) --
+  // intent, not a completed transaction: no payment gateway exists yet, so
+  // this is what seeds the real POS Order's payment_method at Accept time
+  // instead of that always being hardcoded to CASH. Nullable/optional so
+  // every pre-existing OnlineOrder row (created before this field existed)
+  // stays valid without a backfill.
+  paymentMethod    String?
   notes            String   @default("")
   prepTimeMinutes  Int      @default(0)
   estimatedReadyAt String   @default("")

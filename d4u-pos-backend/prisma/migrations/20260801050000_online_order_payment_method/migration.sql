@@ -1,0 +1,11 @@
+-- Captures the customer's stated payment-method preference at website
+-- checkout (CASH/CARD/COD/WALLET). Previously discarded entirely -- the
+-- backend's CreateOnlineOrderDto never declared this field, so it was
+-- silently stripped by the global ValidationPipe whitelist, and every POS
+-- Order created from an online order was hardcoded to CASH regardless of
+-- what the customer actually selected. Nullable/optional: no payment
+-- gateway exists yet, this is intent captured for the kitchen/rider and to
+-- seed the real Order.payment_method at Accept time, not a completed
+-- transaction. Every pre-existing OnlineOrder row stays valid with no
+-- backfill needed.
+ALTER TABLE "OnlineOrder" ADD COLUMN "paymentMethod" TEXT;

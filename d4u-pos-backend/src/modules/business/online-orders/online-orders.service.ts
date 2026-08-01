@@ -38,6 +38,7 @@ export class OnlineOrdersService {
         customerAddress: body.customerAddress || 'No Address Provided',
         items: JSON.stringify(parsedItems),
         totalAmount: String(pricingResult.total.toFixed(2)),
+        paymentMethod: body.payment_method || null,
         source: body.source || 'Website',
         notes: body.notes || '',
         status: 'PENDING',
@@ -190,7 +191,7 @@ export class OnlineOrdersService {
         discount: 0,
         status: 'PENDING',
         order_source: 'ONLINE',
-        payment_method: 'CASH',
+        payment_method: onlineOrder.paymentMethod || 'CASH',
         payment_status: 'PENDING_COD',
         delivery_address: onlineOrder.customerAddress,
         items: {
@@ -503,7 +504,7 @@ export class OnlineOrdersService {
                   discount: 0,
                   status: 'COMPLETED',
                   order_source: 'ONLINE',
-                  payment_method: 'CASH',
+                  payment_method: updated.paymentMethod || 'CASH',
                   payment_status: 'PAID',
                   delivery_address: updated.customerAddress,
                   items: {
