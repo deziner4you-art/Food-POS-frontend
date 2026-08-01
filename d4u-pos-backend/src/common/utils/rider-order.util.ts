@@ -26,6 +26,8 @@ export function formatPosOrderForRider(order: any) {
     estimatedReadyAt: '',
     timePlaced: order.createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     riderAssigned: !!order.rider_id,
+    claimedByRiderId: order.rider_id ?? null,
+    claimedByRiderName: order.rider?.name ?? null,
     feedback: null,
     delivery: order.delivery_info,
     createdAt: order.createdAt,

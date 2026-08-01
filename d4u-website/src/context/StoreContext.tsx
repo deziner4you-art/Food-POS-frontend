@@ -82,6 +82,7 @@ interface StoreContextValue {
   campaigns: any[];
   settings: any;
   orderUpdate: any;
+  riderPosition: { orderId: number; lat: number; lng: number } | null;
 
   // Stitch-shaped views over the real data above — for pages ported from
   // the Stitch reference project's prop shapes.
@@ -114,7 +115,7 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
     return saved ? Number(saved) : null;
   });
   const [cart, setCart] = useState<CartItem[]>([]);
-  const { foodItems, banners, campaigns, settings, orderUpdate } = useStoreData(storeId);
+  const { foodItems, banners, campaigns, settings, orderUpdate, riderPosition } = useStoreData(storeId);
 
   const [loggedInUser, setLoggedInUser] = useState<CustomerProfile | null>(() => {
     const saved = localStorage.getItem('d4u_web_user');
@@ -265,6 +266,7 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       campaigns,
       settings,
       orderUpdate,
+      riderPosition,
       products,
       categories,
       categoryGroups,
@@ -282,7 +284,7 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       kioskMode,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, products, categories, categoryGroups, heroSlides, promotions, cart, loggedInUser, kioskMode],
+    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, riderPosition, products, categories, categoryGroups, heroSlides, promotions, cart, loggedInUser, kioskMode],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

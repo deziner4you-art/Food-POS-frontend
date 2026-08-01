@@ -37,6 +37,10 @@ export function useStoreData(storeId: number | null) {
   const [settings, setSettings] = useState<any>(null);
   const socketRef = useRef<Socket | null>(null);
   const [orderUpdate, setOrderUpdate] = useState<any>(null);
+  // Rider position broadcast by RiderService.updateRiderGps — same simulated
+  // coordinate scheme already driving the POS delivery map, just also
+  // exposed here so TrackOrderPage can render it. { orderId, lat, lng }.
+  const [riderPosition, setRiderPosition] = useState<{ orderId: number; lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     if (!storeId) return;
@@ -124,11 +128,15 @@ export function useStoreData(storeId: number | null) {
       setOrderUpdate(updatedOrder);
     });
 
+    socket.on('gps_update', (data: { orderId: number; lat: number; lng: number }) => {
+      setRiderPosition(data);
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
   }, [storeId]);
 
-  return { foodItems, banners, campaigns, settings, socket: socketRef.current, orderUpdate };
+  return { foodItems, banners, campaigns, settings, socket: socketRef.current, orderUpdate, riderPosition };
 }

@@ -284,6 +284,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [time, setTime] = useState(new Date())
   const [dayClosePin, setDayClosePin] = useState('')
   const [pendingLastDaySettlements, setPendingLastDaySettlements] = useState<any[]>([])
+  // Recently-settled deliveries, kept visible instead of vanishing the
+  // instant Settle Cash succeeds — so the cashier sees "Completed", not the
+  // order silently disappearing. Bounded so this never grows unbounded over
+  // a long shift; not persisted, matches activeDeliveries' own lifetime.
+  const [completedDeliveries, setCompletedDeliveries] = useState<any[]>([])
 
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH' | 'SELECT_VARIANT' | 'ADD_ONS'>('NONE');
@@ -656,17 +661,27 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         return prev;
       });
 
-      if (['DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'DELIVERED', 'PAID', 'SETTLED'].includes(order.status)) {
+      // KITCHEN_PREPARING/READY: the only reliable, device-independent signal
+      // that a delivery card should leave PENDING_CHEF — broadcast directly by
+      // KotsService.updateKotStatus the instant a KOT for this order changes
+      // in the kitchen, regardless of whether any KDS/TV Board tab is open
+      // anywhere. Without this, the card only ever advanced via a local
+      // Dexie (db.kots) watcher that depends on KDS happening to be open in a
+      // tab on this same browser — never true when the kitchen display is a
+      // separate device, which is the normal deployment.
+      if (['KITCHEN_PREPARING', 'READY', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'DELIVERED', 'PAID', 'SETTLED'].includes(order.status)) {
         setActiveDeliveries(prev => {
           const updated = [...prev];
           const existIdx = updated.findIndex(d => d.bridgeOrderId === order.id);
           if (existIdx > -1) {
             let newStatus = order.status;
+            if (order.status === 'KITCHEN_PREPARING') newStatus = 'PREPARING';
             if (order.status === 'RIDER_ACCEPTED') newStatus = 'ON_WAY';
             if (order.status === 'PICKED_UP') newStatus = 'ON_WAY';
             if (order.status === 'DELIVERED' || order.status === 'PAID') newStatus = 'DELIVERED';
-            if (newStatus !== updated[existIdx].status) {
-              updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: 'Active Rider' };
+            const riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : (newStatus === 'PREPARING' ? 'Chef Preparing' : 'Active Rider');
+            if (newStatus !== updated[existIdx].status || riderLabel !== updated[existIdx].rider) {
+              updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: riderLabel };
             }
           }
           return updated;
@@ -675,6 +690,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         // Also update pendingLastDaySettlements if it matches an old order being settled
         if (order.status === 'SETTLED') {
           setPendingLastDaySettlements(prev => prev.filter(d => d.bridgeOrderId !== order.id));
+          // Covers the case where a DIFFERENT terminal pressed Settle Cash —
+          // that terminal's own click handler already moved its card to
+          // completedDeliveries; this terminal only heard about it via the
+          // socket broadcast, so it must do the same move here to stay in
+          // sync (same "land on Completed instead of vanishing" fix).
+          setActiveDeliveries(prev => {
+            const settledCard = prev.find(d => d.bridgeOrderId === order.id);
+            if (!settledCard) return prev;
+            setCompletedDeliveries(cPrev => [{ ...settledCard, status: 'SETTLED' }, ...cPrev].slice(0, 20));
+            return prev.filter(d => d.bridgeOrderId !== order.id);
+          });
         }
       }
     };
@@ -2451,7 +2477,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                         <span className={`delivery-status ${del.status === 'OUT_FOR_DELIVERY' ? 'on-way status-pulse' : del.status === 'KITCHEN_PREPARING' ? 'preparing' : del.status === 'DISPATCHED' ? 'dispatched' : del.status === 'ONLINE_ORDER_RECEIVED' ? 'bg-slate-700 text-slate-300' : 'delivered'}`}>
-                          {del.status === 'WAITING_CASH_SETTLEMENT' ? 'Delivered - Settlement Pending' : del.status.replace(/_/g, ' ')}
+                          {del.status === 'WAITING_CASH_SETTLEMENT' ? 'Delivered - Settlement Pending' : del.status === 'SETTLED' ? 'Completed' : del.status.replace(/_/g, ' ')}
                         </span>
                       </div>
                     </div>
@@ -2546,6 +2572,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                     if (res.ok) {
                                       setActiveDeliveries(prev => prev.filter(o => o.id !== del.id));
                                       setPendingLastDaySettlements(prev => prev.filter(o => o.bridgeOrderId !== del.bridgeOrderId));
+                                      // Land on "Completed" instead of vanishing — keeps the cashier's
+                                      // own view in sync with what the rider and website show at this
+                                      // same moment (see RC5/RC6 in the rider workflow plan).
+                                      setCompletedDeliveries(prev => [{ ...del, status: 'SETTLED' }, ...prev].slice(0, 20));
                                       setToast({ message: 'Cash Settled & Ledger Updated!', type: 'success' });
                                     } else {
                                       const data = await res.json().catch(() => ({}));
@@ -2608,6 +2638,26 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     </div>
                   </div>
                 ))}
+
+                {completedDeliveries.length > 0 && (
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                    <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                      Recently Completed
+                    </div>
+                    {completedDeliveries.map(del => (
+                      <div key={`completed-${del.id}`} className="delivery-card" style={{ opacity: 0.7 }}>
+                        <div className="delivery-card-header">
+                          <div>
+                            <div className="delivery-card-title">Order #{del.id}</div>
+                            <div className="delivery-card-subtitle">{del.rider}</div>
+                          </div>
+                          <span className="delivery-status delivered">Completed</span>
+                        </div>
+                        <div className="delivery-address"><MapPin size={14} /><span>{del.address}</span></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             {(() => {

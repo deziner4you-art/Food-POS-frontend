@@ -222,7 +222,7 @@ export default function ActiveRideView({
                 </div>
                 {activeOrder?.bridgeStatus === 'SETTLED' ? (
                   <div className="w-full bg-accent-green text-slate-900 font-bold py-4 rounded-xl shadow-lg text-center flex items-center justify-center gap-2">
-                    Settled by Cashier
+                    Completed — Settled by Cashier
                   </div>
                 ) : (
                   <div className="w-full bg-slate-950 text-slate-400 font-bold py-4 rounded-xl shadow-inner text-center border border-slate-100/50">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DeliveryStatus, DeliveryOrder, SavedCompletedMission, RiderStats } from './types';
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 import { generateGridPath } from './utils';
@@ -28,7 +28,13 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewMode>('login');
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [status, setStatus] = useState<DeliveryStatus>('SEARCHING');
-  
+  // Mirrors `status` for the socket effect below to read without being a
+  // dependency of it — the effect intentionally does not re-subscribe on
+  // every status change (that would disconnect/reconnect the socket on
+  // every ACCEPTED/ARRIVED_REST/PICKED_UP/DELIVERED transition mid-delivery).
+  const statusRef = useRef<DeliveryStatus>('SEARCHING');
+  useEffect(() => { statusRef.current = status; }, [status]);
+
   // Rider Auth States
   const [riderStoreId, setRiderStoreId] = useState<number | null>(null);
   const [riderName, setRiderName] = useState<string>('');
@@ -236,7 +242,21 @@ export default function App() {
 
       // 3. Sync active order updates
       if (activeOrder && order.id === activeOrder.id) {
-        setActiveOrder(prev => prev ? { ...prev, estimatedReadyAt: order.estimatedReadyAt, bridgeStatus: order.status } : null);
+        // If this order is still just an unaccepted offer and another rider's
+        // claim landed first, drop it instead of leaving a dead offer on
+        // screen — RiderService.claimOrder is the atomic lock; this is the
+        // client-side reaction to losing that race.
+        const claimedByOther = order.claimedByRiderId != null && String(order.claimedByRiderId) !== String(riderId);
+        if (statusRef.current === 'OFFERED' && claimedByOther) {
+          const { toast } = require('react-hot-toast');
+          toast.error('Order was accepted by another rider.');
+          setActiveOrder(null);
+          setStatus(isOnline ? 'SEARCHING' : 'OFFLINE');
+          setActivePath([]);
+          setCurrentPathIndex(0);
+        } else {
+          setActiveOrder(prev => prev ? { ...prev, estimatedReadyAt: order.estimatedReadyAt, bridgeStatus: order.status } : null);
+        }
       }
 
       // 4. Handle settlements
@@ -260,12 +280,44 @@ export default function App() {
     setCurrentView('map');
   };
 
-  const handleAcceptOrder = () => {
+  const handleAcceptOrder = async () => {
     if (!activeOrder) return;
+    // Atomic server-side claim: whichever rider's request lands first wins
+    // (RiderService.claimOrder), every other online rider trying to accept
+    // the same order gets a 409 and their local offer is dropped. Without
+    // this, any idle rider whose socket happened to receive the same
+    // order_updated event could accept the same order — a client-side race
+    // with no server lock.
+    try {
+      const res = await fetch(`${BACKEND_URL}/rider-orders/${activeOrder.id}/claim`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}`,
+        },
+        body: JSON.stringify({ riderId, riderName }),
+      });
+      if (!res.ok) {
+        const { toast } = require('react-hot-toast');
+        if (res.status === 409) {
+          toast.error('Order already taken by another rider.');
+        } else {
+          toast.error('Could not accept this order. Please try again.');
+        }
+        handleDeclineOrder();
+        return;
+      }
+    } catch {
+      const { toast } = require('react-hot-toast');
+      toast.error('Network error — could not accept this order.');
+      handleDeclineOrder();
+      return;
+    }
+
     const currentSpot = driverCoords || { x: 30, y: 65 };
     const pickupPath = generateGridPath(
-      currentSpot.x, currentSpot.y, 
-      activeOrder.restaurantX, activeOrder.restaurantY, 
+      currentSpot.x, currentSpot.y,
+      activeOrder.restaurantX, activeOrder.restaurantY,
       'pickup'
     );
     setActivePath(pickupPath);

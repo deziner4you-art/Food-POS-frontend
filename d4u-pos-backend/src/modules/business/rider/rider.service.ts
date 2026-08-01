@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
@@ -41,7 +41,8 @@ export class RiderService {
       orderBy: { id: 'desc' },
       include: {
         customer: true,
-        items: { include: { product: true } }
+        items: { include: { product: true } },
+        rider: true,
       }
     });
 
@@ -94,6 +95,52 @@ export class RiderService {
       this.gateway.broadcast('gps_update', { orderId, lat, lng });
     }
     return { success: true };
+  }
+
+  // Atomic claim lock: whichever rider's request lands first wins. Every
+  // other rider's identical request then matches 0 rows in the conditional
+  // updateMany (WHERE claimedByRiderId/rider_id IS NULL) and gets a 409 —
+  // this is what makes "any online rider can grab any order" safe instead
+  // of a client-side race. Mirrors the existing "try OnlineOrder first, fall
+  // back to Order" pattern already used by updateRiderGps/getRiderGps above.
+  // Order.rider_id (pre-existing) is reused for POS-native delivery orders
+  // instead of adding a duplicate column there.
+  async claimOrder(id: number, riderId: number, riderName?: string) {
+    const onlineClaim = await this.prisma.onlineOrder.updateMany({
+      where: { id, claimedByRiderId: null },
+      data: { claimedByRiderId: riderId, claimedByRiderName: riderName || null },
+    });
+    if (onlineClaim.count > 0) {
+      const updated = await this.prisma.onlineOrder.findUniqueOrThrow({ where: { id } });
+      this.gateway.broadcast('order_updated', updated, `store_${updated.store_id}`);
+      return { success: true, order: updated };
+    }
+
+    const existingOnline = await this.prisma.onlineOrder.findUnique({ where: { id } });
+    if (existingOnline) {
+      throw new ConflictException('Already claimed by another rider.');
+    }
+
+    const posClaim = await this.prisma.order.updateMany({
+      where: { id, rider_id: null },
+      data: { rider_id: riderId },
+    });
+    if (posClaim.count > 0) {
+      const updated = await this.prisma.order.findUniqueOrThrow({
+        where: { id },
+        include: { customer: true, items: { include: { product: true } }, rider: true },
+      });
+      const formatted = formatPosOrderForRider(updated);
+      this.gateway.broadcast('order_updated', formatted, `store_${updated.store_id}`);
+      return { success: true, order: formatted };
+    }
+
+    const existingPos = await this.prisma.order.findUnique({ where: { id } });
+    if (existingPos) {
+      throw new ConflictException('Already claimed by another rider.');
+    }
+
+    throw new NotFoundException('Order not found.');
   }
 
   async getRiderGps(orderId: string) {

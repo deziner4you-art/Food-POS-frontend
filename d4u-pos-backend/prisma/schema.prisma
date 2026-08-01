@@ -1074,6 +1074,16 @@ model OnlineOrder {
   estimatedReadyAt String   @default("")
   timePlaced       String
   riderAssigned    Boolean  @default(false)
+  // Atomic claim lock: the first rider to PATCH /rider-orders/:id/claim wins
+  // (RiderService.claimOrder does a conditional updateMany WHERE
+  // claimedByRiderId IS NULL); every other rider's identical request then
+  // matches 0 rows and gets a 409. Nullable/optional so every pre-existing
+  // row stays valid without a backfill. claimedByRiderName is a denormalized
+  // snapshot (no Rider model exists — riders are Users) purely so the POS
+  // delivery card and the rider app can display who has the order without
+  // an extra join.
+  claimedByRiderId   Int?
+  claimedByRiderName String?
   feedback         Json?
   delivery         Json?
   createdAt        DateTime @default(now())

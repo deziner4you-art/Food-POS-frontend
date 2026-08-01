@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
 import { RequirePermissions } from '../../../common/decorators';
 import { RiderService } from './rider.service';
-import { UpdateGpsDto } from './dto';
+import { UpdateGpsDto, ClaimOrderDto } from './dto';
 
 @Controller('rider')
 export class RiderController {
@@ -28,5 +28,11 @@ export class RiderOrdersController {
   @Get()
   getRiderOrders(@Query('store_id') storeId: string) {
     return this.service.getRiderOrders(storeId);
+  }
+
+  @RequirePermissions('system.view')
+  @Patch(':id/claim')
+  claimOrder(@Param('id') id: string, @Body() body: ClaimOrderDto) {
+    return this.service.claimOrder(Number(id), Number(body.riderId), body.riderName);
   }
 }

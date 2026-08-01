@@ -18,7 +18,7 @@ const STATUS_INDEX: Record<string, number> = {
 };
 
 export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
-  const { orderUpdate } = useStore();
+  const { orderUpdate, riderPosition } = useStore();
   const [trackInput, setTrackInput] = useState(activeOrder?.id ? String(activeOrder.id) : '');
   const [result, setResult] = useState<any>(activeOrder || null);
   const [error, setError] = useState('');
@@ -95,6 +95,17 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
                 <span className="text-xs font-black text-stitch-accent">${result.totalAmount}</span>
               </div>
             </div>
+
+            {currentStep === 4 && riderPosition && String(riderPosition.orderId) === String(result.id) && (
+              <div className="relative w-full h-28 rounded-2xl overflow-hidden border border-stitch-border bg-stitch-surface">
+                <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle, var(--stitch-border, #888) 1px, transparent 1px)', backgroundSize: '14px 14px' }} />
+                <div
+                  className="absolute w-3 h-3 rounded-full bg-stitch-success shadow-[0_0_0_4px_rgba(0,0,0,0.05)] animate-pulse transition-all duration-500"
+                  style={{ top: `calc(${riderPosition.lat}% - 6px)`, left: `calc(${riderPosition.lng}% - 6px)` }}
+                />
+                <span className="absolute bottom-2 left-2 text-[9px] font-bold text-stitch-muted uppercase tracking-widest">Live tracking — rider on the way</span>
+              </div>
+            )}
 
             <div className="space-y-3">
               {steps.map((step, i) => {
