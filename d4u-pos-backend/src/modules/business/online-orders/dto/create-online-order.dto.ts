@@ -31,4 +31,13 @@ export class CreateOnlineOrderDto {
   // OnlineOrder.paymentMethod for what this becomes.
   @IsOptional()
   payment_method?: string;
+
+  // Fulfillment choice from website/app checkout: DELIVERY, PICKUP, or
+  // DINE_IN (QR-at-table). Stored on OnlineOrder.type, which previously
+  // just hardcoded the literal string "Online" and was never read/matched
+  // anywhere expecting that value -- see OnlineOrder.type for what this
+  // becomes, and KotsService.getActiveKots/getKotsByDay for how the POS
+  // Kitchen Display turns it into a Walk-in/Pickup/Online territory label.
+  @IsOptional()
+  order_type?: string;
 }

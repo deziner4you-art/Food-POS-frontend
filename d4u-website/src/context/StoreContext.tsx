@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useMemo, useEffect, type ReactNode } from 'react';
-import type { Category, CategoryGroup, CartItem, CustomerProfile, HeroSlide, Product, Promotion } from '../types';
+import type { Category, CategoryGroup, CartItem, CustomerProfile, HeroSlide, Product, Promotion, ProductVariant } from '../types';
 import { BACKEND_URL, useStoreData, useStores } from '../hooks/useStoreData';
 
 // Maps D4U's real catalog/banner/campaign shapes onto Stitch's UI-facing
@@ -23,7 +23,25 @@ function mapFoodItemToProduct(fi: any): Product {
     tags: fi.tag ? [fi.tag] : [],
     isAvailable: true,
     stockCount: 999,
-    modifierGroups: fi.modifierGroups || undefined,
+    // Raw shape from the catalog API is the ProductModifierGroup join row
+    // ({modifierGroup: {id, name, is_required, min_selection, max_selection,
+    // modifiers: [{id, name, additional_price}]}}) -- flattened here into
+    // the website's own ModifierGroup/ModifierOption naming so
+    // ProductQuickViewModal (which already expects .required/.options[].priceDelta)
+    // needs no changes to consume it.
+    modifierGroups: (fi.modifierGroups || []).map((mg: any) => ({
+      id: mg.modifierGroup?.id,
+      name: mg.modifierGroup?.name,
+      required: !!mg.modifierGroup?.is_required,
+      minSelections: mg.modifierGroup?.min_selection,
+      maxSelections: mg.modifierGroup?.max_selection,
+      options: (mg.modifierGroup?.modifiers || []).map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        priceDelta: m.additional_price || 0,
+      })),
+    })),
+    variants: (fi.variants || []).map((v: any) => ({ id: v.id, name: v.name, price: v.price })),
   };
 }
 
@@ -59,13 +77,14 @@ function mapCampaignToPromotion(c: any): Promotion {
   };
 }
 
-function makeCartItemId(product: Product, selectedModifiers: { [groupId: string]: any[] }): string {
+function makeCartItemId(product: Product, selectedModifiers: { [groupId: string]: any[] }, selectedVariant?: ProductVariant): string {
   const modifierIds = Object.values(selectedModifiers)
     .flat()
     .map((o: any) => o.id)
     .sort()
     .join(',');
-  return modifierIds ? `${product.id}::${modifierIds}` : product.id;
+  const base = selectedVariant ? `${product.id}-${selectedVariant.id}` : product.id;
+  return modifierIds ? `${base}::${modifierIds}` : base;
 }
 
 export type AppViewMode = 'desktop' | 'tablet' | 'mobile' | 'kiosk';
@@ -93,7 +112,7 @@ interface StoreContextValue {
   promotions: Promotion[];
 
   cart: CartItem[];
-  addToCart: (product: Product, selectedModifiers?: { [groupId: string]: any[] }, quantity?: number, specialInstructions?: string) => void;
+  addToCart: (product: Product, selectedModifiers?: { [groupId: string]: any[] }, quantity?: number, specialInstructions?: string, selectedVariant?: ProductVariant) => void;
   increaseQuantity: (cartItemId: string) => void;
   decreaseQuantity: (cartItemId: string) => void;
   removeFromCart: (cartItemId: string) => void;
@@ -139,12 +158,13 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
     selectedModifiers: { [groupId: string]: any[] } = {},
     quantity = 1,
     specialInstructions = '',
+    selectedVariant?: ProductVariant,
   ) => {
-    const cartItemId = makeCartItemId(product, selectedModifiers);
+    const cartItemId = makeCartItemId(product, selectedModifiers, selectedVariant);
     const modifierTotal = Object.values(selectedModifiers)
       .flat()
       .reduce((sum: number, opt: any) => sum + (opt.priceDelta || 0), 0);
-    const unitPrice = product.price + modifierTotal;
+    const unitPrice = (selectedVariant ? selectedVariant.price : product.price) + modifierTotal;
 
     setCart((prev) => {
       const idx = prev.findIndex((c) => c.cartItemId === cartItemId);
@@ -161,6 +181,7 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
           product,
           quantity,
           selectedModifiers,
+          selectedVariant,
           specialInstructions,
           unitPrice,
           totalPrice: unitPrice * quantity,

@@ -95,7 +95,13 @@ export default function TvBoard() {
           const mapped = data.map((k: any) => ({
             id: k.id,
             orderId: k.order_id,
-            type: k.order?.orderType || 'Walk-in',
+            // Order.orderType doesn't exist -- the real field is
+            // order_source ("WALKIN"/"ONLINE"/etc). Reading the wrong field
+            // meant this was always undefined, so the `|| 'Walk-in'`
+            // fallback fired for every KOT regardless of true source.
+            type: k.order?.order_source === 'ONLINE'
+              ? (k.order?.onlineOrder?.type === 'PICKUP' ? 'Pickup' : 'Online')
+              : 'Walk-in',
             customer: k.order?.customer?.name || '',
             customerPhone: k.order?.customer?.phone || '',
             items: k.items ? JSON.stringify(k.items) : '[]',

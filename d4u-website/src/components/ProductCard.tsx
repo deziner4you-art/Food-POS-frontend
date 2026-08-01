@@ -19,6 +19,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onToggleFavorite,
   cartItemCount = 0,
 }) => {
+  const hasVariants = !!product.variants && product.variants.length > 0;
+  const hasModifiers = !!product.modifierGroups && product.modifierGroups.length > 0;
+  const needsCustomization = hasVariants || hasModifiers;
+
   return (
     <div className="group bg-[#16130B] border border-white/10 hover:border-[#D4AF37]/50 rounded-2xl overflow-hidden shadow-xl transition-all duration-300 hover:-translate-y-1.5 flex flex-col justify-between gold-glow-hover">
       {/* Top Image Container */}
@@ -118,21 +122,30 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         {/* Footer Price & Add To Cart Button */}
         <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
           <div>
-            <div className="text-xs text-gray-400 font-medium">Price</div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-lg font-extrabold text-[#D4AF37] font-display">
-                ${product.price.toFixed(2)}
-              </span>
-              {product.originalPrice && (
-                <span className="text-xs text-gray-500 line-through">
-                  ${product.originalPrice.toFixed(2)}
-                </span>
-              )}
-            </div>
+            {hasVariants ? (
+              <>
+                <div className="text-xs text-gray-400 font-medium">&nbsp;</div>
+                <span className="text-lg font-extrabold text-[#D4AF37] font-display">Choose Size</span>
+              </>
+            ) : (
+              <>
+                <div className="text-xs text-gray-400 font-medium">Price</div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-lg font-extrabold text-[#D4AF37] font-display">
+                    ${product.price.toFixed(2)}
+                  </span>
+                  {product.originalPrice && (
+                    <span className="text-xs text-gray-500 line-through">
+                      ${product.originalPrice.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           <button
-            onClick={() => onAddToCart(product)}
+            onClick={() => (needsCustomization ? onQuickView(product) : onAddToCart(product))}
             disabled={!product.isAvailable || product.stockCount === 0}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
               cartItemCount > 0

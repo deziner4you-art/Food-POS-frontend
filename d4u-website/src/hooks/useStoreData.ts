@@ -82,6 +82,7 @@ export function useStoreData(storeId: number | null) {
           preparationTime: '10 mins',
           calories: 500,
           variants: p.variants || [],
+          modifierGroups: p.modifierGroups || [],
           categories: p.categories || [],
         }));
 

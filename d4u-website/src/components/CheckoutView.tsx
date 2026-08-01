@@ -81,10 +81,18 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
           customer: customerName || 'Online Guest',
           customerPhone: customerPhone || '',
           customerAddress: finalAddress,
+          // Drives the POS Kitchen Display's Walk-in/Pickup/Online territory
+          // label (see KotsService.getActiveKots) -- previously this choice
+          // was made in this exact form but never left the browser.
+          order_type: orderType === 'pickup' ? 'PICKUP' : orderType === 'dine_in' ? 'DINE_IN' : 'DELIVERY',
           items: cart.map((item) => ({
             product_id: item.product.id,
+            variant_id: item.selectedVariant?.id,
             quantity: item.quantity,
             price: item.unitPrice,
+            special_inst: Object.values(item.selectedModifiers || {}).flat().length > 0
+              ? Object.values(item.selectedModifiers || {}).flat().map((m: any) => `+ ${m.name}`).join(', ')
+              : undefined,
           })),
           notes: '',
           payment_method: paymentMethod,
@@ -276,15 +284,28 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
             </h3>
 
             <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-              {cart.map((item) => (
+              {cart.map((item) => {
+                const modifierNames = Object.values(item.selectedModifiers || {}).flat().map((m: any) => m.name);
+                return (
                 <div key={item.cartItemId} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-md bg-[#1A1A1D] text-[#D4AF37] font-bold flex items-center justify-center">{item.quantity}x</span>
-                    <span className="text-gray-300 font-medium truncate max-w-[150px]">{item.product.name}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-5 h-5 rounded-md bg-[#1A1A1D] text-[#D4AF37] font-bold flex items-center justify-center flex-shrink-0">{item.quantity}x</span>
+                    <div className="min-w-0">
+                      <span className="text-gray-300 font-medium truncate max-w-[150px] block">
+                        {item.product.name}{item.selectedVariant && ` (${item.selectedVariant.name})`}
+                      </span>
+                      {modifierNames.length > 0 && (
+                        <span className="text-[10px] text-gray-500 truncate max-w-[150px] block">{modifierNames.join(', ')}</span>
+                      )}
+                      {item.specialInstructions && (
+                        <span className="text-[10px] text-[#D4AF37] italic truncate max-w-[150px] block">"{item.specialInstructions}"</span>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-white font-semibold">${item.totalPrice.toFixed(2)}</span>
+                  <span className="text-white font-semibold flex-shrink-0">${item.totalPrice.toFixed(2)}</span>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="border-t border-white/10 pt-3 space-y-2 text-xs text-gray-300">

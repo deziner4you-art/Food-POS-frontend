@@ -30,6 +30,7 @@ export interface OfflineProduct {
   isApproved?: boolean;
   itemCode?: string;
   variants?: any[];
+  modifierGroups?: any[];
   categories?: any[];
 }
 

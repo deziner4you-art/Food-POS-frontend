@@ -294,6 +294,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH' | 'SELECT_VARIANT' | 'ADD_ONS'>('NONE');
   const [pendingVariantProduct, setPendingVariantProduct] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'SIZES' | 'TOPPINGS'>('SIZES');
+  // Accumulated Extra Toppings picks for the SELECT_VARIANT modal, keyed by
+  // modifier group id -- committed into the cart line together with
+  // whichever size the cashier picks (or on its own if the product has no
+  // variants at all), rather than each topping becoming its own cart line.
+  const [selectedModifiers, setSelectedModifiers] = useState<{ [groupId: number]: { modifierId: number; name: string; price: number }[] }>({});
   const [waiterPinModalOpen, setWaiterPinModalOpen] = useState(false);
   const [generatedWaiterPin, setGeneratedWaiterPin] = useState('');
   const [isGeneratingTabletLink, setIsGeneratingTabletLink] = useState(false);
@@ -946,6 +951,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 desc: p.sku || 'No description',
                 img: p.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80',
                 variants: p.variants,
+                // Flattened from the raw ProductModifierGroup join rows into
+                // {id, name, is_required, min_selection, max_selection,
+                // modifiers} so the Extra Toppings tab doesn't need to know
+                // about the join-table shape.
+                modifierGroups: (p.modifierGroups || []).map((mg: any) => ({
+                  id: mg.modifierGroup?.id,
+                  name: mg.modifierGroup?.name,
+                  is_required: mg.modifierGroup?.is_required,
+                  min_selection: mg.modifierGroup?.min_selection,
+                  max_selection: mg.modifierGroup?.max_selection,
+                  modifiers: mg.modifierGroup?.modifiers || [],
+                })),
                 categories: p.categories,
                 isApproved: p.status === 'APPROVED'
               })));
@@ -1086,8 +1103,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const getProductDiscount = (product: any) => cartEngine.getProductDiscount(product, activeCampaigns, currentUser?.store_id);
 
-  const addToCart = (product: any, variant?: any) => {
-    setCart(prev => cartEngine.addToCart(prev, product, variant));
+  const addToCart = (product: any, variant?: any, modifiers?: import('./pos/types').CartModifier[]) => {
+    setCart(prev => cartEngine.addToCart(prev, product, variant, modifiers));
   }
 
   const updateQty = (id: any, delta: number) => {
@@ -1315,7 +1332,13 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         body: JSON.stringify({
           store_id: currentUser.store_id,
           created_by: 0,
-          items: cart.map((i: any) => ({ product_id: i.id || 1, quantity: i.qty, price: i.price, special_inst: '' })),
+          items: cart.map((i: any) => ({
+            product_id: i.id || 1,
+            variant_id: i.variant_id,
+            quantity: i.qty,
+            price: i.price,
+            special_inst: i.modifiers?.length > 0 ? i.modifiers.map((m: any) => `+ ${m.name}`).join(', ') : '',
+          })),
           order_source: 'WAITER',
           table_no: tableNumber,
           terminal_session_id: currentUser.sessionId,
@@ -1836,9 +1859,21 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </div>
               </div>
             )}
+            {/* Product search -- filter logic already existed (searchQuery/setSearchQuery
+                below), there was simply no input for the cashier to type into. */}
+            <div style={{ position: 'relative', marginBottom: '12px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search products by name..."
+                style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', color: 'white', fontSize: '0.85rem' }}
+              />
+            </div>
             {/* TOP ROW: Main Navigation */}
             <div className="nav-categories" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px' }}>
-              <button 
+              <button
                 className={`nav-category-btn ${activeCategoryId === null && activeCategoryGroupId === null ? 'active' : ''}`}
                 onClick={() => { setActiveCategoryGroupId(null); setActiveCategoryId(null); setCategoryInitialized(true); }}
               >
@@ -1948,8 +1983,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   onClick={() => {
                     if (prod.isApproved === false) {
                       setToast({ message: 'This item requires Admin approval before sale.', type: 'error' });
-                    } else if (prod.variants && prod.variants.length > 0) {
+                    } else if ((prod.variants && prod.variants.length > 0) || (prod.modifierGroups && prod.modifierGroups.length > 0)) {
                       setPendingVariantProduct(prod);
+                      setSelectedModifiers({});
                       setModalType('SELECT_VARIANT');
                     } else {
                       addToCart(prod);
@@ -2986,39 +3022,67 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         )}
 
         {/* SELECT VARIANT MODAL */}
-        {modalType === 'SELECT_VARIANT' && pendingVariantProduct && (
+        {modalType === 'SELECT_VARIANT' && pendingVariantProduct && (() => {
+          const hasVariants = pendingVariantProduct.variants && pendingVariantProduct.variants.length > 0;
+          const modifierGroups: any[] = pendingVariantProduct.modifierGroups || [];
+          const hasModifiers = modifierGroups.length > 0;
+          const flattenedModifiers = (): import('./pos/types').CartModifier[] =>
+            modifierGroups.flatMap(g => (selectedModifiers[g.id] || []).map(sel => ({
+              groupId: g.id, groupName: g.name, modifierId: sel.modifierId, name: sel.name, price: sel.price,
+            })));
+          const toggleModifier = (group: any, modifier: any) => {
+            setSelectedModifiers(prev => {
+              const current = prev[group.id] || [];
+              const exists = current.some(m => m.modifierId === modifier.id);
+              if (group.is_required) {
+                // Radio: required groups always resolve to exactly one pick.
+                return { ...prev, [group.id]: [{ modifierId: modifier.id, name: modifier.name, price: modifier.additional_price || 0 }] };
+              }
+              if (exists) {
+                return { ...prev, [group.id]: current.filter(m => m.modifierId !== modifier.id) };
+              }
+              if (group.max_selection && current.length >= group.max_selection) return prev;
+              return { ...prev, [group.id]: [...current, { modifierId: modifier.id, name: modifier.name, price: modifier.additional_price || 0 }] };
+            });
+          };
+          const closeModal = () => { setModalType('NONE'); setPendingVariantProduct(null); setSelectedModifiers({}); };
+
+          return (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(5px)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div className="modal-content animate-slide-up" style={{ width: '600px', height: '80%', display: 'flex', flexDirection: 'column' }}>
               <div className="modal-header" style={{ flexShrink: 0, alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                   <h2>Select Options for {pendingVariantProduct.name}</h2>
                 </div>
-                <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setPendingVariantProduct(null); }} />
-              </div>
-              
-              <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '10px' }}>
-                <button 
-                  onClick={() => setActiveTab('SIZES')}
-                  style={{ flex: 1, padding: '10px', background: activeTab === 'SIZES' ? 'var(--accent-yellow)' : 'transparent', color: activeTab === 'SIZES' ? 'black' : 'var(--text-muted)', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
-                >
-                  Pizza Sizes
-                </button>
-                <button 
-                  onClick={() => setActiveTab('TOPPINGS')}
-                  style={{ flex: 1, padding: '10px', background: activeTab === 'TOPPINGS' ? 'var(--accent-yellow)' : 'transparent', color: activeTab === 'TOPPINGS' ? 'black' : 'var(--text-muted)', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
-                >
-                  Extra Toppings
-                </button>
+                <X size={24} style={{cursor:'pointer'}} onClick={closeModal} />
               </div>
 
+              {hasVariants && hasModifiers && (
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '10px' }}>
+                  <button
+                    onClick={() => setActiveTab('SIZES')}
+                    style={{ flex: 1, padding: '10px', background: activeTab === 'SIZES' ? 'var(--accent-yellow)' : 'transparent', color: activeTab === 'SIZES' ? 'black' : 'var(--text-muted)', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
+                  >
+                    Choose Size
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('TOPPINGS')}
+                    style={{ flex: 1, padding: '10px', background: activeTab === 'TOPPINGS' ? 'var(--accent-yellow)' : 'transparent', color: activeTab === 'TOPPINGS' ? 'black' : 'var(--text-muted)', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
+                  >
+                    Extra Toppings
+                  </button>
+                </div>
+              )}
+
               <div style={{ padding: '10px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {activeTab === 'SIZES' && pendingVariantProduct.variants.map((v: any) => (
-                  <button 
-                    key={v.id} 
-                    className="btn-action" 
+                {hasVariants && (!hasModifiers || activeTab === 'SIZES') && pendingVariantProduct.variants.map((v: any) => (
+                  <button
+                    key={v.id}
+                    className="btn-action"
                     onClick={() => {
-                      addToCart(pendingVariantProduct, v);
+                      addToCart(pendingVariantProduct, v, flattenedModifiers());
                       setToast({ message: `${v.name} added`, type: 'success' });
+                      closeModal();
                     }}
                     style={{ padding: '8px 15px', background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontSize: '1rem', fontWeight: 'bold', borderRadius: '10px', width: '100%', display: 'flex', alignItems: 'center', gap: '15px' }}
                   >
@@ -3032,36 +3096,69 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   </button>
                 ))}
 
-                {activeTab === 'TOPPINGS' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    {allProducts.filter(p => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).length === 0 && (
-                      <p style={{ color: 'var(--text-muted)', gridColumn: '1 / -1', textAlign: 'center', padding: '20px 0' }}>No Extra Toppings found. Please create an "Extra Toppings" category in the Admin panel and add products to it.</p>
-                    )}
-                    {allProducts.filter(p => p.categories?.some((c:any) => c.name.toLowerCase().includes('topping'))).map(topping => (
-                      <div key={topping.id} 
-                        className="product-card"
-                        onClick={() => { addToCart(topping); setToast({message: `${topping.name} Added`, type: 'success'}); }}
-                        style={{ cursor: 'pointer', background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '15px', textAlign: 'center' }}
-                      >
-                        <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{topping.name}</div>
-                        <div style={{ color: 'var(--accent-green)' }}>Rs. {topping.price}</div>
+                {hasModifiers && (!hasVariants || activeTab === 'TOPPINGS') && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {modifierGroups.map(group => (
+                      <div key={group.id}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{group.name}</span>
+                          {group.is_required && (
+                            <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: 'var(--accent-yellow)', background: 'rgba(250,204,21,0.1)', padding: '2px 8px', borderRadius: '10px' }}>Required</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                          {(group.modifiers || []).map((modifier: any) => {
+                            const isSelected = (selectedModifiers[group.id] || []).some(m => m.modifierId === modifier.id);
+                            return (
+                              <button
+                                key={modifier.id}
+                                onClick={() => toggleModifier(group, modifier)}
+                                style={{
+                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', textAlign: 'left',
+                                  background: isSelected ? 'rgba(250,204,21,0.15)' : 'var(--bg-panel)',
+                                  border: `1px solid ${isSelected ? 'var(--accent-yellow)' : 'var(--border-color)'}`,
+                                  color: isSelected ? 'var(--accent-yellow)' : 'white',
+                                  fontWeight: isSelected ? 'bold' : 'normal',
+                                }}
+                              >
+                                <span>{modifier.name}</span>
+                                {modifier.additional_price > 0 && <span>+Rs. {modifier.additional_price}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-              
+
               <div style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0 }}>
-                <button 
-                  onClick={() => { setModalType('NONE'); setPendingVariantProduct(null); }}
-                  style={{ width: '100%', padding: '15px', background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
-                >
-                  Done
-                </button>
+                {hasVariants ? (
+                  <button
+                    onClick={closeModal}
+                    style={{ width: '100%', padding: '15px', background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      addToCart(pendingVariantProduct, undefined, flattenedModifiers());
+                      setToast({ message: `${pendingVariantProduct.name} added`, type: 'success' });
+                      closeModal();
+                    }}
+                    style={{ width: '100%', padding: '15px', background: 'var(--accent-yellow)', color: 'black', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Add to Cart
+                  </button>
+                )}
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
       </main>
 
       {/* CART SIDEBAR */}
@@ -4060,9 +4157,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     redeem_points: redeemedPoints > 0 ? redeemedPoints : undefined,
                     items: cart.map(i => ({
                       product_id: i.id || 1,
+                      variant_id: i.variant_id,
                       quantity: i.qty,
                       price: i.price,
-                      special_inst: ''
+                      special_inst: i.modifiers?.length > 0 ? i.modifiers.map((m: any) => `+ ${m.name}`).join(', ') : ''
                     })),
                     // MARKETING-003 §9 — Order Details / Promotion Stack Explainer audit trail
                     manager_override_by: promotionOverrideActive ? (currentUser?.id || undefined) : undefined,

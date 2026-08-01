@@ -45,7 +45,11 @@ export class OnlineOrdersService {
         notes: body.notes || '',
         status: 'PENDING',
         kdsStatus: 'PENDING',
-        type: 'Online',
+        // DELIVERY/PICKUP/DINE_IN -- drives the Walk-in/Pickup/Online
+        // territory label on the POS Kitchen Display (see
+        // KotsService.getActiveKots). Previously hardcoded to "Online",
+        // which nothing else read or matched.
+        type: body.order_type || 'DELIVERY',
         timePlaced: new Date().toLocaleTimeString('en-US', {
           hour: '2-digit',
           minute: '2-digit',
@@ -204,17 +208,20 @@ export class OnlineOrdersService {
           // real cart never resolves to product_id 0 and FK-violates.
           create: itemsArr.map((i: any) => ({
             product_id: parseInt(i.product_id ?? i.id) || 0,
+            variant_id: i.variant_id ? parseInt(i.variant_id) : null,
             quantity: i.quantity ?? i.qty ?? 1,
             price: parseFloat(i.price) || 0,
             special_inst: i.special_inst || '',
           })),
         },
       },
-      include: { items: { include: { product: true } } },
+      include: { items: { include: { product: true, variant: true } } },
     });
 
     const kotItems = order.items.map((i) => ({
-      name: i.product?.name || 'Unknown item',
+      // Appends the chosen size so the chef sees "Mughlai Pizza (Medium)"
+      // on the ticket, not just the base product name.
+      name: i.variant ? `${i.product?.name || 'Unknown item'} (${i.variant.name})` : (i.product?.name || 'Unknown item'),
       qty: i.quantity,
       price: i.price,
       specialInst: i.special_inst ?? '',

@@ -66,6 +66,7 @@ export class PosOrdersService {
     redeem_points?: number;
     items: {
       product_id: number;
+      variant_id?: number;
       quantity: number;
       price: number;
       special_inst?: string;
@@ -135,13 +136,14 @@ export class PosOrdersService {
           items: {
             create: body.items.map((i) => ({
               product_id: i.product_id,
+              variant_id: i.variant_id ?? null,
               quantity: i.quantity,
               price: i.price,
               special_inst: i.special_inst ?? null,
             })),
           },
         },
-        include: { items: { include: { product: true } } },
+        include: { items: { include: { product: true, variant: true } } },
       });
 
       // Dine-in table assignment — validates the table isn't already occupied
@@ -161,7 +163,9 @@ export class PosOrdersService {
       // existing consumer of `items` only reads name/qty/price/specialInst,
       // so this is purely additive, not a breaking shape change.
       const kotItems = order.items.map((i) => ({
-        name: i.product.name,
+        // Appends the chosen size so the chef sees "Mughlai Pizza (Medium)"
+        // on the ticket, not just the base product name.
+        name: i.variant ? `${i.product.name} (${i.variant.name})` : i.product.name,
         qty: i.quantity,
         price: i.price,
         specialInst: i.special_inst ?? '',

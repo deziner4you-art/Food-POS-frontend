@@ -1,18 +1,40 @@
 import { sumLineItems } from '../utils/cartTotals';
 import type { CartLineItem } from './cartTypes';
+import type { CartModifier } from '../pos/types';
 
-/** Adds a product (optionally a specific variant) to the cart, merging into an existing line if one already matches. */
-export function addToCart(cart: CartLineItem[], product: any, variant?: any): CartLineItem[] {
+/**
+ * Adds a product (optionally a specific variant, optionally with Extra
+ * Toppings/modifiers) to the cart, merging into an existing line only when
+ * variant AND modifier selection are identical -- two different topping
+ * combos on the same size must stay separate lines, not silently merge
+ * quantities.
+ */
+export function addToCart(cart: CartLineItem[], product: any, variant?: any, modifiers?: CartModifier[]): CartLineItem[] {
+  const modifierKey = modifiers && modifiers.length > 0
+    ? modifiers.map(m => m.modifierId).sort((a, b) => a - b).join(',')
+    : '';
   const cartItemId = variant ? `${product.id}-${variant.id}` : `${product.id}`;
-  const existing = cart.find(item => (item.cartItemId || item.id) === cartItemId);
+  const fullCartItemId = modifierKey ? `${cartItemId}::${modifierKey}` : cartItemId;
+  const existing = cart.find(item => (item.cartItemId || item.id) === fullCartItemId);
   if (existing) {
     return cart.map(item =>
-      (item.cartItemId || item.id) === cartItemId ? { ...item, qty: item.qty + 1 } : item
+      (item.cartItemId || item.id) === fullCartItemId ? { ...item, qty: item.qty + 1 } : item
     );
   }
-  const priceToUse = variant ? variant.price : product.price;
-  const nameToUse = variant ? `${product.name} (${variant.name})` : product.name;
-  return [...cart, { ...product, cartItemId, name: nameToUse, price: priceToUse, variant_id: variant?.id, qty: 1 }];
+  const basePrice = variant ? variant.price : product.price;
+  const modifierTotal = (modifiers || []).reduce((sum, m) => sum + (m.price || 0), 0);
+  const priceToUse = basePrice + modifierTotal;
+  const baseName = variant ? `${product.name} (${variant.name})` : product.name;
+  const nameToUse = modifiers && modifiers.length > 0 ? `${baseName} + ${modifiers.map(m => m.name).join(', ')}` : baseName;
+  return [...cart, {
+    ...product,
+    cartItemId: fullCartItemId,
+    name: nameToUse,
+    price: priceToUse,
+    variant_id: variant?.id,
+    modifiers: modifiers && modifiers.length > 0 ? modifiers : undefined,
+    qty: 1,
+  }];
 }
 
 /** Adjusts a line's quantity by delta; the line is dropped once quantity reaches 0 (existing behavior). */

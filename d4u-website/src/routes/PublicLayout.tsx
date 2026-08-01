@@ -3,23 +3,26 @@ import { Outlet } from 'react-router-dom';
 import Header from '../components/shared/Header';
 import Footer from '../components/shared/Footer';
 import { CartDrawer } from '../components/shared/CartDrawer';
+import { ProductQuickViewModal } from '../components/ProductQuickViewModal';
 import { useStore } from '../context/StoreContext';
-import type { Promotion } from '../types';
+import type { Product, Promotion } from '../types';
 
 export interface PublicOutletContext {
   appliedCoupon: Promotion | null;
   setAppliedCoupon: (c: Promotion | null) => void;
   activeOrder: any;
   setActiveOrder: (o: any) => void;
+  setQuickViewProduct: (p: Product | null) => void;
 }
 
 export default function PublicLayout() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<Promotion | null>(null);
   const [activeOrder, setActiveOrder] = useState<any>(null);
-  const { settings, kioskMode } = useStore();
+  const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
+  const { settings, kioskMode, addToCart } = useStore();
 
-  const ctx: PublicOutletContext = { appliedCoupon, setAppliedCoupon, activeOrder, setActiveOrder };
+  const ctx: PublicOutletContext = { appliedCoupon, setAppliedCoupon, activeOrder, setActiveOrder, setQuickViewProduct };
 
   return (
     <div className="min-h-screen bg-stitch-bg text-stitch-ink flex flex-col font-sans relative selection:bg-stitch-accent selection:text-stitch-accent-ink" data-mode={kioskMode ? 'kiosk' : undefined}>
@@ -37,6 +40,16 @@ export default function PublicLayout() {
         appliedPromo={appliedCoupon}
         onRemovePromo={() => setAppliedCoupon(null)}
       />
+
+      {quickViewProduct && (
+        <ProductQuickViewModal
+          product={quickViewProduct}
+          onClose={() => setQuickViewProduct(null)}
+          onAddToCart={addToCart}
+          isFavorite={false}
+          onToggleFavorite={() => {}}
+        />
+      )}
 
       {!kioskMode && settings?.whatsappNumber && (
         <a

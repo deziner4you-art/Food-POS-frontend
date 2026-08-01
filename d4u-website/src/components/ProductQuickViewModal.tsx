@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Product, ModifierGroup, ModifierOption } from '../types';
+import { Product, ModifierGroup, ModifierOption, ProductVariant } from '../types';
 import { X, Star, Flame, Clock, Plus, Minus, Check, ShoppingBag } from 'lucide-react';
 
 interface ProductQuickViewModalProps {
@@ -9,7 +9,8 @@ interface ProductQuickViewModalProps {
     product: Product,
     selectedModifiers?: any,
     quantity?: number,
-    specialNote?: string
+    specialNote?: string,
+    selectedVariant?: ProductVariant
   ) => void;
   isFavorite: boolean;
   onToggleFavorite: (productId: string) => void;
@@ -26,6 +27,12 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
 
   const [quantity, setQuantity] = useState(1);
   const [instructions, setInstructions] = useState('');
+  // Sizes default to the first (usually smallest/cheapest) variant, same
+  // as required modifier groups defaulting below -- always a valid
+  // selection, no disabled "Add to Order" state needed.
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(
+    product.variants && product.variants.length > 0 ? product.variants[0] : undefined
+  );
   const [selectedModifiers, setSelectedModifiers] = useState<{
     [groupId: string]: ModifierOption[];
   }>(() => {
@@ -69,11 +76,11 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
     });
   });
 
-  const unitPrice = product.price + modifierTotal;
+  const unitPrice = (selectedVariant ? selectedVariant.price : product.price) + modifierTotal;
   const totalPrice = unitPrice * quantity;
 
   const handleAddToCartSubmit = () => {
-    onAddToCart(product, selectedModifiers, quantity, instructions);
+    onAddToCart(product, selectedModifiers, quantity, instructions, selectedVariant);
     onClose();
   };
 
@@ -155,6 +162,44 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
                 </span>
               ))}
             </div>
+
+            {/* Choose Size */}
+            {product.variants && product.variants.length > 0 && (
+              <div className="mt-5 space-y-2 border-t border-white/10 pt-4">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-white uppercase tracking-wider font-display">Choose Size</span>
+                  <span className="text-[10px] text-[#D4AF37] font-semibold bg-[#D4AF37]/10 px-2 py-0.5 rounded">Required</span>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {product.variants.map((variant) => {
+                    const isSelected = selectedVariant?.id === variant.id;
+                    return (
+                      <button
+                        key={variant.id}
+                        onClick={() => setSelectedVariant(variant)}
+                        className={`flex items-center justify-between p-2.5 rounded-xl border text-xs transition-all ${
+                          isSelected
+                            ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#D4AF37] font-bold'
+                            : 'bg-[#1A1A1D] border-white/10 text-gray-300 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                              isSelected ? 'border-[#D4AF37] bg-[#D4AF37] text-black' : 'border-gray-500'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                          <span>{variant.name}</span>
+                        </div>
+                        <span className="font-semibold text-gray-400">${variant.price.toFixed(2)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Modifier Groups */}
             {product.modifierGroups && product.modifierGroups.length > 0 && (

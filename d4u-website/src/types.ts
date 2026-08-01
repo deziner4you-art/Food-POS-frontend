@@ -11,6 +11,7 @@ export interface FoodItem {
   calories?: number;
   categoryGroup?: string;
   variants?: any[];
+  modifierGroups?: any[];
   categories?: any[];
 }
 
@@ -54,6 +55,12 @@ export interface ModifierGroup {
   options: ModifierOption[];
 }
 
+export interface ProductVariant {
+  id: string;
+  name: string; // e.g. "Small", "Medium", "Large"
+  price: number;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -75,6 +82,7 @@ export interface Product {
   calories?: number;
   prepTimeMinutes?: number;
   modifierGroups?: ModifierGroup[];
+  variants?: ProductVariant[];
 }
 
 export interface Category {
@@ -173,10 +181,11 @@ export interface CustomerReview {
 }
 
 export interface CartItem {
-  cartItemId: string; // unique ID for specific item + modifiers combo
+  cartItemId: string; // unique ID for specific item + modifiers + variant combo
   product: Product;
   quantity: number;
   selectedModifiers: { [groupId: string]: ModifierOption[] };
+  selectedVariant?: ProductVariant;
   specialInstructions?: string;
   unitPrice: number;
   totalPrice: number;

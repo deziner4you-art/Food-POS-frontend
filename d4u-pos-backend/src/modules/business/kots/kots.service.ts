@@ -49,7 +49,10 @@ export class KotsService {
     }
     return this.prisma.kOT.findMany({
       where,
-      include: { order: true },
+      // onlineOrder: the linked OnlineOrder row (if this KOT's Order came
+      // from the website/app) -- carries .type (DELIVERY/PICKUP/DINE_IN),
+      // which is how the frontend tells Walk-in apart from Pickup/Online.
+      include: { order: { include: { onlineOrder: true } } },
       orderBy: { id: 'asc' },
     });
   }
@@ -160,7 +163,7 @@ export class KotsService {
   async getKotsByDay(store_id: number, business_day_id: number) {
     return this.prisma.kOT.findMany({
       where: { store_id, business_day_id },
-      include: { order: true },
+      include: { order: { include: { onlineOrder: true } } },
       orderBy: { id: 'desc' },
     });
   }

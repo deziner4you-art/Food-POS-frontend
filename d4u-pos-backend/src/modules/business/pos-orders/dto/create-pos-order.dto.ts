@@ -14,6 +14,14 @@ export class PosOrderItemDto {
   @IsNotEmpty()
   product_id: number;
 
+  // Which size the cashier picked (see ProductVariant) -- optional, and
+  // easy to silently lose since the global ValidationPipe's whitelist
+  // strips any field not declared here, even though PosOrdersService
+  // itself already knew what to do with it.
+  @IsNumber()
+  @IsOptional()
+  variant_id?: number;
+
   @IsNumber()
   @IsNotEmpty()
   quantity: number;

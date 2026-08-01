@@ -88,7 +88,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, applied
                 <div className="flex-1 min-w-0 space-y-1">
                   <div className="flex items-start justify-between gap-2">
                     <h4 className="text-xs font-bold text-white truncate font-display">
-                      {item.product.name}
+                      {item.product.name}{item.selectedVariant && ` (${item.selectedVariant.name})`}
                     </h4>
                     <button
                       onClick={() => removeFromCart(item.cartItemId)}

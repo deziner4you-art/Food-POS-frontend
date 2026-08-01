@@ -315,6 +315,16 @@ export class CategoryGroupService {
           OR: [{ store_id }, { assigned_stores: { some: { id: store_id } } }, { assigned_stores: { none: {} } }],
         },
         orderBy: { name: 'asc' as const },
+        // Previously omitted entirely, so POS/website never received a
+        // product's sizes or extra-topping groups even though both already
+        // have (POS) or expect (website) UI to select them -- every
+        // variant-priced product just silently showed its base price
+        // (often 0, since the real price lives on each variant) with no
+        // way to choose a size at all.
+        include: {
+          variants: true,
+          modifierGroups: { include: { modifierGroup: { include: { modifiers: true } } } },
+        },
       },
     };
 

@@ -26,6 +26,7 @@ import MobileModeLegacy from './legacy/MobileMode';
 
 function HomeRoute() {
   const { heroSlides, promotions, categoryGroups, categories, products, stores, cart, addToCart } = useStore();
+  const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const branches = (stores || []).map((s: any) => ({
     id: String(s.id),
     name: s.name,
@@ -54,7 +55,7 @@ function HomeRoute() {
       branches={branches}
       reviews={[]}
       setActivePage={() => {}}
-      onQuickViewProduct={() => {}}
+      onQuickViewProduct={setQuickViewProduct}
       onAddToCart={addToCart}
       favoriteProductIds={[]}
       onToggleFavorite={() => {}}
@@ -65,6 +66,7 @@ function HomeRoute() {
 
 function MenuRoute() {
   const { categoryGroups, categories, products, cart, addToCart } = useStore();
+  const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const cartCounts: { [id: string]: number } = {};
   cart.forEach((c) => { cartCounts[c.product.id] = c.quantity; });
 
@@ -73,7 +75,7 @@ function MenuRoute() {
       categoryGroups={categoryGroups}
       categories={categories}
       products={products}
-      onQuickViewProduct={() => {}}
+      onQuickViewProduct={setQuickViewProduct}
       onAddToCart={addToCart}
       favoriteProductIds={[]}
       onToggleFavorite={() => {}}
@@ -137,6 +139,7 @@ function deriveLoyaltyTier(points: number): 'Gold Member' | 'Platinum Member' | 
 
 function AccountRoute() {
   const { loggedInUser, loginOrRegister } = useStore();
+  const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [needsName, setNeedsName] = useState(false);
@@ -226,7 +229,7 @@ function AccountRoute() {
       onOpenOrderTracker={() => {}}
       onReorder={() => {}}
       favoriteProductIds={[]}
-      onQuickViewProduct={() => {}}
+      onQuickViewProduct={setQuickViewProduct}
     />
   );
 }
