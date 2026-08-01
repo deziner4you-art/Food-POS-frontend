@@ -110,7 +110,10 @@ export default function App() {
           'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}`,
         },
         body: JSON.stringify({ orderId: activeOrder.id, storeId: activeOrder.store_id || 1, lat: driverCoords.y, lng: driverCoords.x })
-      }).catch(() => {});
+      }).catch(() => {
+        const { toast } = require('react-hot-toast');
+        toast.error('Failed to sync GPS location with backend.');
+      });
     }
   }, [driverCoords, activeOrder]);
 
@@ -143,8 +146,8 @@ export default function App() {
     return () => clearInterval(timer);
   }, [status, activePath, simSpeed, activeOrder]);
 
-  const updateBridgeStatus = async (bridgeStatus: string) => {
-    if (!activeOrder) return;
+  const updateBridgeStatus = async (bridgeStatus: string): Promise<boolean> => {
+    if (!activeOrder) return false;
     try {
       const res = await fetch(`${BACKEND_URL}/online-orders/${activeOrder.id}`, {
         method: 'PATCH',
@@ -157,11 +160,33 @@ export default function App() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const { toast } = require('react-hot-toast');
-        toast.error(data.message || `Order #${activeOrder.id} status update to ${bridgeStatus} failed.`);
+        
+        let humanAction = "be updated";
+        if (bridgeStatus === 'RIDER_ARRIVED') humanAction = "be marked as arrived";
+        if (bridgeStatus === 'OUT_FOR_DELIVERY') humanAction = "start delivery";
+        if (bridgeStatus === 'DELIVERED') humanAction = "be marked delivered";
+        if (bridgeStatus === 'WAITING_CASH_SETTLEMENT') humanAction = "be sent for settlement";
+
+        let errorMessage = data.message || `Order #${activeOrder.id} could not ${humanAction}.`;
+
+        if (res.status >= 400 && res.status < 500) {
+          if (bridgeStatus === 'RIDER_ARRIVED') {
+            errorMessage = "The kitchen hasn't marked this order as READY yet. Please wait for the food to be prepared.";
+          } else {
+            errorMessage = `Action not permitted yet. Please complete previous steps first.`;
+          }
+        } else if (res.status >= 500) {
+          errorMessage = `Server error while trying to ${humanAction}. Please check your connection and try again.`;
+        }
+
+        toast.error(errorMessage);
+        return false;
       }
+      return true;
     } catch {
       const { toast } = require('react-hot-toast');
-      toast.error(`Network error — Order #${activeOrder.id} status was NOT updated to ${bridgeStatus}.`);
+      toast.error(`Network error — Order #${activeOrder.id} could not be updated. Please check your internet connection.`);
+      return false;
     }
   };
 
@@ -257,7 +282,9 @@ export default function App() {
     setCurrentPathIndex(0);
   };
 
-  const handleArriveAtRestaurant = () => {
+  const handleArriveAtRestaurant = async () => {
+    const success = await updateBridgeStatus('RIDER_ARRIVED');
+    if (!success) return;
     setStatus('ARRIVED_REST');
     setDriverCoords({ x: activeOrder!.restaurantX, y: activeOrder!.restaurantY });
     setActivePath([]);
@@ -266,6 +293,8 @@ export default function App() {
 
   const handleConfirmPickedUp = async () => {
     if (!activeOrder) return;
+    const success = await updateBridgeStatus('OUT_FOR_DELIVERY');
+    if (!success) return;
     const tripPath = generateGridPath(
       activeOrder.restaurantX, activeOrder.restaurantY,
       activeOrder.customerX, activeOrder.customerY,
@@ -275,16 +304,18 @@ export default function App() {
     setCurrentPathIndex(0);
     setDriverCoords(tripPath[0]);
     setStatus('PICKED_UP');
-    await updateBridgeStatus('OUT_FOR_DELIVERY');
   };
 
   const handleMarkDelivered = async () => {
+    const successDelivered = await updateBridgeStatus('DELIVERED'); 
+    if (!successDelivered) return;
+    const successSettlement = await updateBridgeStatus('WAITING_CASH_SETTLEMENT');
+    if (!successSettlement) return;
+    
     setStatus('DELIVERED'); // Keep internal status as DELIVERED to show the settlement UI
     setDriverCoords({ x: activeOrder!.customerX, y: activeOrder!.customerY });
     setActivePath([]);
     setCurrentPathIndex(0);
-    await updateBridgeStatus('DELIVERED'); 
-    await updateBridgeStatus('WAITING_CASH_SETTLEMENT');
   };
 
   const handleCompleteRestReset = (feedback: { tip: number }) => {
