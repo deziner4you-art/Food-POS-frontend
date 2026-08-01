@@ -226,6 +226,28 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
 
   const products = useMemo(() => (foodItems || []).map(mapFoodItemToProduct), [foodItems]);
 
+  // categoryGroupId here comes from the first product found in that category
+  // -- every product sharing a categoryId already shares the same
+  // categoryGroupId (both are just the group/category name string stamped
+  // onto each product by mapFoodItemToProduct), so this is a safe 1:1 lookup,
+  // not an arbitrary pick.
+  const categories = useMemo<Category[]>(() => {
+    const names = Array.from(new Set(products.map((p) => p.categoryId).filter(Boolean))) as string[];
+    return names.map((name) => ({
+      id: name,
+      name,
+      iconName: 'Utensils',
+      imageUrl: '',
+      categoryGroupId: products.find((p) => p.categoryId === name)?.categoryGroupId,
+      displayOrder: 0,
+      itemCount: products.filter((p) => p.categoryId === name).length,
+    }));
+  }, [products]);
+
+  // Was always created with categories: [] -- MenuPage's group-expand tree
+  // depended on group.categories to list a group's children and could never
+  // show any, regardless of expand state. Populated here from `categories`
+  // (computed above) instead of duplicating the products.filter logic.
   const categoryGroups = useMemo<CategoryGroup[]>(() => {
     const names = Array.from(new Set(products.map((p) => p.categoryGroupId).filter(Boolean))) as string[];
     return names.map((name) => ({
@@ -234,21 +256,9 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       description: '',
       iconName: 'Menu',
       displayOrder: 0,
-      categories: [],
+      categories: categories.filter((c) => c.categoryGroupId === name),
     }));
-  }, [products]);
-
-  const categories = useMemo<Category[]>(() => {
-    const names = Array.from(new Set(products.map((p) => p.categoryId).filter(Boolean))) as string[];
-    return names.map((name) => ({
-      id: name,
-      name,
-      iconName: 'Utensils',
-      imageUrl: '',
-      displayOrder: 0,
-      itemCount: products.filter((p) => p.categoryId === name).length,
-    }));
-  }, [products]);
+  }, [products, categories]);
 
   const heroSlides = useMemo(() => (banners || []).map(mapBannerToHeroSlide), [banners]);
   const promotions = useMemo(() => (campaigns || []).map(mapCampaignToPromotion), [campaigns]);

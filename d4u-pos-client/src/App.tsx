@@ -4695,6 +4695,16 @@ export default function App() {
   }
 
   if (activeUser.role === 'Chef') {
+    // Chef role always means KDS -- but it used to render KDS in place at
+    // WHATEVER path was open (including "/", the POS's own root), so a
+    // browser that had a Chef logged in showed Kitchen at "/" instead of the
+    // POS register. "/kitchen" is the one canonical URL for this view; land
+    // there via a real redirect instead, so "/" is reserved for POS/login
+    // and the address bar always matches what's on screen.
+    if (window.location.pathname !== '/kitchen') {
+      window.location.replace('/kitchen');
+      return null;
+    }
     if (!settings.module_kds_enabled) {
       return (
         <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: 'white', fontFamily: 'sans-serif' }}>
