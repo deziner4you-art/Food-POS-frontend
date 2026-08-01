@@ -1228,15 +1228,30 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     triggerKotPrint({ ...newKot, id: Date.now() });
 
     const products = await db.products.toArray();
-    const parsedCart = (order.items || '').split(',').map((part: string) => {
-      const m = part.trim().match(/^(\d+)x\s+(.+)$/);
-      let name = part.trim();
-      let qty = 1;
-      if (m) { qty = parseInt(m[1]); name = m[2].trim(); }
-      const product = products.find(p => p.name.toLowerCase() === name.toLowerCase());
-      const price = product ? product.price : 0;
-      return { id: Date.now() + Math.random(), name, price, qty, img: '', desc: 'Online Order Item' };
-    }).filter((i: any) => i.name);
+    // This only ever handled the comma-separated text format; the live
+    // website's JSON-array items (no name, only product_id) fell through to
+    // .split(',') fragmenting the raw JSON text itself into garbage "items".
+    // Missing lookup was the same product_id gap as the two render sites
+    // above, just with no JSON branch here at all to have the bug in.
+    let parsedCart: any[];
+    if (order.items && order.items.trim().startsWith('[')) {
+      const arr = JSON.parse(order.items);
+      parsedCart = arr.map((i: any) => {
+        const product = products.find(p => p.id === (i.product_id ?? i.id));
+        const name = i.name || product?.name || 'Unknown item';
+        return { id: Date.now() + Math.random(), name, price: product ? product.price : (i.price || 0), qty: i.qty || i.quantity || 1, img: '', desc: 'Online Order Item' };
+      });
+    } else {
+      parsedCart = (order.items || '').split(',').map((part: string) => {
+        const m = part.trim().match(/^(\d+)x\s+(.+)$/);
+        let name = part.trim();
+        let qty = 1;
+        if (m) { qty = parseInt(m[1]); name = m[2].trim(); }
+        const product = products.find(p => p.name.toLowerCase() === name.toLowerCase());
+        const price = product ? product.price : 0;
+        return { id: Date.now() + Math.random(), name, price, qty, img: '', desc: 'Online Order Item' };
+      }).filter((i: any) => i.name);
+    }
 
     // Add to Active Deliveries
     setActiveDeliveries(prev => {
@@ -2123,7 +2138,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       try {
                         if (order.items && order.items.trim().startsWith('[')) {
                           const arr = JSON.parse(order.items);
-                          return arr.map((i: any) => `${i.qty || 1}x ${i.name}`).join(', ');
+                          // CheckoutView.tsx sends {product_id, quantity} with
+                          // no name at all — look it up from the already-
+                          // synced local catalog instead of trusting a name
+                          // field that was never there.
+                          return arr.map((i: any) => {
+                            const product = allProducts.find((p: any) => p.id === (i.product_id ?? i.id));
+                            const name = i.name || product?.name || 'Unknown item';
+                            return `${i.qty || i.quantity || 1}x ${name}`;
+                          }).join(', ');
                         }
                       } catch(e) {}
                       return order.items;
@@ -2142,9 +2165,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         try {
                           if (order.items && order.items.trim().startsWith('[')) {
                             const arr = JSON.parse(order.items);
+                            // Same gap as the Items preview above: these entries
+                            // carry product_id, not name — matching by name (i.name
+                            // is undefined here) never found anything and threw
+                            // inside this try/catch, silently printing an empty bill.
                             parsedCart = arr.map((i: any) => {
-                              const product = products.find(p => p.name.toLowerCase() === i.name.toLowerCase());
-                              return { name: i.name, price: product ? product.price : (i.price || 0), qty: i.qty || 1 };
+                              const product = products.find(p => p.id === (i.product_id ?? i.id));
+                              const name = i.name || product?.name || 'Unknown item';
+                              return { name, price: product ? product.price : (i.price || 0), qty: i.qty || i.quantity || 1 };
                             });
                           } else {
                             parsedCart = (order.items || '').split(',').map((part: string) => {
