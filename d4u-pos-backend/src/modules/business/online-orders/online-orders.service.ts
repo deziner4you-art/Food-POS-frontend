@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { PricingService } from '../pos-orders/pricing.service';
+import { CustomersService } from '../customers/customers.service';
 
 @Injectable()
 export class OnlineOrdersService {
@@ -10,6 +11,7 @@ export class OnlineOrdersService {
     private prisma: PrismaService,
     private gateway: AppGateway,
     private pricing: PricingService,
+    private customers: CustomersService,
   ) {}
 
   async createOrder(body: any) {
@@ -61,38 +63,39 @@ export class OnlineOrdersService {
     );
     this.gateway.broadcast('new_order', updatedOrder, `store_${storeId}`);
 
-    // Award Loyalty Points
+    // Award Loyalty Points — via the same CustomersService.earnPoints used by
+    // PosOrdersService.createOrder, not a second, independent formula. The
+    // previous inline version read body.totalAmount, a field the website
+    // never sends, so it always computed 0; it also hardcoded a 1-point-per-
+    // rupee rate that doesn't match earnPoints' real 5-points-per-Rs-100
+    // rate, and never wrote a LoyaltyTransaction audit row. pricingResult.total
+    // is the same value already stored as this order's own totalAmount above.
     if (body.customerPhone) {
       const existingCustomer = await this.prisma.customer.findUnique({
         where: { phone: body.customerPhone },
       });
       if (existingCustomer) {
-        const pointsEarned = Math.floor(parseFloat(body.totalAmount || '0'));
-        if (pointsEarned > 0) {
-          await this.prisma.customer.update({
-            where: { id: existingCustomer.id },
-            data: {
-              loyalty_points: { increment: pointsEarned },
-              total_orders: { increment: 1 },
-            },
-          });
-          console.log(
-            `[LOYALTY] Awarded ${pointsEarned} points to ${existingCustomer.name}`,
-          );
-        }
+        // total_orders counts orders placed, independent of whether this
+        // particular order's total cleared the minimum to earn a point.
+        await this.prisma.customer.update({
+          where: { id: existingCustomer.id },
+          data: { total_orders: { increment: 1 } },
+        });
+        await this.customers.earnPoints(existingCustomer.id, updatedOrder.id, pricingResult.total);
       } else {
         // Auto-create customer — scoped to the brand that actually placed this order, not a hardcoded default.
-        await this.prisma.customer.create({
+        const newCustomer = await this.prisma.customer.create({
           data: {
             brand_id: store.brand_id,
             phone: body.customerPhone,
             name: body.customer || 'Online Guest',
             address: body.customerAddress || '',
             total_orders: 1,
-            loyalty_points: Math.floor(parseFloat(body.totalAmount || '0')),
+            loyalty_points: 0,
           }
         });
         console.log(`[CRM] Auto-created new customer for ${body.customerPhone}`);
+        await this.customers.earnPoints(newCustomer.id, updatedOrder.id, pricingResult.total);
       }
     }
 
