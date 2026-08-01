@@ -1272,7 +1272,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     if (order.items && order.items.trim().startsWith('[')) {
       const arr = JSON.parse(order.items);
       parsedCart = arr.map((i: any) => {
-        const product = products.find(p => p.id === (i.product_id ?? i.id));
+        // The website's Product.id is a string, so product_id arrives here
+        // as e.g. "196" while db.products keys are numeric -- a strict ===
+        // never matched, so every website order showed "Unknown item"
+        // regardless of whether the product actually existed locally.
+        const product = products.find(p => String(p.id) === String(i.product_id ?? i.id));
         const name = i.name || product?.name || 'Unknown item';
         return { id: Date.now() + Math.random(), name, price: product ? product.price : (i.price || 0), qty: i.qty || i.quantity || 1, img: '', desc: 'Online Order Item' };
       });
@@ -2198,7 +2202,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                           // synced local catalog instead of trusting a name
                           // field that was never there.
                           return arr.map((i: any) => {
-                            const product = allProducts.find((p: any) => p.id === (i.product_id ?? i.id));
+                            // Website's Product.id is a string ("196"); db.products
+                            // keys are numeric -- strict === never matched.
+                            const product = allProducts.find((p: any) => String(p.id) === String(i.product_id ?? i.id));
                             const name = i.name || product?.name || 'Unknown item';
                             return `${i.qty || i.quantity || 1}x ${name}`;
                           }).join(', ');
@@ -2225,7 +2231,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                             // is undefined here) never found anything and threw
                             // inside this try/catch, silently printing an empty bill.
                             parsedCart = arr.map((i: any) => {
-                              const product = products.find(p => p.id === (i.product_id ?? i.id));
+                              // Website's Product.id is a string ("196"); db.products
+                              // keys are numeric -- strict === never matched.
+                              const product = products.find(p => String(p.id) === String(i.product_id ?? i.id));
                               const name = i.name || product?.name || 'Unknown item';
                               return { name, price: product ? product.price : (i.price || 0), qty: i.qty || i.quantity || 1 };
                             });
