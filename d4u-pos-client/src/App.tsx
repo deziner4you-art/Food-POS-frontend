@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client';
 import { BACKEND_URL } from './config/backend';
 import { calculateSubtotalWithTax } from './utils/cartTotals';
-import { syncOfflineOrders as syncOfflineOrdersRequest, ApiRequestError } from './pos/api';
+import { syncOfflineOrders as syncOfflineOrdersRequest, ApiRequestError, apiFetch } from './pos/api';
 import * as cartEngine from './cart/cartEngine';
 import type { CartLineItem } from './cart/cartTypes';
 import { generateHeldOrderId } from './cart/heldOrderId';
@@ -548,10 +548,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         // making this fetch 401 silently on every page refresh — the online
         // order was only ever visible via the live socket event, never
         // reloaded from the backend afterwards.
-        const authToken = localStorage.getItem('d4u_pos_token');
-        const res = await fetch(`${BACKEND_URL}/online-orders?store_id=${storeId}`, {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
+        const res = await apiFetch(`/online-orders?store_id=${storeId}`, { auth: true });
         if (res.ok) setBackendOnlineOrders(await res.json());
 
         // Recover Active Deliveries after a browser refresh. activeDeliveries
@@ -563,9 +560,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         // OnlineOrdersService.getAllOnlineOrders) rather than adding a new
         // route — it returns everything the cashier has accepted but that
         // hasn't reached SETTLED yet.
-        const activeRes = await fetch(`${BACKEND_URL}/online-orders?store_id=${storeId}&activeOnly=true`, {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
+        const activeRes = await apiFetch(`/online-orders?store_id=${storeId}&activeOnly=true`, { auth: true });
         if (activeRes.ok) {
           const activeOrders: any[] = await activeRes.json();
           if (activeOrders.length > 0) {
@@ -619,9 +614,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           }
         }
 
-        const riderRes = await fetch(`${BACKEND_URL}/rider-orders`, {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
+        const riderRes = await apiFetch('/rider-orders', { auth: true });
         if (riderRes.ok) {
           const riderOrders: any[] = await riderRes.json();
           setActiveDeliveries(prev => {
@@ -800,9 +793,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const fetchWaiterOrders = async () => {
     if (!isWaiterMode || !currentUser?.sessionId) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/pos-orders?store_id=${currentUser.store_id}&terminal_session_id=${currentUser.sessionId}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
-      });
+      const res = await apiFetch(`/pos-orders?store_id=${currentUser.store_id}&terminal_session_id=${currentUser.sessionId}`, { auth: true });
       if (!res.ok) return;
       const orders = await res.json();
       // "Order accepted by cashier" — a small toast the first time an order this
@@ -852,9 +843,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const fetchTerminalSessions = async () => {
     if (isWaiterMode || !currentUser?.store_id) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/terminal/sessions?store_id=${currentUser.store_id}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
-      });
+      const res = await apiFetch(`/terminal/sessions?store_id=${currentUser.store_id}`, { auth: true });
       if (res.ok) setTerminalSessions(await res.json());
     } catch (e) { /* ignore — list just won't refresh this tick */ }
   };
@@ -868,18 +857,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   }, [isWaiterMode, currentUser?.store_id]);
 
   const handleDisconnectSession = async (id: number) => {
-    await fetch(`${BACKEND_URL}/terminal/sessions/${id}/disconnect`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` } });
+    await apiFetch(`/terminal/sessions/${id}/disconnect`, { method: 'POST', auth: true });
     fetchTerminalSessions();
   };
 
   const handleDisconnectAllSessions = async () => {
     if (!(await customConfirm('Disconnect all connected waiter tablets?'))) return;
-    await fetch(`${BACKEND_URL}/terminal/sessions/disconnect-all?store_id=${currentUser.store_id}`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` } });
+    await apiFetch(`/terminal/sessions/disconnect-all?store_id=${currentUser.store_id}`, { method: 'POST', auth: true });
     fetchTerminalSessions();
   };
 
   const handleReconnectSession = async (id: number) => {
-    await fetch(`${BACKEND_URL}/terminal/sessions/${id}/reconnect`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` } });
+    await apiFetch(`/terminal/sessions/${id}/reconnect`, { method: 'POST', auth: true });
     fetchTerminalSessions();
   };
 
@@ -1021,10 +1010,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             let bridgeOk = true;
             if (kot.bridgeOrderId) {
               try {
-                const res = await fetch(`${BACKEND_URL}/online-orders/${kot.bridgeOrderId}`, {
+                const res = await apiFetch(`/online-orders/${kot.bridgeOrderId}`, {
                   method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
-                  body: JSON.stringify({ status: 'READY', kdsStatus: 'READY' })
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'READY', kdsStatus: 'READY' }),
+                  auth: true,
                 });
                 bridgeOk = res.ok;
               } catch (e) {
@@ -1047,13 +1037,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         newlyPreparing.forEach(async kot => {
           if (kot.type === 'Delivery' && kot.bridgeOrderId) {
             try {
-              const res = await fetch(`${BACKEND_URL}/online-orders/${kot.bridgeOrderId}`, {
+              const res = await apiFetch(`/online-orders/${kot.bridgeOrderId}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   kdsStatus: 'ACCEPTED',
                   estimatedReadyAt: new Date(new Date(kot.startTime).getTime() + (kot.prepTimeMinutes * 60000)).toISOString()
-                })
+                }),
+                auth: true,
               });
 
               if (res.ok) {
@@ -1248,10 +1239,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     // with no backend counterpart to sync against.
     let bridgeSucceeded = false;
     try {
-      const res = await fetch(`${BACKEND_URL}/online-orders/${order.id}`, {
+      const res = await apiFetch(`/online-orders/${order.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
-        body: JSON.stringify({ kdsStatus: 'NEW_KOT' })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kdsStatus: 'NEW_KOT' }),
+        auth: true,
       });
       if (res.ok) {
         bridgeSucceeded = true;
@@ -1326,9 +1318,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     // other order — no parallel order system, so KDS/TV/POS all read the same
     // status from the same place.
     try {
-      const res = await fetch(`${BACKEND_URL}/pos-orders`, {
+      const res = await apiFetch('/pos-orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+        headers: { 'Content-Type': 'application/json' },
+        auth: true,
         body: JSON.stringify({
           store_id: currentUser.store_id,
           created_by: 0,
@@ -2282,10 +2275,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   }
                   setIsGeneratingTabletLink(true);
                   try {
-                    const res = await fetch(`${BACKEND_URL}/terminal/generate`, {
+                    const res = await apiFetch('/terminal/generate', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
+                      headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ store_id: currentUser.store_id, waiter_name: 'Waiter' }),
+                      auth: true,
                     });
                     const data = await res.json().catch(() => null);
                     if (res.ok && data?.success) {
@@ -2526,10 +2520,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                  const res = await apiFetch(`/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
-                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
-                                    body: JSON.stringify({ status: 'RIDER_ARRIVED' })
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: 'RIDER_ARRIVED' }),
+                                    auth: true,
                                   });
                                   if (!res.ok) {
                                     const data = await res.json().catch(() => ({}));
@@ -2550,10 +2545,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                 const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(del.items);
                                 setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
                                 try {
-                                  const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                  const res = await apiFetch(`/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
-                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
-                                    body: JSON.stringify({ status: 'PRINT_BILL' })
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: 'PRINT_BILL' }),
+                                    auth: true,
                                   });
                                   if (!res.ok) {
                                     const data = await res.json().catch(() => ({}));
@@ -2572,10 +2568,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                  const res = await apiFetch(`/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
-                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
-                                    body: JSON.stringify({ status: 'DISPATCHED' }) // rider confirming pickup in the Rider app advances this to OUT_FOR_DELIVERY
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: 'DISPATCHED' }), // rider confirming pickup in the Rider app advances this to OUT_FOR_DELIVERY
+                                    auth: true,
                                   });
                                   if (res.ok) {
                                     setToast({ message: 'Order Dispatched to Delivery App!', type: 'success' });
@@ -2600,10 +2597,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               <button className="btn-action btn-order" style={{ padding: '8px 16px', fontSize: '0.75rem', width: 'auto', flex: 'none' }}
                                 onClick={async () => {
                                   try {
-                                    const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                                    const res = await apiFetch(`/online-orders/${del.bridgeOrderId}`, {
                                       method: 'PATCH',
-                                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
-                                      body: JSON.stringify({ status: 'SETTLED' })
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ status: 'SETTLED' }),
+                                      auth: true,
                                     });
                                     if (res.ok) {
                                       setActiveDeliveries(prev => prev.filter(o => o.id !== del.id));
@@ -2652,10 +2650,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         <button className="btn-action bg-red-600 text-white" style={{ padding: '8px 16px', fontSize: '0.75rem', width: 'auto', flex: 'none', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
                           onClick={async () => {
                             try {
-                              const res = await fetch(`${BACKEND_URL}/online-orders/${del.bridgeOrderId}`, {
+                              const res = await apiFetch(`/online-orders/${del.bridgeOrderId}`, {
                                 method: 'PATCH',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
-                                body: JSON.stringify({ status: 'SETTLED' })
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ status: 'SETTLED' }),
+                                auth: true,
                               });
                               if (res.ok) {
                                 setPendingLastDaySettlements(prev => prev.filter(o => o.bridgeOrderId !== del.bridgeOrderId));
@@ -3481,13 +3480,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                  const amt = parseFloat((document.getElementById('cashOutInput') as HTMLInputElement)?.value || '0');
                  if (amt > 0) {
                    try {
-                     const res = await fetch(BACKEND_URL + '/cash-flow/out', {
+                     const res = await apiFetch('/cash-flow/out', {
                        method: 'POST',
-                       headers: { 
-                         'Content-Type': 'application/json',
-                         'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`
-                       },
-                       body: JSON.stringify({ store_id: Number(currentUser?.store_id), user_id: Number(currentUser?.id) || 1, amount: amt })
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify({ store_id: Number(currentUser?.store_id), user_id: Number(currentUser?.id) || 1, amount: amt }),
+                       auth: true,
                      });
                      if (!res.ok) throw new Error('Cash Out failed');
                      
@@ -3587,12 +3584,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   });
 
                   try {
-                    await fetch(BACKEND_URL + '/business-day/close', {
+                    await apiFetch('/business-day/close', {
                       method: 'POST',
-                      headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`
-                      },
+                      headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         store_id: currentUser?.store_id || 1,
                         closed_by: currentUser?.id || 1,
@@ -3605,7 +3599,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                           denominations: denomCounts,
                           userNotes: handoverNotes
                         })
-                      })
+                      }),
+                      auth: true,
                     });
                   } catch (e) {
                     console.error('Day close failed', e);
@@ -4301,12 +4296,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   try {
                     // Submits a Product Request for Head Office review — this does NOT
                     // create a Menu Product directly; HQ approves it via the Menu Builder.
-                    const res = await fetch(`${BACKEND_URL}/product-requests`, {
+                    const res = await apiFetch('/product-requests', {
                       method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`,
-                      },
+                      headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         store_id: currentUser?.store_id,
                         requested_by: currentUser?.id || 1,
@@ -4315,7 +4307,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         category_id: customItemCategory || undefined,
                         sku: customItemCode || undefined,
                         submit: true,
-                      })
+                      }),
+                      auth: true,
                     });
                     const data = await res.json();
 
@@ -4323,10 +4316,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       if (customItemImgFile) {
                         const formData = new FormData();
                         formData.append('image', customItemImgFile);
-                        await fetch(`${BACKEND_URL}/product-requests/${data.id}/image`, {
+                        await apiFetch(`/product-requests/${data.id}/image`, {
                           method: 'POST',
-                          headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` },
                           body: formData,
+                          auth: true,
                         }).catch(() => {});
                       }
                       setToast({ message: 'Sent to Head Office for Approval!', type: 'success' });
@@ -4449,9 +4442,7 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
   const [errMsg, setErrMsg] = useState('');
 
   useEffect(() => {
-    fetch(BACKEND_URL + `/business-day/history?store_id=${currentUser.store_id}`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` }
-    })
+    apiFetch(`/business-day/history?store_id=${currentUser.store_id}`, { auth: true })
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setHistory(data);
@@ -4465,9 +4456,7 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
   useEffect(() => {
     const checkOpenDay = async () => {
       try {
-        const res = await fetch(BACKEND_URL + `/business-day/current?store_id=${currentUser.store_id}`, {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}` }
-        });
+        const res = await apiFetch(`/business-day/current?store_id=${currentUser.store_id}`, { auth: true });
         if (res.ok) {
           const data = await res.json();
           if (data && data.id) {
@@ -4485,13 +4474,11 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
   const handleStart = async () => {
     setLoading(true);
     try {
-      const res = await fetch(BACKEND_URL + '/business-day/start', {
+      const res = await apiFetch('/business-day/start', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`
-        },
-        body: JSON.stringify({ store_id: currentUser.store_id, started_by: currentUser.id || 1, openingFloat: 0 })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: currentUser.store_id, started_by: currentUser.id || 1, openingFloat: 0 }),
+        auth: true,
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -4607,13 +4594,11 @@ function CashInPage({ currentUser, onCashIn, onLogout }: { currentUser: any; onC
     if (!amount) return;
     setLoading(true);
     try {
-      const res = await fetch(BACKEND_URL + '/cash-flow/in', {
+      const res = await apiFetch('/cash-flow/in', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('d4u_pos_token')}`
-        },
-        body: JSON.stringify({ store_id: currentUser.store_id, user_id: currentUser.id || 1, amount: parseFloat(amount), comment })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: currentUser.store_id, user_id: currentUser.id || 1, amount: parseFloat(amount), comment }),
+        auth: true,
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -4751,6 +4736,18 @@ export default function App() {
     };
     socket.on('force_logout', handleForceLogout);
     return () => { socket.off('force_logout', handleForceLogout); };
+  }, []);
+
+  // apiFetch (pos/api.ts) dispatches this when a session can't be recovered
+  // (refresh token missing/expired) — same window-CustomEvent pattern as
+  // subscription_suspended above, since that module has no access to this
+  // component's state and shouldn't duplicate what handleLogout already does.
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      handleLogout();
+    };
+    window.addEventListener('auth_session_expired', handleSessionExpired);
+    return () => { window.removeEventListener('auth_session_expired', handleSessionExpired); };
   }, []);
 
   useEffect(() => {
