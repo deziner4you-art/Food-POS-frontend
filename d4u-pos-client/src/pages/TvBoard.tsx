@@ -221,50 +221,55 @@ export default function TvBoard() {
                 Limited Offer
               </div>
             )}
-            {slide.image_url ? (
-              <img
-                src={`${BACKEND_URL}${slide.image_url}`}
-                alt={slide.title}
-                className="absolute inset-0 w-full h-full object-cover z-0"
-              />
-            ) : (
+            {slide.image_url && (
               <>
-                <div className="bg-[#ec4899] text-white text-3xl font-black px-6 py-2 rounded-xl mb-8 transform -rotate-3 shadow-2xl relative z-10">
-                  {badgeText}
-                </div>
-                <h1 className="text-6xl font-black text-white mb-6 leading-tight relative z-10 drop-shadow-2xl">
-                  {slide.title}
-                </h1>
-                <p className="text-2xl text-slate-200 max-w-lg relative z-10 drop-shadow-lg font-medium mb-8">
-                  {slide.description}
-                </p>
-                {slide.show_countdown && !isUpcoming && msLeft !== null && msLeft > 0 && (
-                  <p className="text-red-400 text-2xl font-black mb-6 relative z-10">Ends in {hoursLeft}h {minsLeft}m</p>
-                )}
-                {slide.campaign_type === 'FREE_GIFT' && slide.giftProduct?.name && (
-                  <p className="text-amber-400 text-xl font-bold mb-6 relative z-10">🎁 Free Gift: {slide.giftProduct.name}</p>
-                )}
-                {['BUNDLE', 'COMBO'].includes(slide.campaign_type) && slide.bundle_products?.length > 0 && (
-                  <p className="text-amber-400 text-xl font-bold mb-6 relative z-10">Includes: {slide.bundle_products.map((p: any) => p.name).join(' + ')}</p>
-                )}
-                {slide.target_products?.length > 0 && (
-                  <div className="grid grid-cols-2 gap-6 w-full max-w-2xl relative z-10">
-                    {slide.target_products.slice(0, 4).map((p: any) => (
-                      <div key={p.id} className="bg-slate-900/80 backdrop-blur rounded-2xl p-4 flex items-center gap-4 border border-slate-700 shadow-xl">
-                        {p.image_url ? (
-                          <img src={p.image_url.startsWith('http') ? p.image_url : `${BACKEND_URL}${p.image_url}`} className="w-20 h-20 rounded-xl object-cover border-2 border-slate-700" alt={p.name} />
-                        ) : (
-                          <div className="w-20 h-20 rounded-xl bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-500 font-black text-2xl">?</div>
-                        )}
-                        <div className="text-left">
-                          <h4 className="font-bold text-xl text-white line-clamp-1">{p.name}</h4>
-                          <div className="text-amber-400 font-black text-lg mt-1">Rs {p.price}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <img
+                  src={`${BACKEND_URL}${slide.image_url}`}
+                  alt={slide.title}
+                  className="absolute inset-0 w-full h-full object-cover z-0"
+                />
+                {/* Scrim so the title/badge/description below stay legible
+                    over a photo instead of being hidden entirely -- a
+                    banner image used to replace the whole text block
+                    (heading, subheading, discount badge all disappeared)
+                    instead of sitting behind it. */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/10 z-[1]" />
               </>
+            )}
+            <div className="bg-[#ec4899] text-white text-3xl font-black px-6 py-2 rounded-xl mb-8 transform -rotate-3 shadow-2xl relative z-10">
+              {badgeText}
+            </div>
+            <h1 className="text-6xl font-black text-white mb-6 leading-tight relative z-10 drop-shadow-2xl">
+              {slide.title}
+            </h1>
+            <p className="text-2xl text-slate-200 max-w-lg relative z-10 drop-shadow-lg font-medium mb-8">
+              {slide.description}
+            </p>
+            {slide.show_countdown && !isUpcoming && msLeft !== null && msLeft > 0 && (
+              <p className="text-red-400 text-2xl font-black mb-6 relative z-10">Ends in {hoursLeft}h {minsLeft}m</p>
+            )}
+            {slide.campaign_type === 'FREE_GIFT' && slide.giftProduct?.name && (
+              <p className="text-amber-400 text-xl font-bold mb-6 relative z-10">🎁 Free Gift: {slide.giftProduct.name}</p>
+            )}
+            {['BUNDLE', 'COMBO'].includes(slide.campaign_type) && slide.bundle_products?.length > 0 && (
+              <p className="text-amber-400 text-xl font-bold mb-6 relative z-10">Includes: {slide.bundle_products.map((p: any) => p.name).join(' + ')}</p>
+            )}
+            {slide.target_products?.length > 0 && (
+              <div className="grid grid-cols-2 gap-6 w-full max-w-2xl relative z-10">
+                {slide.target_products.slice(0, 4).map((p: any) => (
+                  <div key={p.id} className="bg-slate-900/80 backdrop-blur rounded-2xl p-4 flex items-center gap-4 border border-slate-700 shadow-xl">
+                    {p.image_url ? (
+                      <img src={p.image_url.startsWith('http') ? p.image_url : `${BACKEND_URL}${p.image_url}`} className="w-20 h-20 rounded-xl object-cover border-2 border-slate-700" alt={p.name} />
+                    ) : (
+                      <div className="w-20 h-20 rounded-xl bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-500 font-black text-2xl">?</div>
+                    )}
+                    <div className="text-left">
+                      <h4 className="font-bold text-xl text-white line-clamp-1">{p.name}</h4>
+                      <div className="text-amber-400 font-black text-lg mt-1">Rs {p.price}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
           );
