@@ -544,6 +544,71 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         });
         if (res.ok) setBackendOnlineOrders(await res.json());
 
+        // Recover Active Deliveries after a browser refresh. activeDeliveries
+        // is plain React state — it starts empty on every mount and, before
+        // this, was never rebuilt from anything, so an accepted online order
+        // visually vanished on refresh even though its Order/KOT rows were
+        // already durable in the backend. activeOnly=true reuses the same
+        // /online-orders endpoint the Incoming panel already calls (see
+        // OnlineOrdersService.getAllOnlineOrders) rather than adding a new
+        // route — it returns everything the cashier has accepted but that
+        // hasn't reached SETTLED yet.
+        const activeRes = await fetch(`${BACKEND_URL}/online-orders?store_id=${storeId}&activeOnly=true`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (activeRes.ok) {
+          const activeOrders: any[] = await activeRes.json();
+          if (activeOrders.length > 0) {
+            const products = await db.products.toArray();
+            const parseOrderItems = (order: any) => {
+              try {
+                if (order.items && order.items.trim().startsWith('[')) {
+                  const arr = JSON.parse(order.items);
+                  return arr.map((i: any) => {
+                    const product = products.find(p => p.name.toLowerCase() === (i.name || '').toLowerCase());
+                    return { id: Date.now() + Math.random(), name: i.name, price: product ? product.price : (i.price || 0), qty: i.qty || i.quantity || 1, img: '', desc: 'Online Order Item' };
+                  });
+                }
+              } catch (e) { /* fall through to comma-separated parsing */ }
+              return (order.items || '').split(',').map((part: string) => {
+                const m = part.trim().match(/^(\d+)x\s+(.+)$/);
+                let name = part.trim(); let qty = 1;
+                if (m) { qty = parseInt(m[1]); name = m[2].trim(); }
+                const product = products.find(p => p.name.toLowerCase() === name.toLowerCase());
+                return { id: Date.now() + Math.random(), name, price: product ? product.price : 0, qty, img: '', desc: 'Online Order Item' };
+              }).filter((i: any) => i.name);
+            };
+
+            const hydrated = activeOrders.map(order => {
+              const amount = parseFloat(order.totalAmount) || 0;
+              return {
+                id: order.orderId || order.id,
+                bridgeOrderId: order.id,
+                customer: order.customer || 'Online Guest',
+                address: order.customerAddress || 'No Address Provided',
+                customerAddress: order.customerAddress || 'No Address Provided',
+                // Matches the label handleAcceptOnlineOrder shows for a
+                // freshly-accepted order — so a card looks identical whether
+                // it was just created this session or recovered on reload.
+                status: order.status === 'CONFIRMED' ? 'PENDING_CHEF' : order.status,
+                rider: order.status === 'CONFIRMED' ? 'Pending Chef Acceptance' : 'Active Rider',
+                cod: amount,
+                totalAmount: amount,
+                riderDistance: 'N/A',
+                lat: '50%',
+                lng: '50%',
+                items: parseOrderItems(order),
+              };
+            });
+
+            setActiveDeliveries(prev => {
+              const existingIds = new Set(prev.map(d => d.bridgeOrderId));
+              const toAdd = hydrated.filter(d => !existingIds.has(d.bridgeOrderId));
+              return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+            });
+          }
+        }
+
         const riderRes = await fetch(`${BACKEND_URL}/rider-orders`, {
           headers: { 'Authorization': `Bearer ${authToken}` }
         });
