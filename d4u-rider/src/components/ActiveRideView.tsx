@@ -145,7 +145,11 @@ export default function ActiveRideView({
           </div>
         ) : status === 'OFFERED' ? (
           <div>
-            <h3 className="text-center text-primary font-bold mb-6">New Order</h3>
+            <div className="flex justify-between items-center mb-1">
+              <h3 className="text-center text-primary font-bold">New Order</h3>
+              <span className="text-xs font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">#{activeOrder.id}</span>
+            </div>
+            <div className="border-b border-slate-800 mb-5" />
             
             <div className="flex justify-between items-start mb-6">
               <span className="text-primary font-semibold text-sm">5 minutes to pickup point</span>
@@ -188,9 +192,12 @@ export default function ActiveRideView({
           <div>
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h3 className="font-display font-bold text-xl text-slate-100">
-                  {status === 'ACCEPTED' ? 'En route to Pickup' : 'En route to Drop off'}
-                </h3>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <h3 className="font-display font-bold text-xl text-slate-100">
+                    {status === 'ACCEPTED' ? 'En route to Pickup' : 'En route to Drop off'}
+                  </h3>
+                  <span className="text-xs font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full whitespace-nowrap">#{activeOrder?.id}</span>
+                </div>
                 <p className="text-slate-400 text-sm mb-2">
                   {status === 'ACCEPTED' ? '5 min • 1.7 km' : '8 min • 3.2 km'}
                 </p>

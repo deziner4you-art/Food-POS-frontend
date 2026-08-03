@@ -137,7 +137,8 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | 9fb1035 | Task 4B: TV Board customer-facing order number alignment | Antigravity | PASS |
 | b1725a6 | Task 5A: Rider Identity Persistence & Refresh Restoration | Antigravity | PASS |
 | f269ca3 | Task 5B: Rider Claim Safety / Invalid Rider ID Protection | Antigravity | PASS |
-| (next) | Task 5C: POS Delivery Realtime READY Recovery | Antigravity | PASS |
+| f772d74 | Task 5C: POS Delivery Realtime READY Recovery | Antigravity | PASS |
+| (next) | Task 5D: Rider Customer-Facing Order Number | Antigravity | PASS |
 
 ---
 
@@ -433,6 +434,52 @@ Missing `else if` branch in the socket handler to reconstruct and append new del
 
 **Build:** PASS
 **TypeScript:** PASS
+**Commit:** See timeline above.
+
+---
+
+### Task 5D — Rider Customer-Facing Order Number
+
+**Problem:** 
+The Rider App displayed no order number whatsoever in any screen state. While `activeOrder.id` was already correctly set to `OnlineOrder.id` (the same customer-facing number shown on the Website, POS, and TV Board), the `ActiveRideView` component never rendered it.
+
+**Investigation:** 
+- Confirmed `OnlineOrder.id` (autoincrement PK) = customer-facing order ID (e.g. #1120).
+- Confirmed `OnlineOrder.orderId` (nullable Int) = the linked internal POS Order ID (e.g. 720) — this is what TV Board previously incorrectly used and was fixed in Task 4B.
+- Traced `activeOrder.id` mapping: REST hydration (App.tsx line 236) sets `id: targetOrder.id`, which is `OnlineOrder.id`. ✅
+- Traced `updateBridgeStatus`: calls `PATCH /online-orders/${activeOrder.id}` — works because `activeOrder.id` is correctly `OnlineOrder.id`. ✅
+- Inspected all `ActiveRideView.tsx` JSX — confirmed **no `#` order number was rendered in any state** (OFFERED, ACCEPTED, ARRIVED_REST, PICKED_UP, DELIVERED). The identifier contract was correct; the display was absent.
+- POS-native deliveries: `formatPosOrderForRider` sets `id: order.id` (POS Order.id), which is the appropriate identifier for POS-native orders.
+
+**Root Cause:** 
+`ActiveRideView.tsx` was never updated to display the order number. `activeOrder.id` contained the correct value but was never rendered.
+
+**Files Changed:** 
+- `d4u-rider/src/components/ActiveRideView.tsx`
+
+**Implementation:** 
+- Added `#{activeOrder.id}` badge next to "New Order" heading in the OFFERED screen (inline with a horizontal divider to preserve the existing layout).
+- Added `#{activeOrder?.id}` badge inline with the "En route to Pickup/Drop off" heading in the active delivery screen (ACCEPTED, ARRIVED_REST, PICKED_UP, DELIVERED states).
+- Used `text-slate-400 bg-slate-800 rounded-full` pill style consistent with existing badge patterns.
+
+**Identifier Contract (verified):**
+| Order Type | `activeOrder.id` | Displays |
+|------------|-----------------|----------|
+| Website Online Order | `OnlineOrder.id` (e.g. 1120) | Rider shows #1120 ✅ |
+| POS-native Delivery | `Order.id` (POS primary key) | Rider shows existing POS ID ✅ |
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| A | Website Order — OFFERED screen shows #OnlineOrder.id matching Website/POS/TV Board | PASS |
+| B | After Accept — active delivery header retains correct #OnlineOrder.id | PASS |
+| C | Refresh Recovery — REST hydration maps `id: targetOrder.id`, restored order.id remains #OnlineOrder.id | PASS |
+| D | Status Progression — badge is always inline with the heading, survives all status transitions | PASS |
+| E | POS-native Regression — POS-native orders use `Order.id` from `formatPosOrderForRider`, unchanged | PASS |
+
+**Build:** PASS (Vite production bundle succeeded)
+**TypeScript — Task 5D introduced new errors:** NO
+**TypeScript — Baseline error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
 **Commit:** See timeline above.
 
 ---
