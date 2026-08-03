@@ -10,9 +10,10 @@ import HistoryView from './components/HistoryView';
 import SettleCashView from './components/SettleCashView';
 import POSPanel from './components/POSPanel';
 import LoginView from './components/LoginView';
-import { Clock, Navigation, CheckSquare, LogOut } from 'lucide-react';
+import OrdersView from './components/OrdersView';
+import { Clock, Navigation, CheckSquare, LogOut, List } from 'lucide-react';
 
-type ViewMode = 'login' | 'map' | 'history' | 'settle';
+type ViewMode = 'login' | 'map' | 'history' | 'settle' | 'orders';
 
 export default function App() {
   const logout = () => {
@@ -31,6 +32,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewMode>('login');
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [status, setStatus] = useState<DeliveryStatus>('SEARCHING');
+  const [lastOrderUpdate, setLastOrderUpdate] = useState<number>(Date.now());
   // Mirrors `status` for the socket effect below to read without being a
   // dependency of it — the effect intentionally does not re-subscribe on
   // every status change (that would disconnect/reconnect the socket on
@@ -315,6 +317,7 @@ export default function App() {
     socket.emit('join_store', `store_${riderStoreId}`);
 
     socket.on('order_updated', (order: any) => {
+      setLastOrderUpdate(Date.now());
       // 1. Alert Rider if a new order is READY
       if (['READY', 'PRINT_BILL', 'DISPATCHED'].includes(order.status) && isOnline && !activeOrder) {
         // Just show toast notification
@@ -587,6 +590,15 @@ export default function App() {
             />
           )}
 
+          {currentView === 'orders' && (
+            <OrdersView 
+              riderStoreId={riderStoreId || ''}
+              riderId={riderId}
+              lastOrderUpdate={lastOrderUpdate}
+              onBack={() => setCurrentView('map')} 
+            />
+          )}
+
           {currentView === 'settle' && (
             <SettleCashView 
               stats={riderStats} 
@@ -608,6 +620,13 @@ export default function App() {
             >
               <Navigation size={22} className={currentView === 'map' ? 'fill-primary' : ''} />
               <span className="text-[10px] font-bold">Map</span>
+            </button>
+            <button 
+              onClick={() => setCurrentView('orders')}
+              className={`flex flex-col items-center gap-1 ${currentView === 'orders' ? 'text-primary' : 'text-slate-400'}`}
+            >
+              <List size={22} />
+              <span className="text-[10px] font-bold">Orders</span>
             </button>
             <button 
               onClick={() => setCurrentView('history')}

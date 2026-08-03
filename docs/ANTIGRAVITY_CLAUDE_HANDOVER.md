@@ -138,7 +138,8 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | b1725a6 | Task 5A: Rider Identity Persistence & Refresh Restoration | Antigravity | PASS |
 | f269ca3 | Task 5B: Rider Claim Safety / Invalid Rider ID Protection | Antigravity | PASS |
 | f772d74 | Task 5C: POS Delivery Realtime READY Recovery | Antigravity | PASS |
-| (next) | Task 5D: Rider Customer-Facing Order Number | Antigravity | PASS |
+| a07443c | Task 5D: Rider Customer-Facing Order Number | Antigravity | PASS |
+| (next) | Task 5E: Rider Orders Tab Foundation & REST List (5E-A) | Antigravity | PASS |
 
 ---
 
@@ -479,6 +480,39 @@ The Rider App displayed no order number whatsoever in any screen state. While `a
 
 **Build:** PASS (Vite production bundle succeeded)
 **TypeScript — Task 5D introduced new errors:** NO
+**TypeScript — Baseline error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
+**Commit:** See timeline above.
+
+---
+
+### Task 5E-A — Rider Orders Tab Foundation + REST Order List
+
+**Problem:** 
+The Rider App strictly relied on realtime popup offers to assign deliveries. If a rider missed the popup, refreshed, or joined after a KDS `READY` event, there was no persistent UI to manually browse available orders.
+
+**Implementation:**
+- **Navigation:** Added `List` icon from `lucide-react` to the bottom navigation bar and mapped it to a new `Orders` view, keeping consistent styling with Map/History/Settle tabs.
+- **REST Foundation:** Created `OrdersView.tsx` which fetches `GET /rider-orders?store_id=${riderStoreId}` natively utilizing the rider's auth token.
+- **Filters/Categorization:**
+  - **Available Orders:** Unclaimed (`claimedByRiderId == null`) and in actionable state (`READY`, `PRINT_BILL`, `RIDER_ARRIVED`, `DISPATCHED`).
+  - **My Active Order:** Claimed exclusively by the current rider (`claimedByRiderId == riderId`) and not `SETTLED`/`CANCELLED`.
+- **Card Design:** Showcases Order ID, POS designation tag, dynamic status badge, Restaurant branch name, Customer address, Total Amount, and Payment Method using styling from existing history and ride views.
+- **Identifier Contract Maintained:** Preserved the `#1120` OnlineOrder vs POS ID contract; displays `order.id` cleanly.
+- **Realtime Integration:** The main `App.tsx` socket listener tracks `order_updated` events via a `lastOrderUpdate` timestamp, automatically triggering a background re-fetch in `OrdersView` to maintain parity without creating duplicate UI state models.
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| A | Available Website Delivery — Shows `#1120` matching POS/TV under Available Orders | PASS |
+| B | Missed Popup — Manual navigation correctly loads REST orders and discovers it | PASS |
+| C | Refresh — App mount/refresh gracefully reloads REST state into the Orders tab | PASS |
+| D | My Active Order — Claimed order appears in My Active section, removed from Available | PASS |
+| E | Other Rider — Claimed by Rider B is isolated and hidden entirely from Rider A | PASS |
+| F | SETTLED — Completed orders strictly excluded from Active/Available lists | PASS |
+| G | Realtime — Changing state externally fires socket update causing REST reload instantly | PASS |
+
+**Build:** PASS (Vite production bundle succeeded)
+**TypeScript — Task 5E-A introduced new errors:** NO
 **TypeScript — Baseline error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
 **Commit:** See timeline above.
 
