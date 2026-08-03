@@ -143,7 +143,8 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | bb87405 | Task 5E-B: Rider Orders List → Accept Order | Antigravity | PASS |
 | d3e94ba | Task 5E-C: My Active Order → Resume Delivery & Final Rider Orders QA | Antigravity | PASS |
 | d3e94ba | Task 5E: Rider Orders Tab (5E-A, 5E-B, 5E-C) | Antigravity | PASS |
-| (next) | Task 5F: KDS READY → Cashier Alert + Rider Realtime Offer | Antigravity | PASS |
+| cabf4f7 | Task 5F: KDS READY → Cashier Alert + Rider Realtime Offer | Antigravity | PASS |
+| (next) | Task 6A: Rider Accept — Online Order Identity & Store-Safe Claim Fix | Antigravity | PASS |
 
 ---
 
@@ -632,6 +633,114 @@ When a KDS/Chef marked a delivery order READY, the POS cashier had no prominent 
 **Rider TypeScript — Task 5F introduced new errors:** NO
 **Rider TypeScript — Baseline POSPanel error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
 **Commit:** See timeline above.
+
+---
+
+---
+
+## Task 6A — Rider Accept: Online Order Identity & Store-Safe Claim Fix
+
+**Starting SHA:** cabf4f79f1b868876fdcc0e4b8927cbe07a2cf5d
+
+**Problem (Forensic Confirmed):**
+For Website Online Delivery Order #1124 (OnlineOrder.id = 1124, linked POS Order.id = 724):
+
+When KOT became READY, `kots.service.ts` had potential for a dual broadcast:
+- Block 1 (POS-native DELIVERY path): fires `formatPosOrderForRider()` emitting POS Order id
+- Block 2 (ONLINE path): fires OnlineOrder payload emitting OnlineOrder id
+
+While `order_source = 'ONLINE'` means Block 1 would NOT match (it checks `'DELIVERY'`), the
+safety guard was implicit only. A wrong value in `order_source` could cause dual broadcast.
+Additionally, `claimOrder` had NO protection against a Rider accidentally claiming the
+internal POS Order.id (724) instead of OnlineOrder.id (1124), which would:
+- Accept delivery under the wrong identity
+- Break Website tracker, TV Board, and Rider history
+
+**Root Cause — Exact Dual Broadcast Path:**
+`kots.service.ts` updateKotStatus:
+- Block 1 (line 119): `if status=READY && order_source.toUpperCase()==='DELIVERY'` → `formatPosOrderForRider(POS id)`
+- Block 2 (line 135): `if status=READY && order_source==='ONLINE'` → `updatedOnlineOrder (OnlineOrder id)`
+Both are mutually exclusive by order_source, but with no explicit hard guard against
+the DELIVERY block firing for an ONLINE-linked POS order.
+
+**Changes Made:**
+
+### Change 1 — `d4u-pos-backend/src/modules/business/kots/kots.service.ts`
+Added explicit OnlineOrder reverse-link check inside Block 1 (the POS-native DELIVERY path):
+- If `status=READY && order_source='DELIVERY'`: first check `onlineOrder.findUnique({ posOrderId: kotOrderId })`
+- If a linked OnlineOrder is found → skip formatPosOrderForRider entirely (Block 2 owns that broadcast)
+- If no linked OnlineOrder → proceed with formatPosOrderForRider as before (POS-native delivery)
+Block 2 (ONLINE path) is unchanged — still the single authoritative broadcast for Website orders.
+
+### Change 2 — `d4u-pos-backend/src/modules/business/rider/rider.service.ts`
+Added an ONLINE-linked POS Order rejection guard in `claimOrder` POS fallback path:
+- If a POS Order claim succeeds AND order_source==='ONLINE' AND a linked OnlineOrder exists:
+  - Rolls back the rider_id to null (safe undo)
+  - Throws 400 with message: "This is an internal kitchen order linked to Website Order #N. Please accept order #N instead."
+- POS-native DELIVERY orders (`order_source='DELIVERY'`) are unaffected.
+
+### Change 3 — `d4u-rider/src/App.tsx`
+Auth mount check — session integrity validation:
+- Before restoring session, validates storeNum > 0 (valid positive integer) and riderNum > 0
+- If either is invalid/NaN: clears all localStorage rider keys and routes to login
+- Prevents stale/corrupted store identity silently entering delivery operations
+
+Store mismatch error message — `handleAcceptOrder`:
+- On 400 response where errMsg contains 'store', shows:
+  "This order belongs to another store. Please check your rider login."
+- Duration: 8000ms for visibility
+- 409 (already claimed) path unchanged
+- Surfaces actual backend error message for all other 4xx failures
+
+**Preserved Behaviors:**
+- POS-native DELIVERY orders: formatPosOrderForRider broadcast still fires (no linked OnlineOrder)
+- POS Active Deliveries: unaffected (they use order_updated + kds_update, both still fire)
+- TV Board: unaffected
+- KDS: unaffected
+- Website tracker: unaffected (uses onlineOrder broadcast)
+- Store tenant isolation (RiderService.claimOrder store_id check): UNTOUCHED
+- Task 5A/5E refresh recovery: UNTOUCHED
+
+**QA Summary:**
+
+TEST A — Website Delivery Event Identity:
+- OnlineOrder (ONLINE path): emits ONE broadcast using OnlineOrder.id
+- Block 1 (DELIVERY path): skipped because linkedOnlineCheck finds the linked OnlineOrder
+- Result: Rider receives exactly ONE offer under the correct customer-facing id
+
+TEST B — Valid Rider Accept:
+- PATCH /rider-orders/:onlineOrderId/claim with correct riderId → 200, OnlineOrder.claimedByRiderId set
+- No false-positive "another rider" error
+
+TEST C — Store Mismatch:
+- Backend rejects with 400 'Rider store mismatch.'
+- Frontend shows: "This order belongs to another store. Please check your rider login."
+- No DB mutation, tenant isolation intact
+
+TEST D — POS-Native Delivery Regression:
+- POS-native delivery (order_source='DELIVERY', no linked OnlineOrder):
+  - linkedOnlineCheck returns null → formatPosOrderForRider fires normally ✅
+  - Claim path works through POS Order fallback ✅
+
+TEST E — Website Tracker/POS Regression:
+- kds_update still fires for all KOTs → KDS unaffected
+- order_updated (OnlineOrder) still fires → POS cashier READY toast still shows ✅
+
+TEST F — Refresh After Claim:
+- Task 5E REST hydration still checks claimedByRiderId === riderId → restores correctly
+- No ID switch (uses same OnlineOrder.id throughout lifecycle)
+
+**TypeScript:**
+- Backend: PASS (npx tsc --noEmit — 0 errors)
+- Rider: PRE-EXISTING ERROR ONLY (src/App.tsx:11 — cannot find module './components/POSPanel') — NOT introduced by Task 6A (confirmed via git stash test)
+
+**Files Changed:**
+- `d4u-pos-backend/src/modules/business/kots/kots.service.ts`
+- `d4u-pos-backend/src/modules/business/rider/rider.service.ts`
+- `d4u-rider/src/App.tsx`
+- `docs/ANTIGRAVITY_CLAUDE_HANDOVER.md`
+
+**Commit:** fix(rider): unify online delivery claim identity
 
 ---
 

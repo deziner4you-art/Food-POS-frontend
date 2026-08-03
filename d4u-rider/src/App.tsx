@@ -88,20 +88,38 @@ export default function App() {
   }, [riderStats]);
 
   // Auth Mount Check
+  // Task 6A: validate that the restored session is internally consistent.
+  // A stale/corrupted store_id or rider_id must not silently allow delivery
+  // operations under the wrong store identity — fail safely to login.
   useEffect(() => {
     const token = localStorage.getItem('d4u_rider_token');
     const store = localStorage.getItem('d4u_rider_store');
     const name = localStorage.getItem('d4u_rider_name');
     const storeName = localStorage.getItem('d4u_rider_store_name');
     const restoredRiderId = localStorage.getItem('d4u_rider_id');
-    
-    if (token && store && restoredRiderId) {
-      setRiderStoreId(Number(store));
+
+    const storeNum = Number(store);
+    const riderNum = Number(restoredRiderId);
+    const sessionValid =
+      token &&
+      store &&
+      restoredRiderId &&
+      !isNaN(storeNum) && storeNum > 0 &&
+      !isNaN(riderNum) && riderNum > 0;
+
+    if (sessionValid) {
+      setRiderStoreId(storeNum);
       setRiderName(name || '');
       setRiderStoreName(storeName || '');
-      setRiderId(restoredRiderId);
+      setRiderId(restoredRiderId!);
       setCurrentView('map');
     } else {
+      // Session is missing or internally inconsistent — clear and re-login
+      localStorage.removeItem('d4u_rider_token');
+      localStorage.removeItem('d4u_rider_store');
+      localStorage.removeItem('d4u_rider_name');
+      localStorage.removeItem('d4u_rider_store_name');
+      localStorage.removeItem('d4u_rider_id');
       setCurrentView('login');
     }
   }, []);
@@ -439,11 +457,21 @@ export default function App() {
         body: JSON.stringify({ riderId, riderName }),
       });
       if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const errMsg: string = errData.message || '';
         const { toast } = require('react-hot-toast');
         if (res.status === 409) {
           toast.error('Order already taken by another rider.');
+        } else if (res.status === 400 && errMsg.toLowerCase().includes('store')) {
+          // Task 6A Change 3: clear, actionable store-mismatch message.
+          // Backend returns 400 'Rider store mismatch.' when the rider's
+          // store_id does not match the order's store_id.
+          toast.error(
+            'This order belongs to another store. Please check your rider login.',
+            { duration: 8000 }
+          );
         } else {
-          toast.error('Could not accept this order. Please try again.');
+          toast.error(errMsg || 'Could not accept this order. Please try again.');
         }
         if (!orderToClaim) {
           handleDeclineOrder();

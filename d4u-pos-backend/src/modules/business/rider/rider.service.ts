@@ -161,6 +161,28 @@ export class RiderService {
         where: { id },
         include: { customer: true, items: { include: { product: true } }, rider: true },
       });
+      // Task 6A: if this POS Order is the internal twin of a Website OnlineOrder,
+      // reverse the claim (rollback rider_id) and reject — the Rider must use the
+      // OnlineOrder id so that Website tracking, TV Board, and Rider history all
+      // remain under the same customer-facing identity. A successful claim here
+      // would create a second accepted delivery record under the wrong id.
+      if (updated.order_source === 'ONLINE') {
+        const linkedOnline = await this.prisma.onlineOrder.findUnique({
+          where: { posOrderId: id },
+          select: { id: true },
+        });
+        if (linkedOnline) {
+          // Roll back the rider_id we just wrote — the claim must not stand
+          await this.prisma.order.update({
+            where: { id },
+            data: { rider_id: null },
+          });
+          throw new BadRequestException(
+            `This is an internal kitchen order linked to Website Order #${linkedOnline.id}. ` +
+            `Please accept order #${linkedOnline.id} instead.`,
+          );
+        }
+      }
       const formatted = formatPosOrderForRider(updated);
       this.gateway.broadcast('order_updated', formatted, `store_${updated.store_id}`);
       return { success: true, order: formatted };

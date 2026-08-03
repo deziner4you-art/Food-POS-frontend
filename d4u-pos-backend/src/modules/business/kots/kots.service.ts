@@ -109,21 +109,39 @@ export class KotsService {
       store_id: kot.store_id,
     });
 
-    // Sprint 28.9: this was the actual break in "POS -> Kitchen -> Ready ->
-    // Rider App" — the Rider App only listens for 'order_updated' (the same
-    // event/shape online-orders.service.ts already emits correctly), but
-    // this method only ever emitted 'kds_update' (different name, different
-    // shape), so a POS-originated delivery order becoming READY never
-    // reached any rider, regardless of dispatch/assignment. Only applies to
-    // delivery orders — dine-in/takeaway tickets have no rider to notify.
+    // Task 6A — POS-native delivery orders only (order_source = 'DELIVERY'):
+    // Emit the Rider-facing offer using the POS Order's own identity.
+    // MUST NOT fire for Website-origin orders (order_source = 'ONLINE') —
+    // those are handled by block 2 below using the authoritative OnlineOrder
+    // identity. Emitting formatPosOrderForRider for an ONLINE-sourced POS
+    // Order would create a competing Rider offer under the internal POS
+    // Order id instead of the customer-facing OnlineOrder id, which breaks
+    // claim URL routing, Rider history, and Website order tracking.
+    //
+    // Guard: order_source is 'DELIVERY' (mixed case) for POS-native orders
+    // and 'ONLINE' for Website orders — these are mutually exclusive. The
+    // additional posOrderId=null check below makes the exclusion explicit
+    // for safety: if this POS Order is the linked twin of an OnlineOrder
+    // (posOrderId would point back to it via the unique reverse relation),
+    // skip the POS broadcast entirely — block 2 owns that identity.
     if (status === 'READY' && kot.order?.order_source?.toUpperCase() === 'DELIVERY') {
-      const fullOrder = await this.prisma.order.findUnique({
-        where: { id: kot.order_id },
-        include: { customer: true, items: { include: { product: true } } },
+      // Confirm this is NOT a Website-linked POS Order before broadcasting
+      const linkedOnlineCheck = await this.prisma.onlineOrder.findUnique({
+        where: { posOrderId: kot.order_id },
+        select: { id: true },
       });
-      if (fullOrder) {
-        this.gateway.broadcast('order_updated', formatPosOrderForRider(fullOrder), `store_${kot.store_id}`);
+      if (!linkedOnlineCheck) {
+        // Genuine POS-native delivery — use POS Order identity
+        const fullOrder = await this.prisma.order.findUnique({
+          where: { id: kot.order_id },
+          include: { customer: true, items: { include: { product: true } } },
+        });
+        if (fullOrder) {
+          this.gateway.broadcast('order_updated', formatPosOrderForRider(fullOrder), `store_${kot.store_id}`);
+        }
       }
+      // If linkedOnlineCheck is non-null this order is ONLINE-origin — block 2
+      // below will broadcast the authoritative OnlineOrder representation.
     }
 
     // Website orders that were given a real kitchen ticket at CONFIRMED
@@ -132,6 +150,10 @@ export class KotsService {
     // broadcast THAT, not formatPosOrderForRider(fullOrder): the latter
     // stamps the POS Order's own id, not the OnlineOrder's, which would
     // silently break TrackOrderPage/Rider App's id-based matching.
+    // Task 6A: this is the ONE and ONLY Rider-facing broadcast for
+    // Website-origin orders — block 1 above is explicitly suppressed when
+    // a linked OnlineOrder exists, ensuring exactly one identity (OnlineOrder.id)
+    // reaches the Rider App.
     if ((status === 'PREPARING' || status === 'READY') && kot.order?.order_source === 'ONLINE') {
       const linkedOnlineOrder = await this.prisma.onlineOrder.findUnique({
         where: { posOrderId: kot.order_id },
