@@ -106,6 +106,37 @@ export class RiderService {
   // Order.rider_id (pre-existing) is reused for POS-native delivery orders
   // instead of adding a duplicate column there.
   async claimOrder(id: number, riderId: number, riderName?: string) {
+    if (!riderId || isNaN(riderId) || riderId <= 0) {
+      throw new BadRequestException('Invalid rider ID provided.');
+    }
+
+    const riderUser = await this.prisma.user.findUnique({
+      where: { id: riderId },
+    });
+
+    if (!riderUser) {
+      throw new BadRequestException('Rider does not exist.');
+    }
+
+    let orderStoreId: number | undefined;
+    const existingOnlineForVal = await this.prisma.onlineOrder.findUnique({ where: { id } });
+    if (existingOnlineForVal) {
+      orderStoreId = existingOnlineForVal.store_id;
+    } else {
+      const existingPosForVal = await this.prisma.order.findUnique({ where: { id } });
+      if (existingPosForVal) {
+        orderStoreId = existingPosForVal.store_id;
+      }
+    }
+
+    if (!orderStoreId) {
+      throw new NotFoundException('Order not found.');
+    }
+
+    if (riderUser.store_id !== orderStoreId) {
+      throw new BadRequestException('Rider store mismatch.');
+    }
+
     const onlineClaim = await this.prisma.onlineOrder.updateMany({
       where: { id, claimedByRiderId: null },
       data: { claimedByRiderId: riderId, claimedByRiderName: riderName || null },

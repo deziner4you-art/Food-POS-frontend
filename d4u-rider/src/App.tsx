@@ -393,6 +393,13 @@ export default function App() {
 
   const handleAcceptOrder = async () => {
     if (!activeOrder) return;
+    
+    if (!riderId || isNaN(Number(riderId)) || Number(riderId) <= 0) {
+      const { toast } = require('react-hot-toast');
+      toast.error('Invalid rider identity. Please log in again.');
+      logout();
+      return;
+    }
     // Atomic server-side claim: whichever rider's request lands first wins
     // (RiderService.claimOrder), every other online rider trying to accept
     // the same order gets a 409 and their local offer is dropped. Without

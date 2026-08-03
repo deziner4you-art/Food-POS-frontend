@@ -135,7 +135,8 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | ac62d1b | Task 3B: Website tracker delivery status alignment | Antigravity | PASS |
 | 190e802 | Task 4A: Rider App delivery status recovery alignment | Antigravity | PASS |
 | 9fb1035 | Task 4B: TV Board customer-facing order number alignment | Antigravity | PASS |
-| (next) | Task 5A: Rider Identity Persistence & Refresh Restoration | Antigravity | PASS |
+| b1725a6 | Task 5A: Rider Identity Persistence & Refresh Restoration | Antigravity | PASS |
+| (next) | Task 5B: Rider Claim Safety / Invalid Rider ID Protection | Antigravity | PASS |
 
 ---
 
@@ -344,6 +345,49 @@ Missing persistence of the primary rider ID key `d4u_rider_id` during login and 
 
 **Build:** PASS
 **TypeScript:** Baseline TypeScript error remains (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`); Task 5A introduced no new TypeScript errors.
+**Commit:** See timeline above.
+
+---
+
+### Task 5B — Rider Claim Safety / Invalid Rider ID Protection
+
+**Problem:** 
+Task 5A fixed the immediate cause of `riderId` dropping to `''`, but the backend still had no defense against invalid rider IDs. If `riderId = ''` was sent to `PATCH /rider-orders/:id/claim`, the controller converted it to `0`, and the backend blindly executed `updateMany` to assign the order to phantom ID `0`.
+
+**Investigation:** 
+- Analyzed `handleAcceptOrder` in `App.tsx`.
+- Analyzed `RiderService.claimOrder` and `ClaimOrderDto`.
+- Discovered that the backend did not verify if the ID was valid or if the user actually existed before locking the claim. 
+- Analyzed store tenant isolation options to ensure the rider belonged to the same store as the order.
+
+**Root Cause:** 
+Missing frontend pre-flight validation and missing backend defensive validation against malformed or fabricated `riderId` values.
+
+**Files Changed:** 
+- `d4u-rider/src/App.tsx`
+- `d4u-pos-backend/src/modules/business/rider/rider.service.ts`
+
+**Implementation:** 
+- **Frontend Pre-flight Guard:** Added a validation block at the start of `handleAcceptOrder` in `App.tsx` to check if `riderId` is missing, `NaN`, or `<= 0`. If invalid, it immediately shows a toast error, logs the user out, and aborts the request.
+- **Backend Rider ID Validation:** Added strict bounds checking (`!riderId || isNaN(riderId) || riderId <= 0`) inside `claimOrder`, throwing `BadRequestException` if tripped.
+- **Backend Rider Verification & Tenant Isolation:** Implemented a targeted `Prisma` lookup for the `riderId` to verify existence. Additionally, verified that `riderUser.store_id` matches the target order's `store_id` (supporting both `OnlineOrder` and POS `Order`), throwing if mismatched.
+- **Atomic Race Preservation:** The core `updateMany` locking (`where: { id, claimedByRiderId: null }`) mechanism remains completely untouched and authoritative.
+
+**Status:** 
+- Accept Order corruption finding is now fully **FIXED**.
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| A | Valid Rider → Real ID sent, HTTP success, claim succeeds, UI transitions | PASS |
+| B | Empty `riderId` → Frontend intercepts, fires toast, logs out. No request made. | PASS |
+| C | `riderId = 0` → Backend actively rejects with `400 Bad Request` (Invalid rider ID) | PASS |
+| D | Nonexistent Rider ID → Backend checks DB, rejects with `400` (Rider does not exist) | PASS |
+| E | Cross-Store Claim → Backend compares `store_id`, rejects with `400` (Rider store mismatch) | PASS |
+| F | Atomic Race → Core `updateMany` lock untouched; only first request updates `claimedByRiderId` to non-null | PASS |
+
+**Build:** PASS
+**TypeScript:** PASS (Baseline POSPanel error maintained)
 **Commit:** See timeline above.
 
 ---
