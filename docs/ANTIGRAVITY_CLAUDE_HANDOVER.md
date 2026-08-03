@@ -83,7 +83,7 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 5. POS order_updated filtering omits relevant rider statuses.
    - FIXED
 6. Website tracker STATUS_INDEX lacks RIDER_ACCEPTED.
-   - OPEN
+   - FIXED
 7. Atomic Rider Claim is already working and must not be redesigned.
    - FIXED
 
@@ -95,7 +95,7 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 Rider App REST Refresh Recovery — COMPLETE (Tasks 2A, 2B, 2C passed)
 
 **Task 3**
-Cross-App Delivery Status Dictionary Alignment (IN_PROGRESS — Task 3A Completed)
+Cross-App Delivery Status Dictionary Alignment — COMPLETE (Tasks 3A & 3B)
 
 ---
 
@@ -121,7 +121,8 @@ Cross-App Delivery Status Dictionary Alignment (IN_PROGRESS — Task 3A Complete
 | eed01a2 | Task 2A: Rider REST hydration on mount | Antigravity | PASS |
 | 0f728f5 | Task 2B: Rider stage restore after refresh | Antigravity | PASS |
 | d2e2699 | Task 2C: QA close — no code changes required | Antigravity | PASS |
-| (next) | Task 3A: POS delivery lifecycle status sync | Antigravity | PASS |
+| ec14161 | Task 3A: POS delivery lifecycle status sync | Antigravity | PASS |
+| (next) | Task 3B: Website tracker delivery status alignment | Antigravity | PASS |
 
 ---
 
@@ -179,6 +180,41 @@ Incomplete status list in the `includes()` guard; incorrect remapping to the non
 
 **Build:** PASS
 **TypeScript:** Baseline TypeScript error remains (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`); Task 2C introduced no new TypeScript errors.
+
+
+### Task 3B — Website Tracker Delivery Status Alignment
+
+**Problem:** 
+The customer-facing order tracker could visually jump back to step 0 ("Order Placed") when the order reached `RIDER_ACCEPTED` or `PICKED_UP` status, because those statuses were absent from `STATUS_INDEX` and the `?? 0` fallback was applied.
+
+**Investigation:** 
+Inspected `TrackOrderPage.tsx` `STATUS_INDEX`. Found `RIDER_ACCEPTED` and `PICKED_UP` completely absent. All other operational statuses (`RIDER_ARRIVED`, `PRINT_BILL`, `DISPATCHED`, `OUT_FOR_DELIVERY`, `WAITING_CASH_SETTLEMENT`, `SETTLED`) were correctly mapped.
+
+**Root Cause:** 
+Two backend-emitted statuses not represented in `STATUS_INDEX`, causing the `?? 0` fallback to silently reset the progress bar.
+
+**Files Changed:** 
+- `d4u-website/src/pages/TrackOrderPage.tsx`
+
+**Implementation:** 
+- `RIDER_ACCEPTED: 3` — Rider claimed the order; food is ready and rider is assigned. Maps to the existing "Ready" step (same as `RIDER_ARRIVED`, `DISPATCHED`).
+- `PICKED_UP: 4` — Rider confirmed food pickup from restaurant. Maps to the existing "Out For Delivery" step (same as `OUT_FOR_DELIVERY`).
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| 1 | RIDER_ACCEPTED → tracker stays at step 3 (Ready) | PASS |
+| 2 | RIDER_ARRIVED → correct step 3 (Ready/packed) | PASS |
+| 3 | PICKED_UP / OUT_FOR_DELIVERY → step 4 (On The Way) | PASS |
+| 4 | DELIVERED → step 5 (Delivered) | PASS |
+| 5 | WAITING_CASH_SETTLEMENT → step 5 (Delivered, not regressed) | PASS |
+| 6 | SETTLED → step 6 (Completed) | PASS |
+| 7 | Refresh on OUT_FOR_DELIVERY → REST restores step 4 | PASS |
+| 8 | Socket order_updated → tracker advances live without refresh | PASS |
+
+**Build:** PASS
+**TypeScript:** PASS
+**Commit:** See timeline above.
 
 ---
 
