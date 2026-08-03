@@ -16,7 +16,7 @@ export class RiderService {
     if (!storeId) {
       throw new BadRequestException('store_id is required.');
     }
-    const validStatuses = ['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'PAID', 'SETTLED'];
+    const validStatuses = ['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'WAITING_CASH_SETTLEMENT', 'PAID', 'SETTLED'];
 
     const onlineWhere: any = {
       status: { in: validStatuses },

@@ -614,11 +614,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           }
         }
 
-        const riderRes = await apiFetch('/rider-orders', { auth: true });
+        const riderRes = await apiFetch(`/rider-orders?store_id=${storeId}`, { auth: true });
         if (riderRes.ok) {
           const riderOrders: any[] = await riderRes.json();
           setActiveDeliveries(prev => {
             let changed = false;
+            const existingIds = new Set(prev.map(d => d.bridgeOrderId));
+            const newCards: any[] = [];
+
             const updated = prev.map(d => {
               const ro = riderOrders.find(o => o.id === d.bridgeOrderId);
               if (ro && d.status !== 'SETTLED') {
@@ -630,7 +633,41 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               }
               return d;
             });
-            return changed ? updated : prev;
+
+            for (const ro of riderOrders) {
+              if (!existingIds.has(ro.id) && ro.status !== 'SETTLED' && ro.status !== 'NEW' && ro.status !== 'PREPARING') {
+                changed = true;
+                let parsedItems: any[] = [];
+                try {
+                  parsedItems = (ro.items || '').split(',').map((part: string) => {
+                    const m = part.trim().match(/^(\d+)x\s+(.+)$/);
+                    if (m) return { id: Date.now() + Math.random(), name: m[2].trim(), price: 0, qty: parseInt(m[1]), img: '', desc: 'Delivery Item' };
+                    return { id: Date.now() + Math.random(), name: part.trim(), price: 0, qty: 1, img: '', desc: 'Delivery Item' };
+                  }).filter((i: any) => i.name);
+                } catch (e) {}
+
+                let newStatus = ro.status;
+                if (ro.status === 'RIDER_ACCEPTED' || ro.status === 'PICKED_UP') newStatus = 'ON_WAY';
+                
+                newCards.push({
+                  id: ro.orderId || ro.id,
+                  bridgeOrderId: ro.id,
+                  customer: ro.customer || 'Guest',
+                  address: ro.customerAddress || 'No Address Provided',
+                  customerAddress: ro.customerAddress || 'No Address Provided',
+                  status: newStatus,
+                  rider: ro.claimedByRiderName ? `Rider: ${ro.claimedByRiderName}` : 'Waiting for Rider',
+                  cod: parseFloat(ro.totalAmount) || 0,
+                  totalAmount: parseFloat(ro.totalAmount) || 0,
+                  riderDistance: 'N/A',
+                  lat: ro.delivery?.lat ? ro.delivery.lat + '%' : '50%',
+                  lng: ro.delivery?.lng ? ro.delivery.lng + '%' : '50%',
+                  items: parsedItems,
+                });
+              }
+            }
+
+            return changed ? [...updated, ...newCards] : prev;
           });
         }
       } catch { /* backend offline */ }
