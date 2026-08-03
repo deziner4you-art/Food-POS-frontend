@@ -9,9 +9,10 @@ interface OrdersViewProps {
   lastOrderUpdate: number;
   onBack: () => void;
   onAcceptOrder: (order: any) => Promise<boolean>;
+  onResumeOrder: (order: any) => void;
 }
 
-export default function OrdersView({ riderStoreId, riderId, lastOrderUpdate, onBack, onAcceptOrder }: OrdersViewProps) {
+export default function OrdersView({ riderStoreId, riderId, lastOrderUpdate, onBack, onAcceptOrder, onResumeOrder }: OrdersViewProps) {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -116,7 +117,14 @@ export default function OrdersView({ riderStoreId, riderId, lastOrderUpdate, onB
         </div>
       </div>
 
-      {!isActive && (
+      {isActive ? (
+        <button
+          onClick={() => onResumeOrder(order)}
+          className="w-full mt-3 bg-primary text-slate-900 font-bold py-2.5 rounded-xl shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm"
+        >
+          <span>Resume Delivery</span>
+        </button>
+      ) : (
         <button
           onClick={() => handleAccept(order)}
           disabled={claimingId === order.id}

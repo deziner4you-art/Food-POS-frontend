@@ -203,6 +203,91 @@ export default function App() {
     }
   };
 
+  const restoreOrderStateFromRest = (targetOrder: any) => {
+    console.log('[RIDER] Restoring order state from REST payload:', targetOrder);
+    const deliveryOrder: DeliveryOrder = {
+      id: targetOrder.id,
+      source: 'ONLINE_ORDER',
+      restaurantName: riderStoreName || 'Restaurant',
+      restaurantX: 50, restaurantY: 50,
+      restaurantAddress: riderStoreName || 'Branch Location',
+      customerName: targetOrder.customer || 'Customer',
+      customerAddress: targetOrder.customerAddress || 'Customer Address',
+      customerX: 80, customerY: 20,
+      earnings: parseFloat(targetOrder.totalAmount) || 12.50,
+      distance: 3.5,
+      itemsCount: targetOrder.items ? targetOrder.items.split(',').length : 1,
+      itemsList: targetOrder.items ? targetOrder.items.split(',') : [],
+      estTimeMins: 15,
+      paymentMethod: 'COD',
+      paymentStatus: 'UNPAID',
+      estimatedReadyAt: targetOrder.estimatedReadyAt,
+      bridgeStatus: targetOrder.status
+    };
+    
+    setActiveOrder(deliveryOrder as any);
+
+    let hydratedStatus: DeliveryStatus = 'OFFERED';
+    let hydratedPath: { x: number; y: number }[] = [];
+
+    if (String(targetOrder.claimedByRiderId) === String(riderId)) {
+      if (['READY', 'PRINT_BILL', 'DISPATCHED'].includes(targetOrder.status)) {
+        hydratedStatus = 'ACCEPTED';
+        hydratedPath = generateGridPath(
+          30, 65,
+          deliveryOrder.restaurantX, deliveryOrder.restaurantY,
+          'pickup'
+        );
+      }
+      if (targetOrder.status === 'RIDER_ARRIVED') {
+        hydratedStatus = 'ARRIVED_REST';
+      }
+      if (targetOrder.status === 'OUT_FOR_DELIVERY') {
+        hydratedStatus = 'PICKED_UP';
+        hydratedPath = generateGridPath(
+          deliveryOrder.restaurantX, deliveryOrder.restaurantY,
+          deliveryOrder.customerX, deliveryOrder.customerY,
+          'trip'
+        );
+      }
+      if (targetOrder.status === 'DELIVERED' || targetOrder.status === 'WAITING_CASH_SETTLEMENT') {
+        hydratedStatus = 'DELIVERED';
+      }
+    }
+
+    setStatus(hydratedStatus);
+    setActivePath(hydratedPath);
+    setCurrentPathIndex(0);
+    
+    if (hydratedPath.length > 0) {
+      setDriverCoords(hydratedPath[0]);
+    } else if (hydratedStatus === 'ARRIVED_REST') {
+      setDriverCoords({ x: deliveryOrder.restaurantX, y: deliveryOrder.restaurantY });
+    } else if (hydratedStatus === 'DELIVERED') {
+      setDriverCoords({ x: deliveryOrder.customerX, y: deliveryOrder.customerY });
+    }
+    
+    setCurrentView('map');
+  };
+
+  const handleResumeOrder = (orderToResume: any) => {
+    if (!orderToResume) return;
+
+    if (activeOrder) {
+      if (String(activeOrder.id) === String(orderToResume.id)) {
+        setActiveOrder(prev => prev ? { ...prev, bridgeStatus: orderToResume.status, estimatedReadyAt: orderToResume.estimatedReadyAt } : null);
+        setCurrentView('map');
+        return;
+      } else {
+        const { toast } = require('react-hot-toast');
+        toast.error('You already have another active delivery in progress.');
+        return;
+      }
+    }
+
+    restoreOrderStateFromRest(orderToResume);
+  };
+
   // --- REST HYDRATION ON MOUNT ---
   useEffect(() => {
     if (!riderStoreId || !riderId) return;
@@ -229,74 +314,8 @@ export default function App() {
           );
         }
 
-        // An order claimed by another rider is implicitly excluded because 
-        // we either pick claimedByRiderId == riderId OR claimedByRiderId == null.
-
         if (targetOrder && !activeOrder) {
-          console.log('[RIDER] Hydrated available order from REST!', targetOrder);
-          const deliveryOrder: DeliveryOrder = {
-            id: targetOrder.id,
-            source: 'ONLINE_ORDER',
-            restaurantName: riderStoreName || 'Restaurant',
-            restaurantX: 50, restaurantY: 50,
-            restaurantAddress: riderStoreName || 'Branch Location',
-            customerName: targetOrder.customer || 'Customer',
-            customerAddress: targetOrder.customerAddress || 'Customer Address',
-            customerX: 80, customerY: 20,
-            earnings: parseFloat(targetOrder.totalAmount) || 12.50,
-            distance: 3.5,
-            itemsCount: targetOrder.items ? targetOrder.items.split(',').length : 1,
-            itemsList: targetOrder.items ? targetOrder.items.split(',') : [],
-            estTimeMins: 15,
-            paymentMethod: 'COD',
-            paymentStatus: 'UNPAID',
-            estimatedReadyAt: targetOrder.estimatedReadyAt,
-            bridgeStatus: targetOrder.status
-          };
-          
-          setActiveOrder(deliveryOrder as any);
-
-          let hydratedStatus: DeliveryStatus = 'OFFERED';
-          let hydratedPath: { x: number; y: number }[] = [];
-
-          if (String(targetOrder.claimedByRiderId) === String(riderId)) {
-            if (['READY', 'PRINT_BILL', 'DISPATCHED'].includes(targetOrder.status)) {
-              hydratedStatus = 'ACCEPTED';
-              hydratedPath = generateGridPath(
-                30, 65,
-                deliveryOrder.restaurantX, deliveryOrder.restaurantY,
-                'pickup'
-              );
-            }
-            if (targetOrder.status === 'RIDER_ARRIVED') {
-              hydratedStatus = 'ARRIVED_REST';
-            }
-            if (targetOrder.status === 'OUT_FOR_DELIVERY') {
-              hydratedStatus = 'PICKED_UP';
-              hydratedPath = generateGridPath(
-                deliveryOrder.restaurantX, deliveryOrder.restaurantY,
-                deliveryOrder.customerX, deliveryOrder.customerY,
-                'trip'
-              );
-            }
-            if (targetOrder.status === 'DELIVERED' || targetOrder.status === 'WAITING_CASH_SETTLEMENT') {
-              hydratedStatus = 'DELIVERED';
-            }
-          }
-
-          setStatus(hydratedStatus);
-          setActivePath(hydratedPath);
-          setCurrentPathIndex(0);
-          
-          if (hydratedPath.length > 0) {
-            setDriverCoords(hydratedPath[0]);
-          } else if (hydratedStatus === 'ARRIVED_REST') {
-            setDriverCoords({ x: deliveryOrder.restaurantX, y: deliveryOrder.restaurantY });
-          } else if (hydratedStatus === 'DELIVERED') {
-            setDriverCoords({ x: deliveryOrder.customerX, y: deliveryOrder.customerY });
-          }
-          
-          setCurrentView('map');
+          restoreOrderStateFromRest(targetOrder);
         }
       } catch (err) {
         console.error('Failed to hydrate rider orders', err);
@@ -624,6 +643,7 @@ export default function App() {
               lastOrderUpdate={lastOrderUpdate}
               onBack={() => setCurrentView('map')} 
               onAcceptOrder={(order) => handleAcceptOrder(order)}
+              onResumeOrder={(order) => handleResumeOrder(order)}
             />
           )}
 

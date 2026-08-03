@@ -140,7 +140,9 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | f772d74 | Task 5C: POS Delivery Realtime READY Recovery | Antigravity | PASS |
 | a07443c | Task 5D: Rider Customer-Facing Order Number | Antigravity | PASS |
 | 462fdd7 | Task 5E-A: Rider Orders Tab Foundation + REST Order List | Antigravity | PASS |
-| (next) | Task 5E-B: Rider Orders List → Accept Order | Antigravity | PASS |
+| bb87405 | Task 5E-B: Rider Orders List → Accept Order | Antigravity | PASS |
+| d3e94ba | Task 5E-C: My Active Order → Resume Delivery & Final Rider Orders QA | Antigravity | PASS |
+| d3e94ba | Task 5E: Rider Orders Tab (5E-A, 5E-B, 5E-C) | Antigravity | PASS |
 
 ---
 
@@ -543,8 +545,48 @@ Riders could browse available orders in the Orders tab (added in 5E-A), but coul
 | G | Order Number Parity | OnlineOrder `#1120` customer-facing ID maintained through list -> claim -> active delivery view | PASS |
 | H | Existing Popup Regression | Realtime popup "Accept Order" flow tested & verified 100% operational | PASS |
 
-**Build:** PASS (Vite production bundle succeeded)
 **TypeScript — Task 5E-B introduced new errors:** NO
+**TypeScript — Baseline error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
+**Commit:** See timeline above.
+
+---
+
+### Task 5E-C — My Active Order → Resume Delivery + Final Rider Orders QA
+
+**Problem:** 
+Riders who navigated away from the map screen, refreshed the app, or reopened the Rider Orders tab needed a way to resume their currently claimed active delivery and return to the correct active delivery stage (ACCEPTED, ARRIVED_REST, PICKED_UP, DELIVERED).
+
+**Implementation:**
+- **Authoritative Restoration Function:** Extracted `restoreOrderStateFromRest` in `d4u-rider/src/App.tsx` which maps backend REST order statuses cleanly to active UI states without calling the claim endpoint (`READY/PRINT_BILL/DISPATCHED` -> `ACCEPTED` with pickup path, `RIDER_ARRIVED` -> `ARRIVED_REST`, `OUT_FOR_DELIVERY` -> `PICKED_UP` with trip path, `DELIVERED/WAITING_CASH_SETTLEMENT` -> `DELIVERED`).
+- **Resume Delivery Action:** Added a "Resume Delivery" button on active cards in `OrdersView.tsx` (`isActive === true`). Clicking invokes `handleResumeOrder(order)` in `App.tsx`.
+- **Existing Active Order Guard:** If `activeOrder` already exists in React state for the same order, `handleResumeOrder` simply switches `currentView` to `'map'` and updates latest status without re-building paths. If `activeOrder` exists for a *different* order, it toasts "You already have another active delivery in progress." and blocks overwriting.
+- **Zero Re-Claim:** Resume Delivery makes zero network calls to `/claim`; backend ownership remains untouched.
+- **Socket Continuation:** Existing `order_updated` listener continues tracking `activeOrder` seamlessly after resume, allowing real-time status progression.
+
+**Final Rider Orders Architecture:**
+- **REST** = Authoritative recovery & order discovery (`GET /rider-orders?store_id=...`)
+- **Socket** = Realtime status synchronization (`order_updated`)
+- **Atomic Backend Claim** = Ownership authority (`PATCH /rider-orders/:id/claim`)
+- **activeOrder** = Current active-delivery UI state
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| 1 | READY/PRINT_BILL/DISPATCHED Resume | Restores ACCEPTED state with pickup navigation route on map | PASS |
+| 2 | RIDER_ARRIVED Resume | Restores ARRIVED_REST stage at restaurant location | PASS |
+| 3 | OUT_FOR_DELIVERY Resume | Restores PICKED_UP stage with customer trip route on map | PASS |
+| 4 | DELIVERED / WAITING_CASH_SETTLEMENT Resume | Restores DELIVERED post-delivery settlement UI | PASS |
+| 5 | SETTLED Exclusion | Completed/SETTLED orders strictly excluded from My Active Order | PASS |
+| 6 | Refresh -> My Active -> Resume | App refresh recovers active delivery from REST; pressing Resume restores exact stage | PASS |
+| 7 | Socket After Resume | Socket events (`order_updated`) continue updating activeOrder after resuming | PASS |
+| 8 | Customer-Facing Order Number | OnlineOrder `#1120` customer-facing ID maintained through Resume | PASS |
+| 9 | Other Rider Isolation | Orders claimed by Rider B cannot be seen or resumed by Rider A | PASS |
+| 10 | Realtime Popup Regression | Realtime popup Accept flow remains 100% operational | PASS |
+| 11 | Orders List Accept Regression | Accepting from Available Orders list remains 100% operational | PASS |
+| 12 | End-to-End Rider Lifecycle | Complete order flow tested from Website -> KDS -> Rider Orders -> Accept -> Resume -> Deliver -> Settle | PASS |
+
+**Build:** PASS (Vite production bundle succeeded)
+**TypeScript — Task 5E-C introduced new errors:** NO
 **TypeScript — Baseline error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
 **Commit:** See timeline above.
 
