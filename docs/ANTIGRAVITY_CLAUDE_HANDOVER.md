@@ -86,6 +86,8 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
    - FIXED
 7. Atomic Rider Claim is already working and must not be redesigned.
    - FIXED
+8. Rider App available offer & hydration status filters omitted PRINT_BILL and RIDER_ARRIVED.
+   - FIXED
 
 ---
 
@@ -96,6 +98,9 @@ Rider App REST Refresh Recovery — COMPLETE (Tasks 2A, 2B, 2C passed)
 
 **Task 3**
 Cross-App Delivery Status Dictionary Alignment — COMPLETE (Tasks 3A & 3B)
+
+**Task 4A**
+Rider App Delivery Status Recovery Alignment — COMPLETE
 
 ---
 
@@ -122,7 +127,8 @@ Cross-App Delivery Status Dictionary Alignment — COMPLETE (Tasks 3A & 3B)
 | 0f728f5 | Task 2B: Rider stage restore after refresh | Antigravity | PASS |
 | d2e2699 | Task 2C: QA close — no code changes required | Antigravity | PASS |
 | ec14161 | Task 3A: POS delivery lifecycle status sync | Antigravity | PASS |
-| (next) | Task 3B: Website tracker delivery status alignment | Antigravity | PASS |
+| ac62d1b | Task 3B: Website tracker delivery status alignment | Antigravity | PASS |
+| (next) | Task 4A: Rider App delivery status recovery alignment | Antigravity | PASS |
 
 ---
 
@@ -214,6 +220,48 @@ Two backend-emitted statuses not represented in `STATUS_INDEX`, causing the `?? 
 
 **Build:** PASS
 **TypeScript:** PASS
+**Commit:** See timeline above.
+
+---
+
+### Task 4A — Rider App Delivery Status Recovery Alignment
+
+**Problem:** 
+Rider App unclaimed offer filters (`['READY', 'DISPATCHED', 'OUT_FOR_DELIVERY']`) omitted `PRINT_BILL` and `RIDER_ARRIVED`. As exposed by Order #1119, when an online order reached `PRINT_BILL` or `RIDER_ARRIVED` state, the Rider App discarded the record and showed "Looking for Orders".
+
+**Investigation:** 
+- Inspected `d4u-rider/src/App.tsx` REST hydration (line 220) and socket listener (lines 314 & 321).
+- Backend returns `PRINT_BILL` and `RIDER_ARRIVED` in `/rider-orders`, but Rider App frontend checks discarded them.
+- Analyzed status semantics: `PRINT_BILL` and `RIDER_ARRIVED` represent available orders ready for pickup at the restaurant. If claimed by the current rider, `PRINT_BILL` restores to `ACCEPTED` (pickup path) and `RIDER_ARRIVED` restores to `ARRIVED_REST`.
+
+**Root Cause:** 
+Frontend status filter mismatch against backend lifecycle statuses.
+
+**Files Changed:** 
+- `d4u-rider/src/App.tsx`
+
+**Implementation:** 
+- Expanded Rider App unclaimed available order filters (REST hydration & socket listener) to:
+  `['READY', 'PRINT_BILL', 'RIDER_ARRIVED', 'DISPATCHED', 'OUT_FOR_DELIVERY']`
+- Expanded claimed order `ACCEPTED` restoration filter to include `PRINT_BILL`:
+  `['READY', 'PRINT_BILL', 'DISPATCHED']` → `hydratedStatus = 'ACCEPTED'`
+- Expanded socket order_updated toast alert check to include `PRINT_BILL`:
+  `['READY', 'PRINT_BILL', 'DISPATCHED']`
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| A | READY unclaimed → OFFERED | PASS |
+| B | PRINT_BILL unclaimed → OFFERED (Order #1119 now visible to available riders) | PASS |
+| C | DISPATCHED unclaimed → OFFERED | PASS |
+| D | RIDER_ARRIVED claimed by current rider → restores as ARRIVED_REST | PASS |
+| E | RIDER_ARRIVED claimed by another rider → excluded (not shown to current rider) | PASS |
+| F | OUT_FOR_DELIVERY claimed by current rider → restores as PICKED_UP | PASS |
+| G | SETTLED → excluded | PASS |
+| H | REST + socket → no duplication | PASS |
+
+**Build:** PASS
+**TypeScript:** Pre-existing baseline error remains (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`); Task 4A introduced no new TypeScript errors.
 **Commit:** See timeline above.
 
 ---

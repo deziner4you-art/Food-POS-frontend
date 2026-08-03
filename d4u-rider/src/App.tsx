@@ -217,7 +217,7 @@ export default function App() {
         // 2. Otherwise find an available READY/unclaimed delivery
         if (!targetOrder) {
           targetOrder = orders.find(o => 
-            ['READY', 'DISPATCHED', 'OUT_FOR_DELIVERY'].includes(o.status) && 
+            ['READY', 'PRINT_BILL', 'RIDER_ARRIVED', 'DISPATCHED', 'OUT_FOR_DELIVERY'].includes(o.status) && 
             o.claimedByRiderId == null
           );
         }
@@ -253,7 +253,7 @@ export default function App() {
           let hydratedPath: { x: number; y: number }[] = [];
 
           if (String(targetOrder.claimedByRiderId) === String(riderId)) {
-            if (['READY', 'DISPATCHED'].includes(targetOrder.status)) {
+            if (['READY', 'PRINT_BILL', 'DISPATCHED'].includes(targetOrder.status)) {
               hydratedStatus = 'ACCEPTED';
               hydratedPath = generateGridPath(
                 30, 65,
@@ -311,14 +311,14 @@ export default function App() {
 
     socket.on('order_updated', (order: any) => {
       // 1. Alert Rider if a new order is READY
-      if (order.status === 'READY' && isOnline && !activeOrder) {
+      if (['READY', 'PRINT_BILL', 'DISPATCHED'].includes(order.status) && isOnline && !activeOrder) {
         // Just show toast notification
         const { toast } = require('react-hot-toast');
         toast.success(`New Delivery Ready for Pickup: Order #${order.id}`, { duration: 6000 });
       }
 
       // 2. Handle dispatch when KDS/POS dispatches it to OUT_FOR_DELIVERY or READY
-      if (['READY', 'DISPATCHED', 'OUT_FOR_DELIVERY'].includes(order.status) && isOnline && !activeOrder) {
+      if (['READY', 'PRINT_BILL', 'RIDER_ARRIVED', 'DISPATCHED', 'OUT_FOR_DELIVERY'].includes(order.status) && isOnline && !activeOrder) {
         console.log('[RIDER] Found available order!', order);
         const deliveryOrder: DeliveryOrder = {
           id: order.id,
