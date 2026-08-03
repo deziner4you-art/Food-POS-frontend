@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, MapPin } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 import { BACKEND_URL } from '../hooks/useStoreData';
 
@@ -19,7 +20,9 @@ const STATUS_INDEX: Record<string, number> = {
 
 export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
   const { orderUpdate, riderPosition } = useStore();
-  const [trackInput, setTrackInput] = useState(activeOrder?.id ? String(activeOrder.id) : '');
+  const [searchParams] = useSearchParams();
+  const queryOrder = searchParams.get('order') || '';
+  const [trackInput, setTrackInput] = useState(queryOrder || (activeOrder?.id ? String(activeOrder.id) : ''));
   const [result, setResult] = useState<any>(activeOrder || null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,15 +35,12 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
     }
   }, [orderUpdate]);
 
-  const handleTrack = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const input = trackInput.trim();
+  const loadOrder = async (input: string) => {
     if (!input) { setError('Order ID or phone is required'); return; }
     setLoading(true);
     setError('');
     try {
-      const isPhone = input.length > 5 || input.startsWith('0') || input.startsWith('+');
-      const res = await fetch(isPhone ? `${BACKEND_URL}/online-orders?phone=${encodeURIComponent(input)}` : `${BACKEND_URL}/online-orders/${input}`);
+      const res = await fetch(`${BACKEND_URL}/online-orders/track/${encodeURIComponent(input)}`);
       if (!res.ok) { setError('Order not found.'); setLoading(false); return; }
       const data = await res.json();
       const found = Array.isArray(data) ? data.sort((a, b) => b.id - a.id)[0] : data;
@@ -50,6 +50,18 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
       setError('Failed to connect to server.');
     }
     setLoading(false);
+  };
+
+  useEffect(() => {
+    const input = queryOrder.trim();
+    if (!input) return;
+    if (result && String(result.id) === input) return;
+    void loadOrder(input);
+  }, [queryOrder]);
+
+  const handleTrack = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await loadOrder(trackInput.trim());
   };
 
   const currentStep = result ? (STATUS_INDEX[result.status] ?? 0) : 0;

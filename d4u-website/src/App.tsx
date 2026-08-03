@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { BACKEND_URL } from './hooks/useStoreData';
@@ -140,6 +140,7 @@ function deriveLoyaltyTier(points: number): 'Gold Member' | 'Platinum Member' | 
 function AccountRoute() {
   const { loggedInUser, loginOrRegister } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
+  const navigate = useNavigate();
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [needsName, setNeedsName] = useState(false);
@@ -226,7 +227,7 @@ function AccountRoute() {
       }}
       orders={orders}
       products={[]}
-      onOpenOrderTracker={() => {}}
+      onOpenOrderTracker={(order) => navigate(`/track?order=${encodeURIComponent(order.orderNumber || order.id)}`)}
       onReorder={() => {}}
       favoriteProductIds={[]}
       onQuickViewProduct={setQuickViewProduct}
