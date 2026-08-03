@@ -81,7 +81,7 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 4. Rider REST validStatuses omits: OUT_FOR_DELIVERY, WAITING_CASH_SETTLEMENT.
    - FIXED
 5. POS order_updated filtering omits relevant rider statuses.
-   - OPEN
+   - FIXED
 6. Website tracker STATUS_INDEX lacks RIDER_ACCEPTED.
    - OPEN
 7. Atomic Rider Claim is already working and must not be redesigned.
@@ -95,7 +95,7 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 Rider App REST Refresh Recovery — COMPLETE (Tasks 2A, 2B, 2C passed)
 
 **Task 3**
-Cross-App Delivery Status Dictionary Alignment
+Cross-App Delivery Status Dictionary Alignment (IN_PROGRESS — Task 3A Completed)
 
 ---
 
@@ -120,7 +120,46 @@ Cross-App Delivery Status Dictionary Alignment
 | 36d7f45 | Task 1: Backend Rider validStatuses + POS hydration | Antigravity | PASS |
 | eed01a2 | Task 2A: Rider REST hydration on mount | Antigravity | PASS |
 | 0f728f5 | Task 2B: Rider stage restore after refresh | Antigravity | PASS |
-| (next) | Task 2C: QA close — no code changes required | Antigravity | PASS |
+| d2e2699 | Task 2C: QA close — no code changes required | Antigravity | PASS |
+| (next) | Task 3A: POS delivery lifecycle status sync | Antigravity | PASS |
+
+---
+
+### Task 3A — POS Active Deliveries Missing Status Synchronization
+
+**Problem:** 
+POS Active Deliveries cards froze when a delivery passed through `RIDER_ARRIVED`, `OUT_FOR_DELIVERY`, or `WAITING_CASH_SETTLEMENT` because those statuses were absent from the `order_updated` socket handler filter.
+
+**Investigation:** 
+- `handleOrderUpdated` in `App.tsx` (line 707 pre-fix) listed only 8 statuses; `RIDER_ARRIVED`, `OUT_FOR_DELIVERY`, `WAITING_CASH_SETTLEMENT` were all absent.
+- The card UI at line 2554 reads raw backend status strings — `del.status === 'OUT_FOR_DELIVERY'` for the animation class, `del.status === 'RIDER_ARRIVED'` and `del.status === 'WAITING_CASH_SETTLEMENT'` for action buttons. The pre-existing `RIDER_ACCEPTED → ON_WAY` and `PICKED_UP → ON_WAY` remappings silently broke those card interactions because `ON_WAY` is never checked in the card rendering.
+
+**Root Cause:** 
+Incomplete status list in the `includes()` guard; incorrect remapping to the non-existent POS card status `ON_WAY`.
+
+**Files Changed:** 
+- `d4u-pos-client/src/App.tsx`
+
+**Implementation:** 
+- Added `RIDER_ARRIVED`, `OUT_FOR_DELIVERY`, `WAITING_CASH_SETTLEMENT` to the `includes()` filter.
+- Removed `RIDER_ACCEPTED → ON_WAY` remapping; `RIDER_ACCEPTED` now passes through as-is.
+- Changed `PICKED_UP → ON_WAY` to `PICKED_UP → OUT_FOR_DELIVERY` so the card triggers the correct `on-way status-pulse` CSS class.
+- `KITCHEN_PREPARING → PREPARING`, `DELIVERED/PAID → DELIVERED` remappings preserved.
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| 1 | Rider claims order → POS card stays synchronized | PASS |
+| 2 | RIDER_ARRIVED → POS receives and card shows "Rider Arrived" button | PASS |
+| 3 | OUT_FOR_DELIVERY → POS card enters on-way/pulse state | PASS |
+| 4 | DELIVERED → POS card updates normally | PASS |
+| 5 | WAITING_CASH_SETTLEMENT → POS card shows settlement button | PASS |
+| 6 | SETTLED → existing Completed behavior intact | PASS |
+| 7 | POS refresh → Task 1 REST hydration unaffected, no duplicates | PASS |
+
+**Build:** PASS
+**TypeScript:** PASS
+**Commit:** See timeline above.
 
 ---
 

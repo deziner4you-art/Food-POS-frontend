@@ -704,16 +704,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       // Dexie (db.kots) watcher that depends on KDS happening to be open in a
       // tab on this same browser — never true when the kitchen display is a
       // separate device, which is the normal deployment.
-      if (['KITCHEN_PREPARING', 'READY', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'DELIVERED', 'PAID', 'SETTLED'].includes(order.status)) {
+      if (['KITCHEN_PREPARING', 'READY', 'DISPATCHED', 'RIDER_ACCEPTED', 'RIDER_ARRIVED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PAID', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(order.status)) {
         setActiveDeliveries(prev => {
           const updated = [...prev];
           const existIdx = updated.findIndex(d => d.bridgeOrderId === order.id);
           if (existIdx > -1) {
             let newStatus = order.status;
             if (order.status === 'KITCHEN_PREPARING') newStatus = 'PREPARING';
-            if (order.status === 'RIDER_ACCEPTED') newStatus = 'ON_WAY';
-            if (order.status === 'PICKED_UP') newStatus = 'ON_WAY';
+            // PICKED_UP means the Rider confirmed food pickup from restaurant — OUT_FOR_DELIVERY
+            // is the backend equivalent. Both map to OUT_FOR_DELIVERY since the card UI
+            // checks del.status === 'OUT_FOR_DELIVERY' for the 'on-way' visual class.
+            if (order.status === 'PICKED_UP') newStatus = 'OUT_FOR_DELIVERY';
             if (order.status === 'DELIVERED' || order.status === 'PAID') newStatus = 'DELIVERED';
+            // RIDER_ACCEPTED, RIDER_ARRIVED, WAITING_CASH_SETTLEMENT pass through as-is —
+            // the card UI reads these raw strings for action buttons and display text.
             const riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : (newStatus === 'PREPARING' ? 'Chef Preparing' : 'Active Rider');
             if (newStatus !== updated[existIdx].status || riderLabel !== updated[existIdx].rider) {
               updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: riderLabel };
