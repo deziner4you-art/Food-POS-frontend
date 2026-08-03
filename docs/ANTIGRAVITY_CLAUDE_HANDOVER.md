@@ -92,7 +92,7 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 ## Pending Approved Tasks
 
 **Task 2**
-Rider App REST Refresh Recovery (IN_PROGRESS - Task 2A Completed)
+Rider App REST Refresh Recovery (IN_PROGRESS - Task 2A & 2B Completed)
 
 **Task 3**
 Cross-App Delivery Status Dictionary Alignment

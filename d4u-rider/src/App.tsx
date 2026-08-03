@@ -250,16 +250,45 @@ export default function App() {
           setActiveOrder(deliveryOrder as any);
 
           let hydratedStatus: DeliveryStatus = 'OFFERED';
+          let hydratedPath: { x: number; y: number }[] = [];
+
           if (String(targetOrder.claimedByRiderId) === String(riderId)) {
-            if (['READY', 'DISPATCHED'].includes(targetOrder.status)) hydratedStatus = 'ACCEPTED';
-            if (targetOrder.status === 'RIDER_ARRIVED') hydratedStatus = 'ARRIVED_REST';
-            if (targetOrder.status === 'OUT_FOR_DELIVERY') hydratedStatus = 'PICKED_UP';
-            if (targetOrder.status === 'DELIVERED' || targetOrder.status === 'WAITING_CASH_SETTLEMENT') hydratedStatus = 'DELIVERED';
+            if (['READY', 'DISPATCHED'].includes(targetOrder.status)) {
+              hydratedStatus = 'ACCEPTED';
+              hydratedPath = generateGridPath(
+                30, 65,
+                deliveryOrder.restaurantX, deliveryOrder.restaurantY,
+                'pickup'
+              );
+            }
+            if (targetOrder.status === 'RIDER_ARRIVED') {
+              hydratedStatus = 'ARRIVED_REST';
+            }
+            if (targetOrder.status === 'OUT_FOR_DELIVERY') {
+              hydratedStatus = 'PICKED_UP';
+              hydratedPath = generateGridPath(
+                deliveryOrder.restaurantX, deliveryOrder.restaurantY,
+                deliveryOrder.customerX, deliveryOrder.customerY,
+                'trip'
+              );
+            }
+            if (targetOrder.status === 'DELIVERED' || targetOrder.status === 'WAITING_CASH_SETTLEMENT') {
+              hydratedStatus = 'DELIVERED';
+            }
           }
 
           setStatus(hydratedStatus);
-          setActivePath([]);
+          setActivePath(hydratedPath);
           setCurrentPathIndex(0);
+          
+          if (hydratedPath.length > 0) {
+            setDriverCoords(hydratedPath[0]);
+          } else if (hydratedStatus === 'ARRIVED_REST') {
+            setDriverCoords({ x: deliveryOrder.restaurantX, y: deliveryOrder.restaurantY });
+          } else if (hydratedStatus === 'DELIVERED') {
+            setDriverCoords({ x: deliveryOrder.customerX, y: deliveryOrder.customerY });
+          }
+          
           setCurrentView('map');
         }
       } catch (err) {
