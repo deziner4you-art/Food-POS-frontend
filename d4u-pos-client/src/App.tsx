@@ -315,7 +315,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   // Held orders are persisted in Dexie (see db.ts `heldOrders` table) so they survive
   // a reload/crash instead of living only in React state.
   const heldOrders = useLiveQuery(() => db.heldOrders.toArray()) || [];
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'info' | 'error'} | null>(null);
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'info' | 'error' | 'delivery', action?: { label: string; onClick: () => void }} | null>(null);
   const [kotSearchQuery, setKotSearchQuery] = useState('');
   const [kotStatusFilter, setKotStatusFilter] = useState('ALL');
 
@@ -349,9 +349,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   useEffect(() => {
     if (toast && toast.type !== 'error') {
+      // Delivery-ready alerts stay for 30s; other notifications dismiss after 10s
+      const duration = toast.type === 'delivery' ? 30000 : 10000;
       const timer = setTimeout(() => {
         setToast(null);
-      }, 10000);
+      }, duration);
       return () => clearTimeout(timer);
     }
   }, [toast]);
@@ -721,7 +723,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             const riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : (newStatus === 'PREPARING' ? 'Chef Preparing' : 'Active Rider');
             if (newStatus !== updated[existIdx].status || riderLabel !== updated[existIdx].rider) {
               if (updated[existIdx].status !== 'READY' && newStatus === 'READY') {
-                setToast({ message: `Delivery Order #${updated[existIdx].id} is ready for rider pickup.`, type: 'success' });
+                setToast({ message: `🚀 DELIVERY READY — Order #${updated[existIdx].id || updated[existIdx].bridgeOrderId} is ready for rider pickup.`, type: 'delivery', action: { label: 'Open Delivery', onClick: () => setActiveMenu('Delivery') } });
               }
               updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: riderLabel };
             }
@@ -767,7 +769,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             updated.push(newCard);
             
             if (newStatus === 'READY') {
-              setToast({ message: `Delivery Order #${newCard.id} is ready for rider pickup.`, type: 'success' });
+              setToast({ message: `🚀 DELIVERY READY — Order #${newCard.id} is ready for rider pickup.`, type: 'delivery', action: { label: 'Open Delivery', onClick: () => setActiveMenu('Delivery') } });
             }
           }
           return updated;
@@ -1741,9 +1743,28 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           {/* TOAST NOTIFICATION AREA (IN HEADER) */}
           <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
             {toast && (
-              <div className="blink-animation" style={{ background: toast.type === 'success' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)', border: `1px solid ${toast.type === 'success' ? '#22c55e' : '#ef4444'}`, color: toast.type === 'success' ? '#4ade80' : '#f87171', padding: '10px 20px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', boxShadow: '0 4px 15px rgba(0,0,0,0.2)', cursor: toast.type === 'error' ? 'pointer' : 'default' }} onClick={() => { if (toast.type === 'error') setToast(null); }}>
-                {toast.type === 'success' ? <CheckCircle size={20} /> : <X size={20} />}
-                {toast.message}
+              <div
+                className="blink-animation"
+                style={{
+                  background: toast.type === 'delivery' ? 'rgba(245, 158, 11, 0.15)' : toast.type === 'success' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                  border: `1px solid ${toast.type === 'delivery' ? '#f59e0b' : toast.type === 'success' ? '#22c55e' : '#ef4444'}`,
+                  color: toast.type === 'delivery' ? '#fcd34d' : toast.type === 'success' ? '#4ade80' : '#f87171',
+                  padding: '10px 20px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center',
+                  gap: '10px', fontWeight: 'bold', fontSize: '1rem', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+                  cursor: toast.type === 'error' ? 'pointer' : 'default'
+                }}
+                onClick={() => { if (toast.type === 'error') setToast(null); }}
+              >
+                {toast.type === 'delivery' ? <span style={{fontSize:'1.1rem'}}>🛵</span> : toast.type === 'success' ? <CheckCircle size={20} /> : <X size={20} />}
+                <span>{toast.message}</span>
+                {toast.action && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toast.action!.onClick(); setToast(null); }}
+                    style={{ marginLeft: '8px', padding: '4px 12px', background: '#f59e0b', color: '#1c1c1c', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                  >
+                    {toast.action.label}
+                  </button>
+                )}
               </div>
             )}
           </div>

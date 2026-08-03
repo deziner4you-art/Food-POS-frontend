@@ -143,6 +143,7 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | bb87405 | Task 5E-B: Rider Orders List → Accept Order | Antigravity | PASS |
 | d3e94ba | Task 5E-C: My Active Order → Resume Delivery & Final Rider Orders QA | Antigravity | PASS |
 | d3e94ba | Task 5E: Rider Orders Tab (5E-A, 5E-B, 5E-C) | Antigravity | PASS |
+| (next) | Task 5F: KDS READY → Cashier Alert + Rider Realtime Offer | Antigravity | PASS |
 
 ---
 
@@ -588,6 +589,48 @@ Riders who navigated away from the map screen, refreshed the app, or reopened th
 **Build:** PASS (Vite production bundle succeeded)
 **TypeScript — Task 5E-C introduced new errors:** NO
 **TypeScript — Baseline error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
+**Commit:** See timeline above.
+
+---
+
+### Task 5F — KDS READY → Cashier Delivery Alert + Rider Realtime Offer
+
+**Problem:**
+When a KDS/Chef marked a delivery order READY, the POS cashier had no prominent notification — just a low-visibility success toast that blended in with regular confirmations. Riders were already receiving the order via socket (READY already triggered OFFERED), but the cashier needed a stronger alert while on any POS screen.
+
+**Investigation:**
+- `handleOrderUpdated` in `d4u-pos-client/src/App.tsx` already fires `setToast()` for READY transitions (lines 724 and 770), but used `type: 'success'` — green color, 10-second auto-dismiss, no action button.
+- The Rider's `order_updated` handler in `d4u-rider/src/App.tsx` (line 341) already offers unclaimed READY deliveries as `OFFERED` immediately — **Part B was already complete and correct**.
+
+**Implementation — Part A (Cashier):**
+- Extended toast state type from `'success' | 'info' | 'error'` to include `'delivery'`.
+- Added optional `action?: { label: string; onClick: () => void }` to the toast state interface.
+- Changed both READY delivery `setToast` calls to `type: 'delivery'` with `action: { label: 'Open Delivery', onClick: () => setActiveMenu('Delivery') }`.
+- Updated toast render block: `'delivery'` uses amber/gold (`#f59e0b`) styling with a 🛵 icon — visually distinct from green success and red error toasts.
+- Delivery toasts auto-dismiss after **30 seconds** (up from 10s) so cashier on a busy screen still sees it.
+- Clicking "Open Delivery" button navigates directly to the Delivery section and dismisses the toast.
+
+**Implementation — Part B (Rider):**
+- **No changes required.** The Rider's socket handler already correctly offers unclaimed READY orders as popup OFFERED state. REST Orders tab also serves as a fallback.
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| A | Cashier outside Delivery — READY event fires prominent amber toast with Open Delivery button | PASS |
+| B | Delivery card already present in Active Deliveries at READY | PASS |
+| C | Rider realtime — Rider receives OFFERED popup immediately on READY without any POS cashier action | PASS |
+| D | Rider offline REST recovery — Orders tab shows READY unclaimed orders after app reconnect | PASS |
+| E | Accept from READY offer — existing atomic claim succeeds with real rider ID | PASS |
+| F | Two riders — first Accept wins; second gets 409 conflict message | PASS |
+| G | Duplicate READY — single card in POS, single offer to Rider, single Orders-list card | PASS |
+| H | Customer-facing ID — OnlineOrder.id `#1122` consistent across Website/POS/Rider popup/Rider Orders | PASS |
+| I | Store isolation — READY delivery for Store A shown only to Store A cashier and riders | PASS |
+
+**Build:** PASS (Vite production bundle succeeded for both POS and Rider)
+**POS TypeScript — Task 5F introduced new errors:** NO
+**POS TypeScript — Build:** PASS
+**Rider TypeScript — Task 5F introduced new errors:** NO
+**Rider TypeScript — Baseline POSPanel error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
 **Commit:** See timeline above.
 
 ---
