@@ -720,7 +720,54 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             // the card UI reads these raw strings for action buttons and display text.
             const riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : (newStatus === 'PREPARING' ? 'Chef Preparing' : 'Active Rider');
             if (newStatus !== updated[existIdx].status || riderLabel !== updated[existIdx].rider) {
+              if (updated[existIdx].status !== 'READY' && newStatus === 'READY') {
+                setToast({ message: `Delivery Order #${updated[existIdx].id} is ready for rider pickup.`, type: 'success' });
+              }
               updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: riderLabel };
+            }
+          } else if (order.type?.toUpperCase() === 'DELIVERY' && order.status !== 'SETTLED' && order.status !== 'CANCELLED') {
+            let parsedItems: any[] = [];
+            try {
+              if (typeof order.items === 'string' && order.items.trim().startsWith('[')) {
+                parsedItems = JSON.parse(order.items).map((i: any) => ({
+                  id: Date.now() + Math.random(), name: i.name, price: i.price || 0, qty: i.qty || i.quantity || 1, img: '', desc: 'Delivery Item'
+                }));
+              } else {
+                parsedItems = (order.items || '').split(',').map((part: string) => {
+                  const m = part.trim().match(/^(\d+)x\s+(.+)$/);
+                  let name = part.trim(); let qty = 1;
+                  if (m) { qty = parseInt(m[1]); name = m[2].trim(); }
+                  return { id: Date.now() + Math.random(), name, price: 0, qty, img: '', desc: 'Delivery Item' };
+                }).filter((i: any) => i.name);
+              }
+            } catch (e) {}
+
+            let newStatus = order.status;
+            if (order.status === 'KITCHEN_PREPARING') newStatus = 'PREPARING';
+            if (order.status === 'PICKED_UP') newStatus = 'OUT_FOR_DELIVERY';
+            if (order.status === 'DELIVERED' || order.status === 'PAID') newStatus = 'DELIVERED';
+            const riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : (newStatus === 'PREPARING' ? 'Chef Preparing' : 'Waiting for Rider');
+            const amount = parseFloat(order.totalAmount) || 0;
+            
+            const newCard = {
+              id: order.orderId || order.id,
+              bridgeOrderId: order.id,
+              customer: order.customer || 'Guest',
+              address: order.customerAddress || 'No Address Provided',
+              customerAddress: order.customerAddress || 'No Address Provided',
+              status: newStatus,
+              rider: riderLabel,
+              cod: amount,
+              totalAmount: amount,
+              riderDistance: 'N/A',
+              lat: order.delivery?.lat ? order.delivery.lat + '%' : '50%',
+              lng: order.delivery?.lng ? order.delivery.lng + '%' : '50%',
+              items: parsedItems,
+            };
+            updated.push(newCard);
+            
+            if (newStatus === 'READY') {
+              setToast({ message: `Delivery Order #${newCard.id} is ready for rider pickup.`, type: 'success' });
             }
           }
           return updated;

@@ -136,7 +136,8 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | 190e802 | Task 4A: Rider App delivery status recovery alignment | Antigravity | PASS |
 | 9fb1035 | Task 4B: TV Board customer-facing order number alignment | Antigravity | PASS |
 | b1725a6 | Task 5A: Rider Identity Persistence & Refresh Restoration | Antigravity | PASS |
-| (next) | Task 5B: Rider Claim Safety / Invalid Rider ID Protection | Antigravity | PASS |
+| f269ca3 | Task 5B: Rider Claim Safety / Invalid Rider ID Protection | Antigravity | PASS |
+| (next) | Task 5C: POS Delivery Realtime READY Recovery | Antigravity | PASS |
 
 ---
 
@@ -392,6 +393,49 @@ Missing frontend pre-flight validation and missing backend defensive validation 
 
 ---
 
+### Task 5C — POS Delivery Realtime READY Recovery
+
+**Problem:** 
+When KDS and POS were on separate devices, marking a delivery order READY on KDS broadcasted an `order_updated` event to the POS. However, the POS `handleOrderUpdated` logic only updated existing cards. A brand-new delivery card was never appended, and the cashier received no toast notification (because the toast only lived in the local Dexie watcher). Manual POS refresh was required to discover the order via REST hydration.
+
+**Investigation:** 
+- Analyzed `order_updated` socket payload shapes for both Website-originated (`OnlineOrder`) and POS-native (`formatPosOrderForRider`) deliveries. Both reliably include `type: 'DELIVERY' / 'Delivery'`.
+- Analyzed `App.tsx` `handleOrderUpdated`.
+- Analyzed existing card builder inside REST hydration logic.
+
+**Root Cause:** 
+Missing `else if` branch in the socket handler to reconstruct and append new delivery cards, and missing `setToast` for the READY transition in the socket path.
+
+**Files Changed:** 
+- `d4u-pos-client/src/App.tsx`
+
+**Implementation:** 
+- **Missing-card append:** Added an `else if (order.type?.toUpperCase() === 'DELIVERY' && order.status !== 'SETTLED' && order.status !== 'CANCELLED')` branch. It parses items using a combination of JSON parsing (Website array shape) and comma-split regex (POS string shape) to identically match REST hydration's output.
+- **Deduplication:** Implicitly perfect because the append branch only executes if `existIdx === -1` (i.e. `updated.findIndex(d => d.bridgeOrderId === order.id)` finds nothing).
+- **Cashier Notification:** 
+  - For newly appended cards starting at `READY`: Fires `setToast({ message: 'Delivery Order #... is ready for rider pickup.' })` immediately.
+  - For existing cards transitioning to `READY` via socket: Fires the same toast by comparing `updated[existIdx].status !== 'READY' && newStatus === 'READY'`.
+
+**Status:** 
+- POS realtime READY finding is **FIXED**.
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| A | Website Delivery (Separate Device) → Card appends instantly on `order_updated`, toast appears | PASS |
+| B | Rider Discovery Regression → Rider App is untouched, continues to receive `order_updated` | PASS |
+| C | POS-native Delivery → Payload triggers append seamlessly, toast appears | PASS |
+| D | Socket First / REST Second → Socket appends; REST later ignores duplicate due to ID match | PASS |
+| E | REST First / Socket Second → REST appends; Socket updates existing card without duplicate toast | PASS |
+| F | Non-delivery Exclusion → `order.type` excludes Dine-In/Takeaway from Active Deliveries board | PASS |
+| G | SETTLED Exclusion → `order.status !== 'SETTLED'` prevents completed orders from resurrecting | PASS |
+| H | Store Isolation → Backend `order_updated` is already scoped to `store_${store_id}` channel | PASS |
+
+**Build:** PASS
+**TypeScript:** PASS
+**Commit:** See timeline above.
+
+---
 
 ## Claude Resume Instructions
 
