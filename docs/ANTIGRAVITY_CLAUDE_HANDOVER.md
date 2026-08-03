@@ -77,9 +77,9 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 2. POS-native deliveries are not appended when missing from activeDeliveries.
    - FIXED
 3. Rider App has no REST recovery on mount.
-   - OPEN
+   - IN_PROGRESS (REST discovery added, robust status alignment pending)
 4. Rider REST validStatuses omits: OUT_FOR_DELIVERY, WAITING_CASH_SETTLEMENT.
-   - OPEN
+   - FIXED
 5. POS order_updated filtering omits relevant rider statuses.
    - OPEN
 6. Website tracker STATUS_INDEX lacks RIDER_ACCEPTED.
@@ -92,7 +92,7 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 ## Pending Approved Tasks
 
 **Task 2**
-Rider App REST Refresh Recovery
+Rider App REST Refresh Recovery (IN_PROGRESS - Task 2A Completed)
 
 **Task 3**
 Cross-App Delivery Status Dictionary Alignment

@@ -196,6 +196,83 @@ export default function App() {
     }
   };
 
+  // --- REST HYDRATION ON MOUNT ---
+  useEffect(() => {
+    if (!riderStoreId || !riderId) return;
+
+    const hydrateActiveOrder = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/rider-orders?store_id=${riderStoreId}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}`,
+          }
+        });
+        if (!res.ok) return;
+
+        const orders: any[] = await res.json();
+        
+        // 1. Prefer an order already claimed by THIS rider
+        let targetOrder = orders.find(o => String(o.claimedByRiderId) === String(riderId) && o.status !== 'SETTLED');
+        
+        // 2. Otherwise find an available READY/unclaimed delivery
+        if (!targetOrder) {
+          targetOrder = orders.find(o => 
+            ['READY', 'DISPATCHED', 'OUT_FOR_DELIVERY'].includes(o.status) && 
+            o.claimedByRiderId == null
+          );
+        }
+
+        // An order claimed by another rider is implicitly excluded because 
+        // we either pick claimedByRiderId == riderId OR claimedByRiderId == null.
+
+        if (targetOrder && !activeOrder) {
+          console.log('[RIDER] Hydrated available order from REST!', targetOrder);
+          const deliveryOrder: DeliveryOrder = {
+            id: targetOrder.id,
+            source: 'ONLINE_ORDER',
+            restaurantName: riderStoreName || 'Restaurant',
+            restaurantX: 50, restaurantY: 50,
+            restaurantAddress: riderStoreName || 'Branch Location',
+            customerName: targetOrder.customer || 'Customer',
+            customerAddress: targetOrder.customerAddress || 'Customer Address',
+            customerX: 80, customerY: 20,
+            earnings: parseFloat(targetOrder.totalAmount) || 12.50,
+            distance: 3.5,
+            itemsCount: targetOrder.items ? targetOrder.items.split(',').length : 1,
+            itemsList: targetOrder.items ? targetOrder.items.split(',') : [],
+            estTimeMins: 15,
+            paymentMethod: 'COD',
+            paymentStatus: 'UNPAID',
+            estimatedReadyAt: targetOrder.estimatedReadyAt,
+            bridgeStatus: targetOrder.status
+          };
+          
+          setActiveOrder(deliveryOrder as any);
+
+          let hydratedStatus: DeliveryStatus = 'OFFERED';
+          if (String(targetOrder.claimedByRiderId) === String(riderId)) {
+            if (['READY', 'DISPATCHED'].includes(targetOrder.status)) hydratedStatus = 'ACCEPTED';
+            if (targetOrder.status === 'RIDER_ARRIVED') hydratedStatus = 'ARRIVED_REST';
+            if (targetOrder.status === 'OUT_FOR_DELIVERY') hydratedStatus = 'PICKED_UP';
+            if (targetOrder.status === 'DELIVERED' || targetOrder.status === 'WAITING_CASH_SETTLEMENT') hydratedStatus = 'DELIVERED';
+          }
+
+          setStatus(hydratedStatus);
+          setActivePath([]);
+          setCurrentPathIndex(0);
+          setCurrentView('map');
+        }
+      } catch (err) {
+        console.error('Failed to hydrate rider orders', err);
+      }
+    };
+
+    // Only run if we don't already have an activeOrder
+    if (!activeOrder) {
+      hydrateActiveOrder();
+    }
+  }, [riderStoreId, riderId]);
+
   // --- REAL-TIME SOCKET CONNECTION ---
   useEffect(() => {
     if (!riderStoreId) return;
