@@ -8,12 +8,14 @@ interface OrdersViewProps {
   riderId: string;
   lastOrderUpdate: number;
   onBack: () => void;
+  onAcceptOrder: (order: any) => Promise<boolean>;
 }
 
-export default function OrdersView({ riderStoreId, riderId, lastOrderUpdate, onBack }: OrdersViewProps) {
+export default function OrdersView({ riderStoreId, riderId, lastOrderUpdate, onBack, onAcceptOrder }: OrdersViewProps) {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [claimingId, setClaimingId] = useState<number | string | null>(null);
 
   const fetchOrders = async () => {
     if (!riderStoreId) return;
@@ -38,6 +40,19 @@ export default function OrdersView({ riderStoreId, riderId, lastOrderUpdate, onB
   useEffect(() => {
     fetchOrders();
   }, [riderStoreId, lastOrderUpdate]);
+
+  const handleAccept = async (order: any) => {
+    if (claimingId !== null) return;
+    setClaimingId(order.id);
+    try {
+      const success = await onAcceptOrder(order);
+      if (!success) {
+        await fetchOrders();
+      }
+    } finally {
+      setClaimingId(null);
+    }
+  };
 
   const availableOrders = orders.filter(o => 
     ['READY', 'PRINT_BILL', 'RIDER_ARRIVED', 'DISPATCHED'].includes(o.status) && 
@@ -100,6 +115,23 @@ export default function OrdersView({ riderStoreId, riderId, lastOrderUpdate, onB
           </p>
         </div>
       </div>
+
+      {!isActive && (
+        <button
+          onClick={() => handleAccept(order)}
+          disabled={claimingId === order.id}
+          className="w-full mt-3 bg-primary text-slate-900 font-bold py-2.5 rounded-xl shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+        >
+          {claimingId === order.id ? (
+            <>
+              <RefreshCw size={16} className="animate-spin" />
+              <span>Accepting...</span>
+            </>
+          ) : (
+            <span>Accept Order</span>
+          )}
+        </button>
+      )}
     </div>
   );
 

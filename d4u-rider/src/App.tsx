@@ -394,14 +394,15 @@ export default function App() {
     setCurrentView('map');
   };
 
-  const handleAcceptOrder = async () => {
-    if (!activeOrder) return;
+  const handleAcceptOrder = async (orderToClaim?: any): Promise<boolean> => {
+    const targetOrder = orderToClaim || activeOrder;
+    if (!targetOrder) return false;
     
     if (!riderId || isNaN(Number(riderId)) || Number(riderId) <= 0) {
       const { toast } = require('react-hot-toast');
       toast.error('Invalid rider identity. Please log in again.');
       logout();
-      return;
+      return false;
     }
     // Atomic server-side claim: whichever rider's request lands first wins
     // (RiderService.claimOrder), every other online rider trying to accept
@@ -410,7 +411,7 @@ export default function App() {
     // order_updated event could accept the same order — a client-side race
     // with no server lock.
     try {
-      const res = await fetch(`${BACKEND_URL}/rider-orders/${activeOrder.id}/claim`, {
+      const res = await fetch(`${BACKEND_URL}/rider-orders/${targetOrder.id}/claim`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -425,27 +426,53 @@ export default function App() {
         } else {
           toast.error('Could not accept this order. Please try again.');
         }
-        handleDeclineOrder();
-        return;
+        if (!orderToClaim) {
+          handleDeclineOrder();
+        }
+        return false;
       }
     } catch {
       const { toast } = require('react-hot-toast');
       toast.error('Network error — could not accept this order.');
-      handleDeclineOrder();
-      return;
+      if (!orderToClaim) {
+        handleDeclineOrder();
+      }
+      return false;
     }
+
+    const deliveryOrder: DeliveryOrder = orderToClaim ? {
+      id: targetOrder.id,
+      source: 'ONLINE_ORDER',
+      restaurantName: riderStoreName || 'Restaurant',
+      restaurantX: 50, restaurantY: 50,
+      restaurantAddress: riderStoreName || 'Branch Location',
+      customerName: targetOrder.customer || 'Customer',
+      customerAddress: targetOrder.customerAddress || 'Customer Address',
+      customerX: 80, customerY: 20,
+      earnings: parseFloat(targetOrder.totalAmount) || 12.50,
+      distance: 3.5,
+      itemsCount: targetOrder.items ? targetOrder.items.split(',').length : 1,
+      itemsList: targetOrder.items ? targetOrder.items.split(',') : [],
+      estTimeMins: 15,
+      paymentMethod: 'COD',
+      paymentStatus: 'UNPAID',
+      estimatedReadyAt: targetOrder.estimatedReadyAt,
+      bridgeStatus: targetOrder.status
+    } : (activeOrder as DeliveryOrder);
 
     const currentSpot = driverCoords || { x: 30, y: 65 };
     const pickupPath = generateGridPath(
       currentSpot.x, currentSpot.y,
-      activeOrder.restaurantX, activeOrder.restaurantY,
+      deliveryOrder.restaurantX, deliveryOrder.restaurantY,
       'pickup'
     );
+    setActiveOrder(deliveryOrder as any);
     setActivePath(pickupPath);
     setCurrentPathIndex(0);
     setDriverCoords(pickupPath[0]);
     setStatus('ACCEPTED');
-    // updateBridgeStatus('RIDER_ACCEPTED'); // No longer needed, managed by POS RIDER_ARRIVED
+    setCurrentView('map');
+    return true;
   };
 
   const handleDeclineOrder = () => {
@@ -596,6 +623,7 @@ export default function App() {
               riderId={riderId}
               lastOrderUpdate={lastOrderUpdate}
               onBack={() => setCurrentView('map')} 
+              onAcceptOrder={(order) => handleAcceptOrder(order)}
             />
           )}
 

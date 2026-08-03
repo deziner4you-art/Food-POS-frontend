@@ -139,7 +139,8 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | f269ca3 | Task 5B: Rider Claim Safety / Invalid Rider ID Protection | Antigravity | PASS |
 | f772d74 | Task 5C: POS Delivery Realtime READY Recovery | Antigravity | PASS |
 | a07443c | Task 5D: Rider Customer-Facing Order Number | Antigravity | PASS |
-| (next) | Task 5E: Rider Orders Tab Foundation & REST List (5E-A) | Antigravity | PASS |
+| 462fdd7 | Task 5E-A: Rider Orders Tab Foundation + REST Order List | Antigravity | PASS |
+| (next) | Task 5E-B: Rider Orders List → Accept Order | Antigravity | PASS |
 
 ---
 
@@ -511,8 +512,39 @@ The Rider App strictly relied on realtime popup offers to assign deliveries. If 
 | F | SETTLED — Completed orders strictly excluded from Active/Available lists | PASS |
 | G | Realtime — Changing state externally fires socket update causing REST reload instantly | PASS |
 
-**Build:** PASS (Vite production bundle succeeded)
 **TypeScript — Task 5E-A introduced new errors:** NO
+**TypeScript — Baseline error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
+**Commit:** See timeline above.
+
+---
+
+### Task 5E-B — Rider Orders List → Accept Order
+
+**Problem:**
+Riders could browse available orders in the Orders tab (added in 5E-A), but could not accept an available delivery directly from the list if they missed the popup or navigated manually.
+
+**Implementation:**
+- **Reusable Claim Handler:** Parameterized `handleAcceptOrder` in `d4u-rider/src/App.tsx` so it can be invoked with either a popup `activeOrder` or a specific REST `order` payload from `OrdersView`.
+- **Atomic Backend Claim Reused:** Reused the exact `PATCH /rider-orders/:id/claim` endpoint with Bearer token authentication. Backend atomic locking (`updateMany` where `claimedByRiderId IS NULL`) remains authoritative.
+- **Double Click Protection:** Implemented `claimingId` state in `OrdersView.tsx` which immediately disables the "Accept Order" button and shows a loading spinner ("Accepting...") while the claim request is in-flight.
+- **Conflict & Error Handling:** If another rider claims the order first (409 Conflict), a toast ("Order already taken by another rider.") is displayed, and the Orders list automatically re-fetches from REST to remove the taken card. No local state overwrite or phantom claim occurs.
+- **Active Delivery Transition:** On successful claim, `activeOrder` is populated in `App.tsx`, the pickup route is generated, status is set to `ACCEPTED`, and the view smoothly switches to `'map'`.
+- **Popup Acceptance Preserved:** Un-parameterized calls from the realtime popup continue to execute `handleAcceptOrder()` seamlessly.
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| A | Missed Popup Manual Accept | Available order in Orders list accepts cleanly via REST claim & transitions to active map view | PASS |
+| B | Refresh Before Accept | Unclaimed order loads from REST after refresh & claims successfully | PASS |
+| C | Two Riders Conflict (Race) | Rider A claims first -> Rider B gets 409 toast "Order already taken by another rider", Rider B list refreshes & removes card | PASS |
+| D | Double Click Protection | Rapid double clicks disabled after 1st click; single claim request executed | PASS |
+| E | Invalid Rider Identity | Pre-flight validation blocks request if `riderId` is invalid; no empty/0 ID claim sent | PASS |
+| F | Cross Store Isolation | Backend store validation blocks cross-store claims | PASS |
+| G | Order Number Parity | OnlineOrder `#1120` customer-facing ID maintained through list -> claim -> active delivery view | PASS |
+| H | Existing Popup Regression | Realtime popup "Accept Order" flow tested & verified 100% operational | PASS |
+
+**Build:** PASS (Vite production bundle succeeded)
+**TypeScript — Task 5E-B introduced new errors:** NO
 **TypeScript — Baseline error remains:** YES (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`)
 **Commit:** See timeline above.
 
