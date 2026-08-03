@@ -88,6 +88,8 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
    - FIXED
 8. Rider App available offer & hydration status filters omitted PRINT_BILL and RIDER_ARRIVED.
    - FIXED
+9. TV Board displayed linked internal POS Order ID (#719) instead of customer-facing OnlineOrder ID (#1119).
+   - FIXED
 
 ---
 
@@ -101,6 +103,9 @@ Cross-App Delivery Status Dictionary Alignment — COMPLETE (Tasks 3A & 3B)
 
 **Task 4A**
 Rider App Delivery Status Recovery Alignment — COMPLETE
+
+**Task 4B**
+TV Board Customer-Facing Order Number Alignment — COMPLETE
 
 ---
 
@@ -128,7 +133,8 @@ Rider App Delivery Status Recovery Alignment — COMPLETE
 | d2e2699 | Task 2C: QA close — no code changes required | Antigravity | PASS |
 | ec14161 | Task 3A: POS delivery lifecycle status sync | Antigravity | PASS |
 | ac62d1b | Task 3B: Website tracker delivery status alignment | Antigravity | PASS |
-| (next) | Task 4A: Rider App delivery status recovery alignment | Antigravity | PASS |
+| 190e802 | Task 4A: Rider App delivery status recovery alignment | Antigravity | PASS |
+| (next) | Task 4B: TV Board customer-facing order number alignment | Antigravity | PASS |
 
 ---
 
@@ -262,6 +268,42 @@ Frontend status filter mismatch against backend lifecycle statuses.
 
 **Build:** PASS
 **TypeScript:** Pre-existing baseline error remains (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`); Task 4A introduced no new TypeScript errors.
+**Commit:** See timeline above.
+
+---
+
+### Task 4B — TV Board Customer-Facing Order Number Alignment
+
+**Problem:** 
+For online orders (e.g. Order #1119), TV Board displayed `Online #719` instead of `Online #1119`, exposing the linked internal POS Order primary key (`Order.id = 719`) to customers.
+
+**Investigation:** 
+- Inspected `d4u-pos-client/src/pages/TvBoard.tsx` `syncKots` mapping (line 97).
+- Found `orderId: k.order_id` unconditionally mapped `k.order_id` (POS Order ID).
+- Backend `/kots` API response includes `include: { order: { include: { onlineOrder: true } } }`.
+
+**Root Cause:** 
+TvBoard `syncKots` mapping ignored `k.order?.onlineOrder`, hardcoding `k.order_id`.
+
+**Files Changed:** 
+- `d4u-pos-client/src/pages/TvBoard.tsx`
+
+**Implementation:** 
+- Updated `syncKots` (line 97) `orderId` mapping to prefer the customer-visible OnlineOrder ID when present:
+  `orderId: k.order?.onlineOrder?.id || k.order?.onlineOrder?.orderId || k.order_id`
+- For POS-native orders (where `onlineOrder` is `null`/`undefined`), it cleanly falls back to `k.order_id`.
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| A | Website Online Order #1119 → TV Board displays #1119 (matches Website and POS cards) | PASS |
+| B | POS-native order → TV Board displays existing POS order number (#719 or walk-in ID) | PASS |
+| C | KOT realtime (Preparing → Ready via socket `kds_update`) → order number stays stable as #1119 | PASS |
+| D | TV Board refresh → `syncKots` re-hydrates correct #1119 order number | PASS |
+| E | Mixed orders (1 website order + 1 POS-native order) → each displays its own correct ID independently | PASS |
+
+**Build:** PASS
+**TypeScript:** PASS
 **Commit:** See timeline above.
 
 ---

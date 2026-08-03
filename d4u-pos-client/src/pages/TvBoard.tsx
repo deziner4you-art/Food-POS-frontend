@@ -94,7 +94,10 @@ export default function TvBoard() {
           await db.kots.clear();
           const mapped = data.map((k: any) => ({
             id: k.id,
-            orderId: k.order_id,
+            // Prefer customer-facing OnlineOrder.id for online orders so the TV Board
+            // displays the same order number (#1119) as the Website Tracker and POS cards,
+            // while falling back to k.order_id for POS-native orders (#719).
+            orderId: k.order?.onlineOrder?.id || k.order?.onlineOrder?.orderId || k.order_id,
             // Order.orderType doesn't exist -- the real field is
             // order_source ("WALKIN"/"ONLINE"/etc). Reading the wrong field
             // meant this was always undefined, so the `|| 'Walk-in'`
