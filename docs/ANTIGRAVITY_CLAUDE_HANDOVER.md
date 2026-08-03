@@ -134,7 +134,8 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | ec14161 | Task 3A: POS delivery lifecycle status sync | Antigravity | PASS |
 | ac62d1b | Task 3B: Website tracker delivery status alignment | Antigravity | PASS |
 | 190e802 | Task 4A: Rider App delivery status recovery alignment | Antigravity | PASS |
-| (next) | Task 4B: TV Board customer-facing order number alignment | Antigravity | PASS |
+| 9fb1035 | Task 4B: TV Board customer-facing order number alignment | Antigravity | PASS |
+| (next) | Task 5A: Rider Identity Persistence & Refresh Restoration | Antigravity | PASS |
 
 ---
 
@@ -289,21 +290,60 @@ TvBoard `syncKots` mapping ignored `k.order?.onlineOrder`, hardcoding `k.order_i
 - `d4u-pos-client/src/pages/TvBoard.tsx`
 
 **Implementation:** 
-- Updated `syncKots` (line 97) `orderId` mapping to prefer the customer-visible OnlineOrder ID when present:
-  `orderId: k.order?.onlineOrder?.id || k.order?.onlineOrder?.orderId || k.order_id`
-- For POS-native orders (where `onlineOrder` is `null`/`undefined`), it cleanly falls back to `k.order_id`.
+- Updated TV Board mapping to prefer `order.onlineOrder.id` (using fallback getter logic on KOT order inclusion) to properly display the customer-facing OnlineOrder ID for website-originated orders instead of the internal POS Order ID.
+- Fallback remains the internal `order_id` for pure POS-originated orders without a linked online record.
 
 **QA Results:**
 | Test | Scenario | Result |
 |------|----------|--------|
-| A | Website Online Order #1119 → TV Board displays #1119 (matches Website and POS cards) | PASS |
-| B | POS-native order → TV Board displays existing POS order number (#719 or walk-in ID) | PASS |
-| C | KOT realtime (Preparing → Ready via socket `kds_update`) → order number stays stable as #1119 | PASS |
-| D | TV Board refresh → `syncKots` re-hydrates correct #1119 order number | PASS |
-| E | Mixed orders (1 website order + 1 POS-native order) → each displays its own correct ID independently | PASS |
+| 1 | Online Order (Website) → TV Board shows OnlineOrder ID | PASS |
+| 2 | POS Order (Cashier) → TV Board shows POS Order ID | PASS |
+| 3 | Order synchronization on reconnect | PASS |
 
 **Build:** PASS
 **TypeScript:** PASS
+**Commit:** See timeline above.
+
+---
+
+### Task 5A — Rider Identity Persistence & Refresh Restoration
+
+**Problem:** 
+Rider App `LoginView` did not save the rider's ID (`data.user.id`) to `localStorage`. After a browser refresh, `riderId` in `App.tsx` became `''` while `riderStoreId` was correctly restored. Because the REST hydration effect guards on `if (!riderStoreId || !riderId) return;`, hydration was entirely skipped and the rider app appeared empty. Worse, clicking "Accept Order" would send `riderId: ""` to the backend claim endpoint.
+
+**Investigation:** 
+- Analyzed `LoginView.tsx` and the `auth/login` endpoint response contract.
+- Confirmed `data.user.id` is the authoritative backend rider identity.
+- Analyzed `App.tsx` auth mount restoration `useEffect` and logout handler.
+
+**Root Cause:** 
+Missing persistence of the primary rider ID key `d4u_rider_id` during login and missing restoration during app mount.
+
+**Files Changed:** 
+- `d4u-rider/src/components/LoginView.tsx`
+- `d4u-rider/src/App.tsx`
+
+**Implementation:** 
+- Added `localStorage.setItem('d4u_rider_id', data.user.id.toString())` in `LoginView.tsx`.
+- Restored `restoredRiderId` from `d4u_rider_id` in `App.tsx` and pushed it to `setRiderId()`.
+- Explicitly maintained the fallback guard behavior: if a session is restored but has no `d4u_rider_id` (legacy session before this fix), it forces the rider to the login screen for safety, preventing identity-less orders.
+- Cleared `d4u_rider_id` on logout.
+
+**Status:** 
+- Rider identity persistence finding is **FIXED**.
+- Accept Order corruption issue (Task 5B) remains **PENDING** (the app still needs a defensive no-riderId claim guard).
+
+**QA Results:**
+| Test | Scenario | Result |
+|------|----------|--------|
+| A | Fresh Login → `d4u_rider_id` correctly stored in localStorage | PASS |
+| B | Browser Refresh → `riderId` restored, REST `/rider-orders` request executes successfully | PASS |
+| C | Claimed Order Ownership → string comparison matches exactly and restores claimed order | PASS |
+| D | Missing Legacy ID → omitting `d4u_rider_id` forces safe redirect to `login` view; does NOT invent ID | PASS |
+| E | Other Rider Isolation → other rider's claimed order is NOT restored (skipped by hydration) | PASS |
+
+**Build:** PASS
+**TypeScript:** Baseline TypeScript error remains (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`); Task 5A introduced no new TypeScript errors.
 **Commit:** See timeline above.
 
 ---

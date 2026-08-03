@@ -50,6 +50,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       localStorage.setItem('d4u_rider_store', storeId.toString());
       localStorage.setItem('d4u_rider_name', data.user.name);
       localStorage.setItem('d4u_rider_store_name', data.user.store?.name || '');
+      localStorage.setItem('d4u_rider_id', data.user.id.toString());
       
       onLoginSuccess(data.user.id.toString(), storeId, data.user.name);
     } catch (err: any) {

@@ -19,8 +19,11 @@ export default function App() {
     localStorage.removeItem('d4u_rider_token');
     localStorage.removeItem('d4u_rider_store');
     localStorage.removeItem('d4u_rider_name');
+    localStorage.removeItem('d4u_rider_store_name');
+    localStorage.removeItem('d4u_rider_id');
     setRiderStoreId(null);
     setRiderName('');
+    setRiderId('');
     setCurrentView('login');
   };
 
@@ -88,11 +91,13 @@ export default function App() {
     const store = localStorage.getItem('d4u_rider_store');
     const name = localStorage.getItem('d4u_rider_name');
     const storeName = localStorage.getItem('d4u_rider_store_name');
+    const restoredRiderId = localStorage.getItem('d4u_rider_id');
     
-    if (token && store) {
+    if (token && store && restoredRiderId) {
       setRiderStoreId(Number(store));
       setRiderName(name || '');
       setRiderStoreName(storeName || '');
+      setRiderId(restoredRiderId);
       setCurrentView('map');
     } else {
       setCurrentView('login');
