@@ -76,18 +76,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </button>
         </div>
 
-        {/* Stock Status Badge */}
-        <div className="absolute bottom-3 left-3">
-          {product.stockCount > 0 ? (
-            <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
-              In Stock: {product.stockCount}
-            </span>
-          ) : (
+        {/* Sold Out Badge — restaurant menus don't show raw stock counts, only whether an item is available */}
+        {product.stockCount === 0 && (
+          <div className="absolute bottom-3 left-3">
             <span className="text-[10px] font-semibold text-rose-400 bg-rose-950/80 px-2.5 py-0.5 rounded-full border border-rose-500/30 flex items-center gap-1">
               <ShieldAlert className="w-3 h-3" /> Sold Out
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Card Details Body */}
