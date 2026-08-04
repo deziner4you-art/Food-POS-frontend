@@ -11,7 +11,7 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { RequirePermissions, CurrentUser, Public } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -109,6 +109,24 @@ export class MarketingController {
       return this.marketingService.getVisibleCampaigns(storeId, channel);
     }
     return this.marketingService.getCampaigns(storeId, includeArchived === 'true');
+  }
+
+  // Public counterpart of GET /marketing/campaign?channel=X — that route
+  // requires crm.view (an authenticated staff permission), so every
+  // unauthenticated public surface (Website, Customer App, QR, Kiosk, TV
+  // Board) calling it with no staff JWT always got 401 and silently showed
+  // no promotions. resolveVisibleCampaigns is already the pre-filtered,
+  // display-safe subset (RUNNING + approved + published-for-channel +
+  // within date/schedule window) — the same safety guarantee /catalog and
+  // /online-orders/track already rely on for public exposure.
+  @Public()
+  @Get('campaign/visible')
+  getVisibleCampaignsPublic(
+    @Query('store_id') store_id?: string,
+    @Query('channel') channel?: MarketingChannel,
+  ) {
+    const storeId = store_id ? parseInt(store_id, 10) : undefined;
+    return this.marketingService.getVisibleCampaigns(storeId, channel || 'web');
   }
 
   @RequirePermissions('crm.view')

@@ -98,7 +98,7 @@ export function useStoreData(storeId: number | null) {
         const [bannersRes, settingsRes, campaignsRes] = await Promise.all([
           fetch(`${BACKEND_URL}/cms/banners`),
           fetch(`${BACKEND_URL}/cms/settings/${storeId}`),
-          fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}&channel=web`),
+          fetch(`${BACKEND_URL}/marketing/campaign/visible?store_id=${storeId}&channel=web`),
         ]);
         if (bannersRes.ok) setBanners(await bannersRes.json());
         if (settingsRes.ok) setSettings(await settingsRes.json());
@@ -119,7 +119,7 @@ export function useStoreData(storeId: number | null) {
     });
 
     socket.on('marketing_update', () => {
-      fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}&channel=web`)
+      fetch(`${BACKEND_URL}/marketing/campaign/visible?store_id=${storeId}&channel=web`)
         .then((res) => res.json())
         .then(setCampaigns)
         .catch(console.error);

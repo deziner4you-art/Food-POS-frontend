@@ -68,7 +68,16 @@ export class CampaignResolverService {
       const [endH, endM] = campaign.active_time_end.split(':').map(Number);
       const startMinutes = startH * 60 + startM;
       const endMinutes = endH * 60 + endM;
-      if (nowMinutes < startMinutes || nowMinutes > endMinutes) return false;
+      // Same-day window (e.g. 09:00-17:00): simple range check.
+      // Overnight window (e.g. 15:00-02:00, end < start): valid time is
+      // everything from start to midnight OR midnight to end — an OR, not
+      // an AND. The old single-range check made any overnight window
+      // permanently unsatisfiable (startMinutes > endMinutes can never
+      // bound a real nowMinutes), excluding the campaign at every hour.
+      const withinWindow = startMinutes <= endMinutes
+        ? nowMinutes >= startMinutes && nowMinutes <= endMinutes
+        : nowMinutes >= startMinutes || nowMinutes <= endMinutes;
+      if (!withinWindow) return false;
     }
     return true;
   }

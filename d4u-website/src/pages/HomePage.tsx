@@ -206,11 +206,16 @@ export const HomePage: React.FC<HomePageProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* At least 3 cards shown side by side; beyond 3 the row scrolls/slides
+              horizontally (snap-scroll) instead of wrapping to a new row. */}
+          <div className="flex gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth -mx-1 px-1">
             {promotions.map((promo) => (
               <div
                 key={promo.id}
-                className="group relative rounded-2xl overflow-hidden bg-[#16130B] border border-white/10 hover:border-[#D4AF37]/50 transition-all duration-300 shadow-xl flex flex-col justify-between gold-glow-hover h-64"
+                onClick={() => setActivePage('promotions')}
+                role="button"
+                tabIndex={0}
+                className="group relative rounded-2xl overflow-hidden bg-[#16130B] border border-white/10 hover:border-[#D4AF37]/50 transition-all duration-300 shadow-xl flex flex-col justify-between gold-glow-hover h-64 flex-none w-full sm:w-[calc(50%-12px)] md:w-[calc(33.333%-16px)] snap-start cursor-pointer"
               >
                 <div
                   className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105 opacity-40"
@@ -234,7 +239,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
                   <div className="flex items-center justify-between pt-3 border-t border-white/10">
                     <button
-                      onClick={() => handleCopyCode(promo.code)}
+                      onClick={(e) => { e.stopPropagation(); handleCopyCode(promo.code); }}
                       className="bg-[#1A1A1D]/90 hover:bg-[#25252A] text-gray-200 border border-white/10 text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-mono font-bold"
                     >
                       {copiedPromoCode === promo.code ? (
@@ -249,7 +254,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                     </button>
 
                     <button
-                      onClick={() => setActivePage('menu')}
+                      onClick={(e) => { e.stopPropagation(); setActivePage('menu'); }}
                       className="bg-[#D4AF37] text-black text-xs font-extrabold px-4 py-1.5 rounded-lg gold-glow hover:bg-[#ffe088] transition-colors"
                     >
                       Claim Deal
