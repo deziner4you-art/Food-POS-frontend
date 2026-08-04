@@ -93,6 +93,13 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 
 ---
 
+## Task 6B — Rider Orders Session Recovery (IMPLEMENTED)
+
+- Hardened OrdersView to use the authoritative authenticated Rider session (token, rider_id, store_id) passed from App.tsx.
+- Orders REST fetch now validates token and store_id before issuing requests; never sends Authorization: Bearer null and never requests without a valid store_id query.
+- Added a small fetch wrapper in App.tsx that injects an Authorization header for in-app fetch calls only when a valid rider token is available. This preserves existing realtime socket behavior and ensures deterministic REST reconciliation on Orders open.
+- Improved HTTP error handling (401/403 -> session re-login; 400 store errors -> session re-login; 5xx/network -> retryable UI). Session invalidation now surfaces an actionable message prompting re-login rather than showing an endless "Unable to load orders." message.
+
 ## Pending Approved Tasks
 
 **Task 2**

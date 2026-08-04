@@ -25,6 +25,7 @@ export default function App() {
     setRiderStoreId(null);
     setRiderName('');
     setRiderId('');
+    setRiderToken(null);
     setCurrentView('login');
   };
 
@@ -45,6 +46,7 @@ export default function App() {
   const [riderName, setRiderName] = useState<string>('');
   const [riderStoreName, setRiderStoreName] = useState<string>('');
   const [riderId, setRiderId] = useState<string>('');
+  const [riderToken, setRiderToken] = useState<string | null>(null);
   
   // Active rider order
   const [activeOrder, setActiveOrder] = useState<DeliveryOrder | null>(null);
@@ -108,6 +110,7 @@ export default function App() {
       !isNaN(riderNum) && riderNum > 0;
 
     if (sessionValid) {
+      setRiderToken(token);
       setRiderStoreId(storeNum);
       setRiderName(name || '');
       setRiderStoreName(storeName || '');
@@ -120,9 +123,44 @@ export default function App() {
       localStorage.removeItem('d4u_rider_name');
       localStorage.removeItem('d4u_rider_store_name');
       localStorage.removeItem('d4u_rider_id');
+      setRiderToken(null);
       setCurrentView('login');
     }
   }, []);
+
+  // Install a lightweight fetch wrapper to inject Authorization when we have a valid riderToken.
+  // This ensures components (including OrdersView) that call fetch directly will not accidentally
+  // send `Bearer null` or an empty store_id. The wrapper is removed on cleanup.
+  useEffect(() => {
+    const originalFetch = window.fetch.bind(window);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).fetch = async (input: RequestInfo, init?: RequestInit) => {
+      try {
+        const url = typeof input === 'string' ? input : (input as Request).url;
+        // Only modify requests destined to our BACKEND_URL
+        if (url && url.includes(new URL(BACKEND_URL).host)) {
+          const headers = new Headers(init?.headers || (typeof input !== 'string' ? (input as Request).headers : undefined));
+          if (riderToken && riderToken !== 'null' && riderToken !== 'undefined' && riderToken.trim().length > 0) {
+            // Only set Authorization if not already present
+            if (!headers.get('Authorization')) {
+              headers.set('Authorization', `Bearer ${riderToken}`);
+            }
+          }
+          // Rebuild init with the possibly modified headers
+          const newInit = Object.assign({}, init || {}, { headers });
+          return originalFetch(input, newInit);
+        }
+      } catch (e) {
+        // Fallback to original fetch on any error
+      }
+      return originalFetch(input, init as any);
+    };
+
+    return () => {
+      // Restore
+      (window as any).fetch = originalFetch;
+    };
+  }, [riderToken]);
 
   // Sync general Rider status online vs offline
   useEffect(() => {
@@ -621,6 +659,7 @@ export default function App() {
                 setRiderStoreId(sId);
                 setRiderName(name);
                 setRiderStoreName(localStorage.getItem('d4u_rider_store_name') || 'Branch');
+                setRiderToken(localStorage.getItem('d4u_rider_token') || null);
                 setCurrentView('map');
               }}
             />
@@ -666,12 +705,14 @@ export default function App() {
 
           {currentView === 'orders' && (
             <OrdersView 
-              riderStoreId={riderStoreId || ''}
+              riderStoreId={riderStoreId}
               riderId={riderId}
+              riderToken={riderToken}
               lastOrderUpdate={lastOrderUpdate}
               onBack={() => setCurrentView('map')} 
               onAcceptOrder={(order) => handleAcceptOrder(order)}
               onResumeOrder={(order) => handleResumeOrder(order)}
+              onSessionError={logout}
             />
           )}
 
