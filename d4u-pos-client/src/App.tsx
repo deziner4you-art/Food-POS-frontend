@@ -706,7 +706,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       // Dexie (db.kots) watcher that depends on KDS happening to be open in a
       // tab on this same browser — never true when the kitchen display is a
       // separate device, which is the normal deployment.
-      if (['KITCHEN_PREPARING', 'READY', 'DISPATCHED', 'RIDER_ACCEPTED', 'RIDER_ARRIVED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PAID', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(order.status)) {
+      if (['KITCHEN_PREPARING', 'READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PAID', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(order.status)) {
         setActiveDeliveries(prev => {
           const updated = [...prev];
           const existIdx = updated.findIndex(d => d.bridgeOrderId === order.id);
