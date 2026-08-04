@@ -4,14 +4,12 @@
 
 - Branch: bugfix/antigravity-during-claude-off
 - Branch base SHA: bbfb713afecd27589b47a24e5a06d549dab16613
-- **Latest commit (HEAD): this documentation commit — `feat(pos): add realtime delivery attention badge` (Task 7D)**, parent `05ac682` — `fix(pos): sync Print Bill status realtime so Dispatch Order works without refresh` (ad hoc fix)
+- **Latest commit (HEAD): this documentation commit** (Task 7E — no code changes), parent `b9da18c` — `feat(pos): add realtime delivery attention badge` (Task 7D)
 - Date of this update: 2026-08-05
 - Current production-stabilization status: STABLE, with one open item — see **"Uncommitted Working Tree State"** below before touching `d4u-rider/src/components/OrdersView.tsx`
 - Build status (at HEAD, committed code): PASS
 - TypeScript status (at HEAD, committed code): PASS, except the pre-existing baseline error `src/App.tsx(11,22): Cannot find module './components/POSPanel'` in `d4u-rider`, present since before this handover window and reconfirmed not introduced by any task in it (verified via `git stash` test, see Task 6A)
-- Task 7A and Task 7B are **code complete and build-clean but NOT runtime-certified** — no live end-to-end confirmation has been performed for either. Do not mark them verified until that happens.
-- Task 7C is **fixed and backend-verified live via direct HTTP test** (see "Task 7C — Rider Accept Order Fix"), but the actual browser click-through was NOT performed (no browser tool available) — UI-layer behavior is NOT RUNTIME-CERTIFIED.
-- Task 7D is **UI-derived and build-verified** (see "Task 7D — POS Delivery Menu Badge Count") but has NOT been visually confirmed in a real browser (no browser tool available) — NOT RUNTIME-CERTIFIED.
+- **Task 7E (this task) certified Tasks 7A, 7B, 7C, and 7D at the backend/socket/data-contract layer**, live against the running dev backend with a real fresh order (OnlineOrder #1133) and real socket listeners mirroring exactly how POS and Rider join their store room — see "Task 7E — Live Delivery Lifecycle Runtime Certification". **Browser-rendered pixel confirmation (badge visually appearing, toasts rendering, screen transitions) is still NOT PERFORMED for any of 7A/7B/7C/7D** — no browser tool is available in this environment. Do not claim full runtime certification beyond backend/socket/data-layer until someone drives a real browser.
 
 ## Work Completed During Claude Off
 
@@ -169,7 +167,8 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | 4868652 | Task 7B: Rider READY realtime socket stability | Antigravity | CODE COMPLETE, BUILD PASS, NOT RUNTIME-CERTIFIED |
 | 5f937cd | Task 7C: Rider Accept Order fix | Claude | BUILD PASS, backend claim flow RUNTIME-VERIFIED via live HTTP test, UI click-through NOT RUNTIME-CERTIFIED |
 | 05ac682 | Ad hoc: POS Print Bill realtime sync fix | Claude | BUILD PASS, RUNTIME-VERIFIED via live socket listener |
-| (next) | Task 7D: POS Delivery menu badge count | Claude | BUILD PASS, UI-derived, no browser click-through certification |
+| b9da18c | Task 7D: POS Delivery menu badge count | Claude | BUILD PASS, UI-derived, no browser click-through certification |
+| (next) | Task 7E: Live delivery lifecycle runtime certification (doc-only, no code changes) | Claude | Backend/socket/data-contract layer CERTIFIED live for Tasks 7A-7D; browser pixel-level NOT PERFORMED |
 
 ---
 
@@ -785,7 +784,7 @@ POS realtime insertion now accepts either `ONLINE` or `DELIVERY` (case-insensiti
 **Files Changed:**
 - `d4u-pos-client/src/App.tsx`
 
-**Status:** CODE COMPLETE, BUILD PASS. **NOT RUNTIME-CERTIFIED** — no live end-to-end confirmation (place a real Website order, run it through KDS to READY, confirm the POS Active Deliveries card appears without a manual refresh) has been performed yet.
+**Status:** CODE COMPLETE, BUILD PASS. **Backend/socket-level: CERTIFIED** — Task 7E drove a real fresh order (OnlineOrder #1133) to READY live and confirmed the POS-joined socket listener received the `order_updated` broadcast with `type: 'DELIVERY'`/`status: 'READY'`, matching this fix's accepted-type check. **Browser-rendered confirmation (card visually appearing without refresh) is still NOT PERFORMED** — no browser tool available.
 
 ---
 
@@ -805,7 +804,7 @@ Introduced `activeOrderRef` and `isOnlineRef` so the socket handler can read cur
 **Files Changed:**
 - `d4u-rider/src/App.tsx`
 
-**Status:** CODE COMPLETE, BUILD PASS. **NOT RUNTIME-CERTIFIED** — no live end-to-end confirmation (place a real order, run it to READY, confirm the Rider App receives the offer without a refresh, across a session where `isOnline`/`activeOrder` change) has been performed yet.
+**Status:** CODE COMPLETE, BUILD PASS. **Backend/socket-level: CERTIFIED** — Task 7E confirmed a Rider-joined socket listener (joined exactly as `d4u-rider/src/App.tsx` does, via the bare-string `store_67` form) received the READY `order_updated` broadcast for a real fresh order with `claimedByRiderId: null`, live, without any REST refresh. **Browser-rendered confirmation (OFFERED popup visually appearing) is still NOT PERFORMED** — no browser tool available.
 
 ---
 
@@ -850,7 +849,7 @@ Changed `onClick={onAccept}` to `onClick={() => onAccept()}` so the handler is i
   - Pre-fix repro: `PATCH /rider-orders/undefined/claim` (the exact request the bug produced) → `500 Internal Server Error`.
   - Post-fix simulation: `PATCH /rider-orders/1129/claim` (the exact request the fix produces, using real OnlineOrder #1129 and Rider #90, both store 67) → `200 OK`, response `claimedByRiderId: 90`, `claimedByRiderName: "Anees"`.
   - Test order #1129 was restored to `claimedByRiderId: null` / `claimedByRiderName: null` immediately after each test call — no residual test data left in the dev database.
-- **UI-layer click-through (offer → Accept Order tap → ACCEPTED screen) is NOT RUNTIME-CERTIFIED** — the network-level root cause and fix are proven, but an actual browser session was not driven.
+- **UI-layer click-through (offer → Accept Order tap → ACCEPTED screen) is NOT RUNTIME-CERTIFIED** — the network-level root cause and fix are proven, but an actual browser session was not driven. Task 7E additionally re-confirmed the full claim mechanics live end-to-end with a fresh real order (OnlineOrder #1133, rider #90) — `PATCH /rider-orders/1133/claim` → 200, `claimedByRiderId: 90` — still at the network layer, not a browser click-through.
 
 **TypeScript / Build:**
 - Backend: `npx tsc --noEmit` — PASS (0 errors).
@@ -922,6 +921,41 @@ Changed `onClick={onAccept}` to `onClick={() => onAccept()}` so the handler is i
 
 **Commit:** feat(pos): add realtime delivery attention badge
 
+**Runtime status update (Task 7E):** the underlying data this badge counts on (`activeDeliveries` status transitions) was certified live end-to-end — every status the badge filter checks (`READY`, `RIDER_ARRIVED`, `PRINT_BILL`, `WAITING_CASH_SETTLEMENT`) was confirmed to broadcast correctly for a real fresh order. The badge's own on-screen rendering (pill appearing/disappearing, count digit) is still **NOT PERFORMED** — no browser tool available.
+
+---
+
+## Task 7E — Live Delivery Lifecycle Runtime Certification
+
+**Starting SHA:** b9da18c
+
+**Scope and method:** This environment has no browser tool, so "runtime certification" here means the most rigorous test achievable without one: a fresh order was created through the real public `POST /online-orders` endpoint (the exact endpoint the website checkout calls — not a raw DB insert), driven through the real state machine via the real `PATCH /online-orders/:id` and `PATCH /kots/:id/status` endpoints against the live running dev backend (PID confirmed listening on :3001), while two real `socket.io-client` connections — one joined to `store_67` exactly as the POS does (`join_store` with `{store_id}`), one joined exactly as the Rider app does (`join_store` with the bare string `store_67`) — listened live for `new_order`/`order_updated`/`kds_update` broadcasts. Each resulting payload was then cross-checked against the actual frontend source (already read in full across Tasks 7A–7D) to confirm what the UI would do with it. **This certifies the backend, socket, and data-contract layers end-to-end. It does not certify pixel-level browser rendering** (badge visually appearing, toast visually rendering, screen transitions) — that remains unverified until someone drives a real browser.
+
+**Fresh test order created:** OnlineOrder #1133 (store 67, customer "Task 7E QA Customer", phone 03001234567, item: product #196 "Full" × 1 @ Rs. 3100). **Disclosure:** this is a real order, not a mock — it was carried through the full lifecycle to `SETTLED` as required by the test, which created a real linked POS Order (#733, COMPLETED/PAID) and will have incremented store 67's currently-open Business Day `totalSales`/`totalOrders` by ~Rs. 3100, and awarded/created loyalty data for phone 03001234567. Nothing was deleted or reset (per the DO-NOT-clean-database constraint) — flagging this so you can review/adjust store 67's day totals if that test transaction shouldn't count toward real figures.
+
+**Lifecycle walked and verified:**
+
+| Step | Action | Result |
+|---|---|---|
+| 1 | `POST /online-orders` (store 67, DELIVERY) | 201, OnlineOrder #1133 created PENDING; `new_order` broadcast received by POS listener immediately |
+| 2 | `PATCH /online-orders/1133` → CONFIRMED | 200; created real KOT #75 + POS Order #733 (`kds_update` fired); `order_updated` CONFIRMED reached both POS and Rider listeners |
+| 2c | `PATCH /kots/75/status` → PREPARING | 200; `order_updated` KITCHEN_PREPARING reached both listeners |
+| 3 | `PATCH /kots/75/status` → READY | 200; `kds_update` + `order_updated` (status READY) reached **both POS and Rider listeners simultaneously**; DB confirmed `OnlineOrder{status: READY, kdsStatus: READY, posOrderId: 733}` |
+| 4 | `PATCH /rider-orders/1133/claim` (riderId 90, "Anees") | 200; DB confirmed `claimedByRiderId: 90, claimedByRiderName: "Anees"`; `order_updated` (READY, claimedByRiderId 90) broadcast to both listeners |
+| 5 | RIDER_ARRIVED → PRINT_BILL → DISPATCHED → OUT_FOR_DELIVERY → DELIVERED → WAITING_CASH_SETTLEMENT → SETTLED (each via `PATCH /online-orders/1133`) | Every transition: 200, state-sequence check passed (no skips), `order_updated` broadcast fired and reached the POS listener with the correct status at every single stage, including PRINT_BILL and DISPATCHED |
+
+**Frontend consequence per stage (code-verified against `d4u-pos-client/src/App.tsx` and `d4u-rider/src/App.tsx` as they exist at this HEAD, not re-observed in a browser):**
+- At READY: `handleOrderUpdated`'s insert-branch fires (`existIdx === -1`, `type==='DELIVERY'`, `status!=='SETTLED'/'CANCELLED'`) → card appended to `activeDeliveries`; `newStatus==='READY'` → amber delivery toast fires (Task 5C/5F); Delivery sidebar badge filter (`READY` is in the counted-status list, Task 7D) → badge shows `1`. Rider socket: `claimedByRiderId == null` + status in the offer-eligible list → OFFERED popup fires (Task 5F/7B) with `activeOrder.id = 1133` as the customer-facing number (Task 5D).
+- Rider Accept: 200 response → `handleAcceptOrder` (Task 7C-fixed `onAccept()` wiring) sets `status='ACCEPTED'`, `currentView='map'`.
+- RIDER_ARRIVED/PRINT_BILL/DISPATCHED: all three are in the POS realtime whitelist (`PRINT_BILL` added by the ad hoc fix, commit `05ac682`) → the card's local status updates on each broadcast with no refresh needed — this is the exact sequence the cashier-reported "Dispatch Order needs a refresh" bug was about, and it is now fixed and broadcast-confirmed live.
+- Badge count across the lifecycle: `1` at READY/RIDER_ARRIVED/PRINT_BILL (all counted) → drops to `0` at DISPATCHED (not counted, rider now owns it) → stays `0` through OUT_FOR_DELIVERY/DELIVERED → **returns to `1` at WAITING_CASH_SETTLEMENT** (cashier must collect COD — correctly counted again) → the card leaves `activeDeliveries` entirely at SETTLED (pre-existing filter) → badge `0`/hidden. This non-monotonic dip-then-reappear is intentional, correct behavior, not a defect.
+
+**Root-cause findings requiring a fix:** none. Every step passed on the first attempt (after fixing a harmless bug in the *test script itself* — the create-order response shape is `{success, order: {...}}`, not a flat object — corrected before the certification run counted). No application code was touched in this task.
+
+**Files changed:** none (QA-only task; per instructions, no commit is made for a QA pass with zero code changes).
+
+**Build/TypeScript:** not re-run — no code was modified in this task; builds already stand at PASS from Task 7D.
+
 ---
 
 ## Uncommitted Working Tree State (as of 2026-08-04, before this handover update)
@@ -941,8 +975,8 @@ None of the above were created, modified, or removed by this documentation updat
 
 - **Task 7C — Rider Accept Order investigation/fix.** DONE — see "Task 7C — Rider Accept Order Fix" above. Backend claim flow verified live via HTTP; UI click-through NOT RUNTIME-CERTIFIED (no browser tool available).
 - **Task 7D — Cashier Delivery badge/popup count.** DONE — see "Task 7D — POS Delivery Menu Badge Count" above. UI-derived, build-verified; no browser click-through certification (no browser tool available).
-- **Task 7E — Fresh end-to-end delivery lifecycle QA** (covers runtime certification of Task 7A, Task 7B, and visual confirmation of Task 7D). NEXT task.
-- **Task 7F — COD payment option for POS-created Delivery orders.**
+- **Task 7E — Fresh end-to-end delivery lifecycle QA.** DONE — see "Task 7E — Live Delivery Lifecycle Runtime Certification" above. Backend/socket/data-contract layers certified PASS end-to-end via a real fresh order (OnlineOrder #1133) driven through the live dev backend with real socket listeners; no code changes needed. Browser-rendered pixel confirmation (badge visually appearing, toasts, screen transitions) is still NOT PERFORMED — no browser tool available in this environment.
+- **Task 7F — COD payment option for POS-created Delivery orders.** NEXT task.
 - **Rider backend History integration.**
 - **TV Board unattended realtime reconciliation**, if still required after Task 7A/7B are runtime-certified.
 
@@ -957,6 +991,6 @@ None of the above were created, modified, or removed by this documentation updat
 5. Verify architectural correctness, tenant/store isolation, `OnlineOrder.id` identity, socket lifecycle, and atomic rider claims.
 6. Run builds/typechecks.
 7. Perform a fresh end-to-end delivery test.
-8. Continue from the first unresolved task — currently **Task 7E** (Task 7C and Task 7D are fixed/build-verified but NOT runtime-certified in a real browser; see their sections above).
+8. Continue from the first unresolved task — currently **Task 7F** (Tasks 7A–7D are now certified at the backend/socket/data layer per Task 7E, but none have been visually confirmed in a real browser — no browser tool available in this environment; see each task's section above).
 
 If code and this document disagree, CODE IS AUTHORITATIVE.
