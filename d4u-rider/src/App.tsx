@@ -34,12 +34,18 @@ export default function App() {
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [status, setStatus] = useState<DeliveryStatus>('SEARCHING');
   const [lastOrderUpdate, setLastOrderUpdate] = useState<number>(Date.now());
-  // Mirrors `status` for the socket effect below to read without being a
-  // dependency of it — the effect intentionally does not re-subscribe on
-  // every status change (that would disconnect/reconnect the socket on
-  // every ACCEPTED/ARRIVED_REST/PICKED_UP/DELIVERED transition mid-delivery).
+
+  // Refs: expose mutable latest values to the socket handler without making
+  // them socket-effect dependencies. If isOnline or activeOrder were in the
+  // socket useEffect dep array, every online/offline toggle or REST hydration
+  // would disconnect + reconnect the socket — and a READY broadcast arriving
+  // during that window would be silently dropped. statusRef already used this
+  // pattern; activeOrderRef and isOnlineRef follow the same model (Task 7B).
   const statusRef = useRef<DeliveryStatus>('SEARCHING');
+  const activeOrderRef = useRef<DeliveryOrder | null>(null);
+  const isOnlineRef = useRef<boolean>(true);
   useEffect(() => { statusRef.current = status; }, [status]);
+  useEffect(() => { isOnlineRef.current = isOnline; }, [isOnline]);
 
   // Rider Auth States
   const [riderStoreId, setRiderStoreId] = useState<number | null>(null);
@@ -50,6 +56,8 @@ export default function App() {
   
   // Active rider order
   const [activeOrder, setActiveOrder] = useState<DeliveryOrder | null>(null);
+  // Keep ref in sync so socket handler sees latest value without re-subscribing
+  useEffect(() => { activeOrderRef.current = activeOrder; }, [activeOrder]);
   
   // Simulated Rider position
   const [driverCoords, setDriverCoords] = useState<{ x: number; y: number } | null>({ x: 30, y: 65 });
@@ -393,16 +401,28 @@ export default function App() {
 
     socket.on('order_updated', (order: any) => {
       setLastOrderUpdate(Date.now());
-      // 1. Alert Rider if a new order is READY
-      if (['READY', 'PRINT_BILL', 'DISPATCHED'].includes(order.status) && isOnline && !activeOrder) {
-        // Just show toast notification
+      // Task 7B: use refs instead of closure values — avoids stale reads when
+      // the socket was registered before the latest render.
+      const currentActiveOrder = activeOrderRef.current;
+      const currentIsOnline = isOnlineRef.current;
+
+      // 1. Alert Rider if a new UNCLAIMED order is READY
+      if (['READY', 'PRINT_BILL', 'DISPATCHED'].includes(order.status) &&
+          order.claimedByRiderId == null &&
+          currentIsOnline && !currentActiveOrder) {
         const { toast } = require('react-hot-toast');
         toast.success(`New Delivery Ready for Pickup: Order #${order.id}`, { duration: 6000 });
       }
 
-      // 2. Handle dispatch when KDS/POS dispatches it to OUT_FOR_DELIVERY or READY
-      if (['READY', 'PRINT_BILL', 'RIDER_ARRIVED', 'DISPATCHED', 'OUT_FOR_DELIVERY'].includes(order.status) && isOnline && !activeOrder) {
-        console.log('[RIDER] Found available order!', order);
+      // 2. Show OFFERED popup for any new UNCLAIMED delivery in actionable status
+      // Task 7B: guard claimedByRiderId == null so already-claimed orders
+      // (e.g. accepted by another rider while this rider was offline) don't
+      // appear as new offers. Without this guard every status update on a
+      // claimed order triggers a false OFFERED state on every other rider.
+      if (['READY', 'PRINT_BILL', 'RIDER_ARRIVED', 'DISPATCHED', 'OUT_FOR_DELIVERY'].includes(order.status) &&
+          order.claimedByRiderId == null &&
+          currentIsOnline && !currentActiveOrder) {
+        console.log('[RIDER] Task 7B — new available order via realtime:', order.id, order.status, order.store_id);
         const deliveryOrder: DeliveryOrder = {
           id: order.id,
           source: 'ONLINE_ORDER',
@@ -430,7 +450,7 @@ export default function App() {
       }
 
       // 3. Sync active order updates
-      if (activeOrder && order.id === activeOrder.id) {
+      if (currentActiveOrder && order.id === currentActiveOrder.id) {
         // If this order is still just an unaccepted offer and another rider's
         // claim landed first, drop it instead of leaving a dead offer on
         // screen — RiderService.claimOrder is the atomic lock; this is the
@@ -440,7 +460,7 @@ export default function App() {
           const { toast } = require('react-hot-toast');
           toast.error('Order was accepted by another rider.');
           setActiveOrder(null);
-          setStatus(isOnline ? 'SEARCHING' : 'OFFLINE');
+          setStatus(currentIsOnline ? 'SEARCHING' : 'OFFLINE');
           setActivePath([]);
           setCurrentPathIndex(0);
         } else {
@@ -457,7 +477,12 @@ export default function App() {
     return () => {
       socket.disconnect();
     };
-  }, [riderStoreId, isOnline, activeOrder]);
+  // Task 7B: socket only re-subscribes when the store changes (login/logout).
+  // isOnline and activeOrder are read via refs — they do NOT re-trigger socket
+  // disconnect/reconnect on every state change, which was silently dropping
+  // READY broadcasts that arrived during the reconnect window.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [riderStoreId]);
 
   // --- USER TRIGGERS & SIMULATOR HANDLERS ---
   const handleDispatchOrder = (order: DeliveryOrder) => {
