@@ -5,6 +5,21 @@ import { StoreProvider, useStore } from './context/StoreContext';
 import { BACKEND_URL } from './hooks/useStoreData';
 import BranchSelectorModal from './components/BranchSelectorModal';
 import PublicLayout, { type PublicOutletContext } from './routes/PublicLayout';
+import type { ActiveWebsitePage } from './types';
+
+// HomePage/PromotionsPage predate the react-router migration and still call
+// setActivePage('menu' | 'promotions' | ...) expecting it to switch a local
+// page-state variable. Routing is now real (see AppShell below), so this
+// maps those page names to actual routes instead.
+const PAGE_ROUTES: Record<ActiveWebsitePage, string> = {
+  home: '/',
+  menu: '/menu',
+  promotions: '/promotions',
+  about: '/about',
+  contact: '/contact',
+  checkout: '/checkout',
+  profile: '/account',
+};
 
 // Stitch pages — visual/UX reference, wired to real D4U data via StoreContext
 import { HomePage } from './pages/HomePage';
@@ -27,6 +42,7 @@ import MobileModeLegacy from './legacy/MobileMode';
 function HomeRoute() {
   const { heroSlides, promotions, categoryGroups, categories, products, stores, cart, addToCart } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
+  const navigate = useNavigate();
   const branches = (stores || []).map((s: any) => ({
     id: String(s.id),
     name: s.name,
@@ -54,7 +70,7 @@ function HomeRoute() {
       staff={[]}
       branches={branches}
       reviews={[]}
-      setActivePage={() => {}}
+      setActivePage={(page) => navigate(PAGE_ROUTES[page])}
       onQuickViewProduct={setQuickViewProduct}
       onAddToCart={addToCart}
       favoriteProductIds={[]}
@@ -87,7 +103,8 @@ function MenuRoute() {
 function PromotionsRoute() {
   const { promotions } = useStore();
   const { setAppliedCoupon } = useOutletContext<PublicOutletContext>();
-  return <PromotionsPage promotions={promotions} setActivePage={() => {}} onApplyPromoCode={setAppliedCoupon} />;
+  const navigate = useNavigate();
+  return <PromotionsPage promotions={promotions} setActivePage={(page) => navigate(PAGE_ROUTES[page])} onApplyPromoCode={setAppliedCoupon} />;
 }
 
 function mapStoresToBranches(stores: ReturnType<typeof useStore>['stores']) {
