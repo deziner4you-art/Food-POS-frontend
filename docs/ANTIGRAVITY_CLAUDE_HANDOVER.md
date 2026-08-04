@@ -4,9 +4,9 @@
 
 - Branch: bugfix/antigravity-during-claude-off
 - Branch base SHA: bbfb713afecd27589b47a24e5a06d549dab16613
-- **Latest commit (HEAD): this documentation commit** (Task 7E — no code changes), parent `b9da18c` — `feat(pos): add realtime delivery attention badge` (Task 7D)
+- **Latest commit (HEAD): `ea08cb9` — `Yaha tak order place hona aur order rider tak process complete hai (for single rider)`**, authored directly by the user (Imran) via their IDE while this Task 7E session was in progress — **not a commit Claude made**. It landed on top of `b9da18c` (Task 7D) and, because this handover file was mid-edit for Task 7E at the moment the user committed, it swept in this documentation update alongside the user's own changes (see "Uncommitted Working Tree State" below — that section is now stale as of this commit and has been corrected in place rather than left misleading).
 - Date of this update: 2026-08-05
-- Current production-stabilization status: STABLE, with one open item — see **"Uncommitted Working Tree State"** below before touching `d4u-rider/src/components/OrdersView.tsx`
+- Current production-stabilization status: STABLE. The `OrdersView.tsx` uncommitted-state caveat that used to live here is resolved — see **"Uncommitted Working Tree State"** below for what changed and what remains unreviewed.
 - Build status (at HEAD, committed code): PASS
 - TypeScript status (at HEAD, committed code): PASS, except the pre-existing baseline error `src/App.tsx(11,22): Cannot find module './components/POSPanel'` in `d4u-rider`, present since before this handover window and reconfirmed not introduced by any task in it (verified via `git stash` test, see Task 6A)
 - **Task 7E (this task) certified Tasks 7A, 7B, 7C, and 7D at the backend/socket/data-contract layer**, live against the running dev backend with a real fresh order (OnlineOrder #1133) and real socket listeners mirroring exactly how POS and Rider join their store room — see "Task 7E — Live Delivery Lifecycle Runtime Certification". **Browser-rendered pixel confirmation (badge visually appearing, toasts rendering, screen transitions) is still NOT PERFORMED for any of 7A/7B/7C/7D** — no browser tool is available in this environment. Do not claim full runtime certification beyond backend/socket/data-layer until someone drives a real browser.
@@ -958,16 +958,16 @@ Changed `onClick={onAccept}` to `onClick={() => onAccept()}` so the handler is i
 
 ---
 
-## Uncommitted Working Tree State (as of 2026-08-04, before this handover update)
+## Uncommitted Working Tree State — RESOLVED as of commit `ea08cb9` (2026-08-05)
 
-This section is a factual inventory only — no interpretation, judgment, or code changes were made regarding these items, per explicit instruction to keep this handover documentation-only.
+**Update:** everything this section used to flag as uncommitted was committed by the user (Imran), directly via their IDE, in commit `ea08cb9` — `Yaha tak order place hona aur order rider tak process complete hai (for single rider)`. This happened concurrently with (and was not initiated by) Claude's Task 7E session; Claude did not author, request, or review that commit's content. The original inventory is kept below for historical trace, marked resolved.
 
-- **`d4u-rider/src/components/OrdersView.tsx` — MODIFIED, UNCOMMITTED.** The committed version at HEAD (last touched by commit `dd4f7ce`, Task 6B) is ~10,278 lines. The current working-tree version on disk is ~582 lines (`git diff --stat` reports 582 insertions / 5137 deletions relative to HEAD). Three backup files sit alongside it in the same directory, each also ~10,278 lines: `OrdersView.tsx.bak`, `OrdersView.tsx.orig`, `OrdersView.tsx.preclean`. The purpose and completeness of this in-progress trim is not established from Git history alone. **Inspect this fully before editing, committing, or discarding anything related to it.**
-- **Untracked scratch/debug files (backend):** `d4u-pos-backend/scratch_inspect.js`, `scratch_test_claim.js`, `scratch_test_delivery.js`, `scratch_test_orders.js`, `scripts/audit_store_67.js`, `test_db.js`.
-- **Untracked upload artifact:** `d4u-pos-backend/uploads/b778363118edab6b3959aa5ea24f54ff.png`.
-- **Untracked office documents (repo root):** `Review adn Improvements.docx`, `~$view adn Improvements.docx` (Word lock file for the former).
+- **`d4u-rider/src/components/OrdersView.tsx` — now COMMITTED** in `ea08cb9` (5,719 lines changed from the prior `dd4f7ce` version, net result trimmed from ~10,278 lines). **Content not reviewed by Claude** — this was the user's own in-progress work, out of scope for Task 7E ("do NOT touch OrdersView.tsx"), and remains unreviewed. The three backup files (`OrdersView.tsx.bak`, `.orig`, `.preclean`, each ~10,278 lines) were also committed as-is in the same commit — still present on disk, now tracked.
+- **Scratch/debug files (backend)** — now COMMITTED in `ea08cb9`: `d4u-pos-backend/scratch_inspect.js`, `scratch_test_claim.js`, `scratch_test_delivery.js`, `scratch_test_orders.js`, `scripts/audit_store_67.js`, `test_db.js`.
+- **Upload artifact** — now COMMITTED: `d4u-pos-backend/uploads/b778363118edab6b3959aa5ea24f54ff.png`.
+- **Office documents (repo root)** — now COMMITTED: `Review adn Improvements.docx`, `~$view adn Improvements.docx` (Word lock file for the former).
 
-None of the above were created, modified, or removed by this documentation update. This handover intentionally does not attempt to diagnose or resolve the `OrdersView.tsx` discrepancy.
+**Working tree is now clean** (verified via `git status` immediately after this commit). No further "inspect before touching" caveat applies at the git-state level — but the actual *content* of `OrdersView.tsx` and the scratch files has still not been reviewed by Claude and carries no functional certification from any task in this handover.
 
 ---
 
