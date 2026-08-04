@@ -351,6 +351,7 @@ export class CatalogService {
     sort_order?: number,
     image_url?: string,
     category_group_id?: number,
+    is_featured?: boolean,
   ) {
     // Category Groups are OPTIONAL (business requirement change — see
     // Hotfix: Remove Runtime Migration Default Groups). category_group_id is
@@ -366,6 +367,7 @@ export class CatalogService {
         menu_id: resolvedMenuId,
         category_group_id: category_group_id ?? null,
         is_active: is_active ?? true,
+        is_featured: is_featured ?? false,
         sort_order: sort_order ?? 0,
         image_url,
         assigned_stores: {
@@ -384,6 +386,7 @@ export class CatalogService {
       category_group_id?: number;
       store_ids?: number[];
       is_active?: boolean;
+      is_featured?: boolean;
       sort_order?: number;
       image_url?: string;
     },
@@ -393,6 +396,7 @@ export class CatalogService {
     if (data.menu_id !== undefined) updateData.menu_id = data.menu_id;
     if (data.category_group_id !== undefined) updateData.category_group_id = data.category_group_id;
     if (data.is_active !== undefined) updateData.is_active = data.is_active;
+    if (data.is_featured !== undefined) updateData.is_featured = data.is_featured;
     if (data.sort_order !== undefined) updateData.sort_order = data.sort_order;
     if (data.image_url !== undefined) updateData.image_url = data.image_url;
     if (data.store_ids !== undefined) {

@@ -35,6 +35,10 @@ export class CreateCategoryDto {
   @IsOptional()
   is_active?: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  is_featured?: boolean;
+
   @IsInt()
   @IsOptional()
   sort_order?: number;

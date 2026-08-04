@@ -148,6 +148,7 @@ export class CatalogController {
       body.sort_order,
       body.image_url,
       body.category_group_id,
+      body.is_featured,
     );
   }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { BACKEND_URL } from './hooks/useStoreData';
@@ -71,6 +71,7 @@ function HomeRoute() {
       branches={branches}
       reviews={[]}
       setActivePage={(page) => navigate(PAGE_ROUTES[page])}
+      onSelectCategory={(categoryName) => navigate(`/menu?category=${encodeURIComponent(categoryName)}`)}
       onQuickViewProduct={setQuickViewProduct}
       onAddToCart={addToCart}
       favoriteProductIds={[]}
@@ -83,6 +84,7 @@ function HomeRoute() {
 function MenuRoute() {
   const { categoryGroups, categories, products, cart, addToCart } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
+  const [searchParams] = useSearchParams();
   const cartCounts: { [id: string]: number } = {};
   cart.forEach((c) => { cartCounts[c.product.id] = c.quantity; });
 
@@ -91,6 +93,7 @@ function MenuRoute() {
       categoryGroups={categoryGroups}
       categories={categories}
       products={products}
+      initialCategoryFilter={searchParams.get('category')}
       onQuickViewProduct={setQuickViewProduct}
       onAddToCart={addToCart}
       favoriteProductIds={[]}

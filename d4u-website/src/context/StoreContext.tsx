@@ -134,7 +134,7 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
     return saved ? Number(saved) : null;
   });
   const [cart, setCart] = useState<CartItem[]>([]);
-  const { foodItems, banners, campaigns, settings, orderUpdate, riderPosition } = useStoreData(storeId);
+  const { foodItems, banners, campaigns, settings, categoryMeta, orderUpdate, riderPosition } = useStoreData(storeId);
 
   const [loggedInUser, setLoggedInUser] = useState<CustomerProfile | null>(() => {
     const saved = localStorage.getItem('d4u_web_user');
@@ -255,16 +255,20 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
   // not an arbitrary pick.
   const categories = useMemo<Category[]>(() => {
     const names = Array.from(new Set(products.map((p) => p.categoryId).filter(Boolean))) as string[];
-    return names.map((name) => ({
-      id: name,
-      name,
-      iconName: 'Utensils',
-      imageUrl: '',
-      categoryGroupId: products.find((p) => p.categoryId === name)?.categoryGroupId,
-      displayOrder: 0,
-      itemCount: products.filter((p) => p.categoryId === name).length,
-    }));
-  }, [products]);
+    return names.map((name) => {
+      const meta = categoryMeta[name];
+      return {
+        id: name,
+        name,
+        iconName: 'Utensils',
+        imageUrl: meta?.imageUrl || '',
+        categoryGroupId: products.find((p) => p.categoryId === name)?.categoryGroupId,
+        displayOrder: meta?.sortOrder ?? 0,
+        itemCount: products.filter((p) => p.categoryId === name).length,
+        isFeatured: meta?.isFeatured ?? false,
+      };
+    });
+  }, [products, categoryMeta]);
 
   // Was always created with categories: [] -- MenuPage's group-expand tree
   // depended on group.categories to list a group's children and could never

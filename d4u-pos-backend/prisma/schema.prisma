@@ -526,6 +526,7 @@ model Category {
   category_group_id Int?
   name     String
   is_active   Boolean @default(true)
+  is_featured Boolean @default(false) // shown in the website Home page's Featured Categories section
   sort_order  Int     @default(0)
   image_url   String?
 

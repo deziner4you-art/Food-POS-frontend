@@ -93,6 +93,7 @@ export interface Category {
   categoryGroupId?: string;
   displayOrder: number;
   itemCount?: number;
+  isFeatured?: boolean;
 }
 
 export interface CategoryGroup {

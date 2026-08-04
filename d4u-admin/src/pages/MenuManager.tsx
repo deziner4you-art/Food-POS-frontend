@@ -54,7 +54,7 @@ export default function MenuManager() {
  // Categories State
  const [categories, setCategories] = useState<any[]>([]);
  const [showCategoryModal, setShowCategoryModal] = useState(false);
- const [categoryForm, setCategoryForm] = useState({ id: 0, name: '', menu_id: 0, category_group_id: 0, store_ids: [] as number[], image_url: '', is_active: true, sort_order: 0 });
+ const [categoryForm, setCategoryForm] = useState({ id: 0, name: '', menu_id: 0, category_group_id: 0, store_ids: [] as number[], image_url: '', is_active: true, is_featured: false, sort_order: 0 });
 
  // Products State
  const [products, setProducts] = useState<any[]>([]);
@@ -326,6 +326,7 @@ export default function MenuManager() {
  category_group_id: categoryForm.category_group_id > 0 ? categoryForm.category_group_id : null,
  store_ids: categoryForm.store_ids,
  is_active: categoryForm.is_active,
+ is_featured: categoryForm.is_featured,
  sort_order: Number(categoryForm.sort_order),
  image_url: categoryForm.image_url
  };
@@ -972,16 +973,17 @@ export default function MenuManager() {
  <div className="flex justify-end gap-3 items-center">
  <button 
  onClick={() => { 
- setCategoryForm({ 
- id: c.id, 
- name: c.name, 
- menu_id: c.menu_id || 0, 
+ setCategoryForm({
+ id: c.id,
+ name: c.name,
+ menu_id: c.menu_id || 0,
  category_group_id: c.category_group_id || 0,
- store_ids: c.assigned_stores?.map((s:any)=>s.id) || [], 
+ store_ids: c.assigned_stores?.map((s:any)=>s.id) || [],
  image_url: c.image_url || '',
  is_active: c.is_active ?? true,
+ is_featured: c.is_featured ?? false,
  sort_order: c.sort_order ?? 0
- }); 
+ });
  setShowCategoryModal(true); 
  }}
  className="text-stitch-muted hover:text-stitch-ink transition-colors"
@@ -1280,7 +1282,7 @@ export default function MenuManager() {
  {categoryGroups.map(cg => <option key={cg.id} value={cg.id}>{cg.name}</option>)}
  </select>
  <button
- onClick={() => { setCategoryForm({ id: 0, name: '', menu_id: 0, category_group_id: 0, store_ids: [], image_url: '', is_active: true, sort_order: categories.length + 1 }); setShowCategoryModal(true); }}
+ onClick={() => { setCategoryForm({ id: 0, name: '', menu_id: 0, category_group_id: 0, store_ids: [], image_url: '', is_active: true, is_featured: false, sort_order: categories.length + 1 }); setShowCategoryModal(true); }}
  className="flex items-center gap-2 bg-stitch-accent hover:bg-stitch-accent-hover text-stitch-accent-ink px-4 py-2 rounded-lg font-bold transition-colors accent-glow-hover"
  >
  <Plus size={18} /> Add Category
@@ -1955,13 +1957,20 @@ export default function MenuManager() {
  ))}
  </select>
  </div>
- <div className="flex items-end pb-2 col-span-2">
+ <div className="flex items-end gap-4 pb-2 col-span-2">
  <label className="flex items-center gap-2 text-sm font-bold text-stitch-ink cursor-pointer">
  <input
  type="checkbox" checked={categoryForm.is_active} onChange={e => setCategoryForm({...categoryForm, is_active: e.target.checked})}
  className="accent-stitch-success w-4 h-4"
  />
  Active Category
+ </label>
+ <label className="flex items-center gap-2 text-sm font-bold text-stitch-ink cursor-pointer" title="Shown in the website Home page's Featured Categories section">
+ <input
+ type="checkbox" checked={categoryForm.is_featured} onChange={e => setCategoryForm({...categoryForm, is_featured: e.target.checked})}
+ className="accent-stitch-accent w-4 h-4"
+ />
+ Featured
  </label>
  </div>
  </div>

@@ -45,6 +45,7 @@ interface HomePageProps {
   branches: Branch[];
   reviews: CustomerReview[];
   setActivePage: (page: ActiveWebsitePage) => void;
+  onSelectCategory: (categoryName: string) => void;
   onQuickViewProduct: (product: Product) => void;
   onAddToCart: (product: Product) => void;
   favoriteProductIds: string[];
@@ -63,6 +64,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   branches,
   reviews,
   setActivePage,
+  onSelectCategory,
   onQuickViewProduct,
   onAddToCart,
   favoriteProductIds,
@@ -87,6 +89,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   const activeSlide = visibleSlides[currentSlideIndex] || visibleSlides[0];
 
   const bestSellerProducts = products.filter((p) => p.isBestSeller || p.rating >= 4.9).slice(0, 4);
+  const featuredCategories = categories.filter((c) => c.isFeatured);
   const activeBranch = branches.find((b) => b.id === selectedBranchId) || branches[0];
 
   const handleCopyCode = (code: string) => {
@@ -266,7 +269,11 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
         </section>
 
-        {/* 3. FEATURED CATEGORIES */}
+        {/* 3. FEATURED CATEGORIES — only categories the admin has flagged
+            Featured (Menu Builder > Category > Featured checkbox); hidden
+            entirely when none are flagged, same "never show a hollow
+            section" convention as Best Selling Products below. */}
+        {featuredCategories.length > 0 && (
         <section className="space-y-6">
           <div className="flex items-end justify-between border-b border-white/10 pb-4">
             <div>
@@ -286,10 +293,10 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
-            {categories.map((cat) => (
+            {featuredCategories.map((cat) => (
               <button
                 key={cat.id}
-                onClick={() => setActivePage('menu')}
+                onClick={() => onSelectCategory(cat.id)}
                 className="group bg-[#16130B] border border-white/10 hover:border-[#D4AF37] rounded-2xl p-4 flex flex-col items-center text-center transition-all duration-300 hover:-translate-y-1 shadow-lg"
               >
                 <div className="w-16 h-16 rounded-2xl overflow-hidden mb-3 bg-[#1A1A1D] border border-white/10 group-hover:border-[#D4AF37]/50">
@@ -306,6 +313,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             ))}
           </div>
         </section>
+        )}
 
         {/* 4. BEST SELLING PRODUCTS — hidden entirely until real bestseller/rating data exists (never fabricated) */}
         {bestSellerProducts.length > 0 && (

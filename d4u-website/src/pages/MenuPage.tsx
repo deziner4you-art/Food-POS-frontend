@@ -19,6 +19,11 @@ interface MenuPageProps {
   categoryGroups: CategoryGroup[];
   categories: Category[];
   products: Product[];
+  // Category name to pre-select on load — set when arriving here via a
+  // Featured Category card on the Home page (see App.tsx MenuRoute, which
+  // reads it from ?category=). Only applied on mount, same as any other
+  // useState initial value.
+  initialCategoryFilter?: string | null;
   onQuickViewProduct: (product: Product) => void;
   onAddToCart: (product: Product) => void;
   favoriteProductIds: string[];
@@ -30,6 +35,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
   categoryGroups,
   categories,
   products,
+  initialCategoryFilter,
   onQuickViewProduct,
   onAddToCart,
   favoriteProductIds,
@@ -37,7 +43,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
   cartItems,
 }) => {
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(initialCategoryFilter ?? null);
   const [specialFilter, setSpecialFilter] = useState<'all' | 'discounted' | 'bestsellers' | 'spicy'>(
     'all'
   );

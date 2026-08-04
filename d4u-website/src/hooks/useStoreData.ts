@@ -35,6 +35,11 @@ export function useStoreData(storeId: number | null) {
   const [banners, setBanners] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>(null);
+  // Category metadata (id/is_featured/image_url/sort_order) keyed by category
+  // name — the website's own Category objects are otherwise derived purely
+  // from product.category name strings (see StoreContext), which drops
+  // everything except the name. This carries the rest through.
+  const [categoryMeta, setCategoryMeta] = useState<Record<string, { id: number; isFeatured: boolean; imageUrl: string; sortOrder: number }>>({});
   const socketRef = useRef<Socket | null>(null);
   const [orderUpdate, setOrderUpdate] = useState<any>(null);
   // Rider position broadcast by RiderService.updateRiderGps — same simulated
@@ -51,10 +56,20 @@ export function useStoreData(storeId: number | null) {
         if (!res.ok) return;
         const data = await res.json();
         const allProducts: any[] = [];
+        const meta: Record<string, { id: number; isFeatured: boolean; imageUrl: string; sortOrder: number }> = {};
+        const recordCategoryMeta = (cat: any) => {
+          meta[cat.name] = {
+            id: cat.id,
+            isFeatured: !!cat.is_featured,
+            imageUrl: cat.image_url || '',
+            sortOrder: cat.sort_order ?? 0,
+          };
+        };
 
         if (data.category_groups) {
           data.category_groups.forEach((group: any) => {
             (group.categories || []).forEach((cat: any) => {
+              recordCategoryMeta(cat);
               (cat.products || []).forEach((p: any) => {
                 allProducts.push({ ...p, __catName: cat.name, __groupName: group.name });
               });
@@ -63,11 +78,13 @@ export function useStoreData(storeId: number | null) {
         }
         if (data.categories) {
           data.categories.forEach((cat: any) => {
+            recordCategoryMeta(cat);
             (cat.products || []).forEach((p: any) => {
               allProducts.push({ ...p, __catName: cat.name, __groupName: undefined });
             });
           });
         }
+        setCategoryMeta(meta);
 
         const mappedItems: FoodItem[] = allProducts.map((p: any) => ({
           id: String(p.id),
@@ -139,5 +156,5 @@ export function useStoreData(storeId: number | null) {
     };
   }, [storeId]);
 
-  return { foodItems, banners, campaigns, settings, socket: socketRef.current, orderUpdate, riderPosition };
+  return { foodItems, banners, campaigns, settings, categoryMeta, socket: socketRef.current, orderUpdate, riderPosition };
 }
