@@ -4,11 +4,12 @@
 
 - Branch: bugfix/antigravity-during-claude-off
 - Branch base SHA: bbfb713afecd27589b47a24e5a06d549dab16613
-- Latest verified commit: bbfb713afecd27589b47a24e5a06d549dab16613
-- Date: 2026-08-03
-- Current production-stabilization status: STABLE
-- Build status: PASS
-- TypeScript status: PASS
+- **Latest commit (HEAD): 48686521df56e3b9e0cefdccc06b55dd2528e9cc — `fix(rider): receive ready online orders realtime` (Task 7B)**
+- Date of this update: 2026-08-04
+- Current production-stabilization status: STABLE, with one open item — see **"Uncommitted Working Tree State"** below before touching `d4u-rider/src/components/OrdersView.tsx`
+- Build status (at HEAD, committed code): PASS
+- TypeScript status (at HEAD, committed code): PASS, except the pre-existing baseline error `src/App.tsx(11,22): Cannot find module './components/POSPanel'` in `d4u-rider`, present since before this handover window and reconfirmed not introduced by any task in it (verified via `git stash` test, see Task 6A)
+- Task 7A and Task 7B are **code complete and build-clean but NOT runtime-certified** — no live end-to-end confirmation has been performed for either. Do not mark them verified until that happens.
 
 ## Work Completed During Claude Off
 
@@ -127,6 +128,15 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 - unrelated refactoring
 - unrelated UI cleanup
 
+**Additional hard constraints (2026-08-04 handover):**
+
+- DO NOT reset database.
+- DO NOT seed database.
+- DO NOT clean historical business data.
+- DO NOT merge to main.
+- DO NOT push unless explicitly instructed.
+- DO NOT rewrite working modules.
+
 ---
 
 ## Git Commit Timeline
@@ -151,7 +161,10 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | d3e94ba | Task 5E-C: My Active Order → Resume Delivery & Final Rider Orders QA | Antigravity | PASS |
 | d3e94ba | Task 5E: Rider Orders Tab (5E-A, 5E-B, 5E-C) | Antigravity | PASS |
 | cabf4f7 | Task 5F: KDS READY → Cashier Alert + Rider Realtime Offer | Antigravity | PASS |
-| (next) | Task 6A: Rider Accept — Online Order Identity & Store-Safe Claim Fix | Antigravity | PASS |
+| 06d24b5 | Task 6A: Rider Accept — Online Order Identity & Store-Safe Claim Fix | Antigravity | PASS |
+| dd4f7ce | Task 6B: Rider orders session recovery hardening | Antigravity | PASS |
+| a14391b | Task 7A: Website READY realtime insertion into POS | Antigravity | CODE COMPLETE, BUILD PASS, NOT RUNTIME-CERTIFIED |
+| 4868652 | Task 7B: Rider READY realtime socket stability | Antigravity | CODE COMPLETE, BUILD PASS, NOT RUNTIME-CERTIFIED |
 
 ---
 
@@ -751,13 +764,79 @@ TEST F — Refresh After Claim:
 
 ---
 
-## Claude Resume Instructions
+## Task 7A — Website READY Realtime Insertion into POS
 
-1. Read this document first.
-2. Check current branch and HEAD against this report.
-3. Run git status.
-4. Do not redo completed investigations/fixes.
-5. Review commits made by Antigravity.
-6. Re-run critical QA if desired.
-7. Continue from the first OPEN task.
-8. If code and this document disagree, CODE IS AUTHORITATIVE.
+**Commit:** a14391b1d7e644497798e295cb55e59520a6bb1d — `fix(delivery): sync ready orders to pos realtime`
+
+**Problem:**
+When a Website (Online) order reached READY, POS Active Deliveries did not insert a new delivery card in realtime — the cashier only saw it after a manual refresh (REST hydration).
+
+**Root Cause:**
+The Website `OnlineOrder` socket payload's `type` field is `"Online"`. The POS realtime insertion handler for delivery cards previously only accepted the literal string `"Delivery"`, so an incoming `order_updated` broadcast for a Website order never matched the type check and was silently dropped for card-insertion purposes.
+
+**Fix:**
+POS realtime insertion now accepts either `ONLINE` or `DELIVERY` (case-insensitive) when deciding whether an incoming `order_updated` broadcast should insert a new delivery card.
+
+**Files Changed:**
+- `d4u-pos-client/src/App.tsx`
+
+**Status:** CODE COMPLETE, BUILD PASS. **NOT RUNTIME-CERTIFIED** — no live end-to-end confirmation (place a real Website order, run it through KDS to READY, confirm the POS Active Deliveries card appears without a manual refresh) has been performed yet.
+
+---
+
+## Task 7B — Stable Rider READY Realtime Socket
+
+**Commit:** 4868652 (48686521df56e3b9e0cefdccc06b55dd2528e9cc) — `fix(rider): receive ready online orders realtime`
+
+**Problem:**
+The Rider App intermittently missed READY realtime broadcasts, requiring a manual refresh to see new delivery offers.
+
+**Root Cause:**
+The Rider socket `useEffect` depended on `isOnline` and `activeOrder`. Every time either value changed, the effect re-ran, tearing down and re-establishing the socket connection. Any READY broadcast emitted during one of these disconnect/reconnect windows was lost.
+
+**Fix:**
+Introduced `activeOrderRef` and `isOnlineRef` so the socket handler can read current values without those values being part of the effect's dependency array. The socket lifecycle now depends primarily on `riderStoreId`, so the connection stays open across `isOnline`/`activeOrder` changes instead of cycling. The existing unclaimed-order guard (`claimedByRiderId == null`) is preserved.
+
+**Files Changed:**
+- `d4u-rider/src/App.tsx`
+
+**Status:** CODE COMPLETE, BUILD PASS. **NOT RUNTIME-CERTIFIED** — no live end-to-end confirmation (place a real order, run it to READY, confirm the Rider App receives the offer without a refresh, across a session where `isOnline`/`activeOrder` change) has been performed yet.
+
+---
+
+## Uncommitted Working Tree State (as of 2026-08-04, before this handover update)
+
+This section is a factual inventory only — no interpretation, judgment, or code changes were made regarding these items, per explicit instruction to keep this handover documentation-only.
+
+- **`d4u-rider/src/components/OrdersView.tsx` — MODIFIED, UNCOMMITTED.** The committed version at HEAD (last touched by commit `dd4f7ce`, Task 6B) is ~10,278 lines. The current working-tree version on disk is ~582 lines (`git diff --stat` reports 582 insertions / 5137 deletions relative to HEAD). Three backup files sit alongside it in the same directory, each also ~10,278 lines: `OrdersView.tsx.bak`, `OrdersView.tsx.orig`, `OrdersView.tsx.preclean`. The purpose and completeness of this in-progress trim is not established from Git history alone. **Inspect this fully before editing, committing, or discarding anything related to it.**
+- **Untracked scratch/debug files (backend):** `d4u-pos-backend/scratch_inspect.js`, `scratch_test_claim.js`, `scratch_test_delivery.js`, `scratch_test_orders.js`, `scripts/audit_store_67.js`, `test_db.js`.
+- **Untracked upload artifact:** `d4u-pos-backend/uploads/b778363118edab6b3959aa5ea24f54ff.png`.
+- **Untracked office documents (repo root):** `Review adn Improvements.docx`, `~$view adn Improvements.docx` (Word lock file for the former).
+
+None of the above were created, modified, or removed by this documentation update. This handover intentionally does not attempt to diagnose or resolve the `OrdersView.tsx` discrepancy.
+
+---
+
+## Known Future Tasks
+
+- **Task 7C — Rider Accept Order investigation/fix.** NEXT task. Do not mark complete unless a later commit proves it.
+- **Task 7D — Cashier Delivery badge/popup count.**
+- **Task 7E — Fresh end-to-end delivery lifecycle QA** (covers runtime certification of Task 7A and Task 7B).
+- **Task 7F — COD payment option for POS-created Delivery orders.**
+- **Rider backend History integration.**
+- **TV Board unattended realtime reconciliation**, if still required after Task 7A/7B are runtime-certified.
+
+---
+
+## CLAUDE RETURN — FIRST ACTIONS
+
+1. Read this entire handover before editing code.
+2. Inspect current branch and latest commits.
+3. Review changes made while Claude was unavailable.
+4. Do NOT revert working fixes merely because the implementation differs from old code.
+5. Verify architectural correctness, tenant/store isolation, `OnlineOrder.id` identity, socket lifecycle, and atomic rider claims.
+6. Run builds/typechecks.
+7. Perform a fresh end-to-end delivery test.
+8. Continue from the first unresolved task — currently **Task 7C**.
+
+If code and this document disagree, CODE IS AUTHORITATIVE.
