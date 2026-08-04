@@ -4,12 +4,13 @@
 
 - Branch: bugfix/antigravity-during-claude-off
 - Branch base SHA: bbfb713afecd27589b47a24e5a06d549dab16613
-- **Latest commit (HEAD): 48686521df56e3b9e0cefdccc06b55dd2528e9cc — `fix(rider): receive ready online orders realtime` (Task 7B)**
-- Date of this update: 2026-08-04
+- **Latest commit (HEAD): this documentation commit — `fix(rider): restore delivery order acceptance` (Task 7C)**, parent `4868652` — `fix(rider): receive ready online orders realtime` (Task 7B)
+- Date of this update: 2026-08-05
 - Current production-stabilization status: STABLE, with one open item — see **"Uncommitted Working Tree State"** below before touching `d4u-rider/src/components/OrdersView.tsx`
 - Build status (at HEAD, committed code): PASS
 - TypeScript status (at HEAD, committed code): PASS, except the pre-existing baseline error `src/App.tsx(11,22): Cannot find module './components/POSPanel'` in `d4u-rider`, present since before this handover window and reconfirmed not introduced by any task in it (verified via `git stash` test, see Task 6A)
 - Task 7A and Task 7B are **code complete and build-clean but NOT runtime-certified** — no live end-to-end confirmation has been performed for either. Do not mark them verified until that happens.
+- Task 7C is **fixed and backend-verified live via direct HTTP test** (see "Task 7C — Rider Accept Order Fix"), but the actual browser click-through was NOT performed (no browser tool available) — UI-layer behavior is NOT RUNTIME-CERTIFIED.
 
 ## Work Completed During Claude Off
 
@@ -165,6 +166,7 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | dd4f7ce | Task 6B: Rider orders session recovery hardening | Antigravity | PASS |
 | a14391b | Task 7A: Website READY realtime insertion into POS | Antigravity | CODE COMPLETE, BUILD PASS, NOT RUNTIME-CERTIFIED |
 | 4868652 | Task 7B: Rider READY realtime socket stability | Antigravity | CODE COMPLETE, BUILD PASS, NOT RUNTIME-CERTIFIED |
+| (next) | Task 7C: Rider Accept Order fix | Claude | BUILD PASS, backend claim flow RUNTIME-VERIFIED via live HTTP test, UI click-through NOT RUNTIME-CERTIFIED |
 
 ---
 
@@ -804,6 +806,58 @@ Introduced `activeOrderRef` and `isOnlineRef` so the socket handler can read cur
 
 ---
 
+## Task 7C — Rider Accept Order Fix
+
+**Starting SHA:** 823be01
+
+**Problem:**
+Rider receives the delivery offer (OFFERED state, `ActiveRideView`) and Decline works, but pressing **"Accept Order"** does not accept/start the delivery.
+
+**Investigation:**
+- `handleAcceptOrder(orderToClaim?: any)` in `d4u-rider/src/App.tsx` resolves `const targetOrder = orderToClaim || activeOrder;` and then calls `PATCH /rider-orders/${targetOrder.id}/claim`.
+- `ActiveRideView.tsx:177` (the OFFERED-state "Accept Order" button) wired the handler directly as `onClick={onAccept}` — i.e. `onAccept` (== `handleAcceptOrder`) is invoked by React with the click `SyntheticEvent` as its first argument.
+- Because a `SyntheticEvent` object is truthy, `orderToClaim || activeOrder` picked the **event object**, not the real order. `targetOrder.id` was therefore `undefined`, and the request went to `/rider-orders/undefined/claim`.
+- `handleDeclineOrder()` takes no parameters at all, so the same mis-wiring on the Decline button (`onClick={onDecline}`) is harmless — this is why Decline worked and Accept did not.
+- Confirmed live against the running dev backend (`http://127.0.0.1:3001`, PID 6360): `PATCH /rider-orders/undefined/claim` → **HTTP 500 Internal Server Error** (`Number('undefined')` → `NaN` → invalid Prisma `where: { id: NaN }`). Frontend's `!res.ok` branch shows a generic toast and, because `orderToClaim` (the event) is still truthy, does **not** call `handleDeclineOrder()` either — the offer just sits there silently failing.
+- Confirmed the claim flow itself (`RiderController.claimOrder` → `RiderService.claimOrder`) is correct and unmodified: a live test with a real order id (OnlineOrder #1129, store 67, unclaimed READY) and a real rider (#90, store 67) returned **HTTP 200** with `claimedByRiderId: 90` set correctly. The bug is isolated entirely to the frontend event-wiring in `ActiveRideView.tsx`; the backend claim contract, store validation, atomic first-wins lock, and 409/400 protections were never at fault and were not touched.
+
+**Root Cause:**
+`ActiveRideView.tsx:177` — `onClick={onAccept}` passed the DOM click event as `handleAcceptOrder`'s `orderToClaim` argument instead of calling it with no arguments, causing the resolved order id to be `undefined`.
+
+**Fix:**
+Changed `onClick={onAccept}` to `onClick={() => onAccept()}` so the handler is invoked with no arguments and correctly falls back to `activeOrder`.
+
+**Files Changed:**
+- `d4u-rider/src/components/ActiveRideView.tsx`
+
+**Preserved (unmodified, verified):**
+- `riderId > 0` validation — untouched.
+- Rider-existence validation — untouched.
+- Same-store / cross-store validation (`riderUser.store_id !== orderStoreId`) — untouched.
+- Atomic first-rider-wins claim (`updateMany({ where: { id, claimedByRiderId: null } })`) — untouched.
+- 409 two-rider protection — untouched.
+- `OnlineOrder.id` identity (Task 6A) — untouched.
+- POS-native delivery claim fallback — untouched.
+- Task 7A (Website READY realtime insertion into POS, `d4u-pos-client/src/App.tsx`) — not touched by this fix.
+- Task 7B (Rider socket stability, `d4u-rider/src/App.tsx` socket `useEffect`) — not touched by this fix; `handleAcceptOrder` itself in `App.tsx` was read but not modified.
+- `d4u-rider/src/components/OrdersView.tsx` — not touched, per explicit instruction (contains unrelated uncommitted work).
+
+**Runtime Test Results:**
+- Live backend (dev, PID 6360) HTTP-level verification only — no browser click-through was performed (no browser tool available in this environment).
+  - Pre-fix repro: `PATCH /rider-orders/undefined/claim` (the exact request the bug produced) → `500 Internal Server Error`.
+  - Post-fix simulation: `PATCH /rider-orders/1129/claim` (the exact request the fix produces, using real OnlineOrder #1129 and Rider #90, both store 67) → `200 OK`, response `claimedByRiderId: 90`, `claimedByRiderName: "Anees"`.
+  - Test order #1129 was restored to `claimedByRiderId: null` / `claimedByRiderName: null` immediately after each test call — no residual test data left in the dev database.
+- **UI-layer click-through (offer → Accept Order tap → ACCEPTED screen) is NOT RUNTIME-CERTIFIED** — the network-level root cause and fix are proven, but an actual browser session was not driven.
+
+**TypeScript / Build:**
+- Backend: `npx tsc --noEmit` — PASS (0 errors).
+- Rider: `npx tsc --noEmit` — PASS except the same pre-existing baseline error already documented (`src/App.tsx(11,22): Cannot find module './components/POSPanel'`), not introduced by this change.
+- Rider: `npm run build` (Vite) — PASS.
+
+**Commit:** fix(rider): restore delivery order acceptance
+
+---
+
 ## Uncommitted Working Tree State (as of 2026-08-04, before this handover update)
 
 This section is a factual inventory only — no interpretation, judgment, or code changes were made regarding these items, per explicit instruction to keep this handover documentation-only.
@@ -819,8 +873,8 @@ None of the above were created, modified, or removed by this documentation updat
 
 ## Known Future Tasks
 
-- **Task 7C — Rider Accept Order investigation/fix.** NEXT task. Do not mark complete unless a later commit proves it.
-- **Task 7D — Cashier Delivery badge/popup count.**
+- **Task 7C — Rider Accept Order investigation/fix.** DONE — see "Task 7C — Rider Accept Order Fix" above. Backend claim flow verified live via HTTP; UI click-through NOT RUNTIME-CERTIFIED (no browser tool available).
+- **Task 7D — Cashier Delivery badge/popup count.** NEXT task.
 - **Task 7E — Fresh end-to-end delivery lifecycle QA** (covers runtime certification of Task 7A and Task 7B).
 - **Task 7F — COD payment option for POS-created Delivery orders.**
 - **Rider backend History integration.**
@@ -837,6 +891,6 @@ None of the above were created, modified, or removed by this documentation updat
 5. Verify architectural correctness, tenant/store isolation, `OnlineOrder.id` identity, socket lifecycle, and atomic rider claims.
 6. Run builds/typechecks.
 7. Perform a fresh end-to-end delivery test.
-8. Continue from the first unresolved task — currently **Task 7C**.
+8. Continue from the first unresolved task — currently **Task 7D** (Task 7C is fixed and backend-verified; see "Task 7C — Rider Accept Order Fix").
 
 If code and this document disagree, CODE IS AUTHORITATIVE.

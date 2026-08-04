@@ -173,8 +173,8 @@ export default function ActiveRideView({
             </div>
 
             <div className="flex flex-col gap-3 mt-10">
-              <button 
-                onClick={onAccept}
+              <button
+                onClick={() => onAccept()}
                 className="w-full bg-primary text-slate-900 font-bold py-4 rounded-xl shadow-lg shadow-primary/30 active:scale-[0.98] transition-all"
               >
                 Accept Order
