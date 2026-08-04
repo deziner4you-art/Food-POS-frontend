@@ -727,7 +727,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               }
               updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: riderLabel };
             }
-          } else if (order.type?.toUpperCase() === 'DELIVERY' && order.status !== 'SETTLED' && order.status !== 'CANCELLED') {
+          } else if ((order.type?.toUpperCase() === 'DELIVERY' || order.type?.toUpperCase() === 'ONLINE') && order.status !== 'SETTLED' && order.status !== 'CANCELLED') {
             let parsedItems: any[] = [];
             try {
               if (typeof order.items === 'string' && order.items.trim().startsWith('[')) {
