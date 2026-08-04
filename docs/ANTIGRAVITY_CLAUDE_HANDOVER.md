@@ -4,13 +4,14 @@
 
 - Branch: bugfix/antigravity-during-claude-off
 - Branch base SHA: bbfb713afecd27589b47a24e5a06d549dab16613
-- **Latest commit (HEAD): this documentation commit — `fix(rider): restore delivery order acceptance` (Task 7C)**, parent `4868652` — `fix(rider): receive ready online orders realtime` (Task 7B)
+- **Latest commit (HEAD): this documentation commit — `feat(pos): add realtime delivery attention badge` (Task 7D)**, parent `05ac682` — `fix(pos): sync Print Bill status realtime so Dispatch Order works without refresh` (ad hoc fix)
 - Date of this update: 2026-08-05
 - Current production-stabilization status: STABLE, with one open item — see **"Uncommitted Working Tree State"** below before touching `d4u-rider/src/components/OrdersView.tsx`
 - Build status (at HEAD, committed code): PASS
 - TypeScript status (at HEAD, committed code): PASS, except the pre-existing baseline error `src/App.tsx(11,22): Cannot find module './components/POSPanel'` in `d4u-rider`, present since before this handover window and reconfirmed not introduced by any task in it (verified via `git stash` test, see Task 6A)
 - Task 7A and Task 7B are **code complete and build-clean but NOT runtime-certified** — no live end-to-end confirmation has been performed for either. Do not mark them verified until that happens.
 - Task 7C is **fixed and backend-verified live via direct HTTP test** (see "Task 7C — Rider Accept Order Fix"), but the actual browser click-through was NOT performed (no browser tool available) — UI-layer behavior is NOT RUNTIME-CERTIFIED.
+- Task 7D is **UI-derived and build-verified** (see "Task 7D — POS Delivery Menu Badge Count") but has NOT been visually confirmed in a real browser (no browser tool available) — NOT RUNTIME-CERTIFIED.
 
 ## Work Completed During Claude Off
 
@@ -166,7 +167,9 @@ TV Board Customer-Facing Order Number Alignment — COMPLETE
 | dd4f7ce | Task 6B: Rider orders session recovery hardening | Antigravity | PASS |
 | a14391b | Task 7A: Website READY realtime insertion into POS | Antigravity | CODE COMPLETE, BUILD PASS, NOT RUNTIME-CERTIFIED |
 | 4868652 | Task 7B: Rider READY realtime socket stability | Antigravity | CODE COMPLETE, BUILD PASS, NOT RUNTIME-CERTIFIED |
-| (next) | Task 7C: Rider Accept Order fix | Claude | BUILD PASS, backend claim flow RUNTIME-VERIFIED via live HTTP test, UI click-through NOT RUNTIME-CERTIFIED |
+| 5f937cd | Task 7C: Rider Accept Order fix | Claude | BUILD PASS, backend claim flow RUNTIME-VERIFIED via live HTTP test, UI click-through NOT RUNTIME-CERTIFIED |
+| 05ac682 | Ad hoc: POS Print Bill realtime sync fix | Claude | BUILD PASS, RUNTIME-VERIFIED via live socket listener |
+| (next) | Task 7D: POS Delivery menu badge count | Claude | BUILD PASS, UI-derived, no browser click-through certification |
 
 ---
 
@@ -858,6 +861,69 @@ Changed `onClick={onAccept}` to `onClick={() => onAccept()}` so the handler is i
 
 ---
 
+## Ad Hoc Fix — POS Print Bill Realtime Sync (between Task 7C and Task 7D)
+
+**Commit:** 05ac682 — `fix(pos): sync Print Bill status realtime so Dispatch Order works without refresh`
+
+**Problem:** Cashier reported that after clicking "Print Bill" on an Active Deliveries card, "Dispatch Order" did not progress the order — a manual browser refresh was required before it worked.
+
+**Root Cause:** `d4u-pos-client/src/App.tsx`'s `order_updated` socket handler (`handleOrderUpdated`) gated all card-status updates behind a status whitelist that included `DISPATCHED` but was missing `PRINT_BILL`. The backend correctly transitioned and broadcast the status change (verified live), but this POS terminal silently dropped that specific broadcast, leaving the card's local `status` stuck until a manual refresh forced a REST re-fetch of the true state.
+
+**Fix:** Added `'PRINT_BILL'` to the whitelist array (one line, `App.tsx` — line number shifted by the Task 7D badge change below; search for the array literal containing `'KITCHEN_PREPARING'`).
+
+**Files Changed:** `d4u-pos-client/src/App.tsx`
+
+**TypeScript/Build:** Backend PASS; POS client `tsc -p tsconfig.app.json` — no new errors (pre-existing unrelated baseline errors only); Vite build PASS.
+
+**Status:** Not part of the numbered Task/Sprint sequence — an ad hoc cashier-reported bug fix. No further runtime click-through certification performed (no browser tool available), but the fix was verified against a live socket listener receiving the real backend broadcast payload.
+
+---
+
+## Task 7D — POS Delivery Menu Badge Count
+
+**Starting SHA:** 05ac682
+
+**Problem:** When Kitchen marks a delivery order READY, the order already appears realtime in POS Delivery (Task 7A), but the cashier had no persistent visual notification on the left-side Delivery sidebar icon indicating how many deliveries need attention.
+
+**Investigation:**
+- The Delivery card list itself already has an established, exact definition of "cashier attention required": `App.tsx`'s card-render conditional `['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'WAITING_CASH_SETTLEMENT'].includes(del.status)` — this is precisely the set of statuses where an action button (Rider Arrived / Print Bill / Dispatch Order / Settle Cash) is shown to the cashier. `DISPATCHED`, `OUT_FOR_DELIVERY`, `RIDER_ACCEPTED`, `PICKED_UP` show no button — the rider is handling those, not the cashier.
+- The sidebar already has an established badge pattern used identically for KOT, Online, and Terminal menu items: an absolutely-positioned `<span>` pill inside the icon box, conditionally rendered when count > 0, computed inline via `.filter(...).length` directly off existing state — no `useMemo`, no separate counter state.
+- `activeDeliveries` is already the single, top-level, realtime-synced source of truth for delivery cards (kept live by the existing `handleOrderUpdated`/`handleNewOrder` socket handlers, REST-hydrated on mount) — reusing it directly means no new socket listener, no new API call, no competing state.
+
+**Statuses counted in badge:** `READY`, `RIDER_ARRIVED`, `PRINT_BILL`, `WAITING_CASH_SETTLEMENT` — identical to the existing action-button conditional, so the badge count and the actual number of cards showing an action button can never disagree.
+
+**Count derivation logic:** `activeDeliveries.filter(d => ['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'WAITING_CASH_SETTLEMENT'].includes(d.status)).length`, computed inline in the sidebar JSX (matching the exact style already used for the KOT/Online/Terminal badges) — a pure derivation of existing state, recomputed on every render, not an incrementing counter.
+
+**Why duplicate events cannot inflate the count:** `handleOrderUpdated` always updates an existing `activeDeliveries` entry in place by `bridgeOrderId` (`findIndex` + array-splice-in-place) rather than appending; new-card insertion is also guarded by an `existingIds`/`findIndex` check. Because the badge is a `.filter().length` over this already-deduplicated array (not a counter incremented per event), the same order can appear at most once in `activeDeliveries` and is therefore counted at most once, no matter how many times its status broadcast fires or re-fires.
+
+**Files Changed:**
+- `d4u-pos-client/src/App.tsx` — Delivery sidebar item only (badge span), matching the pre-existing KOT/Online/Terminal badge pattern exactly.
+
+**Preserved (unmodified, verified):**
+- KDS READY backend flow — untouched.
+- Rider offer logic / Task 7A / Task 7B — untouched.
+- Rider Accept / Task 7C — untouched.
+- Rider assignment, COD, History, TV Board — untouched.
+- `d4u-rider/src/components/OrdersView.tsx` — untouched.
+- Database / delivery state machine — untouched (pure frontend, derived-state UI change).
+- No new API endpoint, no new socket listener, no new competing state — reuses `activeDeliveries` exactly as-is.
+
+**Behavior:**
+- READY, 1 order → badge shows `1`.
+- READY, 2 orders → badge shows `2` (each additional qualifying order increments the filtered count by exactly one — no batching or coalescing).
+- Status progression beyond cashier-attention (e.g. `PRINT_BILL` → `DISPATCHED` via "Dispatch Order", or `WAITING_CASH_SETTLEMENT` → `SETTLED` via "Settle Cash") removes that order from the filtered set on the very next render after `activeDeliveries` updates (realtime via the existing socket handler, or immediate for the settle-cash case which already does a local `setActiveDeliveries` filter) — badge count decrements automatically, no separate decrement logic needed since it's a live derivation, not a stored counter.
+- When the filtered count reaches `0`, the `> 0` guard hides the badge `<span>` entirely (same convention as the other three sidebar badges) — it disappears rather than showing `0`.
+- Persists across navigation: `activeDeliveries` is state on the top-level `POSApp` component, not scoped to the Delivery screen, and the sidebar renders regardless of `activeMenu` — switching screens never resets or hides the badge.
+
+**TypeScript / Build:**
+- Backend: not touched by this task (no backend change).
+- POS client: `npx tsc --noEmit -p tsconfig.app.json` — no new errors introduced (same pre-existing baseline error set as before this change, only shifted by line-number offset).
+- POS client: `npm run build` (Vite) — PASS.
+
+**Commit:** feat(pos): add realtime delivery attention badge
+
+---
+
 ## Uncommitted Working Tree State (as of 2026-08-04, before this handover update)
 
 This section is a factual inventory only — no interpretation, judgment, or code changes were made regarding these items, per explicit instruction to keep this handover documentation-only.
@@ -874,8 +940,8 @@ None of the above were created, modified, or removed by this documentation updat
 ## Known Future Tasks
 
 - **Task 7C — Rider Accept Order investigation/fix.** DONE — see "Task 7C — Rider Accept Order Fix" above. Backend claim flow verified live via HTTP; UI click-through NOT RUNTIME-CERTIFIED (no browser tool available).
-- **Task 7D — Cashier Delivery badge/popup count.** NEXT task.
-- **Task 7E — Fresh end-to-end delivery lifecycle QA** (covers runtime certification of Task 7A and Task 7B).
+- **Task 7D — Cashier Delivery badge/popup count.** DONE — see "Task 7D — POS Delivery Menu Badge Count" above. UI-derived, build-verified; no browser click-through certification (no browser tool available).
+- **Task 7E — Fresh end-to-end delivery lifecycle QA** (covers runtime certification of Task 7A, Task 7B, and visual confirmation of Task 7D). NEXT task.
 - **Task 7F — COD payment option for POS-created Delivery orders.**
 - **Rider backend History integration.**
 - **TV Board unattended realtime reconciliation**, if still required after Task 7A/7B are runtime-certified.
@@ -891,6 +957,6 @@ None of the above were created, modified, or removed by this documentation updat
 5. Verify architectural correctness, tenant/store isolation, `OnlineOrder.id` identity, socket lifecycle, and atomic rider claims.
 6. Run builds/typechecks.
 7. Perform a fresh end-to-end delivery test.
-8. Continue from the first unresolved task — currently **Task 7D** (Task 7C is fixed and backend-verified; see "Task 7C — Rider Accept Order Fix").
+8. Continue from the first unresolved task — currently **Task 7E** (Task 7C and Task 7D are fixed/build-verified but NOT runtime-certified in a real browser; see their sections above).
 
 If code and this document disagree, CODE IS AUTHORITATIVE.

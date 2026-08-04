@@ -1681,7 +1681,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           </div>
         )}
         <div className={`sidebar-item ${activeMenu === 'Delivery' ? 'active' : ''}`} onClick={() => setActiveMenu('Delivery')}>
-          <div className="icon-box"><Truck size={22} /></div><span>Delivery</span>
+          <div className="icon-box" style={{ position: 'relative' }}>
+            <Truck size={22} />
+            {activeDeliveries.filter(d => ['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'WAITING_CASH_SETTLEMENT'].includes(d.status)).length > 0 && (
+              <span style={{ position: 'absolute', top: '0', right: '0', background: 'var(--primary)', color: 'white', borderRadius: '50%', padding: '2px 5px', fontSize: '0.65rem', fontWeight: 'bold' }}>
+                {activeDeliveries.filter(d => ['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'WAITING_CASH_SETTLEMENT'].includes(d.status)).length}
+              </span>
+            )}
+          </div>
+          <span>Delivery</span>
         </div>
         <div className={`sidebar-item ${activeMenu === 'Staff' ? 'active' : ''}`} onClick={() => setActiveMenu('Staff')}>
           <div className="icon-box"><Users size={22} /></div><span>Staff</span>
