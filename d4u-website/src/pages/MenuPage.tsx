@@ -117,7 +117,13 @@ export const MenuPage: React.FC<MenuPageProps> = ({
           Group / Category browsing on the right (wide). Both used to live
           in a persistent left sidebar running the full height of the page;
           moving them up here frees the sidebar column for the product grid
-          below, which is why that grid can go from 3 to 4 columns. */}
+          below, which is why that grid can go from 3 to 4 columns.
+          Sticky at the lg breakpoint only -- on mobile the two columns
+          stack vertically and would eat the whole viewport if pinned.
+          top-20 matches Header.tsx's own sticky height (h-20 from the sm:
+          breakpoint up, and lg: is already past that) so this panel sits
+          flush under the nav bar instead of overlapping it. */}
+      <div className="lg:sticky lg:top-20 lg:z-30 lg:bg-[#0d1117] lg:pt-4 lg:-mt-4 lg:pb-3">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
         {/* LEFT: Quick Shortcuts, then Search below it (3 cols) */}
         <div className="lg:col-span-3 space-y-4">
@@ -336,6 +342,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       {/* Product Grid / List -- full width now, 4 columns instead of 3 */}
