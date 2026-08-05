@@ -139,6 +139,14 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 - Implemented WhatsApp routing using a pre-filled `wa.me/` deep link directed to the branch's configured `whatsappNumber`.
 - Form data (name, email, subject, message) is seamlessly passed into both links.
 
+## Task — Fix Website Catalogue Currency Display (IMPLEMENTED)
+
+- Investigated the currency formatting glitch in the Website Catalogue (switching to `$`).
+- Found that `d4u-website/src/utils/currency.ts` originally performed dynamic currency symbol conversion based on `window.d4u_currency` which received `'USD'` from some backend brand instances.
+- Modified `d4u-website/src/utils/currency.ts` to explicitly enforce `PKR` / `Rs. ` display uniformly across the website.
+- Ensured strict compliance with the business rule that prices are the actual selling prices and must never be converted dynamically via exchange rates.
+- Preserved exact numeric amounts received from the backend (e.g., Rs. 11.07 and Rs. 2,950).
+
 ## Pending Approved Tasks
 
 **Task 2**
