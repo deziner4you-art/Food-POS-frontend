@@ -86,6 +86,7 @@ export type Customer = {
   address?: string | null;
   loyalty_points?: number;
   total_orders?: number;
+  addresses?: { id: number; label: string; address: string; is_default?: boolean }[];
 };
 
 export type CartModifier = {

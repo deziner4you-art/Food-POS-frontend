@@ -22,6 +22,7 @@ import { KotsModule } from './modules/business/kots/kots.module';
 import { BusinessDayModule } from './modules/business/business-day/business-day.module';
 import { CashFlowModule } from './modules/business/cash-flow/cash-flow.module';
 import { CustomersModule } from './modules/business/customers/customers.module';
+import { CustomerAddressesModule } from './modules/business/customer-addresses/customer-addresses.module';
 import { ReportsModule } from './modules/business/reports/reports.module';
 import { OnlineOrdersModule } from './modules/business/online-orders/online-orders.module';
 import { RiderModule } from './modules/business/rider/rider.module';
@@ -51,6 +52,7 @@ import { KitchenModule } from './modules/business/kitchen/kitchen.module';
     BusinessDayModule,
     CashFlowModule,
     CustomersModule,
+    CustomerAddressesModule,
     InventoryModule,
     DealModule,
     MarketingModule,

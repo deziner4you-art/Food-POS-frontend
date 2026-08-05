@@ -34,6 +34,7 @@ export class CustomersService {
     return this.prisma.customer.findMany({
       where,
       orderBy: { total_orders: 'desc' },
+      include: { _count: { select: { addresses: true } } },
     });
   }
 
@@ -41,6 +42,7 @@ export class CustomersService {
   async findByPhone(phone: string) {
     const customer = await this.prisma.customer.findUnique({
       where: { phone },
+      include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
     if (!customer) throw new NotFoundException('Customer not found');
     return customer;
@@ -56,6 +58,7 @@ export class CustomersService {
           orderBy: { id: 'desc' },
           take: 50,
         },
+        addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] },
       },
     });
     if (!customer) throw new NotFoundException('Customer not found');

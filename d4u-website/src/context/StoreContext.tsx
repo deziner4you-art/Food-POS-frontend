@@ -121,6 +121,9 @@ interface StoreContextValue {
   loggedInUser: CustomerProfile | null;
   loginOrRegister: (phone: string, name?: string) => Promise<{ success: boolean; needsName?: boolean; message?: string }>;
   logout: () => void;
+  addAddress: (label: string, address: string, isDefault?: boolean) => Promise<{ success: boolean; message?: string }>;
+  updateAddress: (id: number, patch: { label?: string; address?: string; is_default?: boolean }) => Promise<{ success: boolean; message?: string }>;
+  deleteAddress: (id: number) => Promise<{ success: boolean; message?: string }>;
 
   kioskMode: boolean;
 }
@@ -243,6 +246,68 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
     localStorage.removeItem('d4u_web_user');
   };
 
+  // Saved delivery addresses -- persist the updated customer object back to
+  // state/localStorage the same way loginOrRegister already does, so every
+  // consumer (AccountPage's Addresses tab, CheckoutView's picker) stays in
+  // sync from one source without a separate re-fetch.
+  const persistLoggedInUser = (customer: CustomerProfile) => {
+    setLoggedInUser(customer);
+    localStorage.setItem('d4u_web_user', JSON.stringify(customer));
+  };
+
+  const addAddress = async (label: string, address: string, isDefault = false) => {
+    if (!loggedInUser) return { success: false, message: 'Not logged in' };
+    try {
+      const res = await fetch(`${BACKEND_URL}/online-orders/addresses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: loggedInUser.id, label, address, is_default: isDefault }),
+      });
+      if (!res.ok) return { success: false, message: 'Could not save address' };
+      const created = await res.json();
+      const addresses = isDefault
+        ? [...(loggedInUser.addresses || []).map((a) => ({ ...a, is_default: false })), created]
+        : [...(loggedInUser.addresses || []), created];
+      persistLoggedInUser({ ...loggedInUser, addresses });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error' };
+    }
+  };
+
+  const updateAddress = async (id: number, patch: { label?: string; address?: string; is_default?: boolean }) => {
+    if (!loggedInUser) return { success: false, message: 'Not logged in' };
+    try {
+      const res = await fetch(`${BACKEND_URL}/online-orders/addresses/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: loggedInUser.id, ...patch }),
+      });
+      if (!res.ok) return { success: false, message: 'Could not update address' };
+      const updated = await res.json();
+      const addresses = (loggedInUser.addresses || []).map((a) =>
+        a.id === id ? updated : patch.is_default ? { ...a, is_default: false } : a,
+      );
+      persistLoggedInUser({ ...loggedInUser, addresses });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error' };
+    }
+  };
+
+  const deleteAddress = async (id: number) => {
+    if (!loggedInUser) return { success: false, message: 'Not logged in' };
+    try {
+      const res = await fetch(`${BACKEND_URL}/online-orders/addresses/${id}?customer_id=${loggedInUser.id}`, { method: 'DELETE' });
+      if (!res.ok) return { success: false, message: 'Could not delete address' };
+      const addresses = (loggedInUser.addresses || []).filter((a) => a.id !== id);
+      persistLoggedInUser({ ...loggedInUser, addresses });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error' };
+    }
+  };
+
   const selectedStore = stores.find((s) => s.id === storeId);
   const storeName = selectedStore ? selectedStore.name : 'D4U';
 
@@ -316,6 +381,9 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       loggedInUser,
       loginOrRegister,
       logout,
+      addAddress,
+      updateAddress,
+      deleteAddress,
       kioskMode,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

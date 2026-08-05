@@ -174,7 +174,14 @@ export default function CustomersManager() {
                       <div className="text-[10px] text-slate-500">Joined {new Date(customer.createdAt).toLocaleDateString()}</div>
                     </td>
                     <td className="p-4 font-mono text-slate-300">{customer.phone}</td>
-                    <td className="p-4 max-w-[200px] truncate" title={customer.address}>{customer.address || '-'}</td>
+                    <td className="p-4 max-w-[200px]">
+                      <div className="truncate" title={customer.address}>{customer.address || '-'}</div>
+                      {customer._count?.addresses > 0 && (
+                        <div className="text-[10px] text-slate-500 mt-0.5">
+                          {customer._count.addresses} saved address{customer._count.addresses === 1 ? '' : 'es'} (website/POS)
+                        </div>
+                      )}
+                    </td>
                     <td className="p-4">
                       <span className="bg-slate-700 text-white px-2.5 py-1 rounded-md text-xs font-bold">{customer.total_orders || 0}</span>
                     </td>

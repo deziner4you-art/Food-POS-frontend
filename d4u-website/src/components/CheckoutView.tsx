@@ -29,11 +29,19 @@ interface CheckoutViewProps {
 }
 
 export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBackToMenu, onOrderPlaced }) => {
-  const { storeId, cart, clearCart, loggedInUser, kioskMode } = useStore();
+  const { storeId, cart, clearCart, loggedInUser, kioskMode, addAddress } = useStore();
   const navigate = useNavigate();
 
+  const savedAddresses = loggedInUser?.addresses || [];
+  const defaultSavedAddress = savedAddresses.find((a) => a.is_default) || savedAddresses[0];
+
   const [orderType, setOrderType] = useState<OrderType>(kioskMode ? 'dine_in' : 'delivery');
+  // 'new' means the free-text field below is in use; a number selects one
+  // of the customer's saved addresses instead.
+  const [selectedAddressId, setSelectedAddressId] = useState<number | 'new'>(defaultSavedAddress?.id ?? 'new');
   const [customAddress, setCustomAddress] = useState('');
+  const [saveNewAddress, setSaveNewAddress] = useState(false);
+  const [newAddressLabel, setNewAddressLabel] = useState('');
   const [tableNumber, setTableNumber] = useState('');
   const [customerName, setCustomerName] = useState(loggedInUser?.name || (kioskMode ? 'Kiosk Guest' : ''));
   const [customerPhone, setCustomerPhone] = useState(loggedInUser?.phone || '');
@@ -47,13 +55,18 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
   const tax = getTax(cart, appliedPromo);
   const grandTotal = getGrandTotal(cart, appliedPromo, orderType);
 
+  // The address text actually being used for delivery — either a saved
+  // address's text, or whatever's typed in the free-text field.
+  const resolvedDeliveryAddress =
+    selectedAddressId !== 'new' ? savedAddresses.find((a) => a.id === selectedAddressId)?.address || '' : customAddress;
+
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0) {
       setError('Your cart is empty.');
       return;
     }
-    if (!kioskMode && (!customerName.trim() || !customerPhone.trim() || (orderType === 'delivery' && !customAddress.trim()))) {
+    if (!kioskMode && (!customerName.trim() || !customerPhone.trim() || (orderType === 'delivery' && !resolvedDeliveryAddress.trim()))) {
       setError('Please fill in all required details.');
       return;
     }
@@ -63,7 +76,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
 
     const finalAddress =
       orderType === 'delivery'
-        ? customAddress.trim()
+        ? resolvedDeliveryAddress.trim()
         : orderType === 'dine_in'
         ? `Table #${tableNumber || 'Walk-in'} (In-Restaurant)`
         : 'Self Pickup at Counter';
@@ -100,6 +113,12 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
+
+      // Fire-and-forget: don't block navigation on this, and a failure here
+      // shouldn't undo an order that already placed successfully.
+      if (loggedInUser && orderType === 'delivery' && selectedAddressId === 'new' && saveNewAddress && customAddress.trim()) {
+        addAddress(newAddressLabel.trim() || 'Saved Address', customAddress.trim(), savedAddresses.length === 0).catch(() => {});
+      }
 
       onOrderPlaced({ id: data.order?.id, status: 'PENDING', eta: orderType === 'delivery' ? 30 : 15 });
       clearCart();
@@ -178,16 +197,78 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
             </h3>
 
             {orderType === 'delivery' && (
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-300">Delivery Address</label>
-                <input
-                  type="text"
-                  value={customAddress}
-                  onChange={(e) => setCustomAddress(e.target.value)}
-                  placeholder="House / Apartment #, Street Name, Landmark..."
-                  className="w-full bg-[#1A1A1D] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-[#D4AF37] outline-none"
-                  required
-                />
+              <div className="space-y-3">
+                {savedAddresses.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-300">Choose a Saved Address</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {savedAddresses.map((addr) => (
+                        <button
+                          type="button"
+                          key={addr.id}
+                          onClick={() => setSelectedAddressId(addr.id)}
+                          className={`text-left p-3 rounded-xl border text-xs transition-all ${
+                            selectedAddressId === addr.id
+                              ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-white'
+                              : 'bg-[#1A1A1D] border-white/10 text-gray-400 hover:border-white/20'
+                          }`}
+                        >
+                          <div className="font-bold flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" /> {addr.label}
+                          </div>
+                          <div className="text-[11px] mt-0.5 line-clamp-2">{addr.address}</div>
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAddressId('new')}
+                        className={`text-left p-3 rounded-xl border text-xs transition-all ${
+                          selectedAddressId === 'new'
+                            ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-white font-bold'
+                            : 'bg-[#1A1A1D] border-white/10 text-gray-400 hover:border-white/20'
+                        }`}
+                      >
+                        + Use a different address
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {selectedAddressId === 'new' && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-300">Delivery Address</label>
+                    <input
+                      type="text"
+                      value={customAddress}
+                      onChange={(e) => setCustomAddress(e.target.value)}
+                      placeholder="House / Apartment #, Street Name, Landmark..."
+                      className="w-full bg-[#1A1A1D] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-[#D4AF37] outline-none"
+                      required
+                    />
+                    {loggedInUser && (
+                      <div className="space-y-2 pt-1">
+                        <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer w-max">
+                          <input
+                            type="checkbox"
+                            checked={saveNewAddress}
+                            onChange={(e) => setSaveNewAddress(e.target.checked)}
+                            className="accent-[#D4AF37] w-4 h-4"
+                          />
+                          Save this address for next time
+                        </label>
+                        {saveNewAddress && (
+                          <input
+                            type="text"
+                            value={newAddressLabel}
+                            onChange={(e) => setNewAddressLabel(e.target.value)}
+                            placeholder="Label (e.g. Home, Office)"
+                            className="w-full bg-[#1A1A1D] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:border-[#D4AF37] outline-none"
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

@@ -361,6 +361,24 @@ model Customer {
   receivables         CustomerReceivable[]
   credit_limits       CustomerCreditLimit[]
   agings              CustomerAging[]
+  addresses           CustomerAddress[]
+}
+
+// Multiple saved delivery addresses per customer (website account + POS
+// checkout pick-list). Customer.address (legacy single free-text field)
+// is untouched and stays the "last used"/legacy value.
+model CustomerAddress {
+  id          Int      @id @default(autoincrement())
+  customer_id Int
+  label       String
+  address     String
+  is_default  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer    Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+
+  @@index([customer_id])
 }
 
 // -------------------------------------------------------------

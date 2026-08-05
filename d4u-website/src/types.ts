@@ -30,6 +30,7 @@ export interface CustomerProfile {
   name: string;
   phone: string;
   loyalty_points?: number;
+  addresses?: SavedAddress[];
   [key: string]: any;
 }
 
@@ -217,13 +218,20 @@ export interface Order {
   driverPhone?: string;
 }
 
+export interface SavedAddress {
+  id: number;
+  label: string;
+  address: string;
+  is_default?: boolean;
+}
+
 export interface UserProfile {
   name: string;
   email: string;
   phone: string;
   loyaltyTier: 'Gold Member' | 'Platinum Member' | 'VIP';
   loyaltyPoints: number;
-  savedAddresses: { id: string; label: string; address: string }[];
+  savedAddresses: SavedAddress[];
   favoriteProductIds: string[];
 }
 

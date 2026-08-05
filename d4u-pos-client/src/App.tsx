@@ -291,7 +291,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [completedDeliveries, setCompletedDeliveries] = useState<any[]>([])
 
   const [showMoreMenu, setShowMoreMenu] = useState(false)
-  const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH' | 'SELECT_VARIANT' | 'ADD_ONS'>('NONE');
+  const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH' | 'SELECT_VARIANT' | 'ADD_ONS' | 'CUSTOMER_HISTORY'>('NONE');
   const [pendingVariantProduct, setPendingVariantProduct] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'SIZES' | 'TOPPINGS'>('SIZES');
   // Accumulated Extra Toppings picks for the SELECT_VARIANT modal, keyed by
@@ -1512,25 +1512,6 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   // CRM History Modal State
   const [crmHistoryModal, setCrmHistoryModal] = useState<any>(null); // holds customer data
 
-  const handleCustomerLookup = async (phone: string) => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/customers/phone/${phone}`, {
-        headers: { 'Authorization': `Bearer ${user.token}` }
-      });
-      if (!res.ok) throw new Error('Not found');
-      const data = await res.json();
-      if (data) {
-        setCustomerName(data.name);
-        setCustomerAddress(data.address || '');
-        setToast({ message: `Customer found: ${data.name}`, type: 'success' });
-        return data.id;
-      }
-    } catch (e) {
-      setToast({ message: 'Customer not found. Please enter details manually.', type: 'info' });
-    }
-    return null;
-  };
-
   const handleViewCustomerHistory = async (id: number | string) => {
     try {
       const res = await fetch(`${BACKEND_URL}/customers/${id}/orders`, {
@@ -1539,6 +1520,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       if (!res.ok) throw new Error('History fetch failed');
       const data = await res.json();
       setCrmHistoryModal(data);
+      setModalType('CUSTOMER_HISTORY');
     } catch (e) {
       setToast({ message: 'Failed to load order history', type: 'error' });
     }
@@ -1577,11 +1559,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   useEffect(() => {
     if (customerPhone.length >= 10) {
       lookupCustomerByPhone(customerPhone)
-        .then(setLiveCustomer)
+        .then((c) => {
+          setLiveCustomer(c);
+          // Never overwrite a name the cashier already typed — only fills
+          // it in when the field is still blank. Address is deliberately
+          // NOT auto-filled here: a returning customer can have several
+          // saved addresses, so the cashier picks one explicitly (see the
+          // address chips rendered next to the loyalty-points block).
+          if (c && !customerName.trim()) setCustomerName(c.name);
+        })
         .catch(() => setLiveCustomer(null));
     } else {
       setLiveCustomer(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerPhone]);
 
   if (window.location.pathname === '/kitchen') {
@@ -3311,28 +3302,68 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               <input type="tel" placeholder="Customer Mobile (for Points)" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} style={{ width: '100%', background: 'transparent', border: 'none', color: 'white', outline: 'none', fontSize: '0.8rem' }} />
             </div>
             {liveCustomer && (
-              <div style={{ marginTop: '6px', fontSize: '0.75rem', color: '#fbbf24', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Loyalty Points: <b>{liveCustomer.loyalty_points}</b></span>
-                <button 
-                  onClick={() => {
-                    if (cartHasCompanyPromotion() && !promotionOverrideActive) {
-                      trackBlockedDiscount('blocked_loyalty');
-                      setToast({ message: 'Company Promotion Active. Additional discounts cannot be applied.', type: 'error' });
-                      return;
-                    }
-                    if (liveCustomer.loyalty_points > 0) {
-                      setDiscountPercent(0);
-                      const pointValue = (window as any).d4u_loyalty_point_value ?? 0;
-                      const pct = calculateLoyaltyDiscountPercent(liveCustomer.loyalty_points, pointValue, subTotal);
-                      setDiscountPercent(pct);
-                      setRedeemedPoints(liveCustomer.loyalty_points);
-                      setToast({ message: `${liveCustomer.loyalty_points} Points applied!`, type: 'success' });
-                    }
-                  }}
-                  style={{ background: 'transparent', border: 'none', color: '#4edea3', cursor: 'pointer', fontWeight: 'bold' }}
-                >
-                  Redeem All
-                </button>
+              <div style={{ marginTop: '6px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#fbbf24', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Loyalty Points: <b>{liveCustomer.loyalty_points}</b></span>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <button
+                      onClick={() => handleViewCustomerHistory(liveCustomer.id)}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 'bold', textDecoration: 'underline' }}
+                    >
+                      View History
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (cartHasCompanyPromotion() && !promotionOverrideActive) {
+                          trackBlockedDiscount('blocked_loyalty');
+                          setToast({ message: 'Company Promotion Active. Additional discounts cannot be applied.', type: 'error' });
+                          return;
+                        }
+                        if (liveCustomer.loyalty_points > 0) {
+                          setDiscountPercent(0);
+                          const pointValue = (window as any).d4u_loyalty_point_value ?? 0;
+                          const pct = calculateLoyaltyDiscountPercent(liveCustomer.loyalty_points, pointValue, subTotal);
+                          setDiscountPercent(pct);
+                          setRedeemedPoints(liveCustomer.loyalty_points);
+                          setToast({ message: `${liveCustomer.loyalty_points} Points applied!`, type: 'success' });
+                        }
+                      }}
+                      style={{ background: 'transparent', border: 'none', color: '#4edea3', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      Redeem All
+                    </button>
+                  </div>
+                </div>
+                {/* Saved-address pick-list -- cashier explicitly picks one
+                    rather than anything auto-filling, since a returning
+                    customer can have several addresses. Clicking fills the
+                    same customerAddress state the DELIVERY_DETAILS modal's
+                    textarea already reads/writes -- no downstream changes
+                    needed. */}
+                {(liveCustomer.addresses || []).length > 0 && (
+                  <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {liveCustomer.addresses.map((a: any) => (
+                      <button
+                        key={a.id}
+                        onClick={() => setCustomerAddress(a.address)}
+                        title={a.address}
+                        style={{
+                          background: customerAddress === a.address ? 'var(--primary)' : 'var(--bg-base)',
+                          color: customerAddress === a.address ? 'black' : 'white',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '999px',
+                          padding: '4px 10px',
+                          fontSize: '0.7rem',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <MapPin size={10} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -4121,6 +4152,52 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 else if (pendingDeliveryAction === 'PAY') setModalType('PAYMENT');
                 setPendingDeliveryAction(null);
               }} style={{ width: '100%', padding: '15px', fontSize: '1.1rem' }}>Confirm & Continue</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOMER ORDER HISTORY MODAL — finishes a previously half-built
+          feature: handleViewCustomerHistory/crmHistoryModal already called
+          the real GET /customers/:id/orders endpoint correctly, but nothing
+          triggered it or rendered the result. This is that missing piece. */}
+      {modalType === 'CUSTOMER_HISTORY' && crmHistoryModal && (
+        <div className="modal-overlay" style={{ zIndex: 10002 }}>
+          <div className="modal-content animate-slide-up" style={{ width: '500px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header">
+              <h2><Clock size={24} color="#4edea3" /> Order History — {crmHistoryModal.name}</h2>
+              <X size={24} style={{ cursor: 'pointer' }} onClick={() => { setModalType('NONE'); setCrmHistoryModal(null); }} />
+            </div>
+            <div style={{ padding: '20px', overflowY: 'auto' }}>
+              <div style={{ marginBottom: '16px', display: 'flex', gap: '16px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <span>{crmHistoryModal.phone}</span>
+                <span>Loyalty Points: <b style={{ color: '#fbbf24' }}>{crmHistoryModal.loyalty_points}</b></span>
+              </div>
+              {(crmHistoryModal.addresses || []).length > 0 && (
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 'bold' }}>Saved Addresses</div>
+                  {crmHistoryModal.addresses.map((a: any) => (
+                    <div key={a.id} style={{ fontSize: '0.8rem', color: 'white', marginBottom: '4px' }}>
+                      <b>{a.label}:</b> {a.address}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 'bold' }}>Past Orders</div>
+              {[...(crmHistoryModal.orders || []), ...(crmHistoryModal.onlineOrders || [])]
+                .sort((a: any, b: any) => b.id - a.id)
+                .map((o: any) => (
+                  <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}>
+                    <div>
+                      <div style={{ color: 'white', fontWeight: 'bold' }}>Order #{o.id}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{o.status}</div>
+                    </div>
+                    <div style={{ color: '#4edea3', fontWeight: 'bold' }}>Rs. {o.total_amount ?? o.totalAmount ?? 0}</div>
+                  </div>
+                ))}
+              {(!crmHistoryModal.orders || crmHistoryModal.orders.length === 0) && (!crmHistoryModal.onlineOrders || crmHistoryModal.onlineOrders.length === 0) && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No past orders yet.</div>
+              )}
             </div>
           </div>
         </div>

@@ -158,7 +158,7 @@ function deriveLoyaltyTier(points: number): 'Gold Member' | 'Platinum Member' | 
 }
 
 function AccountRoute() {
-  const { loggedInUser, loginOrRegister } = useStore();
+  const { loggedInUser, loginOrRegister, addAddress, updateAddress, deleteAddress } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const navigate = useNavigate();
   const [phone, setPhone] = useState('');
@@ -242,9 +242,12 @@ function AccountRoute() {
         phone: loggedInUser.phone,
         loyaltyTier: deriveLoyaltyTier(loggedInUser.loyalty_points || 0),
         loyaltyPoints: loggedInUser.loyalty_points || 0,
-        savedAddresses: [],
+        savedAddresses: loggedInUser.addresses || [],
         favoriteProductIds: [],
       }}
+      onAddAddress={addAddress}
+      onUpdateAddress={updateAddress}
+      onDeleteAddress={deleteAddress}
       orders={orders}
       products={[]}
       onOpenOrderTracker={(order) => navigate(`/track?order=${encodeURIComponent(order.orderNumber || order.id)}`)}

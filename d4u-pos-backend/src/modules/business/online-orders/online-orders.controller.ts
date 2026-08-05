@@ -10,15 +10,20 @@ import {
 } from '@nestjs/common';
 import { RequirePermissions, Public, CurrentUser } from '../../../common/decorators';
 import { OnlineOrdersService } from './online-orders.service';
+import { CustomerAddressesService } from '../customer-addresses/customer-addresses.service';
 import {
   CreateOnlineOrderDto,
   UpdateOnlineOrderStatusDto,
   PostFeedbackDto,
 } from './dto';
+import { CreateCustomerAddressDto, UpdateCustomerAddressDto } from '../customer-addresses/dto';
 
 @Controller('online-orders')
 export class OnlineOrdersController {
-  constructor(private readonly service: OnlineOrdersService) {}
+  constructor(
+    private readonly service: OnlineOrdersService,
+    private readonly addresses: CustomerAddressesService,
+  ) {}
 
   // activeOnly=true additionally returns orders past PENDING (accepted,
   // in kitchen, out for delivery, etc.) up to but excluding SETTLED —
@@ -58,6 +63,7 @@ export class OnlineOrdersController {
     // Basic phone login without password (for prototype)
     const customer = await this.service['prisma'].customer.findUnique({
       where: { phone: body.phone },
+      include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
     if (!customer) {
       return { success: false, message: 'Customer not found' };
@@ -68,8 +74,9 @@ export class OnlineOrdersController {
   @Public()
   @Post('auth/register')
   async webRegister(@Body() body: { phone: string; name: string; brand_id?: number; store_id?: number }) {
-    let customer = await this.service['prisma'].customer.findUnique({
+    let customer: any = await this.service['prisma'].customer.findUnique({
       where: { phone: body.phone },
+      include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
     if (!customer) {
       // Sprint 28.9: no website surface sends brand/store context to this
@@ -90,6 +97,7 @@ export class OnlineOrdersController {
           name: body.name,
         },
       });
+      customer.addresses = [];
     }
     return { success: true, customer };
   }
@@ -105,6 +113,7 @@ export class OnlineOrdersController {
           orderBy: { id: 'desc' },
           take: 50,
         },
+        addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] },
       },
     });
     if (!customer) {
@@ -116,6 +125,35 @@ export class OnlineOrdersController {
       take: 50,
     });
     return { success: true, ...customer, onlineOrders };
+  }
+
+  // Saved delivery addresses — public, same prototype-grade trust model as
+  // auth/login above (client holds customer_id from login, sends it on
+  // every call). CustomerAddressesService.update/remove verify the address
+  // row's own customer_id matches before mutating, which is what actually
+  // stops one customer's client from touching another's address.
+  @Public()
+  @Get('addresses/:customerId')
+  listAddresses(@Param('customerId') customerId: string) {
+    return this.addresses.listForCustomer(Number(customerId));
+  }
+
+  @Public()
+  @Post('addresses')
+  createAddress(@Body() body: CreateCustomerAddressDto) {
+    return this.addresses.create(body);
+  }
+
+  @Public()
+  @Patch('addresses/:id')
+  updateAddress(@Param('id') id: string, @Body() body: UpdateCustomerAddressDto) {
+    return this.addresses.update(Number(id), body);
+  }
+
+  @Public()
+  @Delete('addresses/:id')
+  deleteAddress(@Param('id') id: string, @Query('customer_id') customer_id: string) {
+    return this.addresses.remove(Number(id), Number(customer_id));
   }
 
   @Public()
