@@ -114,12 +114,12 @@ function mapStoresToBranches(stores: ReturnType<typeof useStore>['stores']) {
   return (stores || []).map((s: any) => ({
     id: String(s.id),
     name: s.name,
-    address: s.address || '',
+    address: s.address || 'Address not configured',
     city: '',
     phone: '',
     whatsapp: '',
-    openingHours: '',
-    isOpen: true,
+    openingHours: '', // No authoritative timing source in DB
+    isOpen: Array.isArray(s.businessDays) && s.businessDays.length > 0,
     lat: 0,
     lng: 0,
     imageUrl: '',

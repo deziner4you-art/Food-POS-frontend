@@ -106,6 +106,33 @@ export const HomePage: React.FC<HomePageProps> = ({
     return () => clearInterval(interval);
   }, [promotions.length, isPromotionsHovered]);
 
+  const branchesRef = React.useRef<HTMLDivElement>(null);
+  const [isBranchesHovered, setIsBranchesHovered] = useState(false);
+  const displayBranches = branches.length > 3 ? [...branches, ...branches, ...branches] : branches;
+
+  useEffect(() => {
+    if (branches.length <= 3) return;
+    const interval = setInterval(() => {
+      if (!isBranchesHovered && branchesRef.current) {
+        const container = branchesRef.current;
+        const firstSetWidth = container.scrollWidth / 3;
+        
+        if (container.scrollLeft >= firstSetWidth * 2) {
+          container.classList.remove('scroll-smooth');
+          container.scrollLeft -= firstSetWidth;
+          void container.offsetWidth;
+          container.classList.add('scroll-smooth');
+        }
+        
+        const firstChild = container.firstElementChild as HTMLElement;
+        const scrollAmount = firstChild ? firstChild.offsetWidth + 24 : container.clientWidth / 3;
+        
+        container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+      }
+    }, 4500);
+    return () => clearInterval(interval);
+  }, [branches.length, isBranchesHovered]);
+
   const visibleSlides = heroSlides.filter((s) => s.isVisible);
 
   // Auto sliding hero banner
@@ -521,12 +548,23 @@ export const HomePage: React.FC<HomePageProps> = ({
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {branches.map((b) => (
+          <div 
+            ref={branchesRef}
+            onMouseEnter={() => setIsBranchesHovered(true)}
+            onMouseLeave={() => setIsBranchesHovered(false)}
+            className={branches.length > 3 
+              ? "flex gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth -mx-1 px-1 [&::-webkit-scrollbar]:hidden" 
+              : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            }
+            style={branches.length > 3 ? { scrollbarWidth: 'none', msOverflowStyle: 'none' } : {}}
+          >
+            {displayBranches.map((b, index) => (
               <div
-                key={b.id}
+                key={`${b.id}-${index}`}
                 onClick={() => setSelectedBranchId(b.id)}
                 className={`cursor-pointer bg-[#16130B] border rounded-2xl p-5 space-y-3 transition-all ${
+                  branches.length > 3 ? "flex-none snap-start w-full sm:w-[calc(50%-12px)] md:w-[calc(33.333%-16px)]" : "w-full"
+                } ${
                   selectedBranchId === b.id
                     ? 'border-[#D4AF37] bg-[#D4AF37]/10 gold-glow'
                     : 'border-white/10 hover:border-white/30'
@@ -534,8 +572,8 @@ export const HomePage: React.FC<HomePageProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-white font-display">{b.name}</h3>
-                  <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                    Open Now
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${b.isOpen ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                    {b.isOpen ? 'Open Now' : 'Closed'}
                   </span>
                 </div>
 
@@ -543,13 +581,11 @@ export const HomePage: React.FC<HomePageProps> = ({
                   <MapPin className="w-4 h-4 text-[#D4AF37] flex-shrink-0 mt-0.5" /> {b.address}
                 </p>
 
-                <p className="text-xs text-gray-400 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-[#D4AF37]" /> {b.phone}
-                </p>
-
-                <p className="text-xs text-gray-400 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#D4AF37]" /> {b.openingHours}
-                </p>
+                {b.openingHours && (
+                  <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#D4AF37]" /> {b.openingHours}
+                  </p>
+                )}
 
                 <button
                   onClick={(e) => {

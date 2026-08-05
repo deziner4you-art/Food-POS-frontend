@@ -116,6 +116,14 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 - Hid the ugly horizontal scrollbar using the `[&::-webkit-scrollbar]:hidden` Tailwind class and inline styles for cross-browser support.
 - All existing functionalities (Claim Deal, Explore All Offers) and responsive layout are preserved.
 
+## Task 8C — Website Branch Carousel + Live Branch Status (IMPLEMENTED)
+
+- Branch cards on the website Home Page now auto-scroll horizontally right-to-left when there are 4 or more branches, leveraging the same seamless logic as promotions.
+- Addressed missing configuration: `openingHours` does not exist in the authoritative `Store` schema. The timing display is gracefully hidden on the frontend to avoid rendering blank values.
+- Phone number removed from public-facing branch cards as requested.
+- Live `Open Now`/`Closed` badge implemented authoritatively by connecting the `Store` model to `BusinessDay` with `status: 'OPEN'`. If a store has an active open business day, it shows as "Open Now", otherwise "Closed". This uses real operational state, not browser time.
+- All responsive layout capabilities and the "Get Directions & Reserve Table" button are preserved.
+
 ## Pending Approved Tasks
 
 **Task 2**

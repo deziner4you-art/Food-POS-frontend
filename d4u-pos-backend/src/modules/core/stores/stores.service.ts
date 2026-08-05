@@ -29,7 +29,11 @@ export class StoresService {
     }
     return this.prisma.store.findMany({
       where: whereClause,
-      include: { brand: true, saas_package: { include: { modules: true } } },
+      include: { 
+        brand: true, 
+        saas_package: { include: { modules: true } },
+        businessDays: { where: { status: 'OPEN' }, select: { id: true, status: true } }
+      },
       orderBy: { id: 'asc' },
     });
   }
