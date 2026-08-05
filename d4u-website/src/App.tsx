@@ -40,7 +40,7 @@ import KioskModeLegacy from './legacy/KioskMode';
 import MobileModeLegacy from './legacy/MobileMode';
 
 function HomeRoute() {
-  const { heroSlides, promotions, categoryGroups, categories, products, stores, cart, addToCart } = useStore();
+  const { heroSlides, promotions, categoryGroups, categories, products, stores, cart, addToCart, favoriteProductIds, toggleFavorite } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const navigate = useNavigate();
   const branches = (stores || []).map((s: any) => ({
@@ -74,15 +74,15 @@ function HomeRoute() {
       onSelectCategory={(categoryName) => navigate(`/menu?category=${encodeURIComponent(categoryName)}`)}
       onQuickViewProduct={setQuickViewProduct}
       onAddToCart={addToCart}
-      favoriteProductIds={[]}
-      onToggleFavorite={() => {}}
+      favoriteProductIds={favoriteProductIds}
+      onToggleFavorite={toggleFavorite}
       cartItems={cartCounts}
     />
   );
 }
 
 function MenuRoute() {
-  const { categoryGroups, categories, products, cart, addToCart } = useStore();
+  const { categoryGroups, categories, products, cart, addToCart, favoriteProductIds, toggleFavorite } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const [searchParams] = useSearchParams();
   const cartCounts: { [id: string]: number } = {};
@@ -96,8 +96,8 @@ function MenuRoute() {
       initialCategoryFilter={searchParams.get('category')}
       onQuickViewProduct={setQuickViewProduct}
       onAddToCart={addToCart}
-      favoriteProductIds={[]}
-      onToggleFavorite={() => {}}
+      favoriteProductIds={favoriteProductIds}
+      onToggleFavorite={toggleFavorite}
       cartItems={cartCounts}
     />
   );
@@ -158,7 +158,7 @@ function deriveLoyaltyTier(points: number): 'Gold Member' | 'Platinum Member' | 
 }
 
 function AccountRoute() {
-  const { loggedInUser, loginOrRegister, addAddress, updateAddress, deleteAddress } = useStore();
+  const { loggedInUser, loginOrRegister, addAddress, updateAddress, deleteAddress, products, favoriteProductIds, toggleFavorite } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const navigate = useNavigate();
   const [phone, setPhone] = useState('');
@@ -243,16 +243,16 @@ function AccountRoute() {
         loyaltyTier: deriveLoyaltyTier(loggedInUser.loyalty_points || 0),
         loyaltyPoints: loggedInUser.loyalty_points || 0,
         savedAddresses: loggedInUser.addresses || [],
-        favoriteProductIds: [],
+        favoriteProductIds,
       }}
       onAddAddress={addAddress}
       onUpdateAddress={updateAddress}
       onDeleteAddress={deleteAddress}
       orders={orders}
-      products={[]}
+      products={products}
       onOpenOrderTracker={(order) => navigate(`/track?order=${encodeURIComponent(order.orderNumber || order.id)}`)}
       onReorder={() => {}}
-      favoriteProductIds={[]}
+      favoriteProductIds={favoriteProductIds}
       onQuickViewProduct={setQuickViewProduct}
     />
   );

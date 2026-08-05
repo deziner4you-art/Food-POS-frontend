@@ -125,6 +125,11 @@ interface StoreContextValue {
   updateAddress: (id: number, patch: { label?: string; address?: string; is_default?: boolean }) => Promise<{ success: boolean; message?: string }>;
   deleteAddress: (id: number) => Promise<{ success: boolean; message?: string }>;
 
+  // Wishlist -- synced to the backend for a logged-in customer, kept in
+  // localStorage only for a guest (merged into the backend list on login).
+  favoriteProductIds: string[];
+  toggleFavorite: (productId: string) => void;
+
   kioskMode: boolean;
 }
 
@@ -143,6 +148,73 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
     const saved = localStorage.getItem('d4u_web_user');
     return saved ? JSON.parse(saved) : null;
   });
+
+  // Wishlist. Guests get a local-only list so the heart icon still works
+  // before logging in; logging in fetches (and one-time merges any local
+  // guest picks into) the real backend list, then everything after that
+  // point goes straight to the backend.
+  const [favoriteProductIds, setFavoriteProductIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('d4u_web_favorites');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (!loggedInUser) return;
+    let cancelled = false;
+    fetch(`${BACKEND_URL}/online-orders/favorites/${loggedInUser.id}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then(async (remoteIds: number[]) => {
+        if (cancelled) return;
+        const remoteSet = new Set(remoteIds.map(String));
+        // One-time merge: anything favorited as a guest (in localStorage)
+        // that isn't already on the backend gets pushed up, so switching
+        // from guest to logged-in doesn't silently drop picks.
+        const guestOnly = favoriteProductIds.filter((id) => !remoteSet.has(id));
+        for (const id of guestOnly) {
+          try {
+            await fetch(`${BACKEND_URL}/online-orders/favorites/toggle`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ customer_id: loggedInUser.id, product_id: Number(id) }),
+            });
+          } catch {
+            // Best-effort merge -- a failed one just stays guest-local this session.
+          }
+        }
+        if (!cancelled) setFavoriteProductIds([...remoteIds.map(String), ...guestOnly]);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // Only re-run when the logged-in identity changes -- this intentionally
+    // does not depend on favoriteProductIds (that would refire the merge
+    // effect on every toggle).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loggedInUser?.id]);
+
+  const toggleFavorite = (productId: string) => {
+    const isCurrentlyFavorite = favoriteProductIds.includes(productId);
+    const next = isCurrentlyFavorite
+      ? favoriteProductIds.filter((id) => id !== productId)
+      : [...favoriteProductIds, productId];
+    setFavoriteProductIds(next);
+
+    if (!loggedInUser) {
+      localStorage.setItem('d4u_web_favorites', JSON.stringify(next));
+      return;
+    }
+    fetch(`${BACKEND_URL}/online-orders/favorites/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer_id: loggedInUser.id, product_id: Number(productId) }),
+    }).catch(() => {
+      // Revert the optimistic update on network failure.
+      setFavoriteProductIds(favoriteProductIds);
+    });
+  };
 
   useEffect(() => {
     document.title = 'D4U Restaurant — Online Ordering';
@@ -384,10 +456,12 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       addAddress,
       updateAddress,
       deleteAddress,
+      favoriteProductIds,
+      toggleFavorite,
       kioskMode,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, riderPosition, products, categories, categoryGroups, heroSlides, promotions, cart, loggedInUser, kioskMode],
+    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, riderPosition, products, categories, categoryGroups, heroSlides, promotions, cart, loggedInUser, favoriteProductIds, kioskMode],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

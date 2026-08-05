@@ -362,6 +362,22 @@ model Customer {
   credit_limits       CustomerCreditLimit[]
   agings              CustomerAging[]
   addresses           CustomerAddress[]
+  favorites           CustomerFavorite[]
+}
+
+// Website "Wishlist" -- heart icon on a product card. One row per
+// (customer, product); toggled on/off, never duplicated.
+model CustomerFavorite {
+  id          Int      @id @default(autoincrement())
+  customer_id Int
+  product_id  Int
+  createdAt   DateTime @default(now())
+
+  customer Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@unique([customer_id, product_id])
+  @@index([customer_id])
 }
 
 // Multiple saved delivery addresses per customer (website account + POS
@@ -593,6 +609,7 @@ model Product {
   giftCampaigns      MarketingCampaign[] @relation("CampaignGiftProduct")
   variants           ProductVariant[]
   productions        ProductionOrder[]   @relation("TargetProduct")
+  favoritedBy        CustomerFavorite[]
   
   tax_rate             Float    @default(0)
   kitchen_station      String?  // Legacy free-text station label — kept for backward compatibility, still authoritative until a product is migrated to kitchen_station_id below.

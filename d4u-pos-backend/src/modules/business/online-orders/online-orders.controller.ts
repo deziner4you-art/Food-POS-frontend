@@ -11,18 +11,21 @@ import {
 import { RequirePermissions, Public, CurrentUser } from '../../../common/decorators';
 import { OnlineOrdersService } from './online-orders.service';
 import { CustomerAddressesService } from '../customer-addresses/customer-addresses.service';
+import { CustomerFavoritesService } from '../customer-favorites/customer-favorites.service';
 import {
   CreateOnlineOrderDto,
   UpdateOnlineOrderStatusDto,
   PostFeedbackDto,
 } from './dto';
 import { CreateCustomerAddressDto, UpdateCustomerAddressDto } from '../customer-addresses/dto';
+import { ToggleFavoriteDto } from '../customer-favorites/dto';
 
 @Controller('online-orders')
 export class OnlineOrdersController {
   constructor(
     private readonly service: OnlineOrdersService,
     private readonly addresses: CustomerAddressesService,
+    private readonly favorites: CustomerFavoritesService,
   ) {}
 
   // activeOnly=true additionally returns orders past PENDING (accepted,
@@ -154,6 +157,19 @@ export class OnlineOrdersController {
   @Delete('addresses/:id')
   deleteAddress(@Param('id') id: string, @Query('customer_id') customer_id: string) {
     return this.addresses.remove(Number(id), Number(customer_id));
+  }
+
+  // Wishlist -- public, same trust model as everything else here.
+  @Public()
+  @Get('favorites/:customerId')
+  listFavorites(@Param('customerId') customerId: string) {
+    return this.favorites.listForCustomer(Number(customerId));
+  }
+
+  @Public()
+  @Post('favorites/toggle')
+  toggleFavorite(@Body() body: ToggleFavoriteDto) {
+    return this.favorites.toggle(body.customer_id, body.product_id);
   }
 
   @Public()
