@@ -310,29 +310,31 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Viewing Filter -- moved here (was a separate full-width bar
+                below) to fill the blank space left under the Category
+                pills instead of taking its own row. */}
+            <div className="pt-3 border-t border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-gray-400">Viewing Filter:</span>
+                <span className="text-xs font-bold text-[#D4AF37] bg-[#D4AF37]/10 px-3 py-1 rounded-full border border-[#D4AF37]/30">
+                  {activeCategoryObj
+                    ? activeCategoryObj.name
+                    : activeGroupObj
+                    ? activeGroupObj.name
+                    : specialFilter === 'discounted'
+                    ? 'Discounted Deals'
+                    : specialFilter === 'bestsellers'
+                    ? 'Chef Bestsellers'
+                    : 'All Items'}
+                </span>
+              </div>
+
+              <div className="text-xs text-gray-400">
+                Showing <span className="text-white font-bold">{sortedProducts.length}</span> dishes
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-
-      {/* Viewing Filter bar -- stays full width, below the row above */}
-      <div className="bg-[#121215] border border-white/10 rounded-2xl p-4 flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-gray-400">Viewing Filter:</span>
-          <span className="text-xs font-bold text-[#D4AF37] bg-[#D4AF37]/10 px-3 py-1 rounded-full border border-[#D4AF37]/30">
-            {activeCategoryObj
-              ? activeCategoryObj.name
-              : activeGroupObj
-              ? activeGroupObj.name
-              : specialFilter === 'discounted'
-              ? 'Discounted Deals'
-              : specialFilter === 'bestsellers'
-              ? 'Chef Bestsellers'
-              : 'All Items'}
-          </span>
-        </div>
-
-        <div className="text-xs text-gray-400">
-          Showing <span className="text-white font-bold">{sortedProducts.length}</span> dishes
         </div>
       </div>
 
