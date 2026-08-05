@@ -107,6 +107,15 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 - Disabled custom item requests for Waiter mode (`isWaiterMode`) in `App.tsx`, regardless of the `posSettings.allowCustomItems` setting.
 - The POS behavior remains intact for regular users.
 
+## Task 8B — Website Home Promotions Auto Carousel (IMPLEMENTED)
+
+- Website "Today's Best Promotions" section now auto-scrolls horizontally when there are 4 or more promotions.
+- Scroll interval is set to 4.5 seconds for a smooth, premium feel.
+- Pause auto-scroll on hover implemented using `onMouseEnter` and `onMouseLeave`.
+- Infinite loop achieved by cloning the promotions array (presentation layer only) and resetting scroll invisibly.
+- Hid the ugly horizontal scrollbar using the `[&::-webkit-scrollbar]:hidden` Tailwind class and inline styles for cross-browser support.
+- All existing functionalities (Claim Deal, Explore All Offers) and responsive layout are preserved.
+
 ## Pending Approved Tasks
 
 **Task 2**

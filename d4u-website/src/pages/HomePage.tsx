@@ -75,6 +75,37 @@ export const HomePage: React.FC<HomePageProps> = ({
   const [selectedBranchId, setSelectedBranchId] = useState(branches[0]?.id || '');
   const [copiedPromoCode, setCopiedPromoCode] = useState<string | null>(null);
 
+  const promotionsRef = React.useRef<HTMLDivElement>(null);
+  const [isPromotionsHovered, setIsPromotionsHovered] = useState(false);
+  
+  // Clone promotions for seamless looping if 4 or more
+  const displayPromotions = promotions.length >= 4 ? [...promotions, ...promotions, ...promotions] : promotions;
+
+  // Auto-scroll logic for promotions
+  useEffect(() => {
+    if (promotions.length < 4) return;
+    const interval = setInterval(() => {
+      if (!isPromotionsHovered && promotionsRef.current) {
+        const container = promotionsRef.current;
+        const firstSetWidth = container.scrollWidth / 3;
+        
+        // Seamless loop jump
+        if (container.scrollLeft >= firstSetWidth * 2) {
+          container.classList.remove('scroll-smooth');
+          container.scrollLeft -= firstSetWidth;
+          void container.offsetWidth; // force reflow
+          container.classList.add('scroll-smooth');
+        }
+        
+        const firstChild = container.firstElementChild as HTMLElement;
+        const scrollAmount = firstChild ? firstChild.offsetWidth + 24 : container.clientWidth / 3; // 24px is gap-6
+        
+        container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+      }
+    }, 4500);
+    return () => clearInterval(interval);
+  }, [promotions.length, isPromotionsHovered]);
+
   const visibleSlides = heroSlides.filter((s) => s.isVisible);
 
   // Auto sliding hero banner
@@ -211,10 +242,16 @@ export const HomePage: React.FC<HomePageProps> = ({
 
           {/* At least 3 cards shown side by side; beyond 3 the row scrolls/slides
               horizontally (snap-scroll) instead of wrapping to a new row. */}
-          <div className="flex gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth -mx-1 px-1">
-            {promotions.map((promo) => (
+          <div 
+            ref={promotionsRef}
+            onMouseEnter={() => setIsPromotionsHovered(true)}
+            onMouseLeave={() => setIsPromotionsHovered(false)}
+            className="flex gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth -mx-1 px-1 [&::-webkit-scrollbar]:hidden"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            {displayPromotions.map((promo, index) => (
               <div
-                key={promo.id}
+                key={`${promo.id}-${index}`}
                 onClick={() => setActivePage('promotions')}
                 role="button"
                 tabIndex={0}
