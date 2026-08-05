@@ -60,6 +60,7 @@ export interface OfflineKOT {
   customer?: string;
   customerPhone?: string;
   customerAddress?: string;
+  customer_id?: number | null;
   source?: string;
   bridgeOrderId?: number;
   paymentMethod?: string;

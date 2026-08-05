@@ -172,8 +172,12 @@ export async function fetchCustomers(params: {
 
 /** Returns the matching customer, or null if no customer exists for this phone (not an error case). */
 export async function lookupCustomerByPhone(phone: string): Promise<Customer | null> {
-  const response = await apiFetch(`/customers/phone/${encodeURIComponent(phone)}`);
-  if (response.status === 404) return null;
+  // GET /customers/phone/:phone requires crm.customers.read -- omitting
+  // auth:true here meant no Authorization header was ever sent, so this
+  // always 401'd and liveCustomer never actually resolved (loyalty points,
+  // saved addresses, order history all silently never worked).
+  const response = await apiFetch(`/customers/phone/${encodeURIComponent(phone)}`, { auth: true });
+  if (response.status === 404 || response.status === 401) return null;
   const data = await readJson<Customer>(response);
   return data?.id ? data : null;
 }
@@ -183,10 +187,13 @@ export async function createCustomer(payload: {
   phone: string;
   name: string;
 }): Promise<Customer> {
+  // Same missing auth:true bug as lookupCustomerByPhone above -- POST
+  // /customers requires crm.customers.create.
   const response = await apiFetch('/customers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    auth: true,
   });
   const data = await readJson<{ success: boolean; customer: Customer }>(response);
   return data.customer;

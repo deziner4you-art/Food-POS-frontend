@@ -8,7 +8,7 @@ import type { CartLineItem } from './cart/cartTypes';
 import { generateHeldOrderId } from './cart/heldOrderId';
 import { customConfirm } from './utils/alerts';
 import { validateDeliveryCustomerInfo, calculateLoyaltyDiscountPercent, resolveCustomerMode } from './customer/customerEngine';
-import { lookupCustomerByPhone, createCustomer } from './pos/api';
+import { lookupCustomerByPhone, createCustomer, fetchCustomers } from './pos/api';
 import { getDeviceId, storeTokens, refreshAccessToken } from './pos/session';
 const socket = io(BACKEND_URL);
 import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, Receipt, LogOut } from 'lucide-react'
@@ -1260,7 +1260,27 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       setPendingDeliveryAction('KOT');
       return setModalType('DELIVERY_DETAILS');
     }
-    
+
+    // This is the actual "order placed under this customer" moment for a
+    // Delivery order (KOT now, settle/pay later) -- previously customer_id
+    // was only ever attached at the separate "Pay" flow, which a
+    // KOT-then-COD delivery order never reaches until much later (if at
+    // all, before this point the offline-sync engine already persisted the
+    // order with no customer link — see PosOrdersService.syncOfflineOrders).
+    // Mirrors the same GUEST-becomes-a-real-Customer behavior already used
+    // at Pay.
+    let resolvedCustomerId: number | null = liveCustomer?.id ?? null;
+    if (!resolvedCustomerId && customerPhone.trim() && resolveCustomerMode(liveCustomer) === 'GUEST') {
+      try {
+        const newCustomerRecord = await createCustomer({
+          brand_id: currentUser?.brand_id,
+          phone: customerPhone.trim(),
+          name: customerName || 'Walk-in',
+        });
+        resolvedCustomerId = newCustomerRecord.id;
+      } catch (e) { console.log('Error saving customer', e); }
+    }
+
     const itemsSummary = cart.map(item => `${item.qty}x ${item.name}`).join(', ');
     const nextOrderId = Math.floor(Math.random() * 100000);
 
@@ -1270,6 +1290,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       customer: customerName,
       customerPhone: customerPhone,
       customerAddress: customerAddress,
+      customer_id: resolvedCustomerId,
       items: itemsSummary,
       notes: orderNotes,
       timePlaced: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -1574,6 +1595,50 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerPhone]);
+
+  // Delivery Details modal's "pick a customer from a list while typing"
+  // search-as-you-type -- partial phone/name match, separate from the exact
+  // 10+-digit lookup above. Debounced so it doesn't fire on every keystroke.
+  const [customerSearchResults, setCustomerSearchResults] = useState<any[]>([]);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  useEffect(() => {
+    if (customerPhone.trim().length >= 3 && customerPhone.trim().length < 11 && currentUser?.brand_id) {
+      const handle = setTimeout(() => {
+        fetchCustomers({ brandId: currentUser.brand_id, storeId: currentUser.store_id, search: customerPhone.trim() })
+          .then((results) => { setCustomerSearchResults(results.slice(0, 6)); setShowCustomerDropdown(true); })
+          .catch(() => setCustomerSearchResults([]));
+      }, 300);
+      return () => clearTimeout(handle);
+    }
+    setCustomerSearchResults([]);
+    setShowCustomerDropdown(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerPhone, currentUser?.brand_id, currentUser?.store_id]);
+
+  const selectCustomerFromSearch = (c: any) => {
+    setCustomerPhone(c.phone);
+    setCustomerName(c.name);
+    setLiveCustomer(c);
+    setShowCustomerDropdown(false);
+    setCustomerSearchResults([]);
+  };
+
+  // Address picker inside the Delivery Details modal: defaults to the
+  // saved-address picker whenever the resolved customer has any; the
+  // cashier can still switch to typing a fresh one-off address. Re-derived
+  // whenever a different customer resolves.
+  const [useManualDeliveryAddress, setUseManualDeliveryAddress] = useState(false);
+  useEffect(() => {
+    const addresses = liveCustomer?.addresses || [];
+    if (addresses.length === 0) {
+      setUseManualDeliveryAddress(true);
+    } else {
+      setUseManualDeliveryAddress(false);
+      // Exactly one saved address -- nothing to choose between, pre-select
+      // it (still visible/changeable, not silently locked in).
+      if (addresses.length === 1) setCustomerAddress(addresses[0].address);
+    }
+  }, [liveCustomer]);
 
   if (window.location.pathname === '/kitchen') {
     // Was rendering with no props at all, so the branch name never had a
@@ -4125,22 +4190,107 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           <div className="modal-content animate-slide-up" style={{ width: '450px' }}>
             <div className="modal-header">
               <h2><MapPin size={24} color="#4edea3" /> Delivery Details</h2>
-              <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setPendingDeliveryAction(null); }} />
+              <X size={24} style={{cursor:'pointer'}} onClick={() => { setModalType('NONE'); setPendingDeliveryAction(null); setShowCustomerDropdown(false); }} />
             </div>
             <div style={{ padding: '20px' }}>
               <p style={{ marginBottom: '20px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Please fill in the customer details to confirm this delivery order.</p>
-              <div style={{ marginBottom: '15px' }}>
+
+              <div style={{ marginBottom: '15px', position: 'relative' }}>
                 <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Customer Mobile Number *</label>
-                <input type="tel" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="0300-1234567" style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none' }} autoFocus />
+                <input
+                  type="tel"
+                  value={customerPhone}
+                  onChange={e => setCustomerPhone(e.target.value)}
+                  onFocus={() => { if (customerSearchResults.length > 0) setShowCustomerDropdown(true); }}
+                  placeholder="0300-1234567"
+                  style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none' }}
+                  autoFocus
+                />
+                {/* Search-as-you-type customer picker -- type any part of a
+                    known phone/name and choose from real matches, instead
+                    of only an exact full-number lookup. */}
+                {showCustomerDropdown && customerSearchResults.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px', background: 'var(--bg-panel, #1e293b)', border: '1px solid var(--border-color)', borderRadius: '8px', zIndex: 20, maxHeight: '220px', overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+                    {customerSearchResults.map((c: any) => (
+                      <div
+                        key={c.id}
+                        onClick={() => selectCustomerFromSearch(c)}
+                        style={{ padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                        onMouseDown={(e) => e.preventDefault()}
+                      >
+                        <div>
+                          <div style={{ color: 'white', fontSize: '0.85rem', fontWeight: 'bold' }}>{c.name}</div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{c.phone}</div>
+                        </div>
+                        {(c.addresses?.length ?? 0) > 0 && (
+                          <span style={{ fontSize: '0.7rem', color: '#4edea3' }}>{c.addresses.length} saved addr.</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {liveCustomer && (
+                  <div style={{ marginTop: '6px', fontSize: '0.75rem', color: '#4edea3', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Check size={12} /> Existing customer found — {liveCustomer.loyalty_points ?? 0} loyalty points
+                  </div>
+                )}
               </div>
+
               <div style={{ marginBottom: '15px' }}>
                 <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Customer Name *</label>
                 <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="e.g. John Doe" style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none' }} />
               </div>
+
               <div style={{ marginBottom: '25px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Complete Delivery Address *</label>
-                <textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} placeholder="House #, Street, Block, Area..." rows={3} style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none', resize: 'none' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                  <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Complete Delivery Address *</label>
+                  {(liveCustomer?.addresses?.length ?? 0) > 0 && (
+                    <span
+                      onClick={() => setUseManualDeliveryAddress(!useManualDeliveryAddress)}
+                      style={{ color: 'var(--primary)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      {useManualDeliveryAddress ? 'Choose a saved address' : '+ Enter a different address'}
+                    </span>
+                  )}
+                </div>
+
+                {!useManualDeliveryAddress && (liveCustomer?.addresses?.length ?? 0) > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {liveCustomer.addresses.map((a: any) => (
+                      <div
+                        key={a.id}
+                        onClick={() => setCustomerAddress(a.address)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          border: customerAddress === a.address ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                          background: customerAddress === a.address ? 'rgba(251, 191, 36, 0.1)' : 'var(--bg-base)',
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '8px',
+                        }}
+                      >
+                        <div style={{
+                          width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0, marginTop: '2px',
+                          border: customerAddress === a.address ? 'none' : '1px solid var(--border-color)',
+                          background: customerAddress === a.address ? 'var(--primary)' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {customerAddress === a.address && <Check size={11} color="black" />}
+                        </div>
+                        <div>
+                          <div style={{ color: 'white', fontSize: '0.8rem', fontWeight: 'bold' }}>{a.label}</div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{a.address}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} placeholder="House #, Street, Block, Area..." rows={3} style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none', resize: 'none' }} />
+                )}
               </div>
+
               <button className="btn-action btn-save" onClick={() => {
                 const validation = validateDeliveryCustomerInfo('Delivery', customerName, customerAddress, customerPhone);
                 if (!validation.valid) {
@@ -4148,6 +4298,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   return;
                 }
                 setModalType('NONE');
+                setShowCustomerDropdown(false);
                 if (pendingDeliveryAction === 'KOT') handleCreateKOT();
                 else if (pendingDeliveryAction === 'PAY') setModalType('PAYMENT');
                 setPendingDeliveryAction(null);

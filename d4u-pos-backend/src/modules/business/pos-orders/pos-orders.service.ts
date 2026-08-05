@@ -372,12 +372,27 @@ export class PosOrdersService {
         if (!order.store_id) throw new Error('Missing store_id in offline sync order');
         if (!order.business_day_id) throw new Error('Missing business_day_id in offline sync order');
 
+        // This is the ONLY path that ever persists a KOT'd order to the real
+        // Order table (the offline-sync engine flushes every local KOT here
+        // every ~30s, online or not) -- it hardcoded customer_id: null
+        // unconditionally, so no POS order that went through "KOT" (rather
+        // than an immediate "Pay") ever linked to a Customer, no matter what
+        // phone/customer was selected. Prefer the id the frontend already
+        // resolved (cashier picked/confirmed a customer in Delivery
+        // Details); fall back to a phone lookup for older queued KOTs that
+        // predate this fix and never captured customer_id directly.
+        let resolvedCustomerId: number | null = order.customer_id ?? null;
+        if (!resolvedCustomerId && order.customerPhone) {
+          const matched = await tx.customer.findUnique({ where: { phone: order.customerPhone } });
+          resolvedCustomerId = matched?.id ?? null;
+        }
+
         const newOrder = await tx.order.create({
           data: {
             store_id: order.store_id,
             business_day_id: order.business_day_id,
             business_date: new Date(),
-            customer_id: null,
+            customer_id: resolvedCustomerId,
             order_source: 'OFFLINE_SYNC',
             status: order.status === 'READY' ? 'DELIVERED' : 'PAID', // Map POS final status
             total_amount: order.totalAmount || 0,
@@ -385,6 +400,10 @@ export class PosOrdersService {
             payment_method: order.paymentMethod || 'CASH',
             is_offline: true,
             created_by: order.created_by || null,
+            // Same gap as customer_id above -- the cashier-entered delivery
+            // address was captured on the local KOT but never made it onto
+            // the real Order.
+            delivery_address: order.customerAddress || null,
             items: {
               create: items.map((i: any) => ({
                 product_id: i.id || 1, // Extract product_id from structured local cart
