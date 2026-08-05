@@ -101,59 +101,16 @@ export const MenuPage: React.FC<MenuPageProps> = ({
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-8 animate-fade-in">
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6 mb-8">
-        <div>
-          <div className="text-xs text-[#D4AF37] font-bold uppercase tracking-wider flex items-center gap-1">
-            <UtensilsCrossed className="w-3.5 h-3.5" /> D4U POS Synced Menu Engine
-          </div>
-          <h1 className="text-3xl font-extrabold text-white font-display">
-            Restaurant Menu &amp; Ordering Catalog
-          </h1>
-          <p className="text-xs text-gray-400 mt-1">
-            Select items directly from our live kitchen database with custom modifiers and real-time stock levels.
-          </p>
+      <div className="border-b border-white/10 pb-6 mb-8">
+        <div className="text-xs text-[#D4AF37] font-bold uppercase tracking-wider flex items-center gap-1">
+          <UtensilsCrossed className="w-3.5 h-3.5" /> D4U POS Synced Menu Engine
         </div>
-
-        {/* View Layout & Sort Controls */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center bg-[#1A1A1D] border border-white/10 rounded-xl p-1">
-            <button
-              onClick={() => setViewLayout('grid')}
-              className={`p-2 rounded-lg text-xs transition-colors ${
-                viewLayout === 'grid'
-                  ? 'bg-[#D4AF37] text-black font-bold'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-              title="Grid Layout View"
-            >
-              <Grid className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewLayout('list')}
-              className={`p-2 rounded-lg text-xs transition-colors ${
-                viewLayout === 'list'
-                  ? 'bg-[#D4AF37] text-black font-bold'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-              title="List Layout View"
-            >
-              <List className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="relative">
-            <select
-              value={sortBy}
-              onChange={(e: any) => setSortBy(e.target.value)}
-              className="bg-[#1A1A1D] text-white text-xs px-3 py-2.5 rounded-xl border border-white/10 focus:border-[#D4AF37] outline-none font-semibold cursor-pointer"
-            >
-              <option value="popular">Sort By: Popularity</option>
-              <option value="price_low">Price: Low to High</option>
-              <option value="price_high">Price: High to Low</option>
-              <option value="rating">Highest Customer Rating</option>
-            </select>
-          </div>
-        </div>
+        <h1 className="text-3xl font-extrabold text-white font-display">
+          Restaurant Menu &amp; Ordering Catalog
+        </h1>
+        <p className="text-xs text-gray-400 mt-1">
+          Select items directly from our live kitchen database with custom modifiers and real-time stock levels.
+        </p>
       </div>
 
       {/* TOP ROW -- Quick Shortcuts + Search on the left (narrow), Category
@@ -313,25 +270,68 @@ export const MenuPage: React.FC<MenuPageProps> = ({
 
             {/* Viewing Filter -- moved here (was a separate full-width bar
                 below) to fill the blank space left under the Category
-                pills instead of taking its own row. */}
-            <div className="pt-3 border-t border-white/10 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-gray-400">Viewing Filter:</span>
-                <span className="text-xs font-bold text-[#D4AF37] bg-[#D4AF37]/10 px-3 py-1 rounded-full border border-[#D4AF37]/30">
-                  {activeCategoryObj
-                    ? activeCategoryObj.name
-                    : activeGroupObj
-                    ? activeGroupObj.name
-                    : specialFilter === 'discounted'
-                    ? 'Discounted Deals'
-                    : specialFilter === 'bestsellers'
-                    ? 'Chef Bestsellers'
-                    : 'All Items'}
-                </span>
+                pills instead of taking its own row. "Showing N dishes" sits
+                right next to it (was pushed off to the far right before);
+                the grid/list + sort controls (moved down from the page
+                header) sit on the far right instead. */}
+            <div className="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-gray-400">Viewing Filter:</span>
+                  <span className="text-xs font-bold text-[#D4AF37] bg-[#D4AF37]/10 px-3 py-1 rounded-full border border-[#D4AF37]/30">
+                    {activeCategoryObj
+                      ? activeCategoryObj.name
+                      : activeGroupObj
+                      ? activeGroupObj.name
+                      : specialFilter === 'discounted'
+                      ? 'Discounted Deals'
+                      : specialFilter === 'bestsellers'
+                      ? 'Chef Bestsellers'
+                      : 'All Items'}
+                  </span>
+                </div>
+
+                <div className="text-xs text-gray-400">
+                  Showing <span className="text-white font-bold">{sortedProducts.length}</span> dishes
+                </div>
               </div>
 
-              <div className="text-xs text-gray-400">
-                Showing <span className="text-white font-bold">{sortedProducts.length}</span> dishes
+              <div className="flex items-center gap-3">
+                <div className="flex items-center bg-[#1A1A1D] border border-white/10 rounded-xl p-1">
+                  <button
+                    onClick={() => setViewLayout('grid')}
+                    className={`p-2 rounded-lg text-xs transition-colors ${
+                      viewLayout === 'grid'
+                        ? 'bg-[#D4AF37] text-black font-bold'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                    title="Grid Layout View"
+                  >
+                    <Grid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewLayout('list')}
+                    className={`p-2 rounded-lg text-xs transition-colors ${
+                      viewLayout === 'list'
+                        ? 'bg-[#D4AF37] text-black font-bold'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                    title="List Layout View"
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <select
+                  value={sortBy}
+                  onChange={(e: any) => setSortBy(e.target.value)}
+                  className="bg-[#1A1A1D] text-white text-xs px-3 py-2.5 rounded-xl border border-white/10 focus:border-[#D4AF37] outline-none font-semibold cursor-pointer"
+                >
+                  <option value="popular">Sort By: Popularity</option>
+                  <option value="price_low">Price: Low to High</option>
+                  <option value="price_high">Price: High to Low</option>
+                  <option value="rating">Highest Customer Rating</option>
+                </select>
               </div>
             </div>
           </div>
