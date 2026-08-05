@@ -1,6 +1,7 @@
 import React from 'react';
 import { Product } from '../types';
 import { Star, Heart, Eye, Plus, Check, Flame, ShieldAlert } from 'lucide-react';
+import { formatCurrency } from '../utils/currency';
 
 interface ProductCardProps {
   product: Product;
@@ -28,6 +29,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       
       {/* Top Metallic Background */}
       <div className="absolute top-0 left-0 right-0 h-[220px] bg-gradient-to-b from-[#e5e5e5] via-[#a3a3a3] to-[#16130B] opacity-90" />
+
+      {/* Top-left discount badge -- flush against the card's top-left edge
+          (matches the Admin Marketing Hub campaign card's badge convention,
+          mirrored to the left), sized up for readability. Kept outside the
+          image container so it isn't clipped by the circular image mask and
+          stays pinned to the card corner regardless of image size. */}
+      {product.isDiscounted && product.discountPercentage && (
+        <span className="absolute top-0 left-0 z-20 bg-gradient-to-r from-amber-500 to-[#D4AF37] text-black font-extrabold text-sm px-3 py-1.5 rounded-br-xl shadow-lg flex items-center gap-1.5 uppercase tracking-wider">
+          <Flame className="w-4 h-4 fill-black" /> -{product.discountPercentage}% OFF
+        </span>
+      )}
 
       {/* Top Icons */}
       <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
@@ -65,16 +77,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             loading="lazy"
           />
         </div>
-        {/* Badges positioned relative to the card, left-aligned near image bottom.
-            Only Discounted / Sold Out are shown -- a raw "In Stock: N" count
-            doesn't apply to a restaurant menu (no real per-item inventory
-            tracking behind it), so it's never shown here. */}
+        {/* Sold Out is the only remaining badge here -- a raw "In Stock: N"
+            count doesn't apply to a restaurant menu (no real per-item
+            inventory tracking behind it), so it's never shown here. */}
         <div className="absolute bottom-6 left-5 flex flex-col gap-1">
-          {product.isDiscounted && product.discountPercentage && (
-            <span className="bg-gradient-to-r from-amber-500 to-[#D4AF37] text-black font-extrabold text-[10px] px-2.5 py-1 rounded shadow-md flex items-center gap-1 uppercase tracking-wider w-fit">
-              <Flame className="w-3 h-3 fill-black" /> -{product.discountPercentage}% OFF
-            </span>
-          )}
           {product.stockCount === 0 && (
             <span className="text-[10px] font-semibold text-rose-100 bg-rose-600 px-2 py-0.5 rounded shadow w-fit">
               Sold Out
@@ -91,24 +97,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </h3>
         </div>
 
-        {/* Footer Price & Add To Cart Button */}
-        <div className="flex items-end justify-between">
-          <div>
+        {/* Footer Price & Add To Cart Button -- the 4->3 column change gives
+            each card more width; min-w-0 + whitespace-nowrap on the price
+            block keeps "Rs. 1,498.50" from breaking after "Rs." (its natural
+            wrap point) instead of shrinking any font size, and flex-shrink-0
+            on the button keeps "Add To Cart" from ever wrapping either. */}
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0">
             {hasVariants ? (
               <>
                 <div className="text-[10px] text-gray-400 font-medium mb-0.5">&nbsp;</div>
-                <span className="text-xl font-extrabold text-[#D4AF37] font-display">Choose Size</span>
+                <span className="text-xl font-extrabold text-[#D4AF37] font-display whitespace-nowrap">Choose Size</span>
               </>
             ) : (
               <>
                 <div className="text-[10px] text-gray-400 font-medium mb-0.5">Price</div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-xl font-extrabold text-[#D4AF37] font-display">
-                    ${product.price.toFixed(2)}
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-xl font-extrabold text-[#D4AF37] font-display whitespace-nowrap">
+                    {formatCurrency(product.price)}
                   </span>
                   {product.originalPrice && (
-                    <span className="text-xs text-gray-500 line-through">
-                      ${product.originalPrice.toFixed(2)}
+                    <span className="text-xs text-gray-500 line-through whitespace-nowrap">
+                      {formatCurrency(product.originalPrice)}
                     </span>
                   )}
                 </div>
@@ -119,7 +129,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <button
             onClick={() => (needsCustomization ? onQuickView(product) : onAddToCart(product))}
             disabled={!product.isAvailable || product.stockCount === 0}
-            className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
+            className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shadow-md flex-shrink-0 whitespace-nowrap ${
               cartItemCount > 0
                 ? 'bg-emerald-500 text-black hover:bg-emerald-400 font-extrabold'
                 : 'bg-[#D4AF37] text-black hover:bg-[#ffe088] gold-glow'
