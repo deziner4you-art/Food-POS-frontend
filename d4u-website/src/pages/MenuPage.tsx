@@ -14,6 +14,7 @@ import {
   UtensilsCrossed,
   Layers,
 } from 'lucide-react';
+import { formatCurrency } from '../utils/currency';
 
 interface MenuPageProps {
   categoryGroups: CategoryGroup[];
@@ -25,10 +26,17 @@ interface MenuPageProps {
   // useState initial value.
   initialCategoryFilter?: string | null;
   onQuickViewProduct: (product: Product) => void;
-  onAddToCart: (product: Product) => void;
+  // Widened beyond (product: Product) => void to match StoreContext's real
+  // addToCart signature -- the BOGO offer card below needs to pass a
+  // quantity (buy_qty/reward_qty) when adding each side of the deal.
+  onAddToCart: (product: Product, selectedModifiers?: any, quantity?: number) => void;
   favoriteProductIds: string[];
   onToggleFavorite: (productId: string) => void;
   cartItems: { [productId: string]: number };
+  // Raw campaign rows (not the display-mapped Promotion[]) -- BOGO campaigns
+  // carry buyProduct/getProduct here, used to synthesize the "Buy X Get Y"
+  // offer card in the Discounted section. Same data source as POS.
+  campaigns: any[];
 }
 
 export const MenuPage: React.FC<MenuPageProps> = ({
@@ -41,6 +49,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
   favoriteProductIds,
   onToggleFavorite,
   cartItems,
+  campaigns,
 }) => {
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(initialCategoryFilter ?? null);
@@ -97,6 +106,30 @@ export const MenuPage: React.FC<MenuPageProps> = ({
 
   const activeCategoryObj = categories.find((c) => c.id === selectedCategoryFilter);
   const activeGroupObj = categoryGroups.find((g) => g.id === selectedGroupFilter);
+
+  // BOGO offer cards -- combines a campaign's buy+get products into one
+  // written offer, shown only in the Discounted Deals view (not as a badge
+  // on the raw buy/get products themselves). Resolved against the
+  // already-mapped `products` list (not the raw campaign.buyProduct/
+  // getProduct rows) so the card gets the site's real image/name/price
+  // shape for free, matching POS's equivalent card.
+  const allBogoOffers = (campaigns || [])
+    .filter((c: any) => c.campaign_type === 'BOGO' && c.published_web && c.buyProduct && c.getProduct)
+    .map((c: any) => ({
+      campaign: c,
+      buyProduct: products.find((p) => p.id === String(c.buyProduct.id)),
+      getProduct: products.find((p) => p.id === String(c.getProduct.id)),
+    }))
+    .filter((o): o is { campaign: any; buyProduct: Product; getProduct: Product } => !!o.buyProduct && !!o.getProduct);
+  const bogoOffers = specialFilter === 'discounted' ? allBogoOffers : [];
+
+  const addBogoOfferToCart = (offer: { campaign: any; buyProduct: Product; getProduct: Product }) => {
+    const { campaign, buyProduct, getProduct } = offer;
+    onAddToCart(buyProduct, undefined, campaign.buy_qty || 1);
+    const getBasePrice = getProduct.originalPrice ?? getProduct.price;
+    const rewardPrice = campaign.reward_type === 'PERCENTAGE' ? getBasePrice * (1 - campaign.discount_pct / 100) : 0;
+    onAddToCart({ ...getProduct, price: rewardPrice }, undefined, campaign.reward_qty || 1);
+  };
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-8 animate-fade-in">
@@ -166,7 +199,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 <Flame className="w-3.5 h-3.5 fill-current" /> Discounted Deals 🔥
               </span>
               <span className="text-[10px] bg-black/20 px-2 py-0.5 rounded-full">
-                {products.filter((p) => p.isDiscounted).length}
+                {products.filter((p) => p.isDiscounted).length + allBogoOffers.length}
               </span>
             </button>
 
@@ -298,7 +331,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 </div>
 
                 <div className="text-xs text-gray-400">
-                  Showing <span className="text-white font-bold">{sortedProducts.length}</span> dishes
+                  Showing <span className="text-white font-bold">{sortedProducts.length + bogoOffers.length}</span> dishes
                 </div>
               </div>
 
@@ -346,8 +379,8 @@ export const MenuPage: React.FC<MenuPageProps> = ({
       </div>
 
       {/* Product Grid / List -- full width now, 4 columns instead of 3 */}
-      <div className="space-y-6">
-        {sortedProducts.length === 0 ? (
+      <div id="menu-catalogue" className="space-y-6">
+        {sortedProducts.length === 0 && bogoOffers.length === 0 ? (
             <div className="bg-[#16130B] border border-white/10 rounded-3xl p-12 text-center space-y-3">
               <UtensilsCrossed className="w-12 h-12 text-gray-600 mx-auto" />
               <h3 className="text-lg font-bold text-white font-display">No dishes match your filter</h3>
@@ -368,6 +401,37 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             </div>
           ) : viewLayout === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {bogoOffers.map((offer) => (
+                <div
+                  key={`bogo-${offer.campaign.id}`}
+                  onClick={() => addBogoOfferToCart(offer)}
+                  className="group relative bg-[#16130B] border border-[#D4AF37]/40 hover:border-[#D4AF37] rounded-2xl overflow-hidden shadow-xl transition-all duration-300 hover:-translate-y-1.5 flex flex-col justify-between cursor-pointer"
+                >
+                  <span className="absolute top-4 left-4 z-20 bg-gradient-to-r from-amber-500 to-[#D4AF37] text-black font-extrabold text-[10px] px-2.5 py-1 rounded shadow-md uppercase tracking-wider">
+                    🎁 Buy 1 Get 1
+                  </span>
+                  <div className="relative z-10 flex flex-col items-center pt-10 pb-4">
+                    <div className="w-48 h-48 rounded-full overflow-hidden shadow-2xl border-4 border-transparent">
+                      <img src={offer.buyProduct.imageUrl} alt={offer.buyProduct.name} className="w-full h-full object-cover" loading="lazy" />
+                    </div>
+                  </div>
+                  <div className="relative z-10 p-5 pt-0 flex-1 flex flex-col justify-between space-y-4">
+                    <h3 className="text-base font-bold text-white font-display line-clamp-2">
+                      Buy {offer.buyProduct.name} Get {offer.getProduct.name}
+                      {offer.campaign.reward_type === 'PERCENTAGE' ? ` (${offer.campaign.discount_pct}% OFF)` : ' FREE'}
+                    </h3>
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <div className="text-[10px] text-gray-400 font-medium mb-0.5">Price</div>
+                        <span className="text-xl font-extrabold text-[#D4AF37] font-display">{formatCurrency(offer.buyProduct.price)}</span>
+                      </div>
+                      <button className="w-10 h-10 rounded-full bg-[#D4AF37] text-black flex items-center justify-center shadow-lg hover:scale-105 transition-transform">
+                        <Flame className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
               {sortedProducts.map((product) => (
                 <ProductCard
                   key={product.id}
@@ -382,6 +446,36 @@ export const MenuPage: React.FC<MenuPageProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
+              {bogoOffers.map((offer) => (
+                <div
+                  key={`bogo-${offer.campaign.id}`}
+                  onClick={() => addBogoOfferToCart(offer)}
+                  className="bg-[#16130B] border border-[#D4AF37]/40 hover:border-[#D4AF37] rounded-2xl p-4 flex flex-col sm:flex-row gap-4 items-center justify-between shadow-xl transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-4 w-full sm:w-auto">
+                    <img
+                      src={offer.buyProduct.imageUrl}
+                      alt={offer.buyProduct.name}
+                      className="w-20 h-20 rounded-xl object-cover flex-shrink-0"
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-white font-display">
+                          Buy {offer.buyProduct.name} Get {offer.getProduct.name}
+                        </h3>
+                        <span className="bg-gradient-to-r from-amber-500 to-[#D4AF37] text-black font-extrabold text-[10px] px-2 py-0.5 rounded-full">
+                          {offer.campaign.reward_type === 'PERCENTAGE' ? `${offer.campaign.discount_pct}% OFF` : 'FREE'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-white/10 pt-3 sm:pt-0">
+                    <div className="text-right">
+                      <div className="text-lg font-extrabold text-[#D4AF37] font-display">{formatCurrency(offer.buyProduct.price)}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
               {sortedProducts.map((product) => (
                 <div
                   key={product.id}
@@ -419,11 +513,11 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                   <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-white/10 pt-3 sm:pt-0">
                     <div className="text-right">
                       <div className="text-lg font-extrabold text-[#D4AF37] font-display">
-                        ${product.price.toFixed(2)}
+                        {formatCurrency(product.price)}
                       </div>
                       {product.originalPrice && (
                         <div className="text-xs text-gray-500 line-through">
-                          ${product.originalPrice.toFixed(2)}
+                          {formatCurrency(product.originalPrice)}
                         </div>
                       )}
                     </div>

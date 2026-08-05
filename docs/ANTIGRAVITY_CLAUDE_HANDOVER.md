@@ -148,6 +148,13 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 - Reverted the previous hardcoded `PKR` fix in `d4u-website/src/utils/currency.ts` so all frontend apps (Website, POS, Admin) use identical dynamic `d4u_currency` logic.
 - Updated the incorrect database `Brand.currency` value from `USD` to `PKR` for the relevant brands, resolving the root cause correctly without breaking exchange-rate logic or multi-currency support.
 
+## Task — Fix Empty Cart Browse Menu Navigation (IMPLEMENTED)
+
+- Added a stable anchor ID `menu-catalogue` to the product grid in `d4u-website/src/pages/MenuPage.tsx`.
+- Updated `d4u-website/src/components/shared/CartDrawer.tsx` to handle the "Browse Menu" button click.
+- Used `useNavigate` from `react-router-dom` to route to `/menu`, followed by a brief timeout to cleanly `scrollIntoView({ behavior: 'smooth' })` down to the catalogue section, avoiding fragile hardcoded logic.
+- Ensured it handles cases where the user is already on `/menu` by skipping the navigation step and simply smoothly scrolling.
+
 ## Pending Approved Tasks
 
 **Task 2**

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Promotion } from '../../types';
 import { useStore } from '../../context/StoreContext';
 import { getDeliveryFee, getDiscountAmount, getGrandTotal, getSubtotal, getTax } from '../../utils/cartMath';
+import { formatCurrency } from '../../utils/currency';
 import {
   X,
   ShoppingBag,
@@ -23,6 +24,20 @@ interface CartDrawerProps {
 export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, appliedPromo, onRemovePromo }) => {
   const { cart, increaseQuantity, decreaseQuantity, removeFromCart } = useStore();
   const navigate = useNavigate();
+
+  const handleBrowseMenu = () => {
+    onClose();
+    if (window.location.pathname === '/menu') {
+      setTimeout(() => {
+        document.getElementById('menu-catalogue')?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } else {
+      navigate('/menu');
+      setTimeout(() => {
+        document.getElementById('menu-catalogue')?.scrollIntoView({ behavior: 'smooth' });
+      }, 500);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -67,7 +82,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, applied
               <h3 className="text-base font-bold text-white font-display">Your cart is empty</h3>
               <p className="text-xs text-gray-400 max-w-xs">Browse the menu and add something delicious!</p>
               <button
-                onClick={onClose}
+                onClick={handleBrowseMenu}
                 className="mt-2 bg-[#D4AF37] text-black text-xs font-extrabold px-6 py-2.5 rounded-full gold-glow"
               >
                 Browse Menu
@@ -116,7 +131,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, applied
 
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-xs font-extrabold text-[#D4AF37]">
-                      ${item.totalPrice.toFixed(2)}
+                      {formatCurrency(item.totalPrice)}
                     </span>
 
                     <div className="flex items-center gap-2 bg-[#121215] border border-white/10 rounded-lg p-1">
@@ -160,31 +175,31 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, applied
             <div className="space-y-1.5 text-xs text-gray-300">
               <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span className="font-semibold text-white">${subtotal.toFixed(2)}</span>
+                <span className="font-semibold text-white">{formatCurrency(subtotal)}</span>
               </div>
               {discountAmount > 0 && (
                 <div className="flex justify-between text-[#D4AF37]">
                   <span>Promo Discount</span>
-                  <span className="font-bold">-${discountAmount.toFixed(2)}</span>
+                  <span className="font-bold">-{formatCurrency(discountAmount)}</span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span>Estimated Delivery</span>
                 <span className="font-semibold text-white">
                   {deliveryFee === 0 ? (
-                    <span className="text-emerald-400">FREE ($15+ order)</span>
+                    <span className="text-emerald-400">FREE</span>
                   ) : (
-                    `$${deliveryFee.toFixed(2)}`
+                    formatCurrency(deliveryFee)
                   )}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>Estimated Tax (13%)</span>
-                <span className="font-semibold text-white">${tax.toFixed(2)}</span>
+                <span className="font-semibold text-white">{formatCurrency(tax)}</span>
               </div>
               <div className="flex justify-between text-sm font-extrabold text-white pt-2 border-t border-white/10 font-display">
                 <span>Grand Total</span>
-                <span className="text-[#D4AF37] text-base">${grandTotal.toFixed(2)}</span>
+                <span className="text-[#D4AF37] text-base">{formatCurrency(grandTotal)}</span>
               </div>
             </div>
 
