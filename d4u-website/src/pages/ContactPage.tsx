@@ -3,11 +3,12 @@ import { Branch } from '../types';
 import { MapPin, Phone, MessageSquare, Mail, Send, CheckCircle2, Clock } from 'lucide-react';
 
 interface ContactPageProps {
-  branches: Branch[];
+  currentBranch: Branch;
+  contactEmail: string;
+  whatsappNumber: string;
 }
 
-export const ContactPage: React.FC<ContactPageProps> = ({ branches }) => {
-  const [selectedBranchId, setSelectedBranchId] = useState(branches[0]?.id || '');
+export const ContactPage: React.FC<ContactPageProps> = ({ currentBranch, contactEmail, whatsappNumber }) => {
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -19,6 +20,22 @@ export const ContactPage: React.FC<ContactPageProps> = ({ branches }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 1. Email Routing via standard mailto deep-link
+    if (contactEmail) {
+      const emailBody = `Name: ${formData.name}\nEmail: ${formData.email}\nPhone: ${formData.phone || 'N/A'}\n\nMessage:\n${formData.message}\n\nBranch: ${currentBranch.name}`;
+      const mailtoLink = `mailto:${contactEmail}?subject=${encodeURIComponent(formData.subject)}&body=${encodeURIComponent(emailBody)}`;
+      window.open(mailtoLink, '_blank');
+    }
+
+    // 2. WhatsApp Routing via wa.me API deep-link
+    if (whatsappNumber) {
+      const waMsg = `*New Contact Request*\n\n*Name:* ${formData.name}\n*Email:* ${formData.email}\n*Subject:* ${formData.subject}\n*Message:* ${formData.message}\n*Branch:* ${currentBranch.name}`;
+      const formattedNumber = whatsappNumber.replace(/[^0-9]/g, '');
+      const waLink = `https://wa.me/${formattedNumber}?text=${encodeURIComponent(waMsg)}`;
+      window.open(waLink, '_blank');
+    }
+
     setSubmitted(true);
     setTimeout(() => {
       setSubmitted(false);
@@ -26,7 +43,7 @@ export const ContactPage: React.FC<ContactPageProps> = ({ branches }) => {
     }, 4000);
   };
 
-  const activeBranch = branches.find((b) => b.id === selectedBranchId) || branches[0];
+  const activeBranch = currentBranch;
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-10 space-y-12 animate-fade-in">
@@ -80,22 +97,6 @@ export const ContactPage: React.FC<ContactPageProps> = ({ branches }) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-300">Select Target Branch</label>
-                  <select
-                    value={selectedBranchId}
-                    onChange={(e) => setSelectedBranchId(e.target.value)}
-                    className="w-full bg-[#1A1A1D] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-[#D4AF37] outline-none"
-                  >
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-gray-300">Subject</label>
                   <select
@@ -109,7 +110,6 @@ export const ContactPage: React.FC<ContactPageProps> = ({ branches }) => {
                     <option value="General Inquiry">General ERP Inquiry</option>
                   </select>
                 </div>
-              </div>
 
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-300">Your Message</label>

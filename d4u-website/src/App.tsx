@@ -131,8 +131,19 @@ function AboutRoute() {
 }
 
 function ContactRoute() {
-  const { stores } = useStore();
-  return <ContactPage branches={mapStoresToBranches(stores)} />;
+  const { storeId, stores, settings } = useStore();
+  const currentStore = stores?.find((s: any) => String(s.id) === String(storeId));
+  const currentBranch = currentStore ? mapStoresToBranches([currentStore])[0] : (stores && stores.length > 0 ? mapStoresToBranches([stores[0]])[0] : null);
+
+  if (!currentBranch) return null;
+
+  return (
+    <ContactPage 
+      currentBranch={currentBranch} 
+      contactEmail={settings?.contactEmail || ''}
+      whatsappNumber={settings?.whatsappNumber || ''}
+    />
+  );
 }
 
 function CheckoutRoute() {

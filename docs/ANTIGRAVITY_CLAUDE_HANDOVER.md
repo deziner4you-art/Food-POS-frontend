@@ -130,6 +130,15 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 - Integrated `hasInventoryUnlockPin` into the `StaffPermissions` data fetching logic.
 - Maintained exact component, API patch behavior, and functionality.
 
+## Task — Simplify Website Contact Form + Branch Routing (IMPLEMENTED)
+
+- Removed the manual "Select Target Branch" dropdown from `ContactPage.tsx`.
+- Automatically resolving the branch using the current active website store context (`useStore()`).
+- Inspected backend: No existing WhatsApp or Email API exists; `whatsappNumber` and `contactEmail` are correctly stored in CMS Settings.
+- Implemented email routing using a pre-filled `mailto:` deep link directed to the branch's configured `contactEmail`.
+- Implemented WhatsApp routing using a pre-filled `wa.me/` deep link directed to the branch's configured `whatsappNumber`.
+- Form data (name, email, subject, message) is seamlessly passed into both links.
+
 ## Pending Approved Tasks
 
 **Task 2**
