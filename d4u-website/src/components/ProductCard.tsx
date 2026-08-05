@@ -89,10 +89,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <h3 className="text-lg font-bold text-white font-display line-clamp-1 group-hover:text-[#D4AF37] transition-colors">
             {product.name}
           </h3>
-          <p className="text-xs text-gray-400 mt-1 uppercase tracking-wide">
-            {/* Fallback to MRB code to match mockup if id is long UUID */}
-            {product.id.length > 10 ? 'MRB-' + product.id.substring(0, 4) : product.id}
-          </p>
         </div>
 
         {/* Footer Price & Add To Cart Button */}

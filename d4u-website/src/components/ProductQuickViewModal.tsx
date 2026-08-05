@@ -25,6 +25,16 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
 }) => {
   if (!product) return null;
 
+  // Extra Toppings is offered as its own tab (mirrors the POS's existing
+  // "Pizza Sizes"/"Extra Toppings" SELECT_VARIANT modal) only for pizza
+  // items that also have sizes to choose -- "in variants choosing screen"
+  // per the request. Every other product keeps the existing behavior:
+  // Choose Size and any modifier groups stacked, not tabbed.
+  const hasVariants = !!product.variants && product.variants.length > 0;
+  const isPizza = (product.categoryId || '').toLowerCase().includes('pizza');
+  const showToppingsTab = isPizza && hasVariants;
+  const [activeTab, setActiveTab] = useState<'size' | 'toppings'>('size');
+
   const [quantity, setQuantity] = useState(1);
   const [instructions, setInstructions] = useState('');
   // Sizes default to the first (usually smallest/cheapest) variant, same
@@ -163,15 +173,42 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
               ))}
             </div>
 
-            {/* Choose Size */}
-            {product.variants && product.variants.length > 0 && (
-              <div className="mt-5 space-y-2 border-t border-white/10 pt-4">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-white uppercase tracking-wider font-display">Choose Size</span>
-                  <span className="text-[10px] text-[#D4AF37] font-semibold bg-[#D4AF37]/10 px-2 py-0.5 rounded">Required</span>
+            {/* Pizza with sizes: Choose Size / Extra Toppings as tabs.
+                Everything else keeps the original stacked layout below. */}
+            {showToppingsTab && (
+              <div className="mt-5 border-t border-white/10 pt-4">
+                <div className="flex items-center gap-2 bg-[#1A1A1D] border border-white/10 rounded-xl p-1">
+                  <button
+                    onClick={() => setActiveTab('size')}
+                    className={`flex-1 text-xs font-bold py-2 rounded-lg transition-colors ${
+                      activeTab === 'size' ? 'bg-[#D4AF37] text-black' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Choose Size
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('toppings')}
+                    className={`flex-1 text-xs font-bold py-2 rounded-lg transition-colors ${
+                      activeTab === 'toppings' ? 'bg-[#D4AF37] text-black' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Extra Toppings
+                  </button>
                 </div>
+              </div>
+            )}
+
+            {/* Choose Size */}
+            {hasVariants && (!showToppingsTab || activeTab === 'size') && (
+              <div className={showToppingsTab ? 'mt-4 space-y-2' : 'mt-5 space-y-2 border-t border-white/10 pt-4'}>
+                {!showToppingsTab && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-white uppercase tracking-wider font-display">Choose Size</span>
+                    <span className="text-[10px] text-[#D4AF37] font-semibold bg-[#D4AF37]/10 px-2 py-0.5 rounded">Required</span>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 gap-2">
-                  {product.variants.map((variant) => {
+                  {(product.variants || []).map((variant) => {
                     const isSelected = selectedVariant?.id === variant.id;
                     return (
                       <button
@@ -201,9 +238,17 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
               </div>
             )}
 
+            {/* Extra Toppings tab content -- empty state when this pizza has
+                no modifier groups configured yet (never fabricated). */}
+            {showToppingsTab && activeTab === 'toppings' && (!product.modifierGroups || product.modifierGroups.length === 0) && (
+              <div className="mt-4 text-xs text-gray-500 text-center py-6">
+                No extra toppings configured for this item yet.
+              </div>
+            )}
+
             {/* Modifier Groups */}
-            {product.modifierGroups && product.modifierGroups.length > 0 && (
-              <div className="mt-5 space-y-4 border-t border-white/10 pt-4">
+            {product.modifierGroups && product.modifierGroups.length > 0 && (!showToppingsTab || activeTab === 'toppings') && (
+              <div className={showToppingsTab ? 'mt-4 space-y-4' : 'mt-5 space-y-4 border-t border-white/10 pt-4'}>
                 {product.modifierGroups.map((group) => (
                   <div key={group.id} className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
