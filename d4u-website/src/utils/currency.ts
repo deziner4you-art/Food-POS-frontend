@@ -6,11 +6,10 @@
 export const formatCurrency = (amount: number): string => {
   const currency = typeof window !== 'undefined' ? (window as any).d4u_currency || 'PKR' : 'PKR';
 
-  // D4U does not use currency conversion. The numeric price is the actual selling price in PKR.
-  // Ignore backend 'USD' or other currency labels and format as Rs.
-  // Preserve decimal places if any, otherwise use toLocaleString.
-  if (amount % 1 !== 0) {
-    return `Rs. ${amount.toFixed(2)}`;
-  }
+  if (currency === 'USD') return `$${amount.toFixed(2)}`;
+  if (currency === 'AED') return `AED ${amount.toFixed(2)}`;
+  if (currency === 'GBP') return `£${amount.toFixed(2)}`;
+  if (currency === 'EUR') return `€${amount.toFixed(2)}`;
+
   return `Rs. ${amount.toLocaleString()}`; // Default PKR
 };

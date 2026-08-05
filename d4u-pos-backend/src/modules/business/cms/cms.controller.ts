@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   UseInterceptors,
   UploadedFile,
+  Query,
 } from '@nestjs/common';
 import { RequirePermissions, Public } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -98,8 +99,9 @@ export class CmsController {
 
   @Public()
   @Get('settings')
-  getSettings() {
-    return this.cmsService.getSettings(1);
+  getSettings(@Query('store_id') storeId?: string) {
+    const id = storeId ? parseInt(storeId, 10) : 1;
+    return this.cmsService.getSettings(id);
   }
 
   @RequirePermissions('system.update')

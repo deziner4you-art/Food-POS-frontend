@@ -139,13 +139,14 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 - Implemented WhatsApp routing using a pre-filled `wa.me/` deep link directed to the branch's configured `whatsappNumber`.
 - Form data (name, email, subject, message) is seamlessly passed into both links.
 
-## Task — Fix Website Catalogue Currency Display (IMPLEMENTED)
+## Task — Audit Website Catalogue Currency Source (IMPLEMENTED)
 
-- Investigated the currency formatting glitch in the Website Catalogue (switching to `$`).
-- Found that `d4u-website/src/utils/currency.ts` originally performed dynamic currency symbol conversion based on `window.d4u_currency` which received `'USD'` from some backend brand instances.
-- Modified `d4u-website/src/utils/currency.ts` to explicitly enforce `PKR` / `Rs. ` display uniformly across the website.
-- Ensured strict compliance with the business rule that prices are the actual selling prices and must never be converted dynamically via exchange rates.
-- Preserved exact numeric amounts received from the backend (e.g., Rs. 11.07 and Rs. 2,950).
+- Investigated why Website hydration changed the currency to `$`, while Admin and POS showed `Rs.`.
+- Traced the `Brand` table as the true authoritative source of currency configuration.
+- Discovered a backend bug in `d4u-pos-backend/src/modules/business/cms/cms.controller.ts`: the `@Get('settings')` endpoint was hardcoded to `store_id = 1` and ignored the query string `?store_id=...`. Admin and POS were fetching `1` and defaulting to `PKR`, while Website used `@Get('settings/:store_id')` and correctly retrieved `USD` for Brand 44.
+- Fixed the backend `cms.controller.ts` endpoint to respect `store_id` query parameters.
+- Reverted the previous hardcoded `PKR` fix in `d4u-website/src/utils/currency.ts` so all frontend apps (Website, POS, Admin) use identical dynamic `d4u_currency` logic.
+- Updated the incorrect database `Brand.currency` value from `USD` to `PKR` for the relevant brands, resolving the root cause correctly without breaking exchange-rate logic or multi-currency support.
 
 ## Pending Approved Tasks
 
