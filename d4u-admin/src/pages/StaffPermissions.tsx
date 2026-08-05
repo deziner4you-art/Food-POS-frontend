@@ -3,6 +3,7 @@ import { Users, Shield, Plus, Trash2, Edit2, Check, X, AlertCircle, CheckCircle,
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 import { useAdminContext } from '../context/AdminContext';
 import { apiFetch } from '../utils/api';
+import InventoryPinCard from '../components/cms/modules/InventoryPinCard';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -12,6 +13,7 @@ export default function StaffPermissions() {
   const [branches, setBranches] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasInventoryUnlockPin, setHasInventoryUnlockPin] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
@@ -70,10 +72,11 @@ export default function StaffPermissions() {
       if (activeBrandId) usersUrl += `?brand_id=${activeBrandId}`;
       if (selectedBranchId) usersUrl += (activeBrandId ? '&' : '?') + `store_id=${selectedBranchId}`;
 
-      const [usersRes, storesRes, rolesRes] = await Promise.all([
+      const [usersRes, storesRes, rolesRes, settingsRes] = await Promise.all([
         fetch(usersUrl, { headers }),
         fetch(`${BACKEND_URL}/stores`, { headers }),
-        fetch(`${BACKEND_URL}/users/roles`, { headers })
+        fetch(`${BACKEND_URL}/users/roles`, { headers }),
+        selectedBranchId ? fetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`, { headers }) : Promise.resolve(null)
       ]);
       
       if (usersRes.status === 401 || storesRes.status === 401 || rolesRes.status === 401) {
@@ -97,6 +100,12 @@ export default function StaffPermissions() {
         const d = await rolesRes.json();
         setRoles(Array.isArray(d) ? d : d.data || []);
       }
+      if (settingsRes && settingsRes.ok) {
+        const d = await settingsRes.json();
+        setHasInventoryUnlockPin(!!d.hasInventoryUnlockPin);
+      } else {
+        setHasInventoryUnlockPin(false);
+      }
     } catch (e) {
       customAlert('Could not connect to backend. Is the server running?');
     }
@@ -104,6 +113,28 @@ export default function StaffPermissions() {
   };
 
   useEffect(() => { fetchData(); }, [activeBrandId, selectedBranchId]);
+
+  const handleSaveInventoryPin = async (pin: string): Promise<boolean> => {
+    if (!selectedBranchId) {
+      customAlert('Please select a branch first.');
+      return false;
+    }
+    try {
+      const res = await apiFetch(`/cms/settings/${selectedBranchId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inventoryUnlockPin: pin }),
+      });
+      if (res.ok) {
+        fetchData();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('Failed to save inventory unlock PIN', e);
+      return false;
+    }
+  };
 
   const openModal = (user: any = null) => {
     if (user) {
@@ -286,6 +317,12 @@ export default function StaffPermissions() {
           <Plus size={20} /> Add New Staff
         </button>
       </div>
+
+      {selectedBranchId && (
+        <div className="mb-8">
+          <InventoryPinCard hasPin={hasInventoryUnlockPin} onSave={handleSaveInventoryPin} />
+        </div>
+      )}
 
       {users.length === 0 ? (
         <div className="bg-slate-800 border border-dashed border-slate-600 rounded-2xl p-16 text-center">

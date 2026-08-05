@@ -124,6 +124,12 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 - Live `Open Now`/`Closed` badge implemented authoritatively by connecting the `Store` model to `BusinessDay` with `status: 'OPEN'`. If a store has an active open business day, it shows as "Open Now", otherwise "Closed". This uses real operational state, not browser time.
 - All responsive layout capabilities and the "Get Directions & Reserve Table" button are preserved.
 
+## Task — Move KDS Inventory Unlock PIN UI (IMPLEMENTED)
+
+- Relocated the KDS Inventory Unlock PIN configuration card from `CmsManager.tsx` (Website CMS -> System Modules) to `StaffPermissions.tsx`.
+- Integrated `hasInventoryUnlockPin` into the `StaffPermissions` data fetching logic.
+- Maintained exact component, API patch behavior, and functionality.
+
 ## Pending Approved Tasks
 
 **Task 2**

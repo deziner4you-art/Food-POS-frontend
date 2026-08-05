@@ -9,7 +9,6 @@ import BannerGrid from '../components/cms/banner/BannerGrid';
 import BannerUploadModal from '../components/cms/banner/BannerUploadModal';
 import SettingsForm from '../components/cms/settings/SettingsForm';
 import ModuleToggleList from '../components/cms/modules/ModuleToggleList';
-import InventoryPinCard from '../components/cms/modules/InventoryPinCard';
 import ComingSoonSection from '../components/cms/ComingSoonSection';
 
 // Static feature-flag definitions — same labels/descriptions/keys the
@@ -115,27 +114,6 @@ export default function CmsManager() {
   // selected — not the general settings object, so this can never
   // accidentally overwrite unrelated fields (or, unlike handleToggleModule
   // above, silently write to the wrong branch).
-  const handleSaveInventoryPin = async (pin: string): Promise<boolean> => {
-    if (!selectedBranchId) {
-      customAlert('Please select a branch first.');
-      return false;
-    }
-    try {
-      const res = await apiFetch(`${BACKEND_URL}/cms/settings/${selectedBranchId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inventoryUnlockPin: pin }),
-      });
-      if (res.ok) {
-        fetchSettings();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error('Failed to save inventory unlock PIN', e);
-      return false;
-    }
-  };
 
   // activeBrandId is now derived in AdminContext
 
@@ -356,7 +334,6 @@ export default function CmsManager() {
       {activeTab === 'MODULES' && (
         <div className="flex-1 overflow-y-auto space-y-6">
           <ModuleToggleList modules={MODULE_DEFINITIONS} settings={settings} onToggle={handleToggleModule} />
-          <InventoryPinCard hasPin={!!settings?.hasInventoryUnlockPin} onSave={handleSaveInventoryPin} />
         </div>
       )}
 
