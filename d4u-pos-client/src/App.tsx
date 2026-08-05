@@ -2162,7 +2162,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   )}
                 </div>
               )})}
-              {posSettings.allowCustomItems && (
+              {posSettings.allowCustomItems && !isWaiterMode && (
                 <div
                   onClick={() => setModalType('ADD_CUSTOM_ITEM')}
                   style={{ border: '2px dashed #334155', borderRadius: '15px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'transparent', minHeight: '200px', color: '#cbd5e1', transition: 'all 0.3s' }}
@@ -4377,7 +4377,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       )}
 
       {/* ADD CUSTOM ITEM MODAL */}
-      {modalType === 'ADD_CUSTOM_ITEM' && (
+      {modalType === 'ADD_CUSTOM_ITEM' && !isWaiterMode && (
         <div className="modal-overlay" style={{ zIndex: 10001, background: 'rgba(15, 23, 42, 0.95)' }}>
           <div className="modal-content animate-slide-up" style={{ width: '500px', background: '#0f172a', border: '1px solid #1e293b', padding: '0', borderRadius: '8px', overflow: 'hidden' }}>
             <div className="modal-header" style={{ padding: '15px 20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -101,6 +101,12 @@ Online order rendering remains intact; only un-hydrated POS cards are pushed int
 - Added a small fetch wrapper in App.tsx that injects an Authorization header for in-app fetch calls only when a valid rider token is available. This preserves existing realtime socket behavior and ensures deterministic REST reconciliation on Orders open.
 - Improved HTTP error handling (401/403 -> session re-login; 400 store errors -> session re-login; 5xx/network -> retryable UI). Session invalidation now surfaces an actionable message prompting re-login rather than showing an endless "Unable to load orders." message.
 
+## Task 8A — Remove Custom Item Request from Waiter (IMPLEMENTED)
+
+- Waiters can no longer see the "Submit Product Request" button or access the custom item modal.
+- Disabled custom item requests for Waiter mode (`isWaiterMode`) in `App.tsx`, regardless of the `posSettings.allowCustomItems` setting.
+- The POS behavior remains intact for regular users.
+
 ## Pending Approved Tasks
 
 **Task 2**
