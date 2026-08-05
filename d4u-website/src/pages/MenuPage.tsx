@@ -156,80 +156,80 @@ export const MenuPage: React.FC<MenuPageProps> = ({
         </div>
       </div>
 
-      {/* CATEGORY GROUP ROW -- top-level browsing: pick a group, then a category
-          appears below it, then the product grid on the right reflects both. */}
-      <div className="bg-[#121215] border border-white/10 rounded-2xl p-4 mb-6 space-y-4">
-        <div>
-          <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center justify-between">
-            <span>Category Group</span>
-            <span className="text-[#D4AF37] text-[10px] normal-case tracking-normal">Synced KDS</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {categoryGroups.map((group) => {
-              const isGroupActive = selectedGroupFilter === group.id;
-              return (
-                <button
-                  key={group.id}
-                  onClick={() => {
-                    setSelectedGroupFilter(isGroupActive ? null : group.id);
-                    setSelectedCategoryFilter(null);
-                    setSpecialFilter('all');
-                  }}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
-                    isGroupActive
-                      ? 'bg-[#D4AF37] text-black gold-glow'
-                      : 'bg-[#1A1A1D] text-gray-300 border border-white/10 hover:border-[#D4AF37]/40 hover:text-white'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  {group.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {activeGroupObj && (
-          <div className="pt-3 border-t border-white/10">
+      {/* TOP ROW -- Quick Shortcuts + Search on the left (narrow), Category
+          Group / Category browsing on the right (wide). Both used to live
+          in a persistent left sidebar running the full height of the page;
+          moving them up here frees the sidebar column for the product grid
+          below, which is why that grid can go from 3 to 4 columns. */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+        {/* LEFT: Quick Shortcuts, then Search below it (3 cols) */}
+        <div className="lg:col-span-3 space-y-4">
+          <div className="bg-[#121215] border border-white/10 rounded-2xl p-4 space-y-1.5 shadow-xl">
             <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-              Category — {activeGroupObj.name}
+              Quick Shortcuts
             </div>
-            <div className="flex flex-wrap gap-2">
-              {activeGroupObj.categories.filter((cat) => (cat.itemCount || 0) > 0).length === 0 ? (
-                <span className="text-xs text-gray-500">No categories in this group yet.</span>
-              ) : (
-                activeGroupObj.categories
-                  .filter((cat) => (cat.itemCount || 0) > 0)
-                  .map((cat) => {
-                    const isCatActive = selectedCategoryFilter === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        onClick={() => {
-                          setSelectedCategoryFilter(isCatActive ? null : cat.id);
-                          setSpecialFilter('all');
-                        }}
-                        className={`px-3.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
-                          isCatActive
-                            ? 'bg-[#D4AF37] text-black shadow'
-                            : 'bg-[#1A1A1D] text-gray-400 border border-white/10 hover:text-white hover:border-[#D4AF37]/40'
-                        }`}
-                      >
-                        {cat.name} <span className="opacity-70">({cat.itemCount})</span>
-                      </button>
-                    );
-                  })
-              )}
-            </div>
-          </div>
-        )}
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* LEFT POS SIDEBAR (3 cols) */}
-        <div className="lg:col-span-3 space-y-6">
-          <div className="bg-[#121215] border border-white/10 rounded-2xl p-4 space-y-4 shadow-xl">
-            {/* Search Box in Menu Sidebar */}
+            <button
+              onClick={() => {
+                setSpecialFilter('all');
+                setSelectedGroupFilter(null);
+                setSelectedCategoryFilter(null);
+              }}
+              className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
+                specialFilter === 'all' && !selectedCategoryFilter && !selectedGroupFilter
+                  ? 'bg-[#D4AF37] text-black font-extrabold gold-glow'
+                  : 'bg-[#1A1A1D] text-gray-300 hover:bg-white/5'
+              }`}
+            >
+              <span>All Catalog Items</span>
+              <span className="text-[10px] bg-black/20 px-2 py-0.5 rounded-full">
+                {products.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setSpecialFilter('discounted');
+                setSelectedGroupFilter(null);
+                setSelectedCategoryFilter(null);
+              }}
+              className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
+                specialFilter === 'discounted'
+                  ? 'bg-amber-500 text-black font-extrabold shadow'
+                  : 'bg-[#1A1A1D] text-gray-300 hover:bg-white/5'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Flame className="w-3.5 h-3.5 fill-current" /> Discounted Deals 🔥
+              </span>
+              <span className="text-[10px] bg-black/20 px-2 py-0.5 rounded-full">
+                {products.filter((p) => p.isDiscounted).length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setSpecialFilter('bestsellers');
+                setSelectedGroupFilter(null);
+                setSelectedCategoryFilter(null);
+              }}
+              className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
+                specialFilter === 'bestsellers'
+                  ? 'bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37]'
+                  : 'bg-[#1A1A1D] text-gray-300 hover:bg-white/5'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Star className="w-3.5 h-3.5 fill-current" /> Chef's Bestsellers 👑
+              </span>
+              <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full">
+                {products.filter((p) => p.isBestSeller).length}
+              </span>
+            </button>
+          </div>
+
+          {/* Search Box -- below Quick Shortcuts */}
+          <div className="bg-[#121215] border border-white/10 rounded-2xl p-4 shadow-xl">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
@@ -240,101 +240,105 @@ export const MenuPage: React.FC<MenuPageProps> = ({
                 className="w-full bg-[#1A1A1D] text-white text-xs pl-9 pr-3 py-2 rounded-xl border border-white/10 focus:border-[#D4AF37] outline-none"
               />
             </div>
-
-            {/* Quick Filters */}
-            <div className="space-y-1.5 border-b border-white/10 pb-4">
-              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                Quick Shortcuts
-              </div>
-
-              <button
-                onClick={() => {
-                  setSpecialFilter('all');
-                  setSelectedGroupFilter(null);
-                  setSelectedCategoryFilter(null);
-                }}
-                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
-                  specialFilter === 'all' && !selectedCategoryFilter && !selectedGroupFilter
-                    ? 'bg-[#D4AF37] text-black font-extrabold gold-glow'
-                    : 'bg-[#1A1A1D] text-gray-300 hover:bg-white/5'
-                }`}
-              >
-                <span>All Catalog Items</span>
-                <span className="text-[10px] bg-black/20 px-2 py-0.5 rounded-full">
-                  {products.length}
-                </span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setSpecialFilter('discounted');
-                  setSelectedGroupFilter(null);
-                  setSelectedCategoryFilter(null);
-                }}
-                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
-                  specialFilter === 'discounted'
-                    ? 'bg-amber-500 text-black font-extrabold shadow'
-                    : 'bg-[#1A1A1D] text-gray-300 hover:bg-white/5'
-                }`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <Flame className="w-3.5 h-3.5 fill-current" /> Discounted Deals 🔥
-                </span>
-                <span className="text-[10px] bg-black/20 px-2 py-0.5 rounded-full">
-                  {products.filter((p) => p.isDiscounted).length}
-                </span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setSpecialFilter('bestsellers');
-                  setSelectedGroupFilter(null);
-                  setSelectedCategoryFilter(null);
-                }}
-                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
-                  specialFilter === 'bestsellers'
-                    ? 'bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37]'
-                    : 'bg-[#1A1A1D] text-gray-300 hover:bg-white/5'
-                }`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <Star className="w-3.5 h-3.5 fill-current" /> Chef's Bestsellers 👑
-                </span>
-                <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full">
-                  {products.filter((p) => p.isBestSeller).length}
-                </span>
-              </button>
-            </div>
-
           </div>
         </div>
 
-        {/* MAIN PRODUCT DISPLAY AREA (9 cols) */}
-        <div className="lg:col-span-9 space-y-6">
-          {/* Active Filter Title */}
-          <div className="bg-[#121215] border border-white/10 rounded-2xl p-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-gray-400">Viewing Filter:</span>
-              <span className="text-xs font-bold text-[#D4AF37] bg-[#D4AF37]/10 px-3 py-1 rounded-full border border-[#D4AF37]/30">
-                {activeCategoryObj
-                  ? activeCategoryObj.name
-                  : activeGroupObj
-                  ? activeGroupObj.name
-                  : specialFilter === 'discounted'
-                  ? 'Discounted Deals'
-                  : specialFilter === 'bestsellers'
-                  ? 'Chef Bestsellers'
-                  : 'All Items'}
-              </span>
+        {/* RIGHT: Category Group + Category browsing (9 cols) */}
+        <div className="lg:col-span-9">
+          <div className="bg-[#121215] border border-white/10 rounded-2xl p-4 space-y-4 h-full">
+            <div>
+              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                <span>Category Group</span>
+                <span className="text-[#D4AF37] text-[10px] normal-case tracking-normal">Synced KDS</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {categoryGroups.map((group) => {
+                  const isGroupActive = selectedGroupFilter === group.id;
+                  return (
+                    <button
+                      key={group.id}
+                      onClick={() => {
+                        setSelectedGroupFilter(isGroupActive ? null : group.id);
+                        setSelectedCategoryFilter(null);
+                        setSpecialFilter('all');
+                      }}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+                        isGroupActive
+                          ? 'bg-[#D4AF37] text-black gold-glow'
+                          : 'bg-[#1A1A1D] text-gray-300 border border-white/10 hover:border-[#D4AF37]/40 hover:text-white'
+                      }`}
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      {group.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="text-xs text-gray-400">
-              Showing <span className="text-white font-bold">{sortedProducts.length}</span> dishes
-            </div>
+            {activeGroupObj && (
+              <div className="pt-3 border-t border-white/10">
+                <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                  Category — {activeGroupObj.name}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {activeGroupObj.categories.filter((cat) => (cat.itemCount || 0) > 0).length === 0 ? (
+                    <span className="text-xs text-gray-500">No categories in this group yet.</span>
+                  ) : (
+                    activeGroupObj.categories
+                      .filter((cat) => (cat.itemCount || 0) > 0)
+                      .map((cat) => {
+                        const isCatActive = selectedCategoryFilter === cat.id;
+                        return (
+                          <button
+                            key={cat.id}
+                            onClick={() => {
+                              setSelectedCategoryFilter(isCatActive ? null : cat.id);
+                              setSpecialFilter('all');
+                            }}
+                            className={`px-3.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                              isCatActive
+                                ? 'bg-[#D4AF37] text-black shadow'
+                                : 'bg-[#1A1A1D] text-gray-400 border border-white/10 hover:text-white hover:border-[#D4AF37]/40'
+                            }`}
+                          >
+                            {cat.name} <span className="opacity-70">({cat.itemCount})</span>
+                          </button>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+            )}
           </div>
+        </div>
+      </div>
 
-          {/* Product Grid / List rendering */}
-          {sortedProducts.length === 0 ? (
+      {/* Viewing Filter bar -- stays full width, below the row above */}
+      <div className="bg-[#121215] border border-white/10 rounded-2xl p-4 flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-400">Viewing Filter:</span>
+          <span className="text-xs font-bold text-[#D4AF37] bg-[#D4AF37]/10 px-3 py-1 rounded-full border border-[#D4AF37]/30">
+            {activeCategoryObj
+              ? activeCategoryObj.name
+              : activeGroupObj
+              ? activeGroupObj.name
+              : specialFilter === 'discounted'
+              ? 'Discounted Deals'
+              : specialFilter === 'bestsellers'
+              ? 'Chef Bestsellers'
+              : 'All Items'}
+          </span>
+        </div>
+
+        <div className="text-xs text-gray-400">
+          Showing <span className="text-white font-bold">{sortedProducts.length}</span> dishes
+        </div>
+      </div>
+
+      {/* Product Grid / List -- full width now, 4 columns instead of 3 */}
+      <div className="space-y-6">
+        {sortedProducts.length === 0 ? (
             <div className="bg-[#16130B] border border-white/10 rounded-3xl p-12 text-center space-y-3">
               <UtensilsCrossed className="w-12 h-12 text-gray-600 mx-auto" />
               <h3 className="text-lg font-bold text-white font-display">No dishes match your filter</h3>
@@ -354,7 +358,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({
               </button>
             </div>
           ) : viewLayout === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {sortedProducts.map((product) => (
                 <ProductCard
                   key={product.id}
@@ -434,7 +438,6 @@ export const MenuPage: React.FC<MenuPageProps> = ({
               ))}
             </div>
           )}
-        </div>
       </div>
     </div>
   );
