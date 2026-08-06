@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useMemo, useEffect, type ReactNode } from 'react';
 import type { Category, CategoryGroup, CartItem, CustomerProfile, HeroSlide, Product, Promotion, ProductVariant } from '../types';
 import { BACKEND_URL, useStoreData, useStores } from '../hooks/useStoreData';
+import { getProductDiscount } from '../utils/campaignDiscount';
 
 // Maps D4U's real catalog/banner/campaign shapes onto Stitch's UI-facing
 // Product/Category/HeroSlide/Promotion types. This is a display-shape
@@ -14,7 +15,12 @@ function mapFoodItemToProduct(fi: any): Product {
     name: fi.name,
     shortDescription: fi.description || '',
     fullDescription: fi.description || '',
-    price: fi.priceUSD ?? fi.priceRs ?? 0,
+    // priceUSD (useStoreData.ts) is real_price / 280 -- a leftover from a
+    // pre-PKR version of this site. `?? fi.priceRs` never actually fell back
+    // since priceUSD is always a computed number, never undefined, so every
+    // product on the live site has been displaying (and would have checked
+    // out) at 1/280th its real price. priceRs is the actual catalog price.
+    price: fi.priceRs ?? fi.priceUSD ?? 0,
     rating: 0,
     reviewCount: 0,
     imageUrl: fi.image ? (fi.image.startsWith('http') ? fi.image : `${BACKEND_URL}${fi.image}`) : '',
@@ -385,6 +391,31 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
 
   const products = useMemo(() => (foodItems || []).map(mapFoodItemToProduct), [foodItems]);
 
+  // Live discount badges — was previously an orphaned static field
+  // (product.isDiscounted/discountPercentage/originalPrice were declared in
+  // types.ts and read by ProductCard/MenuPage/ProductQuickViewModal, but
+  // nothing anywhere ever set them, so every badge silently stayed off).
+  // Mirrors POS's cartEngine.getProductDiscount so the same campaign
+  // produces the same % on both surfaces. Overwriting `price` here (not just
+  // adding originalPrice) means the cart/checkout math in StoreContext's own
+  // addToCart (unitPrice = product.price) and cartMath.ts automatically
+  // check out at the discounted price — no changes needed there.
+  const discountedProducts = useMemo<Product[]>(() => {
+    if (!campaigns || campaigns.length === 0) return products;
+    return products.map((p) => {
+      const categoryNumericId = categoryMeta[p.categoryId]?.id;
+      const pct = getProductDiscount(p.price, Number(p.id), categoryNumericId, campaigns, storeId ?? undefined);
+      if (pct <= 0) return p;
+      return {
+        ...p,
+        price: Math.round(p.price * (1 - pct / 100) * 100) / 100,
+        originalPrice: p.price,
+        discountPercentage: pct,
+        isDiscounted: true,
+      };
+    });
+  }, [products, campaigns, categoryMeta, storeId]);
+
   // categoryGroupId here comes from the first product found in that category
   // -- every product sharing a categoryId already shares the same
   // categoryGroupId (both are just the group/category name string stamped
@@ -439,7 +470,7 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       settings,
       orderUpdate,
       riderPosition,
-      products,
+      products: discountedProducts,
       categories,
       categoryGroups,
       heroSlides,
@@ -461,7 +492,7 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       kioskMode,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, riderPosition, products, categories, categoryGroups, heroSlides, promotions, cart, loggedInUser, favoriteProductIds, kioskMode],
+    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, riderPosition, discountedProducts, categories, categoryGroups, heroSlides, promotions, cart, loggedInUser, favoriteProductIds, kioskMode],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

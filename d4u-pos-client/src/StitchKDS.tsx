@@ -218,12 +218,23 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
             id: k.id,
             orderId: k.order_id,
             // Order.orderType doesn't exist -- the real field is
-            // order_source ("WALKIN"/"ONLINE"/etc). Reading the wrong field
-            // meant this was always undefined, so the `|| 'Walk-in'`
-            // fallback fired for every KOT regardless of true source.
+            // order_source ("WALKIN"/"ONLINE"/"Delivery"/"Take Away"/etc).
+            // Reading the wrong field meant this was always undefined, so
+            // the `|| 'Walk-in'` fallback fired for every KOT regardless of
+            // true source. This still collapsed genuine POS-native Delivery
+            // and Take Away orders into 'Walk-in' since only 'ONLINE' was
+            // ever distinguished — the App.tsx local-KOT watcher checks
+            // `kot.type === 'Delivery'` to know whether to feed the Active
+            // Deliveries panel, so a mis-tagged 'Walk-in' order silently
+            // skipped that entirely once this sync overwrote the correct
+            // locally-set type.
             type: k.order?.order_source === 'ONLINE'
               ? (k.order?.onlineOrder?.type === 'PICKUP' ? 'Pickup' : 'Online')
-              : 'Walk-in',
+              : k.order?.order_source?.toUpperCase() === 'DELIVERY'
+                ? 'Delivery'
+                : (k.order?.order_source?.toUpperCase() === 'TAKE AWAY' || k.order?.order_source?.toUpperCase() === 'PICKUP')
+                  ? 'Pickup'
+                  : 'Walk-in',
             customer: k.order?.customer?.name || '',
             customerPhone: k.order?.customer?.phone || '',
             items: k.items ? JSON.stringify(k.items) : '[]',

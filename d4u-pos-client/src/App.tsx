@@ -10,8 +10,9 @@ import { customConfirm } from './utils/alerts';
 import { validateDeliveryCustomerInfo, calculateLoyaltyDiscountPercent, resolveCustomerMode } from './customer/customerEngine';
 import { lookupCustomerByPhone, createCustomer, fetchCustomers } from './pos/api';
 import { getDeviceId, storeTokens, refreshAccessToken } from './pos/session';
+import { formatCurrency } from './utils/currency';
 const socket = io(BACKEND_URL);
-import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, Receipt, LogOut } from 'lucide-react'
+import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, Receipt, LogOut, UtensilsCrossed } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db';
 import KitchenDisplay from './StitchKDS'
@@ -665,6 +666,13 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   lat: ro.delivery?.lat ? ro.delivery.lat + '%' : '50%',
                   lng: ro.delivery?.lng ? ro.delivery.lng + '%' : '50%',
                   items: parsedItems,
+                  // POS-native delivery order (created directly at the POS, not
+                  // via the website) — its bridgeOrderId is a real pos-orders
+                  // Order id, not an OnlineOrder id, so status-progression
+                  // actions below must PATCH /pos-orders/:id/status instead of
+                  // /online-orders/:id. formatPosOrderForRider (backend) sets
+                  // isPos: true precisely so this can be told apart here.
+                  isPos: !!ro.isPos,
                 });
               }
             }
@@ -765,6 +773,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               lat: order.delivery?.lat ? order.delivery.lat + '%' : '50%',
               lng: order.delivery?.lng ? order.delivery.lng + '%' : '50%',
               items: parsedItems,
+              // See the isPos comment on the /rider-orders reconciliation
+              // block above — same reason, same flag, same source field.
+              isPos: !!order.isPos,
             };
             updated.push(newCard);
             
@@ -832,9 +843,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       });
       socket.on('marketing_update', () => {
         if (currentUser?.store_id) {
-          // MARKETING-003 §1/§2: routed through the shared CampaignResolverService (channel=pos)
-          fetch(`${BACKEND_URL}/marketing/campaign?store_id=${currentUser.store_id}&channel=pos`)
-            .then(res => res.json())
+          // MARKETING-003 §1/§2: routed through the shared CampaignResolverService (channel=pos).
+          // GET /marketing/campaign?channel= requires crm.view (staff-only,
+          // unlike the public /marketing/campaign/visible the website uses)
+          // -- this was a bare unauthenticated fetch(), which always 401'd.
+          // With no `res.ok` guard here, setActiveCampaigns got called with
+          // the 401 error body itself (an object, not an array), silently
+          // corrupting activeCampaigns for every consumer (discount badges,
+          // BOGO cards, the Discounted filter, the stacking-block check)
+          // the instant any campaign changed anywhere in the system.
+          apiFetch(`/marketing/campaign?store_id=${currentUser.store_id}&channel=pos`, { auth: true })
+            .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
             .then(setActiveCampaigns)
             .catch(console.error);
         }
@@ -1028,7 +1047,16 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 name: p.name,
                 price: p.price,
                 desc: p.sku || 'No description',
-                img: p.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=300&q=80',
+                // Almost none of this store's 145 products have a real
+                // uploaded image_url. This used to fall back to an external
+                // Unsplash URL -- fine for a handful of cards (one category,
+                // ~5 items), but "All Items" renders the SAME external image
+                // 140+ times at once, which the browser throttles/queues per
+                // host, so most cards stayed blank until they trickled in (if
+                // ever, on a slow/restricted network). No network dependency
+                // now -- the card itself renders a local placeholder icon
+                // when img is empty (see product-img-wrapper below).
+                img: p.image_url || '',
                 variants: p.variants,
                 // Flattened from the raw ProductModifierGroup join rows into
                 // {id, name, is_required, min_selection, max_selection,
@@ -1049,8 +1077,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           });
         }
 
-        // MARKETING-003 §1/§2: routed through the shared CampaignResolverService (channel=pos)
-        const campRes = await fetch(`${BACKEND_URL}/marketing/campaign?store_id=${storeId}&channel=pos`);
+        // MARKETING-003 §1/§2: routed through the shared CampaignResolverService (channel=pos).
+        // Same missing-auth bug as the marketing_update socket handler above
+        // -- this endpoint requires crm.view, so the unauthenticated call
+        // always 401'd and `campRes.ok` was always false, meaning
+        // activeCampaigns silently stayed at its initial [] forever: no
+        // discount badge, no BOGO card, no Discounted-filter match, no
+        // stacking block, ever, on POS, from the very first load.
+        const campRes = await apiFetch(`/marketing/campaign?store_id=${storeId}&channel=pos`, { auth: true });
         if (campRes.ok) setActiveCampaigns(await campRes.json());
 
       } catch (err) {
@@ -1282,6 +1316,76 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     }
 
     const itemsSummary = cart.map(item => `${item.qty}x ${item.name}`).join(', ');
+
+    // Delivery orders must follow the SAME kitchen -> rider pipeline as
+    // Website orders (KotsService.updateKotStatus already has a dedicated
+    // order_source === 'DELIVERY' branch that broadcasts the Rider offer and
+    // feeds the POS's own Active Deliveries panel the instant the KOT is
+    // marked READY) — but that only fires for a genuine backend Order+KOT.
+    // The local-only db.kots path below never creates one: it's flushed by
+    // the offline-sync engine (PosOrdersService.syncOfflineOrders) as a bare
+    // Order with no linked KOT row at all, order_source hardcoded to
+    // 'OFFLINE_SYNC', and status jumped straight to DELIVERED/PAID the
+    // instant it syncs — the order is marked "delivered" without ever
+    // entering the kitchen/rider workflow. Try the real endpoint first here,
+    // exactly like the Pay Now flow already does a few hundred lines down;
+    // fall back to the existing local-only KOT (unchanged, still needed for
+    // genuine offline order-taking) only if that network call fails.
+    if (orderType === 'Delivery') {
+      try {
+        const res = await apiFetch('/pos-orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          auth: true,
+          body: JSON.stringify({
+            store_id: currentUser.store_id,
+            created_by: currentUser?.id || 1,
+            customer_id: resolvedCustomerId,
+            order_source: 'Delivery',
+            delivery_address: customerAddress,
+            notes: orderNotes,
+            items: cart.map((i: any) => ({
+              product_id: i.id || 1,
+              variant_id: i.variant_id,
+              quantity: i.qty,
+              price: i.price,
+              special_inst: i.modifiers?.length > 0 ? i.modifiers.map((m: any) => `+ ${m.name}`).join(', ') : '',
+            })),
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.message || `Order failed (HTTP ${res.status})`);
+
+        if (posSettings.kotMode === 'PRINT' && posSettings.kotPrintQty > 0) {
+          setPrintData({
+            type: 'KOT',
+            data: {
+              orderId: data?.id,
+              type: 'Delivery',
+              customer: customerName,
+              customerPhone,
+              customerAddress,
+              items: itemsSummary,
+              notes: orderNotes,
+              timePlaced: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              totalAmount: grandTotal,
+              paymentMethod: paymentMethod === 'Split' ? `Split (Cash: ${splitCash}, Card: ${splitCard})` : paymentMethod,
+              isDuplicate: false,
+              time: new Date().toLocaleString(),
+            },
+            printCount: posSettings.kotPrintQty,
+          });
+        }
+        setCart([]);
+        setOrderNotes('');
+        setToast({ message: `Delivery Order #${data?.id} sent to Kitchen!`, type: 'success' });
+        return;
+      } catch (e) {
+        console.error('Delivery KOT backend create failed, falling back to local:', e);
+        // Fall through to the local-only path below (genuine offline case).
+      }
+    }
+
     const nextOrderId = Math.floor(Math.random() * 100000);
 
     const newKot = {
@@ -1499,26 +1603,13 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [promotionOverrideActive, setPromotionOverrideActive] = useState(false);
   const [pendingOverrideReason, setPendingOverrideReason] = useState<'discount' | 'promotion_block' | null>(null);
 
-  const trackBlockedDiscount = (event: 'blocked_coupon' | 'blocked_loyalty') => {
-    const blockingCampaign = activeCampaigns.find(c => cart.some(item => cartEngine.hasActiveCompanyPromotion(item, [c], currentUser?.store_id)));
-    if (blockingCampaign) {
-      fetch(`${BACKEND_URL}/marketing/analytics/${blockingCampaign.id}/${event}`, { method: 'POST' }).catch(() => {});
-    }
-  };
-
   const handleDiscountChange = (val: string) => {
     const newVal = Number(val);
-    if (newVal > 0 && cartHasCompanyPromotion() && !promotionOverrideActive) {
-      trackBlockedDiscount('blocked_coupon');
-      if (posSettings.discountPassword) {
-        setPendingDiscount(val);
-        setPendingOverrideReason('promotion_block');
-        setModalType('DISCOUNT_AUTH');
-      } else {
-        setToast({ message: 'Company Promotion Active. Additional discounts cannot be applied.', type: 'error' });
-      }
-      return;
-    }
+    // Per-item promotion priority (cartEngine.calculateOrderTotals): a
+    // discount% typed here is now automatically scoped to only the
+    // non-promotional cart lines, so it's no longer all-or-nothing — no
+    // block needed just because SOME item in the cart happens to carry a
+    // company promotion. The bill summary shows which items were excluded.
     if (newVal > discountPercent && posSettings.discountPassword) {
       setPendingDiscount(val);
       setPendingOverrideReason('discount');
@@ -1532,15 +1623,35 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   // CRM History Modal State
   const [crmHistoryModal, setCrmHistoryModal] = useState<any>(null); // holds customer data
+  const [crmHistoryTab, setCrmHistoryTab] = useState<'orders' | 'wishlist' | 'addresses' | 'loyalty'>('orders');
+  // Same tier thresholds as the website's deriveLoyaltyTier (App.tsx) --
+  // kept in sync intentionally so a customer sees the same tier label
+  // whether a cashier looks them up here or they check the website.
+  const deriveLoyaltyTierLabel = (points: number) => (points >= 2000 ? 'VIP' : points >= 500 ? 'Platinum Member' : 'Gold Member');
 
   const handleViewCustomerHistory = async (id: number | string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/customers/${id}/orders`, {
-        headers: { 'Authorization': `Bearer ${user.token}` }
-      });
+      // `user.token` was never a real variable in this scope -- every call
+      // threw ReferenceError, silently caught below as a generic toast, so
+      // this modal never actually loaded from either of its two entry
+      // points (checkout sidebar's "View History", and now the CRM grid).
+      const res = await apiFetch(`/customers/${id}/orders`, { auth: true });
       if (!res.ok) throw new Error('History fetch failed');
       const data = await res.json();
-      setCrmHistoryModal(data);
+      // Wishlist -- same public endpoint the website's Account page uses,
+      // resolved against the already-loaded local catalog for name/image.
+      let favoriteProducts: any[] = [];
+      try {
+        const favRes = await apiFetch(`/online-orders/favorites/${id}`, { auth: true });
+        if (favRes.ok) {
+          const favProductIds: number[] = await favRes.json();
+          const catalog = await db.products.toArray();
+          favoriteProducts = favProductIds
+            .map((pid) => catalog.find((p) => p.id === pid))
+            .filter(Boolean);
+        }
+      } catch { /* wishlist is additive -- history still shows without it */ }
+      setCrmHistoryModal({ ...data, favoriteProducts });
       setModalType('CUSTOMER_HISTORY');
     } catch (e) {
       setToast({ message: 'Failed to load order history', type: 'error' });
@@ -1557,22 +1668,25 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     totalDiscountAmount, afterDiscount, tax, grandTotal, giftApplications
   } = cartEngine.calculateOrderTotals(cart, activeCampaigns, currentUser?.store_id, discountPercent);
 
-  const crmCustomersRaw = useLiveQuery(() => db.crmCustomers.toArray()) || [];
-  const crmCustomers = crmCustomersRaw.length > 0 ? crmCustomersRaw : [];
-
+  // CRM customer list -- was previously 3 hardcoded demo customers in a
+  // local-only Dexie table (db.crmCustomers), completely disconnected from
+  // the real Customer table every other CRM/checkout/website surface reads
+  // and writes. Now the same real, synchronized data everywhere else uses.
+  const [crmCustomers, setCrmCustomers] = useState<any[]>([]);
+  const refreshCrmCustomers = () => {
+    if (!currentUser?.brand_id || !currentUser?.store_id) return;
+    fetchCustomers({ brandId: currentUser.brand_id, storeId: currentUser.store_id })
+      .then(setCrmCustomers)
+      .catch(() => setCrmCustomers([]));
+  };
   useEffect(() => {
-    if (crmCustomersRaw.length === 0) {
-      db.crmCustomers.bulkAdd([
-        { id: 'c1', name: 'John Doe',     phone: '03001234567', email: 'john@example.com',    points: 450  },
-        { id: 'c2', name: 'Ayesha Khan',  phone: '03129876543', email: 'ayesha@example.com',  points: 1200 },
-        { id: 'c3', name: 'Zainab Ahmed', phone: '03334567890', email: 'zainab@example.com',  points: 80   },
-      ]).catch(() => {});
-    }
-  }, [crmCustomersRaw.length]);
+    refreshCrmCustomers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.brand_id, currentUser?.store_id]);
 
   const [crmSearch, setCrmSearch] = useState('');
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '' });
+  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '' });
 
   const [liveCustomer, setLiveCustomer] = useState<any>(null);
   const [redeemedPoints, setRedeemedPoints] = useState(0);
@@ -1639,6 +1753,36 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       if (addresses.length === 1) setCustomerAddress(addresses[0].address);
     }
   }, [liveCustomer]);
+
+  // "+ Enter a different address" used to be a one-off override that never
+  // saved anywhere -- next order, the cashier had to type it again. Persists
+  // via the same public POST /online-orders/addresses endpoint the website's
+  // own Account page already uses, so an address added here is immediately
+  // available on the website too (and vice versa), not just this one order.
+  const [newAddressLabel, setNewAddressLabel] = useState('');
+  const [saveNewAddress, setSaveNewAddress] = useState(true);
+
+  const persistNewDeliveryAddress = async (): Promise<void> => {
+    if (!liveCustomer?.id || !saveNewAddress || !customerAddress.trim() || !newAddressLabel.trim()) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/online-orders/addresses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: liveCustomer.id,
+          label: newAddressLabel.trim(),
+          address: customerAddress.trim(),
+          is_default: (liveCustomer.addresses || []).length === 0,
+        }),
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        setLiveCustomer((prev: any) => prev ? { ...prev, addresses: [...(prev.addresses || []), saved] } : prev);
+      }
+    } catch (e) {
+      console.error('Failed to save new delivery address', e);
+    }
+  };
 
   if (window.location.pathname === '/kitchen') {
     // Was rendering with no props at all, so the branch name never had a
@@ -1985,50 +2129,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         {/* HOME (POS) VIEW */}
         {activeMenu === 'Home' && (
           <>
-            {activeCampaigns.some(c => c.published_pos) && (
-              <div className="mb-4 flex gap-4 overflow-x-auto pb-2 snap-x" style={{ scrollbarWidth: 'none' }}>
-                {activeCampaigns.filter(c => c.published_pos).map(camp => {
-                  const msLeft = camp.end_date ? new Date(camp.end_date).getTime() - Date.now() : null;
-                  const isLimitedOffer = msLeft !== null && msLeft > 0 && msLeft < 24 * 60 * 60 * 1000;
-                  const hoursLeft = msLeft ? Math.floor(msLeft / 3600000) : 0;
-                  const minsLeft = msLeft ? Math.floor((msLeft % 3600000) / 60000) : 0;
-                  return (
-                  <div key={camp.id} className="min-w-[300px] h-32 rounded-2xl overflow-hidden relative shadow-lg snap-start flex-shrink-0 bg-gradient-to-r from-[#ec4899] to-[#8b5cf6] flex items-center p-6 text-white cursor-pointer hover:scale-[1.02] transition-transform" onClick={() => {
-                     fetch(`${BACKEND_URL}/marketing/analytics/${camp.id}/offer_click`, { method: 'POST' }).catch(()=>{});
-                  }}>
-                    {camp.image_url && (
-                      <img src={`${BACKEND_URL}${camp.image_url}`} className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-overlay" alt={camp.title} />
-                    )}
-                    {isLimitedOffer && (
-                      <div style={{ position: 'absolute', top: '8px', right: '8px', background: '#ef4444', color: 'white', fontSize: '0.65rem', fontWeight: '900', padding: '3px 8px', borderRadius: '10px', zIndex: 10 }}>
-                        LIMITED OFFER
-                      </div>
-                    )}
-                    <div className="relative z-10">
-                      <div className="text-3xl font-black mb-1 drop-shadow-md">SALE — {camp.discount_pct}% OFF</div>
-                      <div className="text-sm font-bold drop-shadow opacity-90 line-clamp-1">{camp.title}</div>
-                      {camp.show_countdown && msLeft !== null && msLeft > 0 && (
-                        <div className="text-xs font-bold mt-1 opacity-90">Ends in {hoursLeft}h {minsLeft}m</div>
-                      )}
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            )}
-            {cartEngine.getActiveBogoCampaigns(activeCampaigns).length > 0 && (
-              <div className="mb-4" style={{ marginBottom: '16px' }}>
-                <div style={{ color: '#fbbf24', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '6px' }}>🎁 BOGO Deals</div>
-                <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
-                  {cartEngine.getActiveBogoCampaigns(activeCampaigns).map(camp => (
-                    <div key={camp.id} style={{ minWidth: '220px', flexShrink: 0, background: 'linear-gradient(135deg, #f59e0b, #d97706)', borderRadius: '10px', padding: '10px 14px', color: 'black' }}>
-                      <div style={{ fontWeight: '900', fontSize: '0.8rem' }}>BUY {camp.buy_qty} GET {camp.reward_qty} {camp.reward_type === 'PERCENTAGE' ? `${camp.discount_pct}% OFF` : 'FREE'}</div>
-                      <div style={{ fontSize: '0.7rem', opacity: 0.85 }}>{camp.title}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* The promotional "SALE — X% OFF" banner carousel and the
+                always-visible "BOGO Deals" strip used to render here on
+                every view (All Items, every category, etc.) the moment any
+                campaign existed -- that marketing-style promo placement
+                belongs on the customer-facing website, not the cashier's
+                working screen. BOGO offers are still fully available to the
+                cashier: they render as offer cards inside the Discounted
+                filter (activeCategoryId === 'DISCOUNT', in the product grid
+                below), consistent with every other discounted item. */}
             {/* Product search -- filter logic already existed (searchQuery/setSearchQuery
                 below), there was simply no input for the cashier to type into. */}
             <div style={{ position: 'relative', marginBottom: '12px' }}>
@@ -2138,6 +2247,49 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             </div>
             )}
             <div className="product-grid">
+              {/* BOGO offer cards -- combines the campaign's buy+get products into
+                  one written offer, shown only in the Discounted section (not as a
+                  badge on the raw buy/get products themselves). Adding it puts both
+                  real products in the cart; cartEngine's existing applyBogoRewards
+                  automatically discounts the get-item once both are present -- no
+                  new reward math here. */}
+              {activeCategoryId === 'DISCOUNT' && cartEngine.getActiveBogoCampaigns(activeCampaigns)
+                .filter((c: any) => c.buyProduct && c.getProduct)
+                .map((camp: any) => (
+                  <div
+                    key={`bogo-${camp.id}`}
+                    className="product-card"
+                    onClick={() => {
+                      for (let i = 0; i < (camp.buy_qty || 1); i++) addToCart(camp.buyProduct);
+                      for (let i = 0; i < (camp.reward_qty || 1); i++) addToCart(camp.getProduct);
+                      setToast({ message: `Added: Buy ${camp.buyProduct.name} Get ${camp.getProduct.name}!`, type: 'success' });
+                    }}
+                    style={{ position: 'relative', cursor: 'pointer' }}
+                  >
+                    <div style={{
+                      position: 'absolute', top: '10px', left: '0',
+                      background: 'linear-gradient(135deg, #ec4899, #be185d)',
+                      color: 'white', fontWeight: '900', fontSize: '0.72rem',
+                      padding: '4px 10px 4px 8px', borderRadius: '0 20px 20px 0',
+                      zIndex: 10, letterSpacing: '0.05em',
+                    }}>
+                      🎁 BOGO
+                    </div>
+                    <div className="product-img-wrapper">
+                      {camp.buyProduct.image_url ? (
+                        <img src={camp.buyProduct.image_url} alt={camp.buyProduct.name} className="product-img" />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                          <UtensilsCrossed size={22} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="product-name">
+                      Buy {camp.buyProduct.name} Get {camp.getProduct.name}{camp.reward_type === 'PERCENTAGE' ? ` (${camp.discount_pct}% OFF)` : ' FREE'}
+                    </div>
+                    <div className="product-price-badge">Rs. {camp.buyProduct.price}</div>
+                  </div>
+                ))}
               {products.filter(prod => {
                 if (activeCategoryId === 0 && prod.categories?.some((c:any) => ['extra toppings', 'add-ons', 'addons'].includes((c.name || '').toLowerCase()))) return false;
                 if (searchQuery && !prod.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -2191,7 +2343,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       BOGO
                     </div>
                   )}
-                  <div className="product-img-wrapper"><img src={prod.img || ''} alt={prod.name} className="product-img" /></div>
+                  <div className="product-img-wrapper">
+                    {prod.img ? (
+                      <img src={prod.img} alt={prod.name} className="product-img" />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                        <UtensilsCrossed size={22} />
+                      </div>
+                    )}
+                  </div>
                   <div className="product-name">{prod.name}</div>
                   <div className="product-price-badge" style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'center' }}>
                     {discount > 0 && !(prod.variants && prod.variants.length > 0) && (
@@ -2360,7 +2520,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '10px' }}>
                       <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--accent-green)' }}>
-                        {order.totalAmount ? `$${order.totalAmount}` : '—'}
+                        {order.totalAmount ? formatCurrency(Number(order.totalAmount)) : '—'}
                       </div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Pending Approval</div>
                     </div>
@@ -2701,7 +2861,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const res = await apiFetch(`/online-orders/${del.bridgeOrderId}`, {
+                                  const res = await apiFetch(del.isPos ? `/pos-orders/${del.bridgeOrderId}/status` : `/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ status: 'RIDER_ARRIVED' }),
@@ -2726,7 +2886,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                 const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(del.items);
                                 setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
                                 try {
-                                  const res = await apiFetch(`/online-orders/${del.bridgeOrderId}`, {
+                                  const res = await apiFetch(del.isPos ? `/pos-orders/${del.bridgeOrderId}/status` : `/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ status: 'PRINT_BILL' }),
@@ -2749,7 +2909,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const res = await apiFetch(`/online-orders/${del.bridgeOrderId}`, {
+                                  const res = await apiFetch(del.isPos ? `/pos-orders/${del.bridgeOrderId}/status` : `/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ status: 'DISPATCHED' }), // rider confirming pickup in the Rider app advances this to OUT_FOR_DELIVERY
@@ -2778,7 +2938,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               <button className="btn-action btn-order" style={{ padding: '8px 16px', fontSize: '0.75rem', width: 'auto', flex: 'none' }}
                                 onClick={async () => {
                                   try {
-                                    const res = await apiFetch(`/online-orders/${del.bridgeOrderId}`, {
+                                    const res = await apiFetch(del.isPos ? `/pos-orders/${del.bridgeOrderId}/status` : `/online-orders/${del.bridgeOrderId}`, {
                                       method: 'PATCH',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ status: 'SETTLED' }),
@@ -2938,15 +3098,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               />
             </div>
 
-            {/* Cards Grid */}
+            {/* Cards Grid -- real, synchronized customer data (same Customer
+                table the website's Account page and POS checkout already
+                read/write). Click a card to open the same order
+                history/wishlist/addresses/loyalty view available at
+                checkout ("View History"), now reachable from here too. */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
               {crmCustomers
                 .filter(c => {
                   const q = crmSearch.toLowerCase();
-                  return !q || c.name.toLowerCase().includes(q) || c.phone.includes(q) || c.email.toLowerCase().includes(q);
+                  return !q || c.name.toLowerCase().includes(q) || c.phone.includes(q);
                 })
                 .map(customer => (
-                  <div key={customer.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px', transition: 'border-color 0.2s' }}
+                  <div key={customer.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px', transition: 'border-color 0.2s', cursor: 'pointer' }}
+                    onClick={() => handleViewCustomerHistory(customer.id)}
                     onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(255,183,3,0.4)')}
                     onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
                   >
@@ -2966,20 +3131,27 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                         <Phone size={14} /> <span>{customer.phone}</span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                        <span>{customer.email}</span>
-                      </div>
+                      {(customer.addresses?.length ?? 0) > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                          <MapPin size={14} /> <span>{customer.addresses.length} saved address{customer.addresses.length > 1 ? 'es' : ''}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Bottom row: points + button */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '0.95rem' }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                        {customer.points} Pts
+                        {customer.loyalty_points ?? 0} Pts
                       </div>
                       <button
-                        onClick={() => setToast({ message: `${customer.name} attached to current order!`, type: 'success' })}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCustomerPhone(customer.phone);
+                          setCustomerName(customer.name);
+                          setLiveCustomer(customer);
+                          setToast({ message: `${customer.name} attached to current order!`, type: 'success' });
+                        }}
                         style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', padding: '7px 18px', fontSize: '0.78rem', fontWeight: 'bold', letterSpacing: '0.5px', cursor: 'pointer', transition: 'all 0.2s' }}
                         onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-yellow)'; e.currentTarget.style.color = 'var(--accent-yellow)'; }}
                         onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'white'; }}
@@ -2989,6 +3161,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     </div>
                   </div>
                 ))}
+              {crmCustomers.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', gridColumn: '1 / -1', textAlign: 'center', padding: '40px 0' }}>
+                  No customers yet. New ones appear here automatically once they order from POS or the website.
+                </div>
+              )}
             </div>
 
             {/* New Customer Modal */}
@@ -2997,17 +3174,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 <div className="modal-content animate-slide-up" style={{ width: '420px' }}>
                   <div className="modal-header">
                     <h2><Users size={20} style={{ display: 'inline', marginRight: '8px' }} />New Customer</h2>
-                    <X size={22} style={{ cursor: 'pointer' }} onClick={() => { setShowNewCustomerForm(false); setNewCustomer({ name: '', phone: '', email: '' }); }} />
+                    <X size={22} style={{ cursor: 'pointer' }} onClick={() => { setShowNewCustomerForm(false); setNewCustomer({ name: '', phone: '' }); }} />
                   </div>
                   <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    {(['name', 'phone', 'email'] as const).map(field => (
+                    {(['name', 'phone'] as const).map(field => (
                       <div key={field}>
                         <label style={{ display: 'block', marginBottom: '5px', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'capitalize' }}>{field}</label>
                         <input
                           type="text"
                           value={newCustomer[field]}
                           onChange={e => setNewCustomer(prev => ({ ...prev, [field]: e.target.value }))}
-                          placeholder={field === 'phone' ? '+92 300 0000000' : field === 'email' ? 'name@example.com' : 'Full Name'}
+                          placeholder={field === 'phone' ? '+92 300 0000000' : 'Full Name'}
                           style={{ width: '100%', padding: '11px 14px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: 'var(--radius-sm)', outline: 'none', fontSize: '0.9rem' }}
                         />
                       </div>
@@ -3015,13 +3192,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     <button
                       className="btn-action btn-order"
                       style={{ marginTop: '6px', padding: '13px' }}
-                      onClick={() => {
+                      onClick={async () => {
                         if (!newCustomer.name || !newCustomer.phone) { setToast({ message: 'Name and Phone are required', type: 'error' }); return; }
-                        const nextId = `c${Date.now()}`;
-                        db.crmCustomers.add({ id: nextId, ...newCustomer, points: 0 });
-                        setToast({ message: `${newCustomer.name} added to CRM!`, type: 'success' });
-                        setShowNewCustomerForm(false);
-                        setNewCustomer({ name: '', phone: '', email: '' });
+                        try {
+                          await createCustomer({ brand_id: currentUser.brand_id, phone: newCustomer.phone, name: newCustomer.name });
+                          setToast({ message: `${newCustomer.name} added to CRM!`, type: 'success' });
+                          setShowNewCustomerForm(false);
+                          setNewCustomer({ name: '', phone: '' });
+                          refreshCrmCustomers();
+                        } catch (e) {
+                          setToast({ message: 'Failed to create customer — phone number may already be registered.', type: 'error' });
+                        }
                       }}
                     >
                       ADD CUSTOMER
@@ -3379,11 +3560,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     </button>
                     <button
                       onClick={() => {
-                        if (cartHasCompanyPromotion() && !promotionOverrideActive) {
-                          trackBlockedDiscount('blocked_loyalty');
-                          setToast({ message: 'Company Promotion Active. Additional discounts cannot be applied.', type: 'error' });
-                          return;
-                        }
+                        // Per-item promotion priority: loyalty redemption
+                        // shares discountPercent with the manual bill
+                        // discount, and cartEngine.calculateOrderTotals
+                        // already scopes it to non-promotional lines only —
+                        // no block needed here either.
                         if (liveCustomer.loyalty_points > 0) {
                           setDiscountPercent(0);
                           const pointValue = (window as any).d4u_loyalty_point_value ?? 0;
@@ -3450,7 +3631,13 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           <div className="cart-items-list">
             {cart.map(item => (
               <div key={item.id} className="cart-item">
-                <img src={item.img || ''} className="cart-item-img" alt={item.name} />
+                {item.img ? (
+                  <img src={item.img} className="cart-item-img" alt={item.name} />
+                ) : (
+                  <div className="cart-item-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', background: '#1a1a24' }}>
+                    <UtensilsCrossed size={16} />
+                  </div>
+                )}
                 <div className="cart-item-details">
                   <div className="cart-item-name">{item.name}</div>
                   <div className="cart-qty-controls">
@@ -3501,19 +3688,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 <span>🎁 FREE ITEM: {giftApplications[0]?.giftProductName}</span><span>-Rs. {giftDiscountAmount.toFixed(2)}</span>
               </div>
             )}
-            {/* MARKETING-003 §8 — Promotion Stack Explainer: shows the customer/cashier WHY additional discounts are blocked or overridden. */}
+            {/* MARKETING-003 §8 — Promotion Stack Explainer: shows the customer/cashier WHY the manual discount/loyalty redemption isn't reducing every line. Per-item, not all-or-nothing — cartEngine.calculateOrderTotals scopes discountPercent to only the non-promotional lines automatically. */}
             {cartHasCompanyPromotion() && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '4px 0' }}>
                 <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '2px 6px', borderRadius: '10px', background: 'rgba(236,72,153,0.15)', color: '#ec4899' }}>Company Promotion Applied</span>
-                {!promotionOverrideActive && (
-                  <>
-                    <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '2px 6px', borderRadius: '10px', background: 'rgba(148,163,184,0.15)', color: '#94a3b8' }}>Coupon Disabled</span>
-                    <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '2px 6px', borderRadius: '10px', background: 'rgba(148,163,184,0.15)', color: '#94a3b8' }}>Loyalty Disabled</span>
-                  </>
-                )}
-                {promotionOverrideActive && (
-                  <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '2px 6px', borderRadius: '10px', background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>Manager Override Applied</span>
-                )}
+                <span style={{ fontSize: '0.62rem', fontWeight: 700, padding: '2px 6px', borderRadius: '10px', background: 'rgba(148,163,184,0.15)', color: '#94a3b8' }}>Discount/Loyalty apply to non-promo items only</span>
               </div>
             )}
             {!isWaiterMode && (
@@ -4287,16 +4466,34 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     ))}
                   </div>
                 ) : (
-                  <textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} placeholder="House #, Street, Block, Area..." rows={3} style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none', resize: 'none' }} />
+                  <>
+                    <textarea value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} placeholder="House #, Street, Block, Area..." rows={3} style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none', resize: 'none' }} />
+                    {liveCustomer?.id && (
+                      <div style={{ marginTop: '10px' }}>
+                        <input
+                          type="text"
+                          value={newAddressLabel}
+                          onChange={e => setNewAddressLabel(e.target.value)}
+                          placeholder="Label this address (e.g. Home, Office)"
+                          style={{ width: '100%', padding: '10px 12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', outline: 'none', marginBottom: '8px', fontSize: '0.85rem' }}
+                        />
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={saveNewAddress} onChange={e => setSaveNewAddress(e.target.checked)} />
+                          Save this address to {liveCustomer.name || 'the customer'}'s profile
+                        </label>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
-              <button className="btn-action btn-save" onClick={() => {
+              <button className="btn-action btn-save" onClick={async () => {
                 const validation = validateDeliveryCustomerInfo('Delivery', customerName, customerAddress, customerPhone);
                 if (!validation.valid) {
                   setToast({ message: validation.message || 'All fields are required!', type: 'error' });
                   return;
                 }
+                if (useManualDeliveryAddress) await persistNewDeliveryAddress();
                 setModalType('NONE');
                 setShowCustomerDropdown(false);
                 if (pendingDeliveryAction === 'KOT') handleCreateKOT();
@@ -4308,46 +4505,110 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         </div>
       )}
 
-      {/* CUSTOMER ORDER HISTORY MODAL — finishes a previously half-built
-          feature: handleViewCustomerHistory/crmHistoryModal already called
-          the real GET /customers/:id/orders endpoint correctly, but nothing
-          triggered it or rendered the result. This is that missing piece. */}
+      {/* CUSTOMER HISTORY MODAL — same 4 sections as the website's Account
+          page (Order History / Wishlist / Delivery Addresses / Loyalty
+          Rewards), same underlying data, POS's own dark styling (not a
+          visual reskin of the website). */}
       {modalType === 'CUSTOMER_HISTORY' && crmHistoryModal && (
         <div className="modal-overlay" style={{ zIndex: 10002 }}>
-          <div className="modal-content animate-slide-up" style={{ width: '500px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="modal-content animate-slide-up" style={{ width: '520px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
             <div className="modal-header">
-              <h2><Clock size={24} color="#4edea3" /> Order History — {crmHistoryModal.name}</h2>
-              <X size={24} style={{ cursor: 'pointer' }} onClick={() => { setModalType('NONE'); setCrmHistoryModal(null); }} />
+              <h2><Clock size={24} color="#4edea3" /> {crmHistoryModal.name}</h2>
+              <X size={24} style={{ cursor: 'pointer' }} onClick={() => { setModalType('NONE'); setCrmHistoryModal(null); setCrmHistoryTab('orders'); }} />
             </div>
-            <div style={{ padding: '20px', overflowY: 'auto' }}>
-              <div style={{ marginBottom: '16px', display: 'flex', gap: '16px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <span>{crmHistoryModal.phone}</span>
-                <span>Loyalty Points: <b style={{ color: '#fbbf24' }}>{crmHistoryModal.loyalty_points}</b></span>
-              </div>
-              {(crmHistoryModal.addresses || []).length > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 'bold' }}>Saved Addresses</div>
-                  {crmHistoryModal.addresses.map((a: any) => (
-                    <div key={a.id} style={{ fontSize: '0.8rem', color: 'white', marginBottom: '4px' }}>
-                      <b>{a.label}:</b> {a.address}
+            <div style={{ padding: '16px 20px 0', display: 'flex', gap: '16px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <span>{crmHistoryModal.phone}</span>
+              <span>Loyalty Points: <b style={{ color: '#fbbf24' }}>{crmHistoryModal.loyalty_points ?? 0}</b></span>
+              <span style={{ color: '#fbbf24' }}>👑 {deriveLoyaltyTierLabel(crmHistoryModal.loyalty_points ?? 0)}</span>
+            </div>
+
+            {/* Tab bar -- same 4 sections as the website's Account page */}
+            <div style={{ display: 'flex', gap: '8px', padding: '14px 20px 0', borderBottom: '1px solid var(--border-color)', overflowX: 'auto' }}>
+              {([
+                ['orders', 'Order History', Clock],
+                ['wishlist', 'Wishlist', MessageCircle],
+                ['addresses', 'Delivery Addresses', MapPin],
+                ['loyalty', 'Loyalty Rewards', Check],
+              ] as const).map(([key, label, Icon]) => (
+                <button
+                  key={key}
+                  onClick={() => setCrmHistoryTab(key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '0.75rem', fontWeight: 'bold',
+                    borderRadius: '8px 8px 0 0', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+                    background: crmHistoryTab === key ? 'var(--bg-panel)' : 'transparent',
+                    color: crmHistoryTab === key ? 'var(--accent-yellow)' : 'var(--text-muted)',
+                  }}
+                >
+                  <Icon size={13} /> {label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+              {crmHistoryTab === 'orders' && (
+                <>
+                  {[...(crmHistoryModal.orders || []), ...(crmHistoryModal.onlineOrders || [])]
+                    .sort((a: any, b: any) => b.id - a.id)
+                    .map((o: any) => (
+                      <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}>
+                        <div>
+                          <div style={{ color: 'white', fontWeight: 'bold' }}>Order #{o.id}</div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{o.status}</div>
+                        </div>
+                        <div style={{ color: '#4edea3', fontWeight: 'bold' }}>Rs. {o.total_amount ?? o.totalAmount ?? 0}</div>
+                      </div>
+                    ))}
+                  {(!crmHistoryModal.orders || crmHistoryModal.orders.length === 0) && (!crmHistoryModal.onlineOrders || crmHistoryModal.onlineOrders.length === 0) && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No past orders yet.</div>
+                  )}
+                </>
+              )}
+
+              {crmHistoryTab === 'wishlist' && (
+                <>
+                  {(crmHistoryModal.favoriteProducts || []).map((p: any) => (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid var(--border-color)' }}>
+                      {p.img ? (
+                        <img src={p.img} alt={p.name} style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                          <UtensilsCrossed size={16} />
+                        </div>
+                      )}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ color: 'white', fontSize: '0.85rem', fontWeight: 'bold' }}>{p.name}</div>
+                        <div style={{ color: '#fbbf24', fontSize: '0.8rem' }}>Rs. {p.price}</div>
+                      </div>
                     </div>
                   ))}
-                </div>
+                  {(!crmHistoryModal.favoriteProducts || crmHistoryModal.favoriteProducts.length === 0) && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No favorite items saved yet.</div>
+                  )}
+                </>
               )}
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 'bold' }}>Past Orders</div>
-              {[...(crmHistoryModal.orders || []), ...(crmHistoryModal.onlineOrders || [])]
-                .sort((a: any, b: any) => b.id - a.id)
-                .map((o: any) => (
-                  <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}>
-                    <div>
-                      <div style={{ color: 'white', fontWeight: 'bold' }}>Order #{o.id}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{o.status}</div>
+
+              {crmHistoryTab === 'addresses' && (
+                <>
+                  {(crmHistoryModal.addresses || []).map((a: any) => (
+                    <div key={a.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)' }}>
+                      <div style={{ color: 'white', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {a.label} {a.is_default && <span style={{ fontSize: '0.65rem', color: '#4edea3', border: '1px solid #4edea3', borderRadius: '10px', padding: '1px 6px' }}>Default</span>}
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{a.address}</div>
                     </div>
-                    <div style={{ color: '#4edea3', fontWeight: 'bold' }}>Rs. {o.total_amount ?? o.totalAmount ?? 0}</div>
-                  </div>
-                ))}
-              {(!crmHistoryModal.orders || crmHistoryModal.orders.length === 0) && (!crmHistoryModal.onlineOrders || crmHistoryModal.onlineOrders.length === 0) && (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No past orders yet.</div>
+                  ))}
+                  {(!crmHistoryModal.addresses || crmHistoryModal.addresses.length === 0) && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No saved addresses yet.</div>
+                  )}
+                </>
+              )}
+
+              {crmHistoryTab === 'loyalty' && (
+                <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#fbbf24' }}>{crmHistoryModal.loyalty_points ?? 0} Points</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>Current Tier: {deriveLoyaltyTierLabel(crmHistoryModal.loyalty_points ?? 0)}</div>
+                </div>
               )}
             </div>
           </div>

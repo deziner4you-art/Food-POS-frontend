@@ -259,12 +259,18 @@ export function calculateOrderTotals(
 
   const afterPromo = subTotal - promoDiscountAmount - bogoDiscountAmount - bundleDiscountAmount - giftDiscountAmount;
 
-  // Promotion-priority rule (defense in depth — the UI itself rejects the
-  // action before setting discountPercent/redeemedPoints; this is the
-  // second, always-on enforcement point): if ANY cart item already carries
-  // a company promotion, manual discount does not apply at all.
-  const cartHasCompanyPromotion = cart.some(item => hasActiveCompanyPromotion(item, activeCampaigns, storeId));
-  const discountAmount = cartHasCompanyPromotion ? 0 : afterPromo * (discountPercent / 100);
+  // Promotion-priority rule, per-item: a manual bill discount / loyalty
+  // redemption must never stack on top of an item that already carries a
+  // company promotion — but it should still apply normally to the rest of
+  // the cart. Base the manual discount on the post-promo value of only the
+  // NOT-already-promoted lines, rather than zeroing the whole bill out just
+  // because one item in the cart happens to be on promotion.
+  const discountEligibleSubtotal = cart.reduce((sum, item) => {
+    if (hasActiveCompanyPromotion(item, activeCampaigns, storeId)) return sum;
+    const pct = getProductDiscount(item, activeCampaigns, storeId);
+    return sum + item.price * item.qty * (1 - pct / 100);
+  }, 0);
+  const discountAmount = discountEligibleSubtotal * (discountPercent / 100);
 
   const totalDiscountAmount = promoDiscountAmount + bogoDiscountAmount + bundleDiscountAmount + giftDiscountAmount + discountAmount;
   const afterDiscount = subTotal - totalDiscountAmount;

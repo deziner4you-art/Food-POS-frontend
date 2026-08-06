@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Product, ModifierGroup, ModifierOption, ProductVariant } from '../types';
 import { X, Star, Flame, Clock, Plus, Minus, Check, ShoppingBag } from 'lucide-react';
+import { formatCurrency } from '../utils/currency';
 
 interface ProductQuickViewModalProps {
   product: Product | null;
@@ -230,7 +231,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
                           </div>
                           <span>{variant.name}</span>
                         </div>
-                        <span className="font-semibold text-gray-400">${variant.price.toFixed(2)}</span>
+                        <span className="font-semibold text-gray-400">{formatCurrency(variant.price)}</span>
                       </button>
                     );
                   })}
@@ -291,7 +292,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
                             </div>
                             {option.priceDelta > 0 && (
                               <span className="font-semibold text-gray-400">
-                                +${option.priceDelta.toFixed(2)}
+                                +{formatCurrency(option.priceDelta)}
                               </span>
                             )}
                           </button>
@@ -343,7 +344,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
               <div className="text-right">
                 <div className="text-[11px] text-gray-400">Total Price</div>
                 <div className="text-xl font-extrabold text-[#D4AF37] font-display">
-                  ${totalPrice.toFixed(2)}
+                  {formatCurrency(totalPrice)}
                 </div>
               </div>
             </div>
@@ -352,7 +353,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = ({
               onClick={handleAddToCartSubmit}
               className="w-full bg-[#D4AF37] text-black font-extrabold py-3 rounded-xl hover:bg-[#ffe088] transition-all flex items-center justify-center gap-2 gold-glow text-sm"
             >
-              <ShoppingBag className="w-4 h-4" /> Add To Order (${totalPrice.toFixed(2)})
+              <ShoppingBag className="w-4 h-4" /> Add To Order ({formatCurrency(totalPrice)})
             </button>
           </div>
         </div>

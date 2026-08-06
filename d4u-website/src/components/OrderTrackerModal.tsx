@@ -11,6 +11,7 @@ import {
   Sparkles,
   ShoppingBag
 } from 'lucide-react';
+import { formatCurrency } from '../utils/currency';
 
 interface OrderTrackerModalProps {
   order: Order | null;
@@ -90,7 +91,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ order, onC
           <div className="text-right">
             <div className="text-xs text-gray-400">Total Paid</div>
             <div className="text-lg font-bold text-[#D4AF37] font-display">
-              ${order.totalAmount.toFixed(2)}
+              {formatCurrency(order.totalAmount)}
             </div>
           </div>
         </div>

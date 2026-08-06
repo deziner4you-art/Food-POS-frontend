@@ -82,7 +82,7 @@ function HomeRoute() {
 }
 
 function MenuRoute() {
-  const { categoryGroups, categories, products, cart, addToCart, favoriteProductIds, toggleFavorite } = useStore();
+  const { categoryGroups, categories, products, cart, addToCart, favoriteProductIds, toggleFavorite, campaigns } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const [searchParams] = useSearchParams();
   const cartCounts: { [id: string]: number } = {};
@@ -99,6 +99,7 @@ function MenuRoute() {
       favoriteProductIds={favoriteProductIds}
       onToggleFavorite={toggleFavorite}
       cartItems={cartCounts}
+      campaigns={campaigns}
     />
   );
 }
@@ -169,7 +170,7 @@ function deriveLoyaltyTier(points: number): 'Gold Member' | 'Platinum Member' | 
 }
 
 function AccountRoute() {
-  const { loggedInUser, loginOrRegister, addAddress, updateAddress, deleteAddress, products, favoriteProductIds, toggleFavorite } = useStore();
+  const { loggedInUser, loginOrRegister, logout, addAddress, updateAddress, deleteAddress, products, favoriteProductIds, toggleFavorite } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const navigate = useNavigate();
   const [phone, setPhone] = useState('');
@@ -259,6 +260,7 @@ function AccountRoute() {
       onAddAddress={addAddress}
       onUpdateAddress={updateAddress}
       onDeleteAddress={deleteAddress}
+      onLogout={logout}
       orders={orders}
       products={products}
       onOpenOrderTracker={(order) => navigate(`/track?order=${encodeURIComponent(order.orderNumber || order.id)}`)}

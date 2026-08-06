@@ -125,8 +125,16 @@ body { font-family: 'Outfit', sans-serif; background-color: var(--bg-base); colo
 .category-pill:hover { background-color: var(--bg-panel-hover); }
 .category-pill.active { background-color: var(--accent-yellow); color: #000; border-color: var(--accent-yellow); }
 
-.product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; overflow-y: auto; padding-right: 5px; flex: 1; align-content: start; }
-.product-card { background-color: var(--bg-panel); border-radius: var(--radius-lg); padding: 10px; cursor: pointer; transition: all 0.3s ease; border: 1px solid transparent; display: flex; flex-direction: column; overflow: hidden; }
+/* minmax bumped from 150px -> 190px: at 150px a wide panel (e.g. the full
+   "All Items"/"Discounted" view with 140+ products) packed 8-9 columns per
+   row, squeezing each card too narrow for its image/name/price/badge to sit
+   comfortably -- the exact same card layout that looked fine at ~5 columns
+   (a single small category) looked collapsed/broken at 9. 190px yields
+   fewer, wider columns on any given screen, and min-height on the card
+   itself guarantees the image + name + price row can never be clipped
+   regardless of column count or how many products are in the grid. */
+.product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 15px; overflow-y: auto; padding-right: 5px; flex: 1; align-content: start; }
+.product-card { background-color: var(--bg-panel); border-radius: var(--radius-lg); padding: 10px; cursor: pointer; transition: all 0.3s ease; border: 1px solid transparent; display: flex; flex-direction: column; overflow: hidden; min-height: 230px; }
 .product-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 6px 15px rgba(0,0,0,0.3); }
 .product-img-wrapper { width: 100%; height: 85px; border-radius: var(--radius-md); overflow: hidden; margin-bottom: 8px; background: #1a1a24; }
 .product-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }

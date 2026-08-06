@@ -1,6 +1,7 @@
 import React from 'react';
 import { Menu, Bell, MapPin, Navigation, X } from 'lucide-react';
 import { DeliveryOrder, DeliveryStatus } from '../types';
+import { formatCurrency } from '../utils';
 
 interface ActiveRideViewProps {
   status: DeliveryStatus;
@@ -154,7 +155,7 @@ export default function ActiveRideView({
             <div className="flex justify-between items-start mb-6">
               <span className="text-primary font-semibold text-sm">5 minutes to pickup point</span>
               <span className="bg-primary text-slate-900 px-3 py-1 rounded-full text-sm font-bold shadow-sm">
-                ${activeOrder.earnings.toFixed(2)}
+                {formatCurrency(activeOrder.earnings)}
               </span>
             </div>
 

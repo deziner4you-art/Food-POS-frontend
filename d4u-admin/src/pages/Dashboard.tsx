@@ -6,6 +6,7 @@ import {
 import { TrendingUp, DollarSign, ShoppingBag, Store, AlertCircle, ArrowRight } from 'lucide-react';
 import { useAdminContext } from '../context/AdminContext';
 import { customAlert } from '../utils/alerts';
+import { formatCurrency } from '../utils/currency';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -79,7 +80,7 @@ export default function Dashboard() {
         <div className="bg-gradient-to-br from-stitch-panel to-stitch-bg border border-stitch-border p-6 rounded-2xl shadow-xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><DollarSign size={64} /></div>
           <p className="text-stitch-muted text-sm font-bold uppercase tracking-wider mb-2">Today's Revenue</p>
-          <h3 className="text-4xl font-black text-stitch-success">${totalRevenue.toFixed(2)}</h3>
+          <h3 className="text-4xl font-black text-stitch-success">{formatCurrency(totalRevenue)}</h3>
           <p className="text-xs text-stitch-muted mt-2 flex items-center gap-1"><TrendingUp size={12} className="text-stitch-success" /> +14.5% vs yesterday</p>
         </div>
 
@@ -101,7 +102,7 @@ export default function Dashboard() {
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><AlertCircle size={64} /></div>
           <p className="text-stitch-muted text-sm font-bold uppercase tracking-wider mb-2">Avg Order Value</p>
           <h3 className="text-4xl font-black text-[#3b82f6]">
-            ${totalOrders > 0 ? (totalRevenue / totalOrders).toFixed(2) : '0.00'}
+            {formatCurrency(totalOrders > 0 ? totalRevenue / totalOrders : 0)}
           </h3>
           <p className="text-xs text-stitch-muted mt-2">Current selection</p>
         </div>
@@ -124,7 +125,7 @@ export default function Dashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--stitch-border)" vertical={false} />
                 <XAxis dataKey="date" stroke="var(--stitch-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="var(--stitch-muted)" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => '$' + val} />
+                <YAxis stroke="var(--stitch-muted)" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => 'Rs. ' + val} />
                 <RechartsTooltip
                   contentStyle={{ backgroundColor: 'var(--stitch-panel)', borderColor: 'var(--stitch-border)', borderRadius: '8px', color: 'var(--stitch-ink)' }}
                   itemStyle={{ color: 'var(--stitch-success)', fontWeight: 'bold' }}
@@ -180,7 +181,7 @@ export default function Dashboard() {
                   </td>
                   <td className="p-4 text-stitch-muted">{store.location}</td>
                   <td className="p-4 text-stitch-ink font-bold">{store.today_orders}</td>
-                  <td className="p-4 text-stitch-success font-bold">${store.today_sales.toFixed(2)}</td>
+                  <td className="p-4 text-stitch-success font-bold">{formatCurrency(store.today_sales)}</td>
                   <td className="p-4">
                       <div className="w-full bg-stitch-surface rounded-full h-2 mt-1 overflow-hidden">
                         <div className="bg-[#fbbf24] h-2 rounded-full" style={{ width: `${Math.min(100, (store.today_sales / (totalRevenue || 1)) * 100)}%` }}></div>

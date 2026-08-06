@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -10,6 +11,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { CustomersService } from '../customers/customers.service';
 import { PricingService } from './pricing.service';
 import { TablesService } from '../tables/tables.service';
+import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
 
 @Injectable()
 export class PosOrdersService {
@@ -417,5 +419,44 @@ export class PosOrdersService {
       }
       return { success: true, syncedCount };
     });
+  }
+
+  // Delivery lifecycle progression for POS-native delivery orders
+  // (order_source === 'Delivery') -- mirrors the slice of
+  // OnlineOrdersService.updateOrderStatus's state machine the cashier's own
+  // Active Deliveries panel actually drives (Rider Arrived / Print Bill /
+  // Dispatch / Settle Cash). Those buttons used to always PATCH
+  // /online-orders/:id regardless of order source, which is a different
+  // table (OnlineOrder) — for a POS-native card that id is really this
+  // Order's own id, so the call 404'd as "Order not found". Broadcasts via
+  // the same formatPosOrderForRider shape the READY broadcast in
+  // KotsService.updateKotStatus already uses, so the frontend's existing
+  // order_updated handler needs no extra branching to pick it up.
+  private static readonly DELIVERY_STATUSES = [
+    'RIDER_ARRIVED',
+    'PRINT_BILL',
+    'DISPATCHED',
+    'OUT_FOR_DELIVERY',
+    'DELIVERED',
+    'WAITING_CASH_SETTLEMENT',
+    'SETTLED',
+  ];
+
+  async updateDeliveryStatus(id: number, status: string) {
+    if (!PosOrdersService.DELIVERY_STATUSES.includes(status)) {
+      throw new BadRequestException(`Invalid delivery status: ${status}`);
+    }
+
+    const existing = await this.prisma.order.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException(`Order #${id} not found`);
+
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: { status },
+      include: { customer: true, items: { include: { product: true } }, rider: true },
+    });
+
+    this.gateway.broadcast('order_updated', formatPosOrderForRider(updated), `store_${updated.store_id}`);
+    return { success: true, order: updated };
   }
 }

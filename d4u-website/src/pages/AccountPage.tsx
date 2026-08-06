@@ -15,8 +15,10 @@ import {
   Plus,
   Pencil,
   Trash2,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
+import { formatCurrency } from '../utils/currency';
 
 interface CustomerAccountPageProps {
   userProfile: UserProfile;
@@ -29,6 +31,7 @@ interface CustomerAccountPageProps {
   onAddAddress: (label: string, address: string, isDefault?: boolean) => Promise<{ success: boolean; message?: string }>;
   onUpdateAddress: (id: number, patch: { label?: string; address?: string; is_default?: boolean }) => Promise<{ success: boolean; message?: string }>;
   onDeleteAddress: (id: number) => Promise<{ success: boolean; message?: string }>;
+  onLogout: () => void;
 }
 
 export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
@@ -42,6 +45,7 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
   onAddAddress,
   onUpdateAddress,
   onDeleteAddress,
+  onLogout,
 }) => {
   const [activeTab, setActiveTab] = useState<'orders' | 'wishlist' | 'addresses' | 'loyalty'>('orders');
 
@@ -128,19 +132,29 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
           </div>
         </div>
 
-        {/* Loyalty Quick Badge */}
-        <div className="bg-[#1A1A1D] border border-white/10 rounded-2xl p-4 flex items-center gap-4 relative z-10 w-full md:w-auto justify-between">
-          <div>
-            <div className="text-[10px] text-gray-400 uppercase tracking-wider">
-              D4U Rewards Balance
+        <div className="flex flex-col sm:flex-row items-center gap-3 relative z-10 w-full md:w-auto">
+          {/* Loyalty Quick Badge */}
+          <div className="bg-[#1A1A1D] border border-white/10 rounded-2xl p-4 flex items-center gap-4 w-full md:w-auto justify-between">
+            <div>
+              <div className="text-[10px] text-gray-400 uppercase tracking-wider">
+                D4U Rewards Balance
+              </div>
+              <div className="text-xl font-extrabold text-[#D4AF37] font-display">
+                {userProfile.loyaltyPoints} Points
+              </div>
             </div>
-            <div className="text-xl font-extrabold text-[#D4AF37] font-display">
-              {userProfile.loyaltyPoints} Points
+            <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/15 text-[#D4AF37] flex items-center justify-center">
+              <Award className="w-6 h-6" />
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/15 text-[#D4AF37] flex items-center justify-center">
-            <Award className="w-6 h-6" />
-          </div>
+
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-[#1A1A1D] border border-white/10 text-gray-400 hover:text-rose-400 hover:border-rose-500/40 transition-colors text-xs font-bold w-full md:w-auto justify-center"
+            title="Logout"
+          >
+            <LogOut className="w-4 h-4" /> Logout
+          </button>
         </div>
       </div>
 
@@ -237,7 +251,7 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
                       <span className="font-bold text-[#D4AF37]">{item.quantity}x</span>
                       <span>{item.product.name}</span>
                     </div>
-                    <span className="font-semibold text-white">${item.totalPrice.toFixed(2)}</span>
+                    <span className="font-semibold text-white">{formatCurrency(item.totalPrice)}</span>
                   </div>
                 ))}
               </div>
@@ -245,7 +259,7 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
               {/* Order Footer Actions */}
               <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="text-xs text-gray-400">
-                  Total Paid: <span className="text-base font-extrabold text-[#D4AF37] font-display ml-1">${order.totalAmount.toFixed(2)}</span>
+                  Total Paid: <span className="text-base font-extrabold text-[#D4AF37] font-display ml-1">{formatCurrency(order.totalAmount)}</span>
                 </div>
 
                 <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -285,7 +299,7 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
                 <img src={p.imageUrl} alt={p.name} className="w-16 h-16 rounded-xl object-cover" />
                 <div className="flex-1 min-w-0">
                   <h4 className="text-xs font-bold text-white truncate font-display">{p.name}</h4>
-                  <div className="text-xs font-extrabold text-[#D4AF37]">${p.price.toFixed(2)}</div>
+                  <div className="text-xs font-extrabold text-[#D4AF37]">{formatCurrency(p.price)}</div>
                 </div>
                 <button
                   onClick={() => onQuickViewProduct(p)}

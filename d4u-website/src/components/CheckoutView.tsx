@@ -4,6 +4,7 @@ import type { Promotion } from '../types';
 import { useStore } from '../context/StoreContext';
 import { BACKEND_URL } from '../hooks/useStoreData';
 import { getDeliveryFee, getDiscountAmount, getGrandTotal, getSubtotal, getTax } from '../utils/cartMath';
+import { formatCurrency } from '../utils/currency';
 import {
   Truck,
   Store,
@@ -383,7 +384,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
                       )}
                     </div>
                   </div>
-                  <span className="text-white font-semibold flex-shrink-0">${item.totalPrice.toFixed(2)}</span>
+                  <span className="text-white font-semibold flex-shrink-0">{formatCurrency(item.totalPrice)}</span>
                 </div>
                 );
               })}
@@ -392,25 +393,25 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
             <div className="border-t border-white/10 pt-3 space-y-2 text-xs text-gray-300">
               <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span className="font-semibold text-white">${subtotal.toFixed(2)}</span>
+                <span className="font-semibold text-white">{formatCurrency(subtotal)}</span>
               </div>
               {discountAmount > 0 && (
                 <div className="flex justify-between text-[#D4AF37]">
                   <span>Applied Promo</span>
-                  <span className="font-bold">-${discountAmount.toFixed(2)}</span>
+                  <span className="font-bold">-{formatCurrency(discountAmount)}</span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span>Delivery Charge</span>
-                <span className="font-semibold text-white">{deliveryFee === 0 ? 'FREE' : `$${deliveryFee.toFixed(2)}`}</span>
+                <span className="font-semibold text-white">{deliveryFee === 0 ? 'FREE' : formatCurrency(deliveryFee)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Estimated Tax (13%)</span>
-                <span className="font-semibold text-white">${tax.toFixed(2)}</span>
+                <span className="font-semibold text-white">{formatCurrency(tax)}</span>
               </div>
               <div className="flex justify-between text-base font-extrabold text-white pt-2 border-t border-white/10 font-display">
                 <span>Total Amount</span>
-                <span className="text-[#D4AF37]">${grandTotal.toFixed(2)}</span>
+                <span className="text-[#D4AF37]">{formatCurrency(grandTotal)}</span>
               </div>
             </div>
 
@@ -427,7 +428,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-5 h-5" /> Confirm &amp; Place Order (${grandTotal.toFixed(2)})
+                  <CheckCircle2 className="w-5 h-5" /> Confirm &amp; Place Order ({formatCurrency(grandTotal)})
                 </>
               )}
             </button>

@@ -1,15 +1,10 @@
-// Mirrors d4u-pos-client/src/utils/currency.ts, d4u-admin/src/utils/currency.ts,
-// and d4u-rider/src/utils.ts's formatCurrency — same window.d4u_currency
-// contract, set from useStoreData.ts's /cms/settings/:storeId fetch. The
-// store is priced and billed in PKR, so this defaults to "Rs." rather than
-// a hardcoded '$', while still honoring a genuinely different brand currency.
+// D4U does not do currency conversion on the website -- the price stored on
+// every product IS the real selling price in PKR, full stop. This used to
+// branch on window.d4u_currency (Brand.currency), but that field can be set
+// to 'USD' at the brand level for unrelated reasons and there is no actual
+// USD pricing/conversion behind it on this site, so honoring it just meant
+// showing '$' in front of a PKR number. Always Rs. here, no exceptions.
 export const formatCurrency = (amount: number): string => {
-  const currency = typeof window !== 'undefined' ? (window as any).d4u_currency || 'PKR' : 'PKR';
-
-  if (currency === 'USD') return `$${amount.toFixed(2)}`;
-  if (currency === 'AED') return `AED ${amount.toFixed(2)}`;
-  if (currency === 'GBP') return `£${amount.toFixed(2)}`;
-  if (currency === 'EUR') return `€${amount.toFixed(2)}`;
-
-  return `Rs. ${amount.toLocaleString()}`; // Default PKR
+  if (amount % 1 !== 0) return `Rs. ${amount.toFixed(2)}`;
+  return `Rs. ${amount.toLocaleString()}`;
 };

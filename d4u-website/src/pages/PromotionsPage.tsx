@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Promotion, ActiveWebsitePage } from '../types';
 import { Tag, Flame, Copy, Check, ArrowRight, Sparkles } from 'lucide-react';
+import { formatCurrency } from '../utils/currency';
 
 interface PromotionsPageProps {
   promotions: Promotion[];
@@ -61,7 +62,7 @@ export const PromotionsPage: React.FC<PromotionsPageProps> = ({
                 <p className="text-xs text-gray-400 leading-relaxed">{promo.description}</p>
                 {promo.minOrderValue && (
                   <div className="text-[11px] text-gray-500">
-                    Min order amount: ${promo.minOrderValue.toFixed(2)}
+                    Min order amount: {formatCurrency(promo.minOrderValue)}
                   </div>
                 )}
               </div>

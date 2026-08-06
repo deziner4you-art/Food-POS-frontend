@@ -84,11 +84,19 @@ export function generateGridPath(
 }
 
 /**
- * Formats currency values
+ * Formats currency values. Mirrors d4u-pos-client/src/utils/currency.ts and
+ * d4u-admin/src/utils/currency.ts — reads the brand's real currency (set on
+ * `window.d4u_currency` at app init from /cms/settings) and defaults to PKR,
+ * not USD. The store here is priced and billed in PKR, so a hardcoded '$'
+ * was wrong for every rider regardless of what the brand is actually set to.
  */
 export const formatCurrency = (val: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD'
-  }).format(val);
+  const currency = typeof window !== 'undefined' ? (window as any).d4u_currency || 'PKR' : 'PKR';
+
+  if (currency === 'USD') return `$${val.toFixed(2)}`;
+  if (currency === 'AED') return `AED ${val.toFixed(2)}`;
+  if (currency === 'GBP') return `£${val.toFixed(2)}`;
+  if (currency === 'EUR') return `€${val.toFixed(2)}`;
+
+  return `Rs. ${val.toLocaleString()}`; // Default PKR
 };

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SavedCompletedMission } from '../types';
 import { ArrowLeft, ArrowRight, Star } from 'lucide-react';
+import { formatCurrency } from '../utils';
 
 interface HistoryViewProps {
   trips: SavedCompletedMission[];
@@ -84,7 +85,7 @@ export default function HistoryView({ trips, onBack }: HistoryViewProps) {
 
                 <div className="flex justify-between items-center pt-2">
                   <p className="text-primary font-bold text-sm">
-                    Earn <span className="text-slate-800">${trip.earnings.toFixed(2)}</span>
+                    Earn <span className="text-slate-800">{formatCurrency(trip.earnings)}</span>
                   </p>
                   <div className="flex items-center gap-1">
                     <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />

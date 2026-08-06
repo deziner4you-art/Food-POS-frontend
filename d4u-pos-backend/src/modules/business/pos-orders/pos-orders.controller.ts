@@ -110,6 +110,21 @@ export class PosOrdersController {
     return this.service.settleOrder(Number(id), body);
   }
 
+  // PATCH /pos-orders/:id/status — delivery lifecycle progression for
+  // POS-native delivery orders (Rider Arrived / Print Bill / Dispatch /
+  // Settle Cash) — see PosOrdersService.updateDeliveryStatus.
+  @RequirePermissions('sales.update')
+  @Patch(':id/status')
+  async updateDeliveryStatus(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { status: string },
+  ) {
+    const order = await this.service.getOrder(Number(id));
+    if (order) validateTenantAccess(user, order.store_id);
+    return this.service.updateDeliveryStatus(Number(id), body.status);
+  }
+
   // POST /pos-orders/sync-offline — Sync locally stored Dexie KOTs
   @RequirePermissions('sales.create')
   @Post('sync-offline')

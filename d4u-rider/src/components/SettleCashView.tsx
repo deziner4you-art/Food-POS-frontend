@@ -1,6 +1,7 @@
 import React from 'react';
 import { RiderStats } from '../types';
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import { formatCurrency } from '../utils';
 
 interface SettleCashViewProps {
   stats: RiderStats;
@@ -27,7 +28,7 @@ export default function SettleCashView({ stats, onBack, onSettle }: SettleCashVi
         <p className="text-primary-light text-sm mb-4">Pending Settlement</p>
         
         <div className="text-5xl font-display font-extrabold mb-6 tracking-tight">
-          ${stats.todayEarnings.toFixed(2)}
+          {formatCurrency(stats.todayEarnings)}
         </div>
         
         <p className="text-sm text-slate-900/90 mb-6">
@@ -50,7 +51,7 @@ export default function SettleCashView({ stats, onBack, onSettle }: SettleCashVi
         <div className="bg-slate-900 rounded-2xl shadow-sm border border-slate-100 p-5 flex justify-between items-center mb-8">
           <div className="text-center flex-1 border-r border-slate-100">
             <p className="text-slate-400 text-xs font-semibold mb-1">Earning</p>
-            <p className="font-bold text-slate-100 text-sm">${(stats.todayEarnings * 0.15).toFixed(2)}</p>
+            <p className="font-bold text-slate-100 text-sm">{formatCurrency(stats.todayEarnings * 0.15)}</p>
           </div>
           <div className="text-center flex-1 border-r border-slate-100">
             <p className="text-slate-400 text-xs font-semibold mb-1">Work time</p>
@@ -75,7 +76,7 @@ export default function SettleCashView({ stats, onBack, onSettle }: SettleCashVi
           <div className="p-5 flex justify-between items-center">
             <div className="text-center flex-1 border-r border-slate-100">
               <p className="text-slate-400 text-xs font-semibold mb-1">Earning</p>
-              <p className="font-bold text-slate-100 text-sm">${weeklySummary.earnings.toFixed(2)}</p>
+              <p className="font-bold text-slate-100 text-sm">{formatCurrency(weeklySummary.earnings)}</p>
             </div>
             <div className="text-center flex-1 border-r border-slate-100">
               <p className="text-slate-400 text-xs font-semibold mb-1">Work time</p>

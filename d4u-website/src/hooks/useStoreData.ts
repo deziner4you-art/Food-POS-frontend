@@ -118,7 +118,17 @@ export function useStoreData(storeId: number | null) {
           fetch(`${BACKEND_URL}/marketing/campaign/visible?store_id=${storeId}&channel=web`),
         ]);
         if (bannersRes.ok) setBanners(await bannersRes.json());
-        if (settingsRes.ok) setSettings(await settingsRes.json());
+        if (settingsRes.ok) {
+          const settingsData = await settingsRes.json();
+          setSettings(settingsData);
+          // Same window.d4u_currency contract formatCurrency (utils/currency.ts)
+          // reads, matching d4u-pos-client/d4u-admin/d4u-rider — the store is
+          // priced and billed in PKR, so every price on the site should show
+          // "Rs." not a hardcoded '$', for whichever brand/currency is real.
+          if (settingsData?.brand?.currency) {
+            (window as any).d4u_currency = settingsData.brand.currency;
+          }
+        }
         if (campaignsRes.ok) setCampaigns(await campaignsRes.json());
       } catch (e) {
         console.error(e);

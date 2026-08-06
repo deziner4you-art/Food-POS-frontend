@@ -34,24 +34,42 @@ export function clearTokens() {
  * this, every API call in the app would silently start failing with
  * "Invalid or expired authentication token" once the hour is up — this is
  * called proactively (see POSApp's refresh interval) well before that happens.
+ *
+ * The backend rotates refresh tokens on every use and treats presenting an
+ * already-used one as reuse/theft, revoking ALL sessions for that user
+ * (auth.service.ts refreshTokens()). React StrictMode double-invokes mount
+ * effects in dev, and any other accidental concurrent caller would do the
+ * same — two calls firing back-to-back both read the same stored refresh
+ * token before either writes the rotated one back, so the loser gets its
+ * token flagged as reused and nukes every session on that device. This
+ * in-flight guard collapses concurrent calls into the single underlying
+ * request so that race can't happen.
  */
-export async function refreshAccessToken(): Promise<boolean> {
-  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-  if (!refreshToken) return false;
+let inFlightRefresh: Promise<boolean> | null = null;
 
-  try {
-    const res = await fetch(`${BACKEND_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken, device_id: getDeviceId() }),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    if (!data?.access_token) return false;
-    storeTokens(data.access_token, data.refresh_token);
-    return true;
-  } catch (e) {
-    console.error('Silent token refresh failed:', e);
-    return false;
-  }
+export function refreshAccessToken(): Promise<boolean> {
+  if (inFlightRefresh) return inFlightRefresh;
+
+  inFlightRefresh = (async () => {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    if (!refreshToken) return false;
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken, device_id: getDeviceId() }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data?.access_token) return false;
+      storeTokens(data.access_token, data.refresh_token);
+      return true;
+    } catch (e) {
+      console.error('Silent token refresh failed:', e);
+      return false;
+    }
+  })();
+
+  return inFlightRefresh.finally(() => { inFlightRefresh = null; });
 }

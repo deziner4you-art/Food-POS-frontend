@@ -392,6 +392,22 @@ export default function App() {
     }
   }, [riderStoreId, riderId]);
 
+  // Brand currency — same source and same window.d4u_currency contract
+  // utils.ts's formatCurrency reads, matching d4u-pos-client/App.tsx's
+  // identical fetch. Without this every rider saw a hardcoded '$' regardless
+  // of the brand's real (PKR) currency setting.
+  useEffect(() => {
+    if (!riderStoreId) return;
+    fetch(`${BACKEND_URL}/cms/settings?store_id=${riderStoreId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data?.brand?.currency) {
+          (window as any).d4u_currency = data.brand.currency;
+        }
+      })
+      .catch(() => {});
+  }, [riderStoreId]);
+
   // --- REAL-TIME SOCKET CONNECTION ---
   useEffect(() => {
     if (!riderStoreId) return;

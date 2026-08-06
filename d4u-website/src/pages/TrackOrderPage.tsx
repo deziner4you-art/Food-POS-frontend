@@ -3,6 +3,7 @@ import { CheckCircle2, MapPin } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 import { BACKEND_URL } from '../hooks/useStoreData';
+import { formatCurrency } from '../utils/currency';
 
 const STATUS_INDEX: Record<string, number> = {
   ONLINE_ORDER_RECEIVED: 0,
@@ -106,7 +107,7 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
                   <p className="font-black text-stitch-ink text-base">Order #{result.id}</p>
                   <p className="text-[10px] text-stitch-muted">{result.customer} · {result.timePlaced}</p>
                 </div>
-                <span className="text-xs font-black text-stitch-accent">${result.totalAmount}</span>
+                <span className="text-xs font-black text-stitch-accent">{formatCurrency(Number(result.totalAmount))}</span>
               </div>
             </div>
 

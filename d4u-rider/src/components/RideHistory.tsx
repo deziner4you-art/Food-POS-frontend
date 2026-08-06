@@ -1,6 +1,7 @@
 import React from 'react';
 import { SavedCompletedMission } from '../types';
 import { Calendar, Tag, ShieldCheck, ClipboardList } from 'lucide-react';
+import { formatCurrency } from '../utils';
 
 interface RideHistoryProps {
   trips: SavedCompletedMission[];
@@ -43,7 +44,7 @@ export default function RideHistory({ trips, onClearHistory }: RideHistoryProps)
                 </div>
                 
                 <span className="text-[11px] font-mono font-extrabold text-emerald-400 tracking-tight">
-                  +${trip.earnings.toFixed(2)}
+                  +{formatCurrency(trip.earnings)}
                 </span>
               </div>
 

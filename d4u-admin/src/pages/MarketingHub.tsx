@@ -18,6 +18,28 @@ const InstagramIcon = ({ size = 20 }: { size?: number }) => (
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
+// The Active/Scheduled campaign badge used to unconditionally read
+// `${camp.discount_pct}% OFF` regardless of campaign_type — a BOGO campaign
+// (whose reward is FREE, not a %) showed a stray leftover discount_pct value
+// from whatever the form last held. Branch on the real type instead.
+function getCampaignBadgeLabel(camp: any): string {
+  switch (camp.campaign_type) {
+    case 'FLAT':
+      return `Rs. ${camp.flat_discount_amount} OFF`;
+    case 'BOGO':
+    case 'BUY_X_GET_Y':
+      return `BUY ${camp.buy_qty} GET ${camp.reward_qty} ${camp.reward_type === 'PERCENTAGE' ? `${camp.discount_pct}% OFF` : 'FREE'}`;
+    case 'BUNDLE':
+    case 'COMBO':
+      return `FIXED PRICE Rs. ${camp.bundle_price}`;
+    case 'FREE_GIFT':
+      return 'FREE GIFT';
+    case 'PERCENTAGE':
+    default:
+      return `${camp.discount_pct}% OFF`;
+  }
+}
+
 export default function MarketingHub() {
  const { selectedBranchId, isBranchEntered, branches } = useAdminContext();
  const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -715,7 +737,24 @@ export default function MarketingHub() {
  campaignType === value ? 'bg-stitch-accent text-stitch-accent-ink border-stitch-accent cursor-pointer' : 'bg-stitch-surface text-stitch-muted border-stitch-border cursor-pointer'
  }`}
  >
- <input type="radio" className="hidden" disabled={!isAllowed} checked={campaignType === value} onChange={() => isAllowed && setCampaignType(value)} />
+ <input
+ type="radio"
+ className="hidden"
+ disabled={!isAllowed}
+ checked={campaignType === value}
+ onChange={() => {
+ if (!isAllowed) return;
+ // A leftover discountPct from a prior PERCENTAGE (or BOGO-with-%
+ // reward) edit used to silently persist across a type switch and
+ // get submitted/displayed on campaign types where it's meaningless
+ // (e.g. a FREE-reward BOGO showing a stale "15% OFF" badge) — clear
+ // it whenever it stops being relevant for the newly selected type.
+ if (value !== 'PERCENTAGE' && !(value === 'BOGO' && rewardType === 'PERCENTAGE')) {
+ setDiscountPct('');
+ }
+ setCampaignType(value);
+ }}
+ />
  {label}{!isAllowed && ' 🔒'}
  </label>
  );
@@ -788,7 +827,11 @@ export default function MarketingHub() {
  <div className="grid grid-cols-2 gap-3 items-end">
  <div>
  <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Reward Type</label>
- <select value={rewardType} onChange={(e) => setRewardType(e.target.value as 'FREE' | 'PERCENTAGE')} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm">
+ <select value={rewardType} onChange={(e) => {
+ const next = e.target.value as 'FREE' | 'PERCENTAGE';
+ if (next === 'FREE') setDiscountPct('');
+ setRewardType(next);
+ }} className="w-full bg-stitch-panel border border-stitch-border rounded-lg px-3 py-2 text-stitch-ink text-sm">
  <option value="FREE">Free</option>
  <option value="PERCENTAGE">Percentage Discount</option>
  </select>
@@ -1316,7 +1359,7 @@ export default function MarketingHub() {
  }`}>
  {/* Top-right badge */}
  <div className={`absolute top-0 right-0 text-stitch-accent-ink text-[10px] font-black px-3 py-1 rounded-bl-lg ${camp.is_paused ? 'bg-stitch-muted' : 'bg-stitch-accent'}`}>
- {camp.is_paused ? 'PAUSED' : `${camp.discount_pct}% OFF`}
+ {camp.is_paused ? 'PAUSED' : getCampaignBadgeLabel(camp)}
  </div>
  {editingId === camp.id && (
  <div className="absolute top-0 left-0 bg-stitch-accent text-stitch-accent-ink text-[10px] font-black px-3 py-1 rounded-br-lg">
@@ -1414,7 +1457,7 @@ export default function MarketingHub() {
  }`}>
  {/* Top-right badge */}
  <div className={`absolute top-0 right-0 text-stitch-accent-ink text-[10px] font-black px-3 py-1 rounded-bl-lg ${!camp.is_active ? 'bg-stitch-muted' : 'bg-stitch-accent'}`}>
- {!camp.is_active ? 'PAUSED' : `${camp.discount_pct}% OFF`}
+ {!camp.is_active ? 'PAUSED' : getCampaignBadgeLabel(camp)}
  </div>
  {editingId === camp.id && isScheduled && (
  <div className="absolute top-0 left-0 bg-stitch-accent text-stitch-accent-ink text-[10px] font-black px-3 py-1 rounded-br-lg">
