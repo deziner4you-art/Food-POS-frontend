@@ -5,11 +5,9 @@ import Footer from '../components/shared/Footer';
 import { CartDrawer } from '../components/shared/CartDrawer';
 import { ProductQuickViewModal } from '../components/ProductQuickViewModal';
 import { useStore } from '../context/StoreContext';
-import type { Product, Promotion } from '../types';
+import type { Product } from '../types';
 
 export interface PublicOutletContext {
-  appliedCoupon: Promotion | null;
-  setAppliedCoupon: (c: Promotion | null) => void;
   activeOrder: any;
   setActiveOrder: (o: any) => void;
   setQuickViewProduct: (p: Product | null) => void;
@@ -17,12 +15,11 @@ export interface PublicOutletContext {
 
 export default function PublicLayout() {
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [appliedCoupon, setAppliedCoupon] = useState<Promotion | null>(null);
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const { settings, kioskMode, addToCart } = useStore();
 
-  const ctx: PublicOutletContext = { appliedCoupon, setAppliedCoupon, activeOrder, setActiveOrder, setQuickViewProduct };
+  const ctx: PublicOutletContext = { activeOrder, setActiveOrder, setQuickViewProduct };
 
   return (
     <div className="min-h-screen bg-stitch-bg text-stitch-ink flex flex-col font-sans relative selection:bg-stitch-accent selection:text-stitch-accent-ink" data-mode={kioskMode ? 'kiosk' : undefined}>
@@ -37,8 +34,6 @@ export default function PublicLayout() {
       <CartDrawer
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
-        appliedPromo={appliedCoupon}
-        onRemovePromo={() => setAppliedCoupon(null)}
       />
 
       {quickViewProduct && (

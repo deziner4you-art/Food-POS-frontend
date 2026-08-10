@@ -86,8 +86,19 @@ export class CampaignResolverService {
     const capabilities = await this.subscriptions.getMarketingCapabilities(store_id);
     if (!capabilities.enabled) return [];
 
+    // A brand-wide campaign (target_stores: none) used to match ANY store_id
+    // passed in, with no check that the campaign actually belongs to the
+    // requesting store's brand -- a brand-wide campaign for Brand A could
+    // leak into a completely unrelated Brand B's stores. brand_id is the
+    // hard tenant boundary everywhere else in the system; a campaign must
+    // always stay inside its own brand, whether it's scoped to specific
+    // branches or left brand-wide.
+    const store = await this.prisma.store.findUnique({ where: { id: store_id }, select: { brand_id: true } });
+    if (!store) return [];
+
     const campaigns = await this.prisma.marketingCampaign.findMany({
       where: {
+        brand_id: store.brand_id,
         status: 'RUNNING',
         is_active: true,
         deleted_at: null,

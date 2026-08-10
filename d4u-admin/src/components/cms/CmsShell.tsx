@@ -33,10 +33,10 @@ export default function CmsShell({
   children,
 }: CmsShellProps) {
   return (
-    <div className="animate-fade-in flex flex-col md:flex-row gap-6 h-[calc(100vh-160px)]">
+    <div className="animate-fade-in flex flex-col h-[calc(100vh-160px)]">
       <CmsSectionNav activeTab={activeTab} onChangeTab={onChangeTab} />
 
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden mt-4">
         <div className="flex justify-between items-center gap-4 mb-4">
           <h2 className="text-xl font-bold text-stitch-ink flex items-center gap-2">
             <span className="w-1.5 h-5 rounded-full bg-stitch-accent" />

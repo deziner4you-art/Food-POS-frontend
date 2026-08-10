@@ -29,4 +29,10 @@ export class CreateBannerDto {
 
   @IsOptional()
   displayOrder?: any;
+
+  // Multipart form field, sent once per selected branch (same convention as
+  // MarketingCampaign's target_store_ids) -- arrives as a string, an array
+  // of strings, or omitted entirely depending on how many were checked.
+  @IsOptional()
+  target_store_ids?: any;
 }

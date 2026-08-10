@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Promotion } from '../types';
 import { useStore } from '../context/StoreContext';
 import { BACKEND_URL } from '../hooks/useStoreData';
-import { getDeliveryFee, getDiscountAmount, getGrandTotal, getSubtotal, getTax } from '../utils/cartMath';
+import { getDeliveryFee, getGrandTotal, getLoyaltyEligibleSubtotal, getPromoDiscount, getSubtotal, getTax } from '../utils/cartMath';
 import { formatCurrency } from '../utils/currency';
 import {
   Truck,
@@ -16,6 +15,7 @@ import {
   ArrowLeft,
   DollarSign,
   Wallet,
+  Gift,
   Loader2
 } from 'lucide-react';
 
@@ -24,13 +24,12 @@ type OrderType = 'delivery' | 'pickup' | 'dine_in';
 type PaymentMethod = 'CASH' | 'CARD' | 'COD' | 'WALLET';
 
 interface CheckoutViewProps {
-  appliedPromo: Promotion | null;
   onBackToMenu: () => void;
   onOrderPlaced: (order: any) => void;
 }
 
-export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBackToMenu, onOrderPlaced }) => {
-  const { storeId, cart, clearCart, loggedInUser, kioskMode, addAddress } = useStore();
+export const CheckoutView: React.FC<CheckoutViewProps> = ({ onBackToMenu, onOrderPlaced }) => {
+  const { storeId, cart, clearCart, loggedInUser, kioskMode, addAddress, settings } = useStore();
   const navigate = useNavigate();
 
   const savedAddresses = loggedInUser?.addresses || [];
@@ -49,12 +48,24 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(kioskMode ? 'CASH' : 'COD');
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [error, setError] = useState('');
+  const [redeemPoints, setRedeemPoints] = useState(false);
 
   const subtotal = getSubtotal(cart);
-  const discountAmount = getDiscountAmount(cart, appliedPromo);
-  const deliveryFee = getDeliveryFee(cart, orderType);
-  const tax = getTax(cart, appliedPromo);
-  const grandTotal = getGrandTotal(cart, appliedPromo, orderType);
+  const promoDiscount = getPromoDiscount(cart);
+
+  // Points can only pay down "flat price" lines that aren't already
+  // campaign-discounted (never both on the same item) -- this is a
+  // pre-checkout estimate; the backend recomputes and caps it authoritatively
+  // at order-creation time from the customer's real balance.
+  const loyaltyEligibleSubtotal = getLoyaltyEligibleSubtotal(cart);
+  const pointsBalance = loggedInUser?.loyalty_points ?? 0;
+  const pointsValue = pointsBalance * (settings?.loyalty_point_value ?? 0);
+  const canRedeemPoints = !!loggedInUser && pointsBalance > 0 && loyaltyEligibleSubtotal > 0;
+  const estimatedLoyaltyDiscount = redeemPoints && canRedeemPoints ? Math.min(pointsValue, loyaltyEligibleSubtotal) : 0;
+
+  const deliveryFee = getDeliveryFee(cart, orderType, settings, estimatedLoyaltyDiscount);
+  const tax = getTax(cart, settings, estimatedLoyaltyDiscount);
+  const grandTotal = getGrandTotal(cart, orderType, settings, estimatedLoyaltyDiscount);
 
   // The address text actually being used for delivery — either a saved
   // address's text, or whatever's typed in the free-text field.
@@ -110,6 +121,8 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
           })),
           notes: '',
           payment_method: paymentMethod,
+          customer_id: loggedInUser?.id,
+          redeem_points: redeemPoints && canRedeemPoints,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -390,23 +403,46 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ appliedPromo, onBack
               })}
             </div>
 
+            {canRedeemPoints && (
+              <label className="flex items-center justify-between gap-2 bg-[#1A1A1D] border border-white/10 rounded-xl p-3 cursor-pointer">
+                <span className="flex items-center gap-2 text-xs font-bold text-white">
+                  <Gift className="w-4 h-4 text-[#D4AF37]" />
+                  Redeem All Eligible Points ({pointsBalance} pts · up to {formatCurrency(Math.min(pointsValue, loyaltyEligibleSubtotal))})
+                </span>
+                <input
+                  type="checkbox"
+                  checked={redeemPoints}
+                  onChange={(e) => setRedeemPoints(e.target.checked)}
+                  className="accent-[#D4AF37] w-4 h-4"
+                />
+              </label>
+            )}
+
             <div className="border-t border-white/10 pt-3 space-y-2 text-xs text-gray-300">
               <div className="flex justify-between">
                 <span>Subtotal</span>
                 <span className="font-semibold text-white">{formatCurrency(subtotal)}</span>
               </div>
-              {discountAmount > 0 && (
+              {promoDiscount > 0 && (
                 <div className="flex justify-between text-[#D4AF37]">
-                  <span>Applied Promo</span>
-                  <span className="font-bold">-{formatCurrency(discountAmount)}</span>
+                  <span>Promotional Discount</span>
+                  <span className="font-bold">-{formatCurrency(promoDiscount)}</span>
+                </div>
+              )}
+              {estimatedLoyaltyDiscount > 0 && (
+                <div className="flex justify-between text-[#D4AF37]">
+                  <span>Loyalty Discount</span>
+                  <span className="font-bold">-{formatCurrency(estimatedLoyaltyDiscount)}</span>
+                </div>
+              )}
+              {orderType === 'delivery' && (
+                <div className="flex justify-between">
+                  <span>Delivery Charge</span>
+                  <span className="font-semibold text-white">{deliveryFee === 0 ? 'FREE' : formatCurrency(deliveryFee)}</span>
                 </div>
               )}
               <div className="flex justify-between">
-                <span>Delivery Charge</span>
-                <span className="font-semibold text-white">{deliveryFee === 0 ? 'FREE' : formatCurrency(deliveryFee)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Estimated Tax (13%)</span>
+                <span>Estimated Tax ({settings?.tax_percentage ?? 0}%)</span>
                 <span className="font-semibold text-white">{formatCurrency(tax)}</span>
               </div>
               <div className="flex justify-between text-base font-extrabold text-white pt-2 border-t border-white/10 font-display">

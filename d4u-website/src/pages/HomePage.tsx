@@ -28,8 +28,6 @@ import {
   Phone,
   Clock,
   Smartphone,
-  Copy,
-  Check,
   Heart,
   UtensilsCrossed
 } from 'lucide-react';
@@ -73,7 +71,6 @@ export const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [selectedBranchId, setSelectedBranchId] = useState(branches[0]?.id || '');
-  const [copiedPromoCode, setCopiedPromoCode] = useState<string | null>(null);
 
   const promotionsRef = React.useRef<HTMLDivElement>(null);
   const [isPromotionsHovered, setIsPromotionsHovered] = useState(false);
@@ -149,12 +146,6 @@ export const HomePage: React.FC<HomePageProps> = ({
   const bestSellerProducts = products.filter((p) => p.isBestSeller || p.rating >= 4.9).slice(0, 4);
   const featuredCategories = categories.filter((c) => c.isFeatured);
   const activeBranch = branches.find((b) => b.id === selectedBranchId) || branches[0];
-
-  const handleCopyCode = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedPromoCode(code);
-    setTimeout(() => setCopiedPromoCode(null), 2500);
-  };
 
   return (
     <div className="space-y-16 pb-16 animate-fade-in">
@@ -282,7 +273,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 onClick={() => setActivePage('promotions')}
                 role="button"
                 tabIndex={0}
-                className="group relative rounded-2xl overflow-hidden bg-[#16130B] border border-white/10 hover:border-[#D4AF37]/50 transition-all duration-300 shadow-xl flex flex-col justify-between gold-glow-hover h-64 flex-none w-full sm:w-[calc(50%-12px)] md:w-[calc(33.333%-16px)] snap-start cursor-pointer"
+                className="group relative rounded-2xl overflow-hidden bg-[#16130B] border border-white/10 hover:border-[#D4AF37]/50 transition-all duration-300 shadow-xl flex flex-col gold-glow-hover h-64 flex-none w-full sm:w-[calc(50%-12px)] md:w-[calc(33.333%-16px)] snap-start cursor-pointer"
               >
                 <div
                   className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105 opacity-40"
@@ -290,43 +281,17 @@ export const HomePage: React.FC<HomePageProps> = ({
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#16130B] via-[#16130B]/80 to-transparent" />
 
-                <div className="relative p-6 space-y-2 z-10 flex-1 flex flex-col justify-between">
-                  <div>
-                    <span className="bg-[#D4AF37] text-black font-extrabold text-[10px] px-2.5 py-1 rounded-full uppercase tracking-wider shadow">
-                      {promo.badgeText}
-                    </span>
-                    <h3 className="text-2xl font-extrabold text-white font-display mt-2">
-                      {promo.title}
-                    </h3>
-                    <p className="text-xs text-[#D4AF37] font-semibold">{promo.subtitle}</p>
-                    <p className="text-xs text-gray-400 line-clamp-2 mt-1">
-                      {promo.description}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t border-white/10">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleCopyCode(promo.code); }}
-                      className="bg-[#1A1A1D]/90 hover:bg-[#25252A] text-gray-200 border border-white/10 text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-mono font-bold"
-                    >
-                      {copiedPromoCode === promo.code ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" /> Copied!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5 text-[#D4AF37]" /> Code: {promo.code}
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setActivePage('menu'); }}
-                      className="bg-[#D4AF37] text-black text-xs font-extrabold px-4 py-1.5 rounded-lg gold-glow hover:bg-[#ffe088] transition-colors"
-                    >
-                      Claim Deal
-                    </button>
-                  </div>
+                <div className="relative p-6 space-y-2 z-10">
+                  <span className="bg-[#D4AF37] text-black font-extrabold text-[10px] px-2.5 py-1 rounded-full uppercase tracking-wider shadow">
+                    {promo.badgeText}
+                  </span>
+                  <h3 className="text-2xl font-extrabold text-white font-display mt-2">
+                    {promo.title}
+                  </h3>
+                  <p className="text-xs text-[#D4AF37] font-semibold">{promo.subtitle}</p>
+                  <p className="text-xs text-gray-400 line-clamp-2 mt-1">
+                    {promo.description}
+                  </p>
                 </div>
               </div>
             ))}

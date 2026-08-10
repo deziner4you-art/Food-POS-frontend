@@ -186,7 +186,7 @@ export async function createCustomer(payload: {
   brand_id: number;
   phone: string;
   name: string;
-}): Promise<Customer> {
+}): Promise<Customer & { alreadyExisted?: boolean }> {
   // Same missing auth:true bug as lookupCustomerByPhone above -- POST
   // /customers requires crm.customers.create.
   const response = await apiFetch('/customers', {
@@ -195,16 +195,28 @@ export async function createCustomer(payload: {
     body: JSON.stringify(payload),
     auth: true,
   });
-  const data = await readJson<{ success: boolean; customer: Customer }>(response);
-  return data.customer;
+  // Find-or-create: the backend now returns the existing customer (200,
+  // alreadyExisted: true) instead of throwing when the phone is already
+  // registered -- readJson would otherwise treat that as success either
+  // way, so callers can ignore alreadyExisted entirely and it behaves
+  // exactly as before; the CRM "New Customer" form uses it for a clearer toast.
+  const data = await readJson<{ success: boolean; customer: Customer; alreadyExisted?: boolean }>(response);
+  return { ...data.customer, alreadyExisted: data.alreadyExisted };
 }
 
 export async function syncOfflineOrders(orders: OfflineKOT[]): Promise<{ ok: boolean }> {
+  // POST /pos-orders/sync-offline requires sales.create -- same missing
+  // auth:true bug found elsewhere in this file. Every single sync attempt,
+  // for the entire time this endpoint has existed, 401'd immediately
+  // before ever reaching the missing store_id/business_day_id/itemsData
+  // issues also fixed in this same pass -- the offline queue could never
+  // have succeeded regardless of what was actually queued.
   const response = await apiFetch('/pos-orders/sync-offline', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orders }),
     timeoutMs: 20000,
+    auth: true,
   });
   if (!response.ok) {
     throw new ApiRequestError(`Offline sync failed with HTTP ${response.status}`, response.status);

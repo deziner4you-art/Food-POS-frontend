@@ -48,6 +48,7 @@ function mapFoodItemToProduct(fi: any): Product {
       })),
     })),
     variants: (fi.variants || []).map((v: any) => ({ id: v.id, name: v.name, price: v.price })),
+    categories: fi.categories || [],
   };
 }
 

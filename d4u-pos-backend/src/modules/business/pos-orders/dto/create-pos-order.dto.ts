@@ -48,11 +48,14 @@ export class CreatePosOrderDto {
   @IsOptional()
   customer_id?: number;
 
-  // Loyalty points to redeem atomically with this order (all-or-nothing —
-  // see PosOrdersService.createOrder). Requires customer_id.
-  @IsNumber()
+  // "Redeem all eligible points" flag, atomic with this order (see
+  // PosOrdersService.createOrder). Requires customer_id -- the actual number
+  // of points redeemed is computed server-side by PricingService, capped by
+  // the customer's real balance and by cart lines that aren't already
+  // campaign-discounted, never trusted from the client.
+  @IsBoolean()
   @IsOptional()
-  redeem_points?: number;
+  redeem_points?: boolean;
 
   @IsArray()
   @ValidateNested({ each: true })

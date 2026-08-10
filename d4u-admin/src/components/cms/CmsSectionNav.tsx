@@ -26,6 +26,9 @@ const COMING_SOON_ITEMS: NavItem[] = [
   { tab: 'MEDIA', label: 'Media Library', icon: Images, status: 'soon' },
 ];
 
+// Top Bar Tabs — same horizontal pattern as MenuManager's "Menu Products
+// Engine" tab row (Menu Collections / Categories / ... buttons), used here
+// instead of a left sidebar so Website CMS matches the rest of Admin.
 export default function CmsSectionNav({ activeTab, onChangeTab }: CmsSectionNavProps) {
   const renderItem = ({ tab, label, icon: Icon, status }: NavItem) => {
     const isActive = activeTab === tab;
@@ -36,18 +39,16 @@ export default function CmsSectionNav({ activeTab, onChangeTab }: CmsSectionNavP
         title={label}
         aria-current={isActive ? 'page' : undefined}
         onClick={() => onChangeTab(tab)}
-        className={`flex items-center md:justify-center lg:justify-between justify-start gap-2 px-3 py-2.5 rounded-lg font-bold text-sm whitespace-nowrap transition-colors ${
+        className={`px-4 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 text-sm whitespace-nowrap ${
           isActive
-            ? 'bg-stitch-accent text-stitch-accent-ink'
-            : 'text-stitch-muted hover:bg-stitch-surface hover:text-stitch-ink'
+            ? 'bg-stitch-accent text-stitch-accent-ink accent-glow'
+            : 'bg-stitch-panel text-stitch-muted hover:bg-stitch-surface'
         }`}
       >
-        <span className="flex items-center gap-2">
-          <Icon size={16} aria-hidden="true" />
-          <span className="md:hidden lg:inline">{label}</span>
-        </span>
+        <Icon size={16} aria-hidden="true" />
+        {label}
         <span
-          className={`hidden lg:inline-block text-[0.6rem] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${
+          className={`text-[0.55rem] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${
             isActive
               ? 'bg-black/20 text-stitch-accent-ink'
               : status === 'live'
@@ -62,18 +63,9 @@ export default function CmsSectionNav({ activeTab, onChangeTab }: CmsSectionNavP
   };
 
   return (
-    <nav
-      aria-label="Website CMS sections"
-      className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible bg-stitch-panel border border-stitch-border rounded-xl md:rounded-2xl p-2 md:w-16 lg:w-56 md:flex-none"
-    >
-      <div className="hidden lg:block px-3 pt-2 pb-3 text-[0.65rem] font-bold uppercase tracking-wider text-stitch-muted">
-        Website CMS
-      </div>
-
+    <nav aria-label="Website CMS sections" className="flex gap-2 sm:gap-3 overflow-x-auto pb-1">
       {LIVE_ITEMS.map(renderItem)}
-
-      <div className="hidden lg:block my-2 border-t border-dashed border-stitch-border" />
-
+      <div className="w-px my-1 bg-stitch-border" />
       {COMING_SOON_ITEMS.map(renderItem)}
     </nav>
   );

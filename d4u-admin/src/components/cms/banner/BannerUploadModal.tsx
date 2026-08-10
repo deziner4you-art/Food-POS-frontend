@@ -22,6 +22,9 @@ interface BannerUploadModalProps {
   fileInputRef: RefObject<HTMLInputElement | null>;
   onClose: () => void;
   onSubmit: (e: FormEvent) => void;
+  targetStoreIds: number[];
+  setTargetStoreIds: (ids: number[]) => void;
+  branches: { id: number; name: string }[];
 }
 
 export default function BannerUploadModal({
@@ -35,6 +38,9 @@ export default function BannerUploadModal({
   fileInputRef,
   onClose,
   onSubmit,
+  targetStoreIds,
+  setTargetStoreIds,
+  branches,
 }: BannerUploadModalProps) {
   const isEdit = mode === 'edit';
 
@@ -135,6 +141,33 @@ export default function BannerUploadModal({
               </label>
             </div>
           )}
+
+          <div>
+            <label className="block text-xs font-bold text-stitch-muted uppercase tracking-wider mb-2">Show On Branches</label>
+            <div className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-2 text-stitch-ink max-h-40 overflow-y-auto flex flex-col gap-1">
+              {branches.length === 0 ? (
+                <span className="text-sm text-stitch-muted">No branches found.</span>
+              ) : branches.map((s) => (
+                <label key={s.id} className="flex items-center gap-2 cursor-pointer p-1.5 rounded hover:bg-stitch-card">
+                  <input
+                    type="checkbox"
+                    checked={targetStoreIds.includes(s.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) setTargetStoreIds([...targetStoreIds, s.id]);
+                      else setTargetStoreIds(targetStoreIds.filter((id) => id !== s.id));
+                    }}
+                    className="accent-stitch-accent"
+                  />
+                  <span className="text-sm font-bold">{s.name}</span>
+                </label>
+              ))}
+            </div>
+            {targetStoreIds.length === 0 ? (
+              <p className="text-[11px] text-amber-400 mt-2 font-bold">⚠ No branch selected — this banner will show on EVERY branch of this brand.</p>
+            ) : (
+              <p className="text-[11px] text-stitch-muted mt-2 font-medium">This banner will only show on the selected branch(es).</p>
+            )}
+          </div>
 
           <div className="flex gap-3 pt-4">
             <button

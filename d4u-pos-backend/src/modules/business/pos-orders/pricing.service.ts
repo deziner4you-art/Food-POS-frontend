@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { SubscriptionService } from '../../core/subscription/subscription.service';
 import { CampaignResolverService } from './campaign-resolver.service';
+import { LOYALTY_POINT_VALUE } from '../customers/loyalty.constants';
 
 export interface CartLikeItem {
   product_id?: number;
@@ -80,8 +81,18 @@ export class PricingService {
     store_id: number;
     items: CartLikeItem[];
     couponCode?: string;
+    // Delivery fee only ever applies when this is 'DELIVERY' -- Pickup/
+    // Dine-In/offline-sync orders never carry one, regardless of branch
+    // settings.
+    orderType?: 'DELIVERY' | 'PICKUP' | 'DINE_IN' | 'OTHER';
+    // Loyalty Points redemption -- customer_id + a bare "wants to redeem"
+    // flag, never a client-supplied points number. The caller can't
+    // over-redeem or under-cap this: we look up the real balance and the
+    // real eligible (non-campaign-discounted) subtotal ourselves.
+    customer_id?: number;
+    redeemLoyaltyPoints?: boolean;
   }) {
-    const { store_id, items, couponCode } = params;
+    const { store_id, items, couponCode, orderType, customer_id, redeemLoyaltyPoints } = params;
 
     let subtotal = 0;
     for (const item of items) {
@@ -90,6 +101,10 @@ export class PricingService {
 
     let totalDiscount = 0;
     const appliedRules: string[] = [];
+    // Tracks which cart lines (by product_id/id) already carry a campaign
+    // discount, so Loyalty Points redemption below never stacks with one --
+    // "flat price" items only.
+    const discountedProductIds = new Set<number>();
 
     // Order-attribution summary (MARKETING-002 §16) — the single/primary
     // promotion this order is attributed to, plus BOGO/gift line detail.
@@ -126,6 +141,8 @@ export class PricingService {
         if (discount > 0) {
           totalDiscount += discount;
           attribute(campaign, discount);
+          const itemId = item.product_id ?? item.id;
+          if (itemId != null) discountedProductIds.add(itemId);
           if (!appliedCampaignIds.has(campaign.id)) {
             appliedCampaignIds.add(campaign.id);
             appliedRules.push(`Campaign: ${campaign.title}`);
@@ -155,6 +172,8 @@ export class PricingService {
 
       totalDiscount += discount;
       attribute(campaign, discount);
+      const getItemId = getItem.product_id ?? getItem.id;
+      if (getItemId != null) discountedProductIds.add(getItemId);
       bogoItems.push({ product_id: campaign.get_product_id as number, name: campaign.getProduct?.name || '', qty: getItem.quantity, rewardUnits });
       appliedRules.push(`BOGO: ${campaign.title} (${rewardUnits} free unit${rewardUnits > 1 ? 's' : ''})`);
     }
@@ -180,6 +199,7 @@ export class PricingService {
 
       totalDiscount += discount;
       attribute(campaign, discount);
+      for (const p of campaign.bundle_products) discountedProductIds.add(p.id);
       if (campaign.campaign_type === 'BUNDLE') bundleId = campaign.id;
       else comboId = campaign.id;
       appliedRules.push(`${campaign.campaign_type === 'BUNDLE' ? 'Bundle' : 'Combo'}: ${campaign.title} (fixed price Rs.${campaign.bundle_price})`);
@@ -210,17 +230,64 @@ export class PricingService {
       }
     }
 
-    let tax = 0;
-    let deliveryFee = 0;
+    // 6. Loyalty Points redemption — only against "flat price" lines that
+    // aren't already campaign-discounted (discountedProductIds, built up
+    // above); capped by both the customer's real balance and the eligible
+    // subtotal. Pure calculation only — the actual points-ledger deduction
+    // happens in the caller (pos-orders/online-orders service) using
+    // pointsRedeemed below, once the order is confirmed.
+    const eligibleForLoyaltySubtotal = items
+      .filter((item) => {
+        const itemId = item.product_id ?? item.id;
+        return itemId == null || !discountedProductIds.has(itemId);
+      })
+      .reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-    let finalTotal = subtotal - totalDiscount + tax + deliveryFee;
+    let loyaltyDiscount = 0;
+    let pointsRedeemed = 0;
+    if (redeemLoyaltyPoints && customer_id) {
+      const customer = await this.prisma.customer.findUnique({ where: { id: customer_id }, select: { loyalty_points: true } });
+      const availableValue = (customer?.loyalty_points ?? 0) * LOYALTY_POINT_VALUE;
+      const rawLoyaltyDiscount = Math.min(availableValue, eligibleForLoyaltySubtotal);
+      pointsRedeemed = Math.floor(rawLoyaltyDiscount / LOYALTY_POINT_VALUE);
+      // Re-derive from the whole points actually being redeemed, not the raw
+      // (possibly fractional) cap -- what we charge must match what we deduct.
+      loyaltyDiscount = Math.round(pointsRedeemed * LOYALTY_POINT_VALUE * 100) / 100;
+    }
+
+    // Tax % and delivery fee are per-branch settings (CmsSettings), never
+    // hardcoded -- previously this was always tax=0/deliveryFee=0 here, with
+    // every client (POS/website) independently hardcoding its own guess
+    // (10%, 13%) purely for on-screen display, never sent to or validated by
+    // the backend. This is now the single authoritative computation both
+    // channels' createOrder() persist onto the Order/OnlineOrder row.
+    const cmsSettings = await this.prisma.cmsSettings.findUnique({ where: { store_id } });
+    const taxPercent = cmsSettings?.tax_percentage ?? 0;
+    // Loyalty discount reduces the taxable base exactly like a campaign
+    // discount does -- one consistent formula for every discount type, not
+    // a post-tax payment credit.
+    const afterDiscount = subtotal - totalDiscount - loyaltyDiscount;
+    const tax = Math.round(afterDiscount * (taxPercent / 100) * 100) / 100;
+
+    let deliveryFee = 0;
+    if (orderType === 'DELIVERY') {
+      const freeThreshold = cmsSettings?.min_order_free_delivery ?? 0;
+      const qualifiesForFreeDelivery = freeThreshold > 0 && afterDiscount >= freeThreshold;
+      deliveryFee = qualifiesForFreeDelivery ? 0 : cmsSettings?.delivery_fee ?? 0;
+    }
+
+    let finalTotal = Math.round((afterDiscount + tax + deliveryFee) * 100) / 100;
     if (finalTotal < 0) finalTotal = 0;
 
     return {
       subtotal,
       discount: totalDiscount,
       tax,
+      taxPercent,
       deliveryFee,
+      loyaltyDiscount,
+      pointsRedeemed,
+      eligibleForLoyaltySubtotal,
       total: finalTotal,
       appliedRules,
       promotionId,

@@ -41,7 +41,7 @@ function getCampaignBadgeLabel(camp: any): string {
 }
 
 export default function MarketingHub() {
- const { selectedBranchId, isBranchEntered, branches } = useAdminContext();
+ const { selectedBranchId, isBranchEntered, branches, activeBrandId } = useAdminContext();
  const [campaigns, setCampaigns] = useState<any[]>([]);
  const [title, setTitle] = useState('');
  const [description, setDescription] = useState('');
@@ -87,7 +87,15 @@ export default function MarketingHub() {
  const [categories, setCategories] = useState<any[]>([]);
  const [products, setProducts] = useState<any[]>([]);
  
- const [targetStoreIds, setTargetStoreIds] = useState<number[]>([]);
+ // Defaults to the branch currently being viewed -- previously always
+ // started empty, so an admin who didn't think to manually tick the one
+ // checkbox shown (very easy to miss: "I'm looking at this branch, of
+ // course it's for this branch") got an accidental brand-wide campaign
+ // instead. Leaving it empty is still possible and remains the explicit
+ // "apply to every branch of this brand" choice -- it just has to be a
+ // deliberate uncheck now, not a silent default.
+ const defaultTargetStoreIds = () => (isBranchEntered && selectedBranchId ? [Number(selectedBranchId)] : []);
+ const [targetStoreIds, setTargetStoreIds] = useState<number[]>(defaultTargetStoreIds);
  const [targetCategoryIds, setTargetCategoryIds] = useState<number[]>([]);
  const [targetProductIds, setTargetProductIds] = useState<number[]>([]);
 
@@ -131,7 +139,8 @@ export default function MarketingHub() {
 
  useEffect(() => {
  fetchCampaigns();
- }, []);
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [selectedBranchId]);
 
  useEffect(() => {
  if (selectedBranchId) {
@@ -220,8 +229,15 @@ export default function MarketingHub() {
 
  const fetchCampaigns = async () => {
  try {
+ // Was never scoped by branch at all -- returned every campaign in the
+ // whole system regardless of which branch was selected, which is why
+ // Baghbanpura's Active Campaigns tab showed Masjid-e-Taqwa's campaigns.
+ // A brand-wide campaign still correctly shows under every branch of
+ // that same brand (see MarketingService.getCampaigns) -- only a
+ // campaign scoped to a DIFFERENT specific branch stops appearing.
+ const campaignQuery = selectedBranchId ? `?store_id=${selectedBranchId}` : '';
  const [res, res2, res4, res5] = await Promise.all([
- apiFetch('/marketing/campaign'),
+ apiFetch(`/marketing/campaign${campaignQuery}`),
  apiFetch('/marketing/schedule'),
  apiFetch('/catalog/categories'),
  apiFetch('/catalog/products'),
@@ -335,7 +351,7 @@ export default function MarketingHub() {
  setPublishInstagram(false);
  setPublishTv(false);
  setImageFile(null);
- setTargetStoreIds([]);
+ setTargetStoreIds(defaultTargetStoreIds());
  setTargetCategoryIds([]);
  setTargetProductIds([]);
  resetBogoFields();
@@ -352,6 +368,7 @@ export default function MarketingHub() {
  formData.append('published_facebook', String(publishFacebook));
  formData.append('published_instagram', String(publishInstagram));
  formData.append('published_tv', String(publishTv));
+ if (activeBrandId) formData.append('brand_id', String(activeBrandId));
  targetStoreIds.forEach(id => formData.append('target_store_ids', String(id)));
  targetCategoryIds.forEach(id => formData.append('target_category_ids', String(id)));
  targetProductIds.forEach(id => formData.append('target_product_ids', String(id)));
@@ -365,7 +382,7 @@ export default function MarketingHub() {
  await fetchCampaigns();
  setTitle(''); setDescription(''); setDiscountPct('');
  setStartDate(''); setEndDate(''); setImageFile(null);
- setTargetStoreIds([]);
+ setTargetStoreIds(defaultTargetStoreIds());
  setTargetCategoryIds([]);
  setTargetProductIds([]);
  resetBogoFields();
@@ -381,6 +398,7 @@ export default function MarketingHub() {
  formData.append('published_facebook', String(publishFacebook));
  formData.append('published_instagram', String(publishInstagram));
  formData.append('published_tv', String(publishTv));
+ if (activeBrandId) formData.append('brand_id', String(activeBrandId));
  targetStoreIds.forEach(id => formData.append('target_store_ids', String(id)));
  targetCategoryIds.forEach(id => formData.append('target_category_ids', String(id)));
  targetProductIds.forEach(id => formData.append('target_product_ids', String(id)));
@@ -400,7 +418,7 @@ export default function MarketingHub() {
  setTitle(''); setDescription(''); setDiscountPct('');
  setPublishWeb(true); setPublishPos(true); setPublishFacebook(false); setPublishInstagram(false); setPublishTv(false);
  setImageFile(null);
- setTargetStoreIds([]);
+ setTargetStoreIds(defaultTargetStoreIds());
  resetBogoFields();
  } else {
  const err = await res.json().catch(() => null);
@@ -514,7 +532,7 @@ export default function MarketingHub() {
  setStartDate('');
  setEndDate('');
  setIsScheduled(false);
- setTargetStoreIds([]);
+ setTargetStoreIds(defaultTargetStoreIds());
  setTargetCategoryIds([]);
  setTargetProductIds([]);
  setSuccessMsg('');
@@ -1061,7 +1079,11 @@ export default function MarketingHub() {
  )})}
  )()}
  </div>
- <p className="text-[11px] text-stitch-muted mt-2 font-medium">If no branch/category/item is selected, the deal applies globally.</p>
+ {targetStoreIds.length === 0 ? (
+ <p className="text-[11px] text-amber-400 mt-2 font-bold">⚠ No branch selected — this deal will apply to EVERY branch of this brand.</p>
+ ) : (
+ <p className="text-[11px] text-stitch-muted mt-2 font-medium">If no category/item is selected, the deal applies to all items at the selected branch(es).</p>
+ )}
  </div>
  </div>
  </div>

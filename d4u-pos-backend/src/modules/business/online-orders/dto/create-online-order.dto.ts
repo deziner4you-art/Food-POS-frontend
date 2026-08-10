@@ -40,4 +40,16 @@ export class CreateOnlineOrderDto {
   // Kitchen Display turns it into a Walk-in/Pickup/Online territory label.
   @IsOptional()
   order_type?: string;
+
+  // Logged-in customer's own id, when known -- lets PricingService redeem
+  // Loyalty Points and credit earned points against the real customer
+  // record instead of only ever resolving one by customerPhone.
+  @IsOptional()
+  customer_id?: number | string;
+
+  // "Redeem all eligible points" flag -- see PosOrdersService's identical
+  // field for why this is a bare boolean, never a client-supplied points
+  // number.
+  @IsOptional()
+  redeem_points?: boolean;
 }

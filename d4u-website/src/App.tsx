@@ -106,9 +106,8 @@ function MenuRoute() {
 
 function PromotionsRoute() {
   const { promotions } = useStore();
-  const { setAppliedCoupon } = useOutletContext<PublicOutletContext>();
   const navigate = useNavigate();
-  return <PromotionsPage promotions={promotions} setActivePage={(page) => navigate(PAGE_ROUTES[page])} onApplyPromoCode={setAppliedCoupon} />;
+  return <PromotionsPage promotions={promotions} setActivePage={(page) => navigate(PAGE_ROUTES[page])} />;
 }
 
 function mapStoresToBranches(stores: ReturnType<typeof useStore>['stores']) {
@@ -148,8 +147,8 @@ function ContactRoute() {
 }
 
 function CheckoutRoute() {
-  const { appliedCoupon, setActiveOrder } = useOutletContext<PublicOutletContext>();
-  return <CheckoutView appliedPromo={appliedCoupon} onBackToMenu={() => window.history.back()} onOrderPlaced={setActiveOrder} />;
+  const { setActiveOrder } = useOutletContext<PublicOutletContext>();
+  return <CheckoutView onBackToMenu={() => window.history.back()} onOrderPlaced={setActiveOrder} />;
 }
 
 function TrackRoute() {

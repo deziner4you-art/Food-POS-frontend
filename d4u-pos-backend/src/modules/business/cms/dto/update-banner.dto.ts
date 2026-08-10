@@ -28,4 +28,7 @@ export class UpdateBannerDto {
   @IsNumber()
   @IsOptional()
   displayOrder?: number;
+
+  @IsOptional()
+  target_store_ids?: any;
 }

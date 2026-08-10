@@ -113,7 +113,7 @@ export function useStoreData(storeId: number | null) {
     const fetchCMS = async () => {
       try {
         const [bannersRes, settingsRes, campaignsRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/cms/banners`),
+          fetch(`${BACKEND_URL}/cms/banners?store_id=${storeId}`),
           fetch(`${BACKEND_URL}/cms/settings/${storeId}`),
           fetch(`${BACKEND_URL}/marketing/campaign/visible?store_id=${storeId}&channel=web`),
         ]);

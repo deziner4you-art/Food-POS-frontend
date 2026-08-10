@@ -16,21 +16,36 @@ export class CustomersService {
   // تمام گاہک (CRM Grid)
   async getCustomers(brand_id: number, store_id?: number, search?: string) {
     const where: any = { brand_id };
-    
+    // Both conditions below are their own OR clause -- combined via AND (not
+    // both assigned to where.OR, which would let whichever runs second
+    // silently discard the other) so store-scoping and search both apply
+    // together when both are given.
+    const and: any[] = [];
+
+    // Customer has no store_id of its own -- "belongs to this branch" was
+    // being inferred purely from having a past POS Order at that store,
+    // which made a brand-new customer (0 orders so far, e.g. one just
+    // created via "New Customer" or via a Delivery order still awaiting
+    // sync) invisible in the CRM grid the instant they were added, since
+    // they don't have a qualifying order yet. Always include customers with
+    // no order history at all so they show up immediately; customers who
+    // do have real order history stay scoped to the branch they actually
+    // ordered from, unchanged.
     if (store_id) {
-      where.orders = {
-        some: {
-          store_id: store_id
-        }
-      };
+      and.push({ OR: [{ orders: { some: { store_id } } }, { total_orders: 0 }] });
     }
 
     if (search) {
-      where.OR = [
-        { phone: { contains: search } },
-        { name: { contains: search, mode: 'insensitive' } },
-      ];
+      and.push({
+        OR: [
+          { phone: { contains: search } },
+          { name: { contains: search, mode: 'insensitive' } },
+        ],
+      });
     }
+
+    if (and.length > 0) where.AND = and;
+
     return this.prisma.customer.findMany({
       where,
       orderBy: { total_orders: 'desc' },
@@ -79,13 +94,21 @@ export class CustomersService {
     name: string;
     address?: string;
   }) {
+    // Find-or-create: phone is globally unique (not per-brand), so a
+    // cashier typing a number that's already registered under ANY brand
+    // used to hard-fail with "already exists" even though, from the
+    // cashier's point of view, they just typed a genuinely new customer for
+    // THIS brand. Returning the existing record instead (matching
+    // lookupCustomerByPhone's own behavior) means "Add Customer" is
+    // idempotent: an existing number resolves to that customer, a new one
+    // creates a real new row.
     const existing = await this.prisma.customer.findUnique({
       where: { phone: body.phone },
+      include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
-    if (existing)
-      throw new ConflictException(
-        `Customer with phone ${body.phone} already exists`,
-      );
+    if (existing) {
+      return { success: true, customer: existing, alreadyExisted: true };
+    }
 
     const customer = await this.prisma.customer.create({
       data: {

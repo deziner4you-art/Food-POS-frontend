@@ -26,10 +26,43 @@ export class OnlineOrdersService {
     if (!store) throw new BadRequestException(`Store #${storeId} not found.`);
     let parsedItems = typeof body.items === 'string' ? JSON.parse(body.items) : body.items;
 
+    // Resolve the real customer BEFORE pricing -- Loyalty Points redemption
+    // needs a real customer_id to look up the balance against. A logged-in
+    // customer already sends their own id directly; a guest/phone-only
+    // checkout resolves (or auto-creates) by phone, same as this method
+    // already did after order creation for earnPoints -- moved earlier so
+    // both earn and redeem can share one resolved customer.
+    let resolvedCustomerId: number | undefined = body.customer_id ? Number(body.customer_id) : undefined;
+    let isNewCustomer = false;
+    if (!resolvedCustomerId && body.customerPhone) {
+      const existingCustomer = await this.prisma.customer.findUnique({ where: { phone: body.customerPhone } });
+      if (existingCustomer) {
+        resolvedCustomerId = existingCustomer.id;
+      } else {
+        const newCustomer = await this.prisma.customer.create({
+          data: {
+            brand_id: store.brand_id,
+            phone: body.customerPhone,
+            name: body.customer || 'Online Guest',
+            address: body.customerAddress || '',
+            total_orders: 1,
+            loyalty_points: 0,
+          },
+        });
+        console.log(`[CRM] Auto-created new customer for ${body.customerPhone}`);
+        resolvedCustomerId = newCustomer.id;
+        isNewCustomer = true;
+      }
+    }
+
+    const orderType = (body.order_type || 'DELIVERY').toUpperCase();
     const pricingResult = await this.pricing.calculatePricing({
       store_id: storeId,
       items: parsedItems,
-      couponCode: body.couponCode
+      couponCode: body.couponCode,
+      orderType: orderType === 'DELIVERY' ? 'DELIVERY' : 'OTHER',
+      customer_id: resolvedCustomerId,
+      redeemLoyaltyPoints: body.redeem_points === true,
     });
 
     const order = await this.prisma.onlineOrder.create({
@@ -40,6 +73,10 @@ export class OnlineOrdersService {
         customerAddress: body.customerAddress || 'No Address Provided',
         items: JSON.stringify(parsedItems),
         totalAmount: String(pricingResult.total.toFixed(2)),
+        tax_amount: pricingResult.tax,
+        delivery_fee: pricingResult.deliveryFee,
+        loyalty_discount: pricingResult.loyaltyDiscount,
+        points_redeemed: pricingResult.pointsRedeemed,
         paymentMethod: body.payment_method || null,
         source: body.source || 'Website',
         notes: body.notes || '',
@@ -67,6 +104,15 @@ export class OnlineOrdersService {
     );
     this.gateway.broadcast('new_order', updatedOrder, `store_${storeId}`);
 
+    // Redeem Loyalty Points — uses pricingResult.pointsRedeemed (the real,
+    // capped number computed by calculatePricing from the customer's actual
+    // balance and their eligible, non-campaign-discounted subtotal), never a
+    // raw client-supplied points count. No redemption support existed on
+    // this online-order path before at all.
+    if (resolvedCustomerId && pricingResult.pointsRedeemed > 0) {
+      await this.customers.redeemPoints(resolvedCustomerId, pricingResult.pointsRedeemed);
+    }
+
     // Award Loyalty Points — via the same CustomersService.earnPoints used by
     // PosOrdersService.createOrder, not a second, independent formula. The
     // previous inline version read body.totalAmount, a field the website
@@ -74,33 +120,18 @@ export class OnlineOrdersService {
     // rupee rate that doesn't match earnPoints' real 5-points-per-Rs-100
     // rate, and never wrote a LoyaltyTransaction audit row. pricingResult.total
     // is the same value already stored as this order's own totalAmount above.
-    if (body.customerPhone) {
-      const existingCustomer = await this.prisma.customer.findUnique({
-        where: { phone: body.customerPhone },
-      });
-      if (existingCustomer) {
-        // total_orders counts orders placed, independent of whether this
-        // particular order's total cleared the minimum to earn a point.
+    if (resolvedCustomerId) {
+      // total_orders counts orders placed, independent of whether this
+      // particular order's total cleared the minimum to earn a point.
+      // (A brand-new customer already starts at total_orders: 1 -- see
+      // creation above -- so it isn't incremented a second time here.)
+      if (!isNewCustomer) {
         await this.prisma.customer.update({
-          where: { id: existingCustomer.id },
+          where: { id: resolvedCustomerId },
           data: { total_orders: { increment: 1 } },
         });
-        await this.customers.earnPoints(existingCustomer.id, updatedOrder.id, pricingResult.total);
-      } else {
-        // Auto-create customer — scoped to the brand that actually placed this order, not a hardcoded default.
-        const newCustomer = await this.prisma.customer.create({
-          data: {
-            brand_id: store.brand_id,
-            phone: body.customerPhone,
-            name: body.customer || 'Online Guest',
-            address: body.customerAddress || '',
-            total_orders: 1,
-            loyalty_points: 0,
-          }
-        });
-        console.log(`[CRM] Auto-created new customer for ${body.customerPhone}`);
-        await this.customers.earnPoints(newCustomer.id, updatedOrder.id, pricingResult.total);
       }
+      await this.customers.earnPoints(resolvedCustomerId, updatedOrder.id, pricingResult.total);
     }
 
     return { success: true, order: updatedOrder };

@@ -324,6 +324,11 @@ export class CategoryGroupService {
         include: {
           variants: true,
           modifierGroups: { include: { modifierGroup: { include: { modifiers: true } } } },
+          // Previously omitted, so POS/website's "belongs to an Add-ons
+          // category" checks (p.categories?.some(...)) always saw undefined
+          // and treated every product as category-less, regardless of what
+          // was actually assigned in Admin.
+          categories: { select: { id: true, name: true } },
         },
       },
     };

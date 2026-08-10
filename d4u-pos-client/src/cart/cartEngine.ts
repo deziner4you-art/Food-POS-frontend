@@ -222,6 +222,7 @@ export interface OrderTotals {
   totalDiscountAmount: number;
   afterDiscount: number;
   tax: number;
+  deliveryFee: number;
   grandTotal: number;
   bogoApplications: BogoApplication[];
   bundleApplications: { campaignId: number; title: string; discount: number }[];
@@ -240,7 +241,11 @@ export function calculateOrderTotals(
   activeCampaigns: any[],
   storeId: number | undefined,
   discountPercent: number,
-  taxRate: number = 0.10
+  taxRate: number = 0.10,
+  // Delivery fee only ever applies for a Delivery order, mirroring
+  // PricingService.calculatePricing()'s server-side formula exactly so the
+  // cashier's screen/printed bill always matches what actually gets billed.
+  delivery: { isDelivery: boolean; fee: number; freeThreshold: number } = { isDelivery: false, fee: 0, freeThreshold: 0 }
 ): OrderTotals {
   const subTotal = sumLineItems(cart);
   const promoDiscountAmount = cart.reduce((sum, item) => {
@@ -274,11 +279,20 @@ export function calculateOrderTotals(
 
   const totalDiscountAmount = promoDiscountAmount + bogoDiscountAmount + bundleDiscountAmount + giftDiscountAmount + discountAmount;
   const afterDiscount = subTotal - totalDiscountAmount;
-  const tax = afterDiscount * taxRate;
-  const grandTotal = afterDiscount + tax;
+  // Rounded here, at the source, rather than leaving accumulated float drift
+  // (e.g. 1958.4180000000001) for every downstream display to individually
+  // remember to .toFixed(2) -- one quick-cash button in Complete Payment was
+  // missing that and showed the raw float straight to the cashier.
+  const tax = Math.round(afterDiscount * taxRate * 100) / 100;
+  let deliveryFee = 0;
+  if (delivery.isDelivery) {
+    const qualifiesForFreeDelivery = delivery.freeThreshold > 0 && afterDiscount >= delivery.freeThreshold;
+    deliveryFee = qualifiesForFreeDelivery ? 0 : delivery.fee;
+  }
+  const grandTotal = Math.round((afterDiscount + tax + deliveryFee) * 100) / 100;
   return {
     subTotal, promoDiscountAmount, bogoDiscountAmount, bundleDiscountAmount, giftDiscountAmount,
-    afterPromo, discountAmount, totalDiscountAmount, afterDiscount, tax, grandTotal,
+    afterPromo, discountAmount, totalDiscountAmount, afterDiscount, tax, deliveryFee, grandTotal,
     bogoApplications, bundleApplications, giftApplications,
   };
 }

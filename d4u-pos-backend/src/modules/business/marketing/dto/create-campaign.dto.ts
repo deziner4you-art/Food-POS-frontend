@@ -1,6 +1,9 @@
 import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class CreateCampaignDto {
+  @IsOptional()
+  brand_id?: any;
+
   @IsString()
   @IsNotEmpty()
   title: string;

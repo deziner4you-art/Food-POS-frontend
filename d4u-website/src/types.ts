@@ -84,6 +84,7 @@ export interface Product {
   prepTimeMinutes?: number;
   modifierGroups?: ModifierGroup[];
   variants?: ProductVariant[];
+  categories?: { id: number; name: string }[];
 }
 
 export interface Category {

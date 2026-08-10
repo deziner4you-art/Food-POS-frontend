@@ -22,7 +22,7 @@ const MODULE_DEFINITIONS = [
 ];
 
 export default function CmsManager() {
-  const { branches, brands, selectedBranchId, setSelectedBranchId, activeBrandId } = useAdminContext();
+  const { branches, brands, selectedBranchId, setSelectedBranchId, activeBrandId, isBranchEntered } = useAdminContext();
 
   const [activeTab, setActiveTab] = useState<CmsTab>('BANNERS');
   // Snapshot of the last-fetched/last-saved settings, used only to derive
@@ -38,6 +38,10 @@ export default function CmsManager() {
   const [bannerForm, setBannerForm] = useState({ title: '', subtitle: '', linkUrl: '', buttonText: '', isActive: true, displayOrder: 0 });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Same convention as MarketingHub.tsx's targetStoreIds: empty = brand-wide
+  // (explicit), pre-checked to whichever branch is currently being viewed.
+  const defaultTargetStoreIds = () => (isBranchEntered && selectedBranchId ? [Number(selectedBranchId)] : []);
+  const [targetStoreIds, setTargetStoreIds] = useState<number[]>(defaultTargetStoreIds);
 
   // Settings & Modules State
   // tiktokUrl/linkedinUrl/pinterestUrl/threadsUrl removed entirely — they
@@ -47,6 +51,7 @@ export default function CmsManager() {
     siteTitle: '', contactPhone: '', contactEmail: '', address: '', googleMapUrl: '',
     facebookUrl: '', instagramUrl: '', whatsappNumber: '',
     twitterUrl: '', youtubeUrl: '', aboutText: '', companyText: '',
+    tax_percentage: 0, delivery_fee: 0, delivery_radius_km: 0, min_order_free_delivery: 0,
     module_auth_enabled: false, module_kds_enabled: true, module_loyalty_enabled: false, module_payments_enabled: false,
     hasInventoryUnlockPin: false
   });
@@ -58,7 +63,8 @@ export default function CmsManager() {
   const fetchBanners = async () => {
     setBannersLoading(true);
     try {
-      const res = await apiFetch(`${BACKEND_URL}/cms/banners`);
+      const query = selectedBranchId ? `?store_id=${selectedBranchId}` : '';
+      const res = await apiFetch(`${BACKEND_URL}/cms/banners${query}`);
       if (res.ok) setBanners(await res.json());
     } catch (e) {
       console.error('Failed to fetch banners', e);
@@ -133,6 +139,7 @@ export default function CmsManager() {
     setBannerForm({ title: '', subtitle: '', linkUrl: '', buttonText: '', isActive: true, displayOrder: 0 });
     setSelectedFile(null);
     setBannerPreview(null);
+    setTargetStoreIds(defaultTargetStoreIds());
   };
 
   const closeBannerModal = () => {
@@ -159,6 +166,7 @@ export default function CmsManager() {
     });
     setSelectedFile(null);
     setBannerPreview(null);
+    setTargetStoreIds((banner.target_stores || []).map((s: any) => s.id));
     setShowBannerModal(true);
   };
 
@@ -177,6 +185,7 @@ export default function CmsManager() {
             title: bannerForm.title,
             subtitle: bannerForm.subtitle,
             isActive: bannerForm.isActive,
+            target_store_ids: targetStoreIds,
           }),
         });
         if (res.ok) {
@@ -199,7 +208,8 @@ export default function CmsManager() {
     formData.append('buttonText', bannerForm.buttonText);
     formData.append('isActive', String(bannerForm.isActive));
     formData.append('displayOrder', String(bannerForm.displayOrder));
-    formData.append('brand_id', '1');
+    if (activeBrandId) formData.append('brand_id', String(activeBrandId));
+    targetStoreIds.forEach(id => formData.append('target_store_ids', String(id)));
 
     try {
       const res = await apiFetch(`${BACKEND_URL}/cms/banners`, {
@@ -375,6 +385,9 @@ export default function CmsManager() {
           fileInputRef={fileInputRef}
           onClose={closeBannerModal}
           onSubmit={handleBannerSubmit}
+          targetStoreIds={targetStoreIds}
+          setTargetStoreIds={setTargetStoreIds}
+          branches={isBranchEntered && selectedBranchId ? branches.filter(b => b.id === Number(selectedBranchId)) : branches}
         />
       )}
     </CmsShell>

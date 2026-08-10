@@ -65,7 +65,12 @@ export class PosOrdersService {
     store_id: number;
     created_by: number;
     customer_id?: number;
-    redeem_points?: number;
+    // A bare "customer wants to redeem" flag, never a client-supplied points
+    // number -- calculatePricing looks up the real balance and the real
+    // eligible (non-campaign-discounted) subtotal itself, so this can never
+    // over-redeem past what the customer actually has or what's actually
+    // usable.
+    redeem_points?: boolean;
     items: {
       product_id: number;
       variant_id?: number;
@@ -95,11 +100,18 @@ export class PosOrdersService {
     const pricingResult = await this.pricing.calculatePricing({
       store_id: body.store_id,
       items: body.items,
-      couponCode: body.couponCode
+      couponCode: body.couponCode,
+      orderType: body.order_source === 'Delivery' ? 'DELIVERY' : 'OTHER',
+      customer_id: body.customer_id,
+      redeemLoyaltyPoints: body.redeem_points === true,
     });
 
     const total_amount = pricingResult.total;
     const discount = pricingResult.discount;
+    const tax_amount = pricingResult.tax;
+    const delivery_fee = pricingResult.deliveryFee;
+    const loyalty_discount = pricingResult.loyaltyDiscount;
+    const points_redeemed = pricingResult.pointsRedeemed;
 
     // Order + Items + KOT ایک ہی transaction میں
     const result = await this.prisma.$transaction(async (tx) => {
@@ -112,6 +124,10 @@ export class PosOrdersService {
           business_date: new Date(),
           total_amount,
           discount: discount,
+          tax_amount,
+          delivery_fee,
+          loyalty_discount,
+          points_redeemed,
           status: 'PENDING',
           order_source: body.order_source ?? 'WALKIN',
           payment_method: body.payment_method ?? 'CASH',
@@ -189,10 +205,16 @@ export class PosOrdersService {
       // doesn't actually have enough points (e.g. a race with another
       // redemption), this throws and the whole order rolls back instead of
       // the order succeeding while the points deduction silently fails.
-      if (body.customer_id && body.redeem_points && body.redeem_points > 0) {
+      // Uses pricingResult.pointsRedeemed (the real, capped number computed
+      // by calculatePricing), never a raw client-supplied points count —
+      // previously this used body.redeem_points directly, so a customer
+      // with more points than their eligible subtotal had their ENTIRE
+      // balance deducted even though total_amount only ever reflected the
+      // properly capped discount.
+      if (body.customer_id && points_redeemed > 0) {
         await this.customersService.redeemPoints(
           body.customer_id,
-          body.redeem_points,
+          points_redeemed,
           tx,
         );
       }
@@ -372,7 +394,19 @@ export class PosOrdersService {
         }
 
         if (!order.store_id) throw new Error('Missing store_id in offline sync order');
-        if (!order.business_day_id) throw new Error('Missing business_day_id in offline sync order');
+
+        // business_day_id used to be REQUIRED from the client, but neither
+        // local-fallback KOT object anywhere in the POS ever actually set
+        // it (it's not even declared on the OfflineKOT type) -- meaning
+        // this line threw on literally every sync attempt, forever, for
+        // every locally-queued order regardless of type. createOrder()
+        // (the live path) never asked the client for this either -- it
+        // resolves the currently open business day itself. Do the same
+        // here instead of trusting a field that was never actually sent.
+        const openDay = await tx.businessDay.findFirst({
+          where: { store_id: order.store_id, status: 'OPEN' },
+          orderBy: { id: 'desc' },
+        });
 
         // This is the ONLY path that ever persists a KOT'd order to the real
         // Order table (the offline-sync engine flushes every local KOT here
@@ -389,19 +423,47 @@ export class PosOrdersService {
           resolvedCustomerId = matched?.id ?? null;
         }
 
+        // A queued Delivery order (either KOT'd for later, or a "Pay Now"
+        // attempt that fell back to the offline queue on a network blip)
+        // used to always land here as a bare Order with NO linked KOT row
+        // at all, order_source hardcoded to 'OFFLINE_SYNC', and status
+        // jumped straight to a terminal DELIVERED/PAID -- silently skipping
+        // the entire kitchen -> rider pipeline a live-created Delivery
+        // order goes through (never shows on a real Kitchen Display, never
+        // reaches Active Deliveries). Give it the exact same real lifecycle
+        // instead: its real order_source, a genuine KOT, and its actual
+        // current status rather than a forced terminal one. Non-Delivery
+        // types (Dine In / Take Away) keep their existing behavior
+        // unchanged -- this is scoped to the one thing that was reported
+        // broken, not a rewrite of the whole sync path.
+        const isDelivery = typeof order.type === 'string' && order.type.toUpperCase() === 'DELIVERY';
+        const kotStatus: 'NEW' | 'PREPARING' | 'READY' =
+          isDelivery && ['NEW', 'PREPARING', 'READY'].includes(order.status) ? order.status : 'NEW';
+        const orderStatus = isDelivery
+          ? (kotStatus === 'NEW' ? 'PENDING' : kotStatus) // matches createOrder's own PENDING->PREPARING->READY progression
+          : (order.status === 'READY' ? 'DELIVERED' : 'PAID'); // unchanged for Dine In / Take Away
+
         const newOrder = await tx.order.create({
           data: {
             store_id: order.store_id,
-            business_day_id: order.business_day_id,
+            business_day_id: openDay?.id ?? null,
             business_date: new Date(),
             customer_id: resolvedCustomerId,
-            order_source: 'OFFLINE_SYNC',
-            status: order.status === 'READY' ? 'DELIVERED' : 'PAID', // Map POS final status
+            order_source: isDelivery ? 'Delivery' : 'OFFLINE_SYNC',
+            status: orderStatus,
             total_amount: order.totalAmount || 0,
             payment_status: 'PAID',
             payment_method: order.paymentMethod || 'CASH',
             is_offline: true,
-            created_by: order.created_by || null,
+            // created_by is a required (non-nullable) relation to User --
+            // neither local-fallback KOT object anywhere in the POS ever
+            // actually set this field, so it was always `undefined ||
+            // null`, which Prisma rejects. Confusingly, Prisma's own error
+            // message for this pointed at the unrelated `store` field
+            // instead of the real cause, which is what made this so hard
+            // to track down. `|| 1` is the same last-resort fallback
+            // createOrder() itself already uses elsewhere in this file.
+            created_by: order.created_by || 1,
             // Same gap as customer_id above -- the cashier-entered delivery
             // address was captured on the local KOT but never made it onto
             // the real Order.
@@ -414,7 +476,38 @@ export class PosOrdersService {
               })),
             },
           },
+          include: { items: { include: { product: true } }, customer: true },
         });
+
+        if (isDelivery) {
+          await tx.kOT.create({
+            data: {
+              store_id: order.store_id,
+              order_id: newOrder.id,
+              business_day_id: openDay?.id ?? null,
+              items: items.map((i: any) => ({
+                name: i.name || 'Item',
+                qty: i.qty || 1,
+                price: i.price || 0,
+                specialInst: '',
+                product_id: i.id || 1,
+              })),
+              status: kotStatus,
+              ...(kotStatus !== 'NEW' ? { acceptedAt: new Date() } : {}),
+              ...(kotStatus === 'READY' ? { readyAt: new Date() } : {}),
+            },
+          });
+
+          // If this order was already marked READY locally (finished
+          // cooking while genuinely offline) before it ever reached the
+          // backend, fire the same Rider-facing broadcast a live
+          // updateKotStatus(..., 'READY') call would have -- otherwise it
+          // would sync in "ready" but never actually notify a rider.
+          if (kotStatus === 'READY') {
+            this.gateway.broadcast('order_updated', formatPosOrderForRider(newOrder), `store_${order.store_id}`);
+          }
+        }
+
         syncedCount++;
       }
       return { success: true, syncedCount };

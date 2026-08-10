@@ -338,6 +338,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     localStorage.setItem('d4u_pos_settings', JSON.stringify(posSettings));
   }, [posSettings]);
 
+  // Per-branch Tax % + Delivery settings (CmsSettings) -- was previously
+  // hardcoded to 10% everywhere in this component with no per-branch
+  // concept at all. Mirrors the same fetch the outer App() component
+  // already makes for itself; POSApp doesn't receive that state as a prop.
+  const [branchSettings, setBranchSettings] = useState<any>(null);
+  const taxRate = (branchSettings?.tax_percentage ?? 0) / 100;
+  useEffect(() => {
+    if (!currentUser?.store_id) return;
+    fetch(`${BACKEND_URL}/cms/settings?store_id=${currentUser.store_id}`)
+      .then(res => res.json())
+      .then(setBranchSettings)
+      .catch(console.error);
+  }, [currentUser?.store_id]);
+
   // The access token expires after 1 hour, but a POS terminal is meant to
   // stay logged in for a full shift — proactively refresh it well before
   // expiry so every API call in the app keeps working silently instead of
@@ -1396,6 +1410,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       customerAddress: customerAddress,
       customer_id: resolvedCustomerId,
       items: itemsSummary,
+      // itemsData/synced/store_id were never set on this object anywhere in
+      // the app -- itemsData isn't even declared here, meaning the offline
+      // sync engine's own query for "unsynced" rows never matched this
+      // record (synced stayed undefined, never literal false) and, even if
+      // it somehow had, the backend had nothing to parse (no itemsData) and
+      // no store_id to satisfy its own validation. This KOT was never going
+      // to leave the browser. Matches the shape the Pay Now flow's own
+      // offline fallback already uses correctly.
+      itemsData: JSON.stringify(cart),
+      synced: false,
+      store_id: currentUser.store_id,
+      created_by: currentUser?.id || 1,
       notes: orderNotes,
       timePlaced: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       prepTimeMinutes: 0,
@@ -1665,8 +1691,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const {
     subTotal, promoDiscountAmount, bogoDiscountAmount, bundleDiscountAmount, giftDiscountAmount, afterPromo, discountAmount,
-    totalDiscountAmount, afterDiscount, tax, grandTotal, giftApplications
-  } = cartEngine.calculateOrderTotals(cart, activeCampaigns, currentUser?.store_id, discountPercent);
+    totalDiscountAmount, afterDiscount, tax, deliveryFee, grandTotal, giftApplications
+  } = cartEngine.calculateOrderTotals(cart, activeCampaigns, currentUser?.store_id, discountPercent, taxRate, {
+    isDelivery: orderType === 'Delivery',
+    fee: branchSettings?.delivery_fee ?? 0,
+    freeThreshold: branchSettings?.min_order_free_delivery ?? 0,
+  });
 
   // CRM customer list -- was previously 3 hardcoded demo customers in a
   // local-only Dexie table (db.crmCustomers), completely disconnected from
@@ -2580,8 +2610,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                             });
                           }
                         } catch(e) {}
-                        const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(parsedCart);
-                        setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: parsedCart, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
+                        const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(parsedCart, taxRate);
+                        setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: parsedCart, subTotal, tax, taxPercent: branchSettings?.tax_percentage ?? 0, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
                       }} style={{ padding: '12px 20px', background: 'var(--accent-yellow)', color: 'black', fontWeight: 'bold', borderRadius: '5px', border: 'none', cursor: 'pointer' }} title="Print Bill Slip">
                         <Printer size={18} />
                       </button>
@@ -2883,8 +2913,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                             <button className="btn-action bg-green-500 text-white font-bold px-4 py-2 flex justify-center items-center gap-2" style={{ width: '100%', borderRadius: '4px' }}
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(del.items);
-                                setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
+                                const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(del.items, taxRate);
+                                setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, taxPercent: branchSettings?.tax_percentage ?? 0, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
                                 try {
                                   const res = await apiFetch(del.isPos ? `/pos-orders/${del.bridgeOrderId}/status` : `/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
@@ -3195,13 +3225,23 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       onClick={async () => {
                         if (!newCustomer.name || !newCustomer.phone) { setToast({ message: 'Name and Phone are required', type: 'error' }); return; }
                         try {
-                          await createCustomer({ brand_id: currentUser.brand_id, phone: newCustomer.phone, name: newCustomer.name });
-                          setToast({ message: `${newCustomer.name} added to CRM!`, type: 'success' });
+                          // Find-or-create (see CustomersService.createCustomer): an
+                          // already-registered number resolves to that existing
+                          // customer instead of failing -- this can never actually
+                          // throw for a duplicate phone anymore, only genuine
+                          // network/permission errors reach the catch below.
+                          const result = await createCustomer({ brand_id: currentUser.brand_id, phone: newCustomer.phone, name: newCustomer.name });
+                          setToast({
+                            message: result.alreadyExisted
+                              ? `${result.name} already exists — showing their record.`
+                              : `${newCustomer.name} added to CRM!`,
+                            type: 'success',
+                          });
                           setShowNewCustomerForm(false);
                           setNewCustomer({ name: '', phone: '' });
                           refreshCrmCustomers();
                         } catch (e) {
-                          setToast({ message: 'Failed to create customer — phone number may already be registered.', type: 'error' });
+                          setToast({ message: 'Failed to create customer — please check your connection and try again.', type: 'error' });
                         }
                       }}
                     >
@@ -3712,7 +3752,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               </div>
             </div>
             )}
-            <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem' }}><span>Tax (10%)</span><span>Rs. {tax.toFixed(2)}</span></div>
+            <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem' }}><span>Tax ({branchSettings?.tax_percentage ?? 0}%)</span><span>Rs. {tax.toFixed(2)}</span></div>
+            {deliveryFee > 0 && (
+              <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem' }}><span>Delivery Fee</span><span>Rs. {deliveryFee.toFixed(2)}</span></div>
+            )}
             <div className="totals-row grand" style={{ padding: '2px 0', marginTop: '2px', marginBottom: '4px' }}><span style={{ fontSize: '0.85rem' }}>Grand Total</span><span className="value" style={{ fontSize: '1.1rem' }}>Rs. {grandTotal.toFixed(2)}</span></div>
             {isWaiterMode ? (
               <div className="action-buttons" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '4px' }}>
@@ -4725,7 +4768,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     {paymentMethod === 'Cash' && (
                       <div style={{ display: 'flex', gap: '10px' }}>
                          {[grandTotal, Math.ceil(grandTotal/100)*100 === grandTotal ? grandTotal+100 : Math.ceil(grandTotal/100)*100, Math.ceil(grandTotal/500)*500 === grandTotal ? grandTotal+500 : Math.ceil(grandTotal/500)*500, Math.ceil(grandTotal/1000)*1000 === grandTotal ? grandTotal+1000 : Math.ceil(grandTotal/1000)*1000].map((amt, i) => (
-                           <button key={i} onClick={() => setCashGiven(amt.toString())} style={{ flex: 1, padding: '10px 0', background: '#0f172a', border: '1px solid #1e293b', color: 'white', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 'bold' }}>Rs. {amt}</button>
+                           <button key={i} onClick={() => setCashGiven(amt.toString())} style={{ flex: 1, padding: '10px 0', background: '#0f172a', border: '1px solid #1e293b', color: 'white', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 'bold' }}>Rs. {amt.toFixed(2)}</button>
                          ))}
                       </div>
                     )}
@@ -4759,11 +4802,21 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     payment_method: paymentMethod.toUpperCase(),
                     order_source: orderType,
                     table_no: tableNumber || undefined,
+                    // Was never sent here at all -- a Delivery order paid
+                    // immediately (as opposed to KOT'd then paid later,
+                    // which does send this) landed in the backend with no
+                    // address whatsoever, regardless of what the cashier
+                    // entered in the Delivery Details modal.
+                    delivery_address: orderType === 'Delivery' ? customerAddress : undefined,
                     notes: orderNotes,
-                    // Redeemed atomically with the order server-side (see PosOrdersService.createOrder) —
-                    // if the points can't actually be redeemed, the whole order is rejected instead of
-                    // succeeding while the points deduction silently fails.
-                    redeem_points: redeemedPoints > 0 ? redeemedPoints : undefined,
+                    // A bare "redeem eligible points" flag, not the raw points count --
+                    // the backend computes the real, capped amount itself (customer's real
+                    // balance x eligible/non-discounted subtotal), redeemed atomically with
+                    // the order (see PosOrdersService.createOrder). Previously this sent
+                    // redeemedPoints directly, so a customer with more points than their
+                    // cart's eligible value had their ENTIRE balance deducted even though
+                    // the charged total only ever reflected the properly capped discount.
+                    redeem_points: redeemedPoints > 0 ? true : undefined,
                     items: cart.map(i => ({
                       product_id: i.id || 1,
                       variant_id: i.variant_id,
@@ -4812,6 +4865,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       type: orderType === 'Dine In' ? `Dine In (${tableNumber})` : orderType,
                       customer: customerName,
                       customerPhone: customerPhone,
+                      // Neither was ever set here -- a Delivery order that
+                      // fell back to this path (network blip on the direct
+                      // call above) lost its address and its resolved
+                      // customer link the instant it hit the offline queue.
+                      customerAddress: orderType === 'Delivery' ? customerAddress : undefined,
+                      customer_id: customerId,
                       items: cart.map(item => `${item.qty}x ${item.name}`).join(', '),
                       notes: orderNotes,
                       timePlaced: new Date().toLocaleTimeString(),
@@ -4819,7 +4878,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       totalAmount: grandTotal,
                       paymentMethod: paymentMethod,
                       itemsData: JSON.stringify(cart),
-                      synced: false
+                      synced: false,
+                      store_id: currentUser.store_id,
+                      created_by: currentUser?.id || 1,
                     };
                     await db.kots.add(newKot);
                   }
@@ -4835,9 +4896,16 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   cart: cartWithPromo,
                   subTotal,
                   tax,
+                  taxPercent: branchSettings?.tax_percentage ?? 0,
+                  deliveryFee,
                   discount: totalDiscountAmount,
                   promoDiscount: promoDiscountAmount,
-                  manualDiscount: discountAmount,
+                  // "Redeem All" drives this same discountPercent/discountAmount
+                  // pair (see the button above) -- when it was points that
+                  // produced this discount, label it as Loyalty on the
+                  // receipt instead of the generic manual-discount line.
+                  manualDiscount: redeemedPoints > 0 ? 0 : discountAmount,
+                  loyaltyDiscount: redeemedPoints > 0 ? discountAmount : 0,
                   grandTotal,
                   cashGiven: tendered,
                   returnAmount,
@@ -5372,9 +5440,6 @@ export default function App() {
         setSettings(data);
         if (data.brand?.currency) {
           (window as any).d4u_currency = data.brand.currency;
-        }
-        if (data.brand?.vat_percentage !== undefined) {
-          (window as any).d4u_vat = data.brand.vat_percentage;
         }
         if (data.loyalty_point_value !== undefined) {
           (window as any).d4u_loyalty_point_value = data.loyalty_point_value;

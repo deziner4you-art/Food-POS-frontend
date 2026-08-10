@@ -1,29 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Promotion } from '../../types';
 import { useStore } from '../../context/StoreContext';
-import { getDeliveryFee, getDiscountAmount, getGrandTotal, getSubtotal, getTax } from '../../utils/cartMath';
+import { getDeliveryFee, getGrandTotal, getPromoDiscount, getSubtotal, getTax } from '../../utils/cartMath';
 import { formatCurrency } from '../../utils/currency';
+import { AddOnsModal } from '../AddOnsModal';
 import {
   X,
   ShoppingBag,
   Plus,
   Minus,
   Trash2,
-  ArrowRight,
-  Sparkles
+  ArrowRight
 } from 'lucide-react';
 
 interface CartDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  appliedPromo: Promotion | null;
-  onRemovePromo: () => void;
 }
 
-export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, appliedPromo, onRemovePromo }) => {
-  const { cart, increaseQuantity, decreaseQuantity, removeFromCart } = useStore();
+export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
+  const { cart, increaseQuantity, decreaseQuantity, removeFromCart, settings } = useStore();
   const navigate = useNavigate();
+  const [showAddOns, setShowAddOns] = useState(false);
 
   const handleBrowseMenu = () => {
     onClose();
@@ -42,10 +40,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, applied
   if (!isOpen) return null;
 
   const subtotal = getSubtotal(cart);
-  const discountAmount = getDiscountAmount(cart, appliedPromo);
-  const deliveryFee = getDeliveryFee(cart, 'delivery');
-  const tax = getTax(cart, appliedPromo);
-  const grandTotal = getGrandTotal(cart, appliedPromo, 'delivery');
+  const promoDiscount = getPromoDiscount(cart);
+  const deliveryFee = getDeliveryFee(cart, 'delivery', settings);
+  const tax = getTax(cart, settings);
+  const grandTotal = getGrandTotal(cart, 'delivery', settings);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-md animate-fade-in">
@@ -159,17 +157,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, applied
         {/* Footer Summary */}
         {cart.length > 0 && (
           <div className="p-4 sm:p-6 border-t border-white/10 bg-[#0C0C0E] space-y-4">
-            {appliedPromo && (
-              <div className="bg-[#D4AF37]/10 border border-[#D4AF37]/40 rounded-xl p-2.5 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 text-[#D4AF37]">
-                  <Sparkles className="w-4 h-4" />
-                  <span className="font-bold">Promo '{appliedPromo.code}' Applied!</span>
-                </div>
-                <button onClick={onRemovePromo} className="text-gray-400 hover:text-white text-[11px] underline">
-                  Remove
-                </button>
-              </div>
-            )}
+            <button
+              onClick={() => setShowAddOns(true)}
+              className="w-full border border-dashed border-[#D4AF37]/40 text-[#D4AF37] text-xs font-bold py-2.5 rounded-xl hover:bg-[#D4AF37]/10 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Ons
+            </button>
 
             {/* Price Breakdown — real D4U tax/delivery rules, not Stitch's demo math */}
             <div className="space-y-1.5 text-xs text-gray-300">
@@ -177,10 +170,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, applied
                 <span>Subtotal</span>
                 <span className="font-semibold text-white">{formatCurrency(subtotal)}</span>
               </div>
-              {discountAmount > 0 && (
+              {promoDiscount > 0 && (
                 <div className="flex justify-between text-[#D4AF37]">
-                  <span>Promo Discount</span>
-                  <span className="font-bold">-{formatCurrency(discountAmount)}</span>
+                  <span>Promotional Discount</span>
+                  <span className="font-bold">-{formatCurrency(promoDiscount)}</span>
                 </div>
               )}
               <div className="flex justify-between">
@@ -194,7 +187,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, applied
                 </span>
               </div>
               <div className="flex justify-between">
-                <span>Estimated Tax (13%)</span>
+                <span>Estimated Tax ({settings?.tax_percentage ?? 0}%)</span>
                 <span className="font-semibold text-white">{formatCurrency(tax)}</span>
               </div>
               <div className="flex justify-between text-sm font-extrabold text-white pt-2 border-t border-white/10 font-display">
@@ -215,6 +208,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, applied
           </div>
         )}
       </div>
+      <AddOnsModal isOpen={showAddOns} onClose={() => setShowAddOns(false)} />
     </div>
   );
 };

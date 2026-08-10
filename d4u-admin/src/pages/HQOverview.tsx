@@ -111,12 +111,12 @@ export default function HQOverview() {
           </div>
           <div className="flex items-center gap-3">
             {isSuperAdmin && (
-              <button 
+              <button
                 onClick={() => setRecycleAuthOpen(true)}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-5 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all"
                 title="Recycle Bin"
               >
-                <Trash2 size={20} />
+                <Trash2 size={20} /> Recycle Bin
               </button>
             )}
             <button 

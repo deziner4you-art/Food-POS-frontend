@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const PrintBill = ({ cart, subTotal, tax, grandTotal, cashGiven, returnAmount, time, orderType, orderId, paymentMethod, cashOutAmount, promoDiscount, manualDiscount }: any) => (
+export const PrintBill = ({ cart, subTotal, tax, taxPercent, grandTotal, cashGiven, returnAmount, time, orderType, orderId, paymentMethod, cashOutAmount, promoDiscount, manualDiscount, deliveryFee, loyaltyDiscount }: any) => (
   <div style={{ padding: '10px', width: '80mm', fontFamily: 'monospace', color: 'black', background: 'white', letterSpacing: '-0.5px' }}>
     <div style={{ textAlign: 'center', marginBottom: '15px' }}>
       <h2 style={{ margin: 0, fontSize: '1.8rem', fontWeight: '900', textTransform: 'uppercase' }}>D4U POS</h2>
@@ -57,7 +57,13 @@ export const PrintBill = ({ cart, subTotal, tax, grandTotal, cashGiven, returnAm
           {manualDiscount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}><span>DISCOUNT</span><span>-{manualDiscount?.toFixed(2)}</span></div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}><span>TAX (10%)</span><span>{tax?.toFixed(2)}</span></div>
+          {loyaltyDiscount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}><span>LOYALTY DISCOUNT</span><span>-{loyaltyDiscount?.toFixed(2)}</span></div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}><span>TAX ({taxPercent ?? 10}%)</span><span>{tax?.toFixed(2)}</span></div>
+          {deliveryFee > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}><span>DELIVERY FEE</span><span>{deliveryFee?.toFixed(2)}</span></div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '900', fontSize: '1.3rem', marginTop: '5px' }}>
             <span>TOTAL</span><span>{grandTotal?.toFixed(2)}</span>
           </div>

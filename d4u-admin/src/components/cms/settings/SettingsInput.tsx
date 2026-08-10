@@ -1,8 +1,8 @@
 interface SettingsInputProps {
   label: string;
-  value: string;
+  value: string | number;
   onChange: (value: string) => void;
-  type?: 'text' | 'email';
+  type?: 'text' | 'email' | 'number';
   placeholder?: string;
   error?: string;
 }

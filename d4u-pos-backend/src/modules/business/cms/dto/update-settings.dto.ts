@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsNumber } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class UpdateSettingsDto {
   @IsString()
@@ -48,6 +49,29 @@ export class UpdateSettingsDto {
   @IsString()
   @IsOptional()
   companyText?: string;
+
+  // Global ValidationPipe runs with transformOptions.enableImplicitConversion
+  // false, so a bare @IsNumber() would reject the string a plain HTML number
+  // input sends via JSON.stringify -- @Type(() => Number) coerces explicitly.
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  tax_percentage?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  delivery_fee?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  delivery_radius_km?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  min_order_free_delivery?: number;
 
   @IsBoolean()
   @IsOptional()

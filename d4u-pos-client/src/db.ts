@@ -67,6 +67,8 @@ export interface OfflineKOT {
   itemsData?: string;
   synced?: boolean;
   readyAt?: number;
+  store_id?: number;
+  created_by?: number;
 }
 
 export interface OfflineIngredient {

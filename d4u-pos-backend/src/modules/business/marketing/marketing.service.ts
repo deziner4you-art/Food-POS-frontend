@@ -299,11 +299,29 @@ export class MarketingService {
     ).map(Number);
     await this.assertCampaignTypeAllowed(campaignType, normalizedStoreIds);
 
+    // brand_id has a schema default of 1 that every caller of this method
+    // used to silently inherit -- every campaign in the system ended up
+    // tagged to brand 1 ("D4U Enterprise") regardless of which real brand's
+    // branches it actually targeted, defeating the brand isolation guard in
+    // CampaignResolverService entirely. Resolve it for real: prefer an
+    // explicit brand_id from the caller, else infer it from the first
+    // targeted store (they're all required to share one brand already via
+    // assertCampaignTypeAllowed's store lookups elsewhere in this file).
+    let brandId = body.brand_id ? Number(body.brand_id) : undefined;
+    if (!brandId && normalizedStoreIds.length > 0) {
+      const store = await this.prisma.store.findUnique({ where: { id: normalizedStoreIds[0] }, select: { brand_id: true } });
+      brandId = store?.brand_id;
+    }
+    if (!brandId) {
+      throw new BadRequestException('brand_id is required (select at least one branch, or specify a brand) to create a campaign.');
+    }
+
     const warnings = await this.checkConflicts(body);
     const requireApproval = body.require_approval === true || body.require_approval === 'true';
 
     const campaign = await this.prisma.marketingCampaign.create({
       data: {
+        brand_id: brandId,
         title: body.title,
         description: body.description,
         discount_pct: Number(body.discount_pct) || 0,
@@ -387,6 +405,12 @@ export class MarketingService {
     const whereClause: any = includeArchived ? {} : { deleted_at: null };
 
     if (store_id) {
+      // Same brand-isolation fix as CampaignResolverService.getCoreActiveCampaigns
+      // -- a brand-wide (target_stores: none) campaign must never be listed
+      // for a store belonging to a different brand.
+      const store = await this.prisma.store.findUnique({ where: { id: store_id }, select: { brand_id: true } });
+      if (!store) return [];
+      whereClause.brand_id = store.brand_id;
       whereClause.OR = [
         { target_stores: { none: {} } },
         { target_stores: { some: { id: store_id } } },
