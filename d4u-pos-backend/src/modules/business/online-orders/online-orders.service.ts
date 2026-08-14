@@ -4,6 +4,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { PricingService } from '../pos-orders/pricing.service';
 import { CustomersService } from '../customers/customers.service';
+import { normalizePhone } from '../../../common/utils/phone.util';
 
 @Injectable()
 export class OnlineOrdersService {
@@ -25,6 +26,12 @@ export class OnlineOrdersService {
     const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { brand_id: true } });
     if (!store) throw new BadRequestException(`Store #${storeId} not found.`);
     let parsedItems = typeof body.items === 'string' ? JSON.parse(body.items) : body.items;
+    // Same normalized identity Customer.phone lookups use everywhere else
+    // (customers.service.ts) -- website and POS both capture phone via a
+    // free-text input with no enforced format, so without this the same
+    // real person could resolve to two different customer rows depending on
+    // whether they typed dashes.
+    const normalizedPhone = body.customerPhone ? normalizePhone(body.customerPhone) : '';
 
     // Resolve the real customer BEFORE pricing -- Loyalty Points redemption
     // needs a real customer_id to look up the balance against. A logged-in
@@ -34,22 +41,22 @@ export class OnlineOrdersService {
     // both earn and redeem can share one resolved customer.
     let resolvedCustomerId: number | undefined = body.customer_id ? Number(body.customer_id) : undefined;
     let isNewCustomer = false;
-    if (!resolvedCustomerId && body.customerPhone) {
-      const existingCustomer = await this.prisma.customer.findUnique({ where: { phone: body.customerPhone } });
+    if (!resolvedCustomerId && normalizedPhone) {
+      const existingCustomer = await this.prisma.customer.findUnique({ where: { phone: normalizedPhone } });
       if (existingCustomer) {
         resolvedCustomerId = existingCustomer.id;
       } else {
         const newCustomer = await this.prisma.customer.create({
           data: {
             brand_id: store.brand_id,
-            phone: body.customerPhone,
+            phone: normalizedPhone,
             name: body.customer || 'Online Guest',
             address: body.customerAddress || '',
             total_orders: 1,
             loyalty_points: 0,
           },
         });
-        console.log(`[CRM] Auto-created new customer for ${body.customerPhone}`);
+        console.log(`[CRM] Auto-created new customer for ${normalizedPhone}`);
         resolvedCustomerId = newCustomer.id;
         isNewCustomer = true;
       }
@@ -69,7 +76,7 @@ export class OnlineOrdersService {
       data: {
         store_id: storeId,
         customer: body.customer || 'Online Guest',
-        customerPhone: body.customerPhone || '',
+        customerPhone: normalizedPhone,
         customerAddress: body.customerAddress || 'No Address Provided',
         items: JSON.stringify(parsedItems),
         totalAmount: String(pricingResult.total.toFixed(2)),
@@ -139,7 +146,7 @@ export class OnlineOrdersService {
 
   async getOrdersByPhone(phone: string) {
     return this.prisma.onlineOrder.findMany({
-      where: { customerPhone: phone },
+      where: { customerPhone: normalizePhone(phone) },
       orderBy: { id: 'desc' },
     });
   }
@@ -183,7 +190,7 @@ export class OnlineOrdersService {
     
     if (!order) {
       order = await this.prisma.onlineOrder.findFirst({
-        where: { customerPhone: query },
+        where: { customerPhone: normalizePhone(query) },
         orderBy: { id: 'desc' }
       });
     }

@@ -31,6 +31,7 @@ export default function BannerUploadModal({
   mode,
   bannerForm,
   setBannerForm,
+  selectedFile,
   setSelectedFile,
   bannerPreview,
   setBannerPreview,
@@ -69,13 +70,32 @@ export default function BannerUploadModal({
           {isEdit ? (
             <div>
               <label className="block text-xs font-bold text-stitch-muted mb-1">Banner Image</label>
-              {existingImageSrc && (
-                <div className="rounded-xl overflow-hidden border border-stitch-border">
-                  <img src={existingImageSrc} alt={bannerForm.title || 'Banner'} className="w-full h-auto object-cover" />
-                </div>
-              )}
+              <div className="rounded-xl overflow-hidden border border-stitch-border">
+                <img
+                  src={bannerPreview || existingImageSrc}
+                  alt={bannerForm.title || 'Banner'}
+                  className="w-full h-auto object-cover"
+                />
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                  const file = e.target.files?.[0] || null;
+                  setSelectedFile(file);
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setBannerPreview(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                  } else {
+                    setBannerPreview(null);
+                  }
+                }}
+                className="w-full bg-stitch-surface border border-stitch-border rounded-lg p-2 text-stitch-ink file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-stitch-accent/10 file:text-stitch-accent hover:file:bg-stitch-accent/20 mt-2"
+              />
               <p className="text-xs text-stitch-muted mt-2">
-                To change the image, delete this banner and upload a new one.
+                {selectedFile ? 'New image selected — will replace the current one on save.' : 'Upload a new image to replace the current one, or leave blank to keep it.'}
               </p>
             </div>
           ) : (

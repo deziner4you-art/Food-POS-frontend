@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const PrintBill = ({ cart, subTotal, tax, taxPercent, grandTotal, cashGiven, returnAmount, time, orderType, orderId, paymentMethod, cashOutAmount, promoDiscount, manualDiscount, deliveryFee, loyaltyDiscount }: any) => (
+export const PrintBill = ({ cart, subTotal, tax, taxPercent, grandTotal, cashGiven, returnAmount, time, orderType, orderId, paymentMethod, cashOutAmount, cashOutReason, promoDiscount, manualDiscount, deliveryFee, loyaltyDiscount }: any) => (
   <div style={{ padding: '10px', width: '80mm', fontFamily: 'monospace', color: 'black', background: 'white', letterSpacing: '-0.5px' }}>
     <div style={{ textAlign: 'center', marginBottom: '15px' }}>
       <h2 style={{ margin: 0, fontSize: '1.8rem', fontWeight: '900', textTransform: 'uppercase' }}>D4U POS</h2>
@@ -21,6 +21,11 @@ export const PrintBill = ({ cart, subTotal, tax, taxPercent, grandTotal, cashGiv
         <div style={{ textAlign: 'center', fontSize: '1.2rem', fontWeight: 'bold', margin: '20px 0' }}>
           CASH OUT AMOUNT<br />
           Rs. {cashOutAmount?.toFixed?.(2) || cashOutAmount}
+          {cashOutReason ? (
+            <div style={{ fontSize: '0.9rem', fontWeight: 'normal', marginTop: '10px', textAlign: 'left', borderTop: '1px dashed black', paddingTop: '8px' }}>
+              REASON: {cashOutReason}
+            </div>
+          ) : null}
         </div>
       ) : (
         <>

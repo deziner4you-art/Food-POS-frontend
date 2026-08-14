@@ -12,6 +12,7 @@ import { CustomersService } from '../customers/customers.service';
 import { PricingService } from './pricing.service';
 import { TablesService } from '../tables/tables.service';
 import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
+import { normalizePhone } from '../../../common/utils/phone.util';
 
 @Injectable()
 export class PosOrdersService {
@@ -419,7 +420,7 @@ export class PosOrdersService {
         // predate this fix and never captured customer_id directly.
         let resolvedCustomerId: number | null = order.customer_id ?? null;
         if (!resolvedCustomerId && order.customerPhone) {
-          const matched = await tx.customer.findUnique({ where: { phone: order.customerPhone } });
+          const matched = await tx.customer.findUnique({ where: { phone: normalizePhone(order.customerPhone) } });
           resolvedCustomerId = matched?.id ?? null;
         }
 

@@ -50,6 +50,10 @@ export interface DeliveryOrder {
   paymentStatus: 'PAID' | 'PENDING_CUSTOMER_TAP' | 'UNPAID';
   estimatedReadyAt?: string;
   bridgeStatus?: string;
+  // True when this delivery is a POS-native Order (order_source: 'Delivery')
+  // rather than a website OnlineOrder — status updates for it must PATCH
+  // /pos-orders/:id/status instead of /online-orders/:id.
+  isPos?: boolean;
 }
 
 export interface SavedCompletedMission {

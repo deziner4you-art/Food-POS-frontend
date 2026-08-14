@@ -1,9 +1,53 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, Edit2, Plus, Trash2, Award, X, Phone, User as UserIcon, MapPin } from 'lucide-react';
+import { Users, Search, Edit2, Plus, Trash2, Award, X, Phone, User as UserIcon, MapPin, History } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiFetch } from '../utils/api';
 import { useAdminContext } from '../context/AdminContext';
 import { customConfirm } from '../utils/alerts';
+import { formatCurrency } from '../utils/currency';
+
+// POS Order and website OnlineOrder are different Prisma models -- Order has
+// total_amount/business_date and a real items relation (product.name
+// included); OnlineOrder has totalAmount (string)/createdAt and items as a
+// JSON string of {product_id, quantity, price} with no product name stored
+// at all. Mirrors the equivalent fix in d4u-website/src/App.tsx's
+// AccountRoute so both surfaces show the same, correct totals/dates/items
+// off the same underlying data instead of two divergent views.
+function mapOrderForHistoryDisplay(o: any, source: 'pos' | 'online') {
+  const isPos = source === 'pos';
+  const totalAmount = isPos ? Number(o.total_amount) || 0 : Number(o.totalAmount) || 0;
+  const createdAt = isPos ? o.business_date : o.createdAt;
+  const items = isPos
+    ? (o.items || []).map((i: any) => ({
+        cartItemId: String(i.id),
+        quantity: i.quantity,
+        totalPrice: i.price * i.quantity,
+        name: i.product?.name || `Item #${i.product_id}`,
+      }))
+    : (() => {
+        try {
+          const parsed = JSON.parse(o.items || '[]');
+          return (Array.isArray(parsed) ? parsed : []).map((i: any, idx: number) => ({
+            cartItemId: `${o.id}-${idx}`,
+            quantity: i.quantity || 1,
+            totalPrice: (i.price || 0) * (i.quantity || 1),
+            name: `Item #${i.product_id}`,
+          }));
+        } catch {
+          return [];
+        }
+      })();
+
+  return {
+    id: String(o.id),
+    orderNumber: String(o.id),
+    createdAt: createdAt ? new Date(createdAt).toLocaleString() : '',
+    status: (o.status || 'pending').toLowerCase(),
+    source,
+    items,
+    totalAmount,
+  };
+}
 
 export default function CustomersManager() {
   const [customers, setCustomers] = useState<any[]>([]);
@@ -16,6 +60,32 @@ export default function CustomersManager() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({ id: 0, name: '', phone: '', address: '' });
   const [submitting, setSubmitting] = useState(false);
+
+  // Order History Modal State
+  const [historyCustomer, setHistoryCustomer] = useState<any | null>(null);
+  const [historyOrders, setHistoryOrders] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const handleViewHistory = async (customer: any) => {
+    setHistoryCustomer(customer);
+    setHistoryLoading(true);
+    try {
+      const res = await apiFetch(`/customers/${customer.id}/orders`);
+      const data = await res.json();
+      // Same client-side merge the website's Account page does off the same
+      // GET /customers/:id/orders endpoint -- one shared source of truth,
+      // not a second, divergent dataset.
+      const all = [
+        ...(data.orders || []).map((o: any) => mapOrderForHistoryDisplay(o, 'pos')),
+        ...(data.onlineOrders || []).map((o: any) => mapOrderForHistoryDisplay(o, 'online')),
+      ].sort((a, b) => Number(b.id) - Number(a.id));
+      setHistoryOrders(all);
+    } catch (e) {
+      toast.error('Failed to load order history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const fetchCustomers = () => {
     if (!activeBrandId) {
@@ -192,7 +262,14 @@ export default function CustomersManager() {
                       </span>
                     </td>
                     <td className="p-4 text-right space-x-2">
-                      <button 
+                      <button
+                        onClick={() => handleViewHistory(customer)}
+                        className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white transition-colors"
+                        title="View Order History"
+                      >
+                        <History className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => handleOpenEdit(customer)}
                         className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white transition-colors" 
                         title="Edit Customer"
@@ -297,6 +374,80 @@ export default function CustomersManager() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ORDER HISTORY MODAL */}
+      {historyCustomer && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl max-h-[85vh] rounded-2xl overflow-hidden shadow-2xl animate-scale-in flex flex-col">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-800">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <History className="w-5 h-5 text-blue-400" />
+                Order History — {historyCustomer.name}
+              </h3>
+              <button onClick={() => setHistoryCustomer(null)} className="text-slate-400 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4">
+              {historyLoading ? (
+                <div className="flex justify-center p-12">
+                  <div className="w-8 h-8 border-4 border-[#3b82f6] border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              ) : historyOrders.length === 0 ? (
+                <div className="text-center text-slate-500 py-12">No orders yet.</div>
+              ) : (
+                historyOrders.map((order) => (
+                  <div key={`${order.source}-${order.id}`} className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-3 border-b border-slate-700 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-400 font-bold flex items-center justify-center">#</div>
+                        <div>
+                          <div className="text-sm font-bold text-white flex items-center gap-1.5">
+                            Order #{order.orderNumber}
+                            <span className="text-[10px] uppercase font-bold text-slate-500 bg-slate-700 px-1.5 py-0.5 rounded">{order.source === 'pos' ? 'POS' : 'Website'}</span>
+                          </div>
+                          <div className="text-xs text-slate-500">Placed: {order.createdAt || '—'}</div>
+                        </div>
+                      </div>
+                      <span
+                        className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                          ['settled', 'delivered'].includes(order.status)
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                            : order.status === 'dispatched'
+                            ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                            : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                        }`}
+                      >
+                        {['settled', 'delivered'].includes(order.status)
+                          ? 'Delivered'
+                          : order.status === 'dispatched'
+                          ? 'Out for Delivery'
+                          : 'Kitchen Preparing'}
+                      </span>
+                    </div>
+
+                    {order.items.length > 0 && (
+                      <div className="space-y-1.5">
+                        {order.items.map((item: any) => (
+                          <div key={item.cartItemId} className="flex items-center justify-between text-xs text-slate-300">
+                            <span><span className="font-bold text-blue-400">{item.quantity}x</span> {item.name}</span>
+                            <span className="font-semibold text-white">{formatCurrency(item.totalPrice)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="pt-3 border-t border-slate-700 text-xs text-slate-400">
+                      Total Paid: <span className="text-base font-extrabold text-blue-400 ml-1">{formatCurrency(order.totalAmount)}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}

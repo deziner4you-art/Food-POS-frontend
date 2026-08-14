@@ -168,6 +168,58 @@ function deriveLoyaltyTier(points: number): 'Gold Member' | 'Platinum Member' | 
   return 'Gold Member';
 }
 
+// POS Order and website OnlineOrder are different Prisma models -- Order has
+// total_amount/business_date and a real items relation (product.name
+// included); OnlineOrder has totalAmount (string)/createdAt and items as a
+// JSON string of {product_id, quantity, price} with no product name stored
+// at all. Was previously always mapped as if every order were the OnlineOrder
+// shape, so every POS-originated order in this history showed Rs. 0 and a
+// blank placed-date.
+function mapOrderForHistoryDisplay(o: any, customerName: string, customerPhone: string) {
+  const isPos = o.__source === 'pos';
+  const totalAmount = isPos ? Number(o.total_amount) || 0 : Number(o.totalAmount) || 0;
+  const createdAt = isPos ? o.business_date : o.createdAt;
+  const items = isPos
+    ? (o.items || []).map((i: any) => ({
+        cartItemId: String(i.id),
+        quantity: i.quantity,
+        totalPrice: i.price * i.quantity,
+        product: { name: i.product?.name || `Item #${i.product_id}` },
+      }))
+    : (() => {
+        try {
+          const parsed = JSON.parse(o.items || '[]');
+          return (Array.isArray(parsed) ? parsed : []).map((i: any, idx: number) => ({
+            cartItemId: `${o.id}-${idx}`,
+            quantity: i.quantity || 1,
+            totalPrice: (i.price || 0) * (i.quantity || 1),
+            // Online-order line items only ever stored product_id, never a
+            // name -- an honest fallback label, not a fabricated one.
+            product: { name: `Item #${i.product_id}` },
+          }));
+        } catch {
+          return [];
+        }
+      })();
+
+  return {
+    id: String(o.id),
+    orderNumber: String(o.id),
+    createdAt: createdAt ? new Date(createdAt).toLocaleString() : '',
+    status: (o.status || 'pending').toLowerCase(),
+    orderType: 'delivery',
+    items,
+    subtotal: totalAmount,
+    discount: 0,
+    tax: 0,
+    deliveryFee: 0,
+    totalAmount,
+    customerName,
+    customerPhone,
+    paymentMethod: 'cash',
+  };
+}
+
 function AccountRoute() {
   const { loggedInUser, loginOrRegister, logout, addAddress, updateAddress, deleteAddress, products, favoriteProductIds, toggleFavorite } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
@@ -185,26 +237,19 @@ function AccountRoute() {
       .then((res) => res.json())
       .then((data) => {
         if (!data.success) return;
-        const all = [...(data.orders || []), ...(data.onlineOrders || [])];
+        // POS Order and website OnlineOrder are different Prisma models with
+        // different field names (total_amount vs totalAmount, business_date
+        // vs createdAt, a real items relation vs a JSON string with no
+        // product name embedded) -- tag the source so the mapping below can
+        // read the right field from each instead of assuming one shape.
+        const all = [
+          ...(data.orders || []).map((o: any) => ({ ...o, __source: 'pos' })),
+          ...(data.onlineOrders || []).map((o: any) => ({ ...o, __source: 'online' })),
+        ];
         setOrders(
           all
             .sort((a: any, b: any) => b.id - a.id)
-            .map((o: any) => ({
-              id: String(o.id),
-              orderNumber: String(o.id),
-              createdAt: o.createdAt ? new Date(o.createdAt).toLocaleString() : '',
-              status: (o.status || 'pending').toLowerCase(),
-              orderType: 'delivery',
-              items: [],
-              subtotal: Number(o.totalAmount) || 0,
-              discount: 0,
-              tax: 0,
-              deliveryFee: 0,
-              totalAmount: Number(o.totalAmount) || 0,
-              customerName: loggedInUser.name,
-              customerPhone: loggedInUser.phone,
-              paymentMethod: 'cash',
-            })),
+            .map((o: any) => mapOrderForHistoryDisplay(o, loggedInUser.name, loggedInUser.phone)),
         );
       })
       .catch(() => {});

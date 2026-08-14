@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean, IsNumber } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 export class UpdateBannerDto {
   @IsString()
@@ -21,13 +21,14 @@ export class UpdateBannerDto {
   @IsOptional()
   buttonText?: string;
 
-  @IsBoolean()
+  // Untyped like CreateBannerDto's -- arrives as a real boolean/number over
+  // JSON (text-only edits) but as a string over multipart (image replace),
+  // coerced in the controller either way.
   @IsOptional()
-  isActive?: boolean;
+  isActive?: any;
 
-  @IsNumber()
   @IsOptional()
-  displayOrder?: number;
+  displayOrder?: any;
 
   @IsOptional()
   target_store_ids?: any;

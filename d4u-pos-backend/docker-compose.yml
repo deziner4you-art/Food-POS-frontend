@@ -1,16 +1,40 @@
 version: '3.8'
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: d4u_postgres
-    environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: rootpassword
-      POSTGRES_DB: d4u_pos_db
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+  # Unused for now: the backend below connects to the existing native
+  # Postgres already running on the host (127.0.0.1:5432, has the real
+  # live data). Left here in case we ever want to containerize the DB too.
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: d4u_postgres
+  #   environment:
+  #     POSTGRES_USER: root
+  #     POSTGRES_PASSWORD: rootpassword
+  #     POSTGRES_DB: d4u_pos_db
+  #   ports:
+  #     - "5433:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
 
-volumes:
-  postgres_data:
+  backend:
+    build: .
+    container_name: d4u_backend
+    # Node runs as PID 1 with no signal/zombie-process reaping of its own;
+    # without an init process a container can get stuck un-stoppable. This
+    # runs Docker's built-in tini as PID 1 instead.
+    init: true
+    env_file:
+      - .env
+    environment:
+      # Overrides .env's 127.0.0.1 (which inside the container would mean
+      # the container itself) so the app reaches the host's real Postgres.
+      DATABASE_URL: "postgresql://postgres:postgres@host.docker.internal:5432/d4u_pos_db?schema=public"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+
+# volumes:
+#   postgres_data:

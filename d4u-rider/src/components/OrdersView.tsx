@@ -354,7 +354,7 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
           onClick={() => handleAccept(order)}
 
-          disabled={claimingId === order.id}
+          disabled={claimingId === order.id || activeOrders.length > 0}
 
           className="w-full mt-3 bg-primary text-slate-900 font-bold py-2.5 rounded-xl shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
 
@@ -369,6 +369,10 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
               <span>Accepting...</span>
 
             </>
+
+          ) : activeOrders.length > 0 ? (
+
+            <span>Finish Current Delivery First</span>
 
           ) : (
 
@@ -551,6 +555,16 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
             <div>
 
               <h2 className="text-primary font-bold mb-4 uppercase tracking-widest text-xs">Available Orders</h2>
+
+              {activeOrders.length > 0 && (
+
+                <div className="text-center py-3 mb-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+
+                  <p className="text-amber-400 text-xs font-semibold">Finish your active delivery before accepting a new one.</p>
+
+                </div>
+
+              )}
 
               {availableOrders.length === 0 ? (
 

@@ -32,6 +32,20 @@ function normalizeStoreIds(raw: any): number[] {
   return (Array.isArray(raw) ? raw : raw ? [raw] : []).map(Number);
 }
 
+// Shared by create and update so a banner's image can be replaced in place
+// (previously only create accepted a file -- edit could only be reached by
+// deleting the banner and re-uploading).
+const bannerStorage = diskStorage({
+  destination: './uploads',
+  filename: (req: any, file: any, cb: any) => {
+    const randomName = Array(32)
+      .fill(null)
+      .map(() => Math.round(Math.random() * 16).toString(16))
+      .join('');
+    cb(null, `${randomName}${extname(file.originalname)}`);
+  },
+});
+
 @Controller('cms')
 export class CmsController {
   constructor(private readonly cmsService: CmsService) {}
@@ -55,20 +69,7 @@ export class CmsController {
 
   @RequirePermissions('system.create')
   @Post('banners')
-  @UseInterceptors(
-    FileInterceptor('image', {
-      storage: diskStorage({
-        destination: './uploads',
-        filename: (req: any, file: any, cb: any) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
-        },
-      }),
-    }),
-  )
+  @UseInterceptors(FileInterceptor('image', { storage: bannerStorage }))
   createBanner(
     @UploadedFile() file: any, // Express.Multer.File
     @Body() body: CreateBannerDto,
@@ -88,14 +89,29 @@ export class CmsController {
     });
   }
 
+  // FileInterceptor only engages for multipart/form-data requests (sent when
+  // the image is being replaced); plain JSON PATCHes (text-only edits, the
+  // drag-reorder handler) pass through it unaffected -- same route either way.
   @RequirePermissions('system.update')
   @Patch('banners/:id')
+  @UseInterceptors(FileInterceptor('image', { storage: bannerStorage }))
   updateBanner(
     @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: any, // Express.Multer.File
     @Body() body: UpdateBannerDto,
   ) {
     if (body.target_store_ids !== undefined) {
       (body as any).target_store_ids = normalizeStoreIds(body.target_store_ids);
+    }
+    if (body.isActive !== undefined) {
+      (body as any).isActive = body.isActive === true || body.isActive === 'true';
+    }
+    if (body.displayOrder !== undefined) {
+      (body as any).displayOrder =
+        typeof body.displayOrder === 'string' ? parseInt(body.displayOrder, 10) : body.displayOrder;
+    }
+    if (file) {
+      (body as any).imageUrl = `/uploads/${file.filename}`;
     }
     return this.cmsService.updateBanner(id, body);
   }

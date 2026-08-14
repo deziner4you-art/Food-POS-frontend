@@ -173,21 +173,35 @@ export default function CmsManager() {
   const handleBannerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Edit mode — the update endpoint takes plain JSON (no FileInterceptor
-    // on the backend route), so this only ever patches text/status fields,
-    // never the image itself.
+    // Edit mode — plain JSON for text/status-only edits; multipart (with the
+    // update route's FileInterceptor) only when a replacement image was
+    // selected, so the image can now be swapped without deleting the banner.
     if (editingBanner) {
       try {
-        const res = await apiFetch(`${BACKEND_URL}/cms/banners/${editingBanner.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: bannerForm.title,
-            subtitle: bannerForm.subtitle,
-            isActive: bannerForm.isActive,
-            target_store_ids: targetStoreIds,
-          }),
-        });
+        let res: Response;
+        if (selectedFile) {
+          const formData = new FormData();
+          formData.append('image', selectedFile);
+          formData.append('title', bannerForm.title);
+          formData.append('subtitle', bannerForm.subtitle);
+          formData.append('isActive', String(bannerForm.isActive));
+          targetStoreIds.forEach(id => formData.append('target_store_ids', String(id)));
+          res = await apiFetch(`${BACKEND_URL}/cms/banners/${editingBanner.id}`, {
+            method: 'PATCH',
+            body: formData,
+          });
+        } else {
+          res = await apiFetch(`${BACKEND_URL}/cms/banners/${editingBanner.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: bannerForm.title,
+              subtitle: bannerForm.subtitle,
+              isActive: bannerForm.isActive,
+              target_store_ids: targetStoreIds,
+            }),
+          });
+        }
         if (res.ok) {
           closeBannerModal();
           fetchBanners();

@@ -19,6 +19,7 @@ import {
 } from './dto';
 import { CreateCustomerAddressDto, UpdateCustomerAddressDto } from '../customer-addresses/dto';
 import { ToggleFavoriteDto } from '../customer-favorites/dto';
+import { normalizePhone } from '../../../common/utils/phone.util';
 
 @Controller('online-orders')
 export class OnlineOrdersController {
@@ -65,7 +66,7 @@ export class OnlineOrdersController {
   async webLogin(@Body() body: { phone: string }) {
     // Basic phone login without password (for prototype)
     const customer = await this.service['prisma'].customer.findUnique({
-      where: { phone: body.phone },
+      where: { phone: normalizePhone(body.phone) },
       include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
     if (!customer) {
@@ -77,8 +78,9 @@ export class OnlineOrdersController {
   @Public()
   @Post('auth/register')
   async webRegister(@Body() body: { phone: string; name: string; brand_id?: number; store_id?: number }) {
+    const normalizedPhone = normalizePhone(body.phone);
     let customer: any = await this.service['prisma'].customer.findUnique({
-      where: { phone: body.phone },
+      where: { phone: normalizedPhone },
       include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
     if (!customer) {
@@ -96,7 +98,7 @@ export class OnlineOrdersController {
       customer = await this.service['prisma'].customer.create({
         data: {
           brand_id: brandId ?? 1,
-          phone: body.phone,
+          phone: normalizedPhone,
           name: body.name,
         },
       });
@@ -108,8 +110,9 @@ export class OnlineOrdersController {
   @Public()
   @Get('auth/history/:phone')
   async webHistory(@Param('phone') phone: string) {
+    const normalizedPhone = normalizePhone(phone);
     const customer = await this.service['prisma'].customer.findUnique({
-      where: { phone },
+      where: { phone: normalizedPhone },
       include: {
         orders: {
           include: { items: { include: { product: true } } },
@@ -123,7 +126,7 @@ export class OnlineOrdersController {
       return { success: false, message: 'Not found' };
     }
     const onlineOrders = await this.service['prisma'].onlineOrder.findMany({
-      where: { customerPhone: phone },
+      where: { customerPhone: normalizedPhone },
       orderBy: { id: 'desc' },
       take: 50,
     });

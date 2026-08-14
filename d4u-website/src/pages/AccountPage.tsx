@@ -229,14 +229,14 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
                 <div className="flex items-center gap-2">
                   <span
                     className={`text-xs font-bold px-3 py-1 rounded-full border ${
-                      order.status === 'delivered'
+                      order.status === 'delivered' || order.status === 'settled'
                         ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
                         : 'bg-amber-500/20 text-amber-400 border-amber-500/40 animate-pulse'
                     }`}
                   >
-                    {order.status === 'delivered'
+                    {order.status === 'delivered' || order.status === 'settled'
                       ? 'Delivered'
-                      : order.status === 'on_the_way'
+                      : ['out_for_delivery', 'dispatched', 'rider_arrived', 'print_bill', 'on_the_way'].includes(order.status)
                       ? 'Out for Delivery 🛵'
                       : 'Kitchen Preparing 👨‍🍳'}
                   </span>

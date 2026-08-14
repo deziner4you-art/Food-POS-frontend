@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { io } from 'socket.io-client';
 import { BACKEND_URL } from './config/backend';
 import { calculateSubtotalWithTax } from './utils/cartTotals';
@@ -12,7 +12,7 @@ import { lookupCustomerByPhone, createCustomer, fetchCustomers } from './pos/api
 import { getDeviceId, storeTokens, refreshAccessToken } from './pos/session';
 import { formatCurrency } from './utils/currency';
 const socket = io(BACKEND_URL);
-import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, Receipt, LogOut, UtensilsCrossed } from 'lucide-react'
+import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, Receipt, LogOut, UtensilsCrossed, AlertTriangle } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db';
 import KitchenDisplay from './StitchKDS'
@@ -300,6 +300,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   // whichever size the cashier picks (or on its own if the product has no
   // variants at all), rather than each topping becoming its own cart line.
   const [selectedModifiers, setSelectedModifiers] = useState<{ [groupId: number]: { modifierId: number; name: string; price: number }[] }>({});
+  // Which size to commit to the cart when the cashier hits "Add to Cart"
+  // from the Extra Toppings tab directly, without switching back to Choose
+  // Size first. Defaults to the product's first variant if never touched.
+  const [toppingsVariantId, setToppingsVariantId] = useState<number | null>(null);
   const [waiterPinModalOpen, setWaiterPinModalOpen] = useState(false);
   const [generatedWaiterPin, setGeneratedWaiterPin] = useState('');
   const [isGeneratingTabletLink, setIsGeneratingTabletLink] = useState(false);
@@ -374,7 +378,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   }, [toast]);
 
   const [cashGiven, setCashGiven] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Card' | 'Digital Link' | 'Split'>('Cash');
+  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Card' | 'Digital Link' | 'Split' | 'COD'>('Cash');
+
+  // A Delivery order is paid on arrival, not at the counter -- no cash/card/
+  // digital-link/split choice or tendered-amount entry makes sense yet, so
+  // the only real "payment method" at this step is Cash on Delivery.
+  // Non-delivery order types keep the existing in-person options untouched.
+  useEffect(() => {
+    if (modalType === 'PAYMENT' && orderType === 'Delivery') setPaymentMethod('COD');
+    else if (modalType === 'PAYMENT' && paymentMethod === 'COD') setPaymentMethod('Cash');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalType, orderType]);
   const [splitCash, setSplitCash] = useState('');
   const [splitCard, setSplitCard] = useState('');
   const [isTillLocked, setIsTillLocked] = useState(true);
@@ -497,9 +511,71 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   // Fetch online orders from backend (website orders)
   const [backendOnlineOrders, setBackendOnlineOrders] = useState<any[]>([]);
-  const [terminalOrders, setTerminalOrders] = useState<any[]>([]);
-  const [activeTerminalKotId, setActiveTerminalKotId] = useState<number | null>(null);
-  const terminalKots = useLiveQuery(() => db.kots.toArray())?.filter(kot => kot.source === 'Terminal' && kot.status !== 'PAID' && kot.status !== 'CANCELLED') || [];
+
+  // Waiter tablet orders, as seen by the cashier's "Waiter" panel -- real
+  // Order rows (order_source === 'WAITER') from GET /pos-orders, not the
+  // old dead TERMINAL_ORDER_RECEIVED socket relay + local-only Dexie table
+  // that nothing populated anymore (a fake "Accept & Send to KDS" button
+  // wrote a random fake order id, never the real one the waiter's order
+  // actually got). The real KOT is already live in the kitchen the instant
+  // the waiter sends it -- this panel is a read-only view of that same real
+  // data, plus a real Settle action, not a second "send to kitchen" step.
+  const [terminalPanelOrders, setTerminalPanelOrders] = useState<any[]>([]);
+  const fetchTerminalPanelOrders = useCallback(() => {
+    if (!currentUser?.store_id) return;
+    apiFetch(`/pos-orders?store_id=${currentUser.store_id}`, { auth: true })
+      .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
+      .then((orders: any[]) => setTerminalPanelOrders((orders || []).filter(o => o.order_source === 'WAITER' && o.status !== 'SETTLED' && o.status !== 'VOIDED')))
+      .catch(err => console.error('Failed to fetch waiter terminal orders', err));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.store_id]);
+
+  // Fetch once a store is known (keeps the sidebar badge count right even
+  // before the cashier opens the tab) and again whenever they switch to it.
+  useEffect(() => { fetchTerminalPanelOrders(); }, [fetchTerminalPanelOrders]);
+  useEffect(() => { if (activeMenu === 'Terminal') fetchTerminalPanelOrders(); }, [activeMenu, fetchTerminalPanelOrders]);
+
+  // Settles a READY waiter order directly via the real settle endpoint --
+  // NOT by reloading it into the cart and running it through the normal Pay
+  // flow, which would create a second, duplicate order (this order already
+  // exists in the backend; the waiter created it when they sent it).
+  const handleSettleWaiterOrder = async (order: any, method: 'CASH' | 'CARD') => {
+    try {
+      const res = await apiFetch(`/pos-orders/${order.id}/settle`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_method: method, amount_received: order.total_amount }),
+        auth: true,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setToast({ message: data.message || `Failed to settle Order #${order.id}.`, type: 'error' });
+        return;
+      }
+      if (posSettings.billPrintQty > 0) {
+        setPrintData({
+          type: 'BILL',
+          data: {
+            orderType: `Dine In (${order.table_no})`,
+            cart: (order.items || []).map((i: any) => ({ name: i.product?.name || `Item #${i.product_id}`, qty: i.quantity, price: i.price })),
+            subTotal: order.total_amount - (order.tax_amount || 0),
+            tax: order.tax_amount || 0,
+            taxPercent: branchSettings?.tax_percentage ?? 0,
+            grandTotal: order.total_amount,
+            cashGiven: order.total_amount,
+            returnAmount: 0,
+            paymentMethod: method,
+            time: new Date().toLocaleString(),
+          },
+          printCount: posSettings.billPrintQty,
+        });
+      }
+      setToast({ message: `Order #${order.id} settled!`, type: 'success' });
+      fetchTerminalPanelOrders();
+    } catch (e) {
+      setToast({ message: `Network error — could not settle Order #${order.id}.`, type: 'error' });
+    }
+  };
 
   // Offline Sync Engine
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
@@ -828,14 +904,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         }
       };
 
-      const handleTerminalOrder = (order: any) => {
-        if (!posSettings.terminalEngineEnabled) return; // Ignore if Engine is OFF
-        setTerminalOrders(prev => {
-          if (prev.find(o => o.id === order.id)) return prev; // Prevent duplicates
-          setToast({ message: `New Terminal Order from ${order.waiter_name} (Table ${order.table_no})`, type: 'success' });
-          return [{ ...order }, ...prev]; 
-        });
-      };
+      // Real order data changing (new order placed, settled, or voided) --
+      // refetches the Waiter panel's list rather than trying to patch state
+      // from each event's own (minimal) payload shape.
+      const handleTerminalPanelRefresh = () => fetchTerminalPanelOrders();
 
       const joinStore = () => {
         socket.emit('join_store', { store_id: currentUser?.store_id });
@@ -849,7 +921,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       socket.on('new_order', handleNewOrder);
       socket.on('order_updated', handleOrderUpdated);
       socket.on('negative_inventory_alert', handleNegativeInventoryAlert);
-      socket.on('TERMINAL_ORDER_RECEIVED', handleTerminalOrder);
+      socket.on('new_kot', handleTerminalPanelRefresh);
+      socket.on('order_settled', handleTerminalPanelRefresh);
+      socket.on('order_voided', handleTerminalPanelRefresh);
       socket.on('waiter_connected', () => setIsWaiterConnected(true));
       socket.on('waiter_disconnected', () => setIsWaiterConnected(false));
       socket.on('update_active_waiters', (waiters: any[]) => {
@@ -878,7 +952,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         socket.off('new_order', handleNewOrder);
         socket.off('order_updated', handleOrderUpdated);
         socket.off('negative_inventory_alert', handleNegativeInventoryAlert);
-        socket.off('TERMINAL_ORDER_RECEIVED', handleTerminalOrder);
+        socket.off('new_kot', handleTerminalPanelRefresh);
+        socket.off('order_settled', handleTerminalPanelRefresh);
+        socket.off('order_voided', handleTerminalPanelRefresh);
         socket.off('waiter_connected');
         socket.off('waiter_disconnected');
         socket.off('marketing_update');
@@ -999,6 +1075,32 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const [activeDeliveries, setActiveDeliveries] = useState<any[]>([]);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
+  const activeDeliveriesRef = useRef<any[]>([]);
+  useEffect(() => { activeDeliveriesRef.current = activeDeliveries; }, [activeDeliveries]);
+
+  // Repeating "settle cash with rider" reminder for the cashier — fires once
+  // immediately, then every 3 minutes for as long as any delivery sits at
+  // WAITING_CASH_SETTLEMENT, reusing the same toast styling/action already
+  // used for the "DELIVERY READY" alerts below. Reads activeDeliveriesRef
+  // (not activeDeliveries directly) so the interval is set up once instead
+  // of restarting on every delivery-list update.
+  useEffect(() => {
+    const remindPendingSettlements = () => {
+      const pending = activeDeliveriesRef.current.filter(d => d.status === 'WAITING_CASH_SETTLEMENT');
+      if (pending.length === 0) return;
+      const total = pending.reduce((sum, d) => sum + (Number(d.totalAmount || d.cod) || 0), 0);
+      const orderList = pending.map(d => `#${d.id}`).join(', ');
+      setToast({
+        message: `💵 Settle Rs. ${total.toFixed(2)} in cash with Rider — Order ${orderList}`,
+        type: 'delivery',
+        action: { label: 'Open Delivery', onClick: () => setActiveMenu('Delivery') },
+      });
+    };
+
+    remindPendingSettlements();
+    const interval = setInterval(remindPendingSettlements, 3 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const categoryGroups = useLiveQuery(() => db.category_groups?.toArray()) || []
   const categories = useLiveQuery(() => db.categories.toArray()) || []
@@ -1905,9 +2007,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           >
             <div className="icon-box" style={{ position: 'relative' }}>
               <Navigation size={20} color={isWaiterConnected ? '#4edea3' : undefined} />
-              {terminalOrders.length > 0 && <span style={{ position: 'absolute', top: '0', right: '0', background: 'var(--primary)', color: 'white', borderRadius: '50%', padding: '2px 5px', fontSize: '0.65rem', fontWeight: 'bold' }}>{terminalOrders.length}</span>}
+              {terminalPanelOrders.filter(o => o.status === 'PENDING').length > 0 && <span style={{ position: 'absolute', top: '0', right: '0', background: 'var(--primary)', color: 'white', borderRadius: '50%', padding: '2px 5px', fontSize: '0.65rem', fontWeight: 'bold' }}>{terminalPanelOrders.filter(o => o.status === 'PENDING').length}</span>}
             </div>
-            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', marginTop: '4px', color: isWaiterConnected ? '#4edea3' : undefined }}>Terminal</span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', marginTop: '4px', color: isWaiterConnected ? '#4edea3' : undefined }}>Waiter</span>
           </div>
         )}
         <div className={`sidebar-item ${activeMenu === 'Delivery' ? 'active' : ''}`} onClick={() => setActiveMenu('Delivery')}>
@@ -2725,69 +2827,58 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               )}
             </div>
 
-            {/* Pending Orders (left) / Active Terminal Orders in Kitchen (right) — split into two columns */}
+            {/* Pending Orders (left) / Active Terminal Orders in Kitchen (right) — split into
+                two columns. Real Order rows (order_source === 'WAITER'), not the old dead
+                socket relay + local-only Dexie table -- the KOT is already live in the
+                kitchen the instant the waiter sends it, so this is a read-only view of that
+                same real data plus a real Settle action, not a second "send to kitchen" step. */}
+            {(() => {
+              const pendingWaiterOrders = terminalPanelOrders.filter(o => o.status === 'PENDING');
+              const activeWaiterOrders = terminalPanelOrders.filter(o => o.status === 'PREPARING' || o.status === 'READY');
+              const waiterNameFor = (order: any) => terminalSessions.find((s: any) => s.id === order.terminal_session_id)?.waiter_name || 'Waiter';
+              const orderItemsList = (order: any) => (order.items || []).map((i: any) => ({
+                name: i.product?.name || `Item #${i.product_id}`,
+                qty: i.quantity,
+                price: i.price,
+              }));
+              return (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start', marginTop: '20px' }}>
             <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 10px 0' }}>
               <h3 style={{ margin: 0, color: 'white' }}>Pending Orders</h3>
-              {terminalOrders.length > 0 && (
-                <button
-                  onClick={() => setTerminalOrders([])}
-                  style={{ background: '#ef4444', color: 'white', border: 'none', padding: '6px 15px', borderRadius: '5px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
-                >
-                  Clear All
-                </button>
-              )}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px', paddingRight: '10px' }}>
-              {terminalOrders.length === 0 && (
+              {pendingWaiterOrders.length === 0 && (
                 <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem' }}>
                   No pending terminal orders
                 </div>
               )}
-              {terminalOrders.map(order => (
-                <div key={order.id} style={{ display: 'flex', flexDirection: 'column', gap: '15px', background: 'var(--bg-base)', padding: '20px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid var(--accent-green)` }}>
+              {pendingWaiterOrders.map(order => (
+                <div key={order.id} style={{ display: 'flex', flexDirection: 'column', gap: '15px', background: 'var(--bg-base)', padding: '20px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid var(--accent-yellow)` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
                       <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: 'white' }}>Table {order.table_no}</h3>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Waiter: {order.waiter_name}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Waiter: {waiterNameFor(order)}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {order.total.toFixed(2)}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{new Date(order.timestamp).toLocaleTimeString()}</div>
+                      <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {(order.total_amount || 0).toFixed(2)}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{order.business_date ? new Date(order.business_date).toLocaleTimeString() : ''}</div>
                     </div>
                   </div>
-                  
+
                   <div style={{ background: '#0f172a', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.9rem', color: '#cbd5e1' }}>
-                    {order.items.map((i: any, idx: number) => (
+                    {orderItemsList(order).map((i: any, idx: number) => (
                       <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                         <span>{i.qty}x {i.name}</span>
                         <span style={{ color: 'var(--text-muted)' }}>Rs. {i.price * i.qty}</span>
                       </div>
                     ))}
                   </div>
-                  
-                  <button className="btn-action" style={{ background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', border: 'none', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={async () => {
-                    const newKot = {
-                      orderId: 'T' + Math.floor(Math.random() * 10000),
-                      type: 'Dine-In',
-                      items: JSON.stringify(order.items.map((i: any) => ({ name: i.name, qty: i.qty }))),
-                      notes: `Terminal - Table ${order.table_no}`,
-                      timePlaced: new Date().toLocaleTimeString(),
-                      prepTimeMinutes: 0,
-                      status: 'NEW' as const,
-                      startTime: '',
-                      printCount: 0,
-                      totalAmount: parseFloat(order.total) || 0,
-                      customer: order.table_no,
-                      source: 'Terminal',
-                    };
-                    await db.kots.add(newKot);
-                    setToast({ message: 'Order sent to KDS!', type: 'success' });
-                    setTerminalOrders(prev => prev.filter(o => o.id !== order.id));
-                  }}>
-                    Accept & Send to KDS
-                  </button>
+
+                  <div style={{ padding: '12px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: 'rgba(251, 191, 36, 0.1)', color: 'var(--accent-yellow)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-yellow)' }}>
+                    <Clock size={18} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
+                    Already sent to Kitchen — awaiting chef
+                  </div>
                 </div>
               ))}
             </div>
@@ -2796,58 +2887,46 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             <div>
             <h3 style={{ margin: '0 0 10px 0', color: 'white' }}>Active Terminal Orders (In Kitchen)</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px', paddingRight: '10px' }}>
-              {terminalKots.length === 0 && (
+              {activeWaiterOrders.length === 0 && (
                 <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem' }}>
                   No active terminal orders
                 </div>
               )}
-              {terminalKots.map(kot => (
-                <div key={kot.id} style={{ display: 'flex', flexDirection: 'column', gap: '15px', background: 'var(--bg-base)', padding: '20px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid ${kot.status === 'READY' ? 'var(--accent-green)' : 'var(--accent-yellow)'}` }}>
+              {activeWaiterOrders.map(order => (
+                <div key={order.id} style={{ display: 'flex', flexDirection: 'column', gap: '15px', background: 'var(--bg-base)', padding: '20px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid ${order.status === 'READY' ? 'var(--accent-green)' : 'var(--accent-yellow)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                      <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: 'white' }}>Table {kot.customer}</h3>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Order #{kot.orderId}</div>
+                      <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: 'white' }}>Table {order.table_no}</h3>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Order #{order.id} · Waiter: {waiterNameFor(order)}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {(kot.totalAmount || 0).toFixed(2)}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{kot.timePlaced}</div>
+                      <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {(order.total_amount || 0).toFixed(2)}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{order.business_date ? new Date(order.business_date).toLocaleTimeString() : ''}</div>
                     </div>
                   </div>
-                  
+
                   <div style={{ background: '#0f172a', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.9rem', color: '#cbd5e1' }}>
-                    {JSON.parse(kot.items).map((i: any, idx: number) => (
+                    {orderItemsList(order).map((i: any, idx: number) => (
                       <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                         <span>{i.qty}x {i.name}</span>
                       </div>
                     ))}
                   </div>
-                  
-                  {kot.status === 'READY' ? (
-                    <button className="btn-action" style={{ background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', border: 'none', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={() => {
-                      // Load into cart
-                      try {
-                        const parsedItems = JSON.parse(kot.items);
-                        const newCart = parsedItems.map((i: any) => {
-                          const product = products.find(p => p.name.toLowerCase() === i.name.toLowerCase());
-                          return { name: i.name, price: product ? product.price : 0, qty: i.qty };
-                        });
-                        setCart(newCart);
-                        setOrderType('Dine In');
-                        setOrderNotes(`Terminal - Table ${kot.customer}`);
-                        setActiveTerminalKotId(kot.id!);
-                        setActiveMenu('Home');
-                        setModalType('PAYMENT');
-                      } catch (e) {
-                        setToast({ message: 'Error loading order', type: 'error' });
-                      }
-                    }}>
-                      <Printer size={18} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
-                      Pay & Print Bill
-                    </button>
+
+                  {order.status === 'READY' ? (
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button className="btn-action" style={{ flex: 1, background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', border: 'none', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={() => handleSettleWaiterOrder(order, 'CASH')}>
+                        <Printer size={16} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
+                        Settle (Cash)
+                      </button>
+                      <button className="btn-action" style={{ flex: 1, background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontWeight: 'bold', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={() => handleSettleWaiterOrder(order, 'CARD')}>
+                        Settle (Card)
+                      </button>
+                    </div>
                   ) : (
-                    <div style={{ padding: '12px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: kot.status === 'PREPARING' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(251, 191, 36, 0.1)', color: kot.status === 'PREPARING' ? '#3b82f6' : 'var(--accent-yellow)', borderRadius: 'var(--radius-sm)', border: `1px solid ${kot.status === 'PREPARING' ? '#3b82f6' : 'var(--accent-yellow)'}` }}>
+                    <div style={{ padding: '12px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', borderRadius: 'var(--radius-sm)', border: '1px solid #3b82f6' }}>
                       <Clock size={18} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
-                      {kot.status === 'PREPARING' ? 'Preparing in Kitchen' : 'Pending in KDS'}
+                      Preparing in Kitchen
                     </div>
                   )}
                 </div>
@@ -2855,6 +2934,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             </div>
             </div>
             </div>
+              );
+            })()}
           </div>
         )}
 
@@ -2869,7 +2950,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </span>
               </div>
               <div className="delivery-list custom-scrollbar">
-                {activeDeliveries.map(del => (
+                {[...activeDeliveries].sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0)).map(del => (
                   <div key={del.id} className={`delivery-card ${selectedDeliveryId === del.id ? 'active' : ''}`} onClick={() => setSelectedDeliveryId(del.id)}>
                     <div className="delivery-card-header">
                       <div>
@@ -3425,7 +3506,27 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         {/* SELECT VARIANT MODAL */}
         {modalType === 'SELECT_VARIANT' && pendingVariantProduct && (() => {
           const hasVariants = pendingVariantProduct.variants && pendingVariantProduct.variants.length > 0;
-          const modifierGroups: any[] = pendingVariantProduct.modifierGroups || [];
+          // "Extra Toppings" is configured in Admin as a product category
+          // (same convention as "Add-ons"), not a real Modifier Group -- no
+          // modifier group named anything like "Topping" exists anywhere in
+          // this system's data. Synthesize one at render time from whatever
+          // real products currently sit in that category, so the rest of
+          // this modal's already-working modifier machinery (selection
+          // state, price display, flattening into the cart line, KOT/receipt
+          // "+ Name" text) handles them with zero further changes.
+          const extraToppingProducts = allProducts.filter((p: any) =>
+            p.categories?.some((c: any) => c.name.toLowerCase() === 'extra toppings'),
+          );
+          const syntheticToppingsGroup = extraToppingProducts.length > 0 ? {
+            id: 'extra-toppings',
+            name: 'Extra Toppings',
+            is_required: false,
+            modifiers: extraToppingProducts.map((p: any) => ({ id: p.id, name: p.name, additional_price: p.price })),
+          } : null;
+          const modifierGroups: any[] = [
+            ...(pendingVariantProduct.modifierGroups || []),
+            ...(syntheticToppingsGroup ? [syntheticToppingsGroup] : []),
+          ];
           const hasModifiers = modifierGroups.length > 0;
           const flattenedModifiers = (): import('./pos/types').CartModifier[] =>
             modifierGroups.flatMap(g => (selectedModifiers[g.id] || []).map(sel => ({
@@ -3446,7 +3547,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               return { ...prev, [group.id]: [...current, { modifierId: modifier.id, name: modifier.name, price: modifier.additional_price || 0 }] };
             });
           };
-          const closeModal = () => { setModalType('NONE'); setPendingVariantProduct(null); setSelectedModifiers({}); };
+          const closeModal = () => { setModalType('NONE'); setPendingVariantProduct(null); setSelectedModifiers({}); setActiveTab('SIZES'); setToppingsVariantId(null); };
+          const toppingsSelectedVariant = pendingVariantProduct.variants?.find((v: any) => v.id === toppingsVariantId) || pendingVariantProduct.variants?.[0];
 
           return (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(5px)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -3499,6 +3601,28 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
                 {hasModifiers && (!hasVariants || activeTab === 'TOPPINGS') && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {hasVariants && pendingVariantProduct.variants.length > 1 && (
+                      <div>
+                        <span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Size (for Add to Cart below)</span>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
+                          {pendingVariantProduct.variants.map((v: any) => (
+                            <button
+                              key={v.id}
+                              onClick={() => setToppingsVariantId(v.id)}
+                              style={{
+                                padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
+                                background: toppingsSelectedVariant?.id === v.id ? 'rgba(250,204,21,0.15)' : 'var(--bg-panel)',
+                                border: `1px solid ${toppingsSelectedVariant?.id === v.id ? 'var(--accent-yellow)' : 'var(--border-color)'}`,
+                                color: toppingsSelectedVariant?.id === v.id ? 'var(--accent-yellow)' : 'white',
+                                fontWeight: toppingsSelectedVariant?.id === v.id ? 'bold' : 'normal',
+                              }}
+                            >
+                              {v.name} · Rs. {v.price}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {modifierGroups.map(group => (
                       <div key={group.id}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -3536,7 +3660,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               </div>
 
               <div style={{ padding: '15px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0 }}>
-                {hasVariants ? (
+                {hasVariants && activeTab === 'TOPPINGS' ? (
+                  <button
+                    onClick={() => {
+                      addToCart(pendingVariantProduct, toppingsSelectedVariant, flattenedModifiers());
+                      setToast({ message: `${toppingsSelectedVariant?.name || pendingVariantProduct.name} added`, type: 'success' });
+                      closeModal();
+                    }}
+                    style={{ width: '100%', padding: '15px', background: 'var(--accent-yellow)', color: 'black', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Add {toppingsSelectedVariant?.name} to Cart
+                  </button>
+                ) : hasVariants ? (
                   <button
                     onClick={closeModal}
                     style={{ width: '100%', padding: '15px', background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -3919,23 +4054,28 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             <div style={{ padding: '20px' }}>
               <p style={{ color: 'var(--text-muted)', marginBottom: '15px' }}>Enter the amount you are withdrawing from the till.</p>
               <input type="number" id="cashOutInput" placeholder="Amount (Rs.)" style={{ width: '100%', padding: '15px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', marginBottom: '15px', fontSize: '1.2rem' }} autoFocus />
+              <textarea id="cashOutReasonInput" placeholder="Reason for cash out (e.g. Petty expense, Bank deposit...)" rows={2} style={{ width: '100%', padding: '15px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', marginBottom: '15px', fontSize: '1rem', resize: 'none', fontFamily: 'inherit' }} />
               <button className="btn-action btn-save" style={{ width: '100%', padding: '15px', fontSize: '1.1rem' }} onClick={async () => {
                  const amt = parseFloat((document.getElementById('cashOutInput') as HTMLInputElement)?.value || '0');
+                 const reason = (document.getElementById('cashOutReasonInput') as HTMLTextAreaElement)?.value.trim() || '';
                  if (amt > 0) {
+                   if (!reason) {
+                     setToast({ message: 'Please enter a reason for the cash out', type: 'error' });
+                     return;
+                   }
                    try {
                      const res = await apiFetch('/cash-flow/out', {
                        method: 'POST',
                        headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({ store_id: Number(currentUser?.store_id), user_id: Number(currentUser?.id) || 1, amount: amt }),
+                       body: JSON.stringify({ store_id: Number(currentUser?.store_id), user_id: Number(currentUser?.id) || 1, amount: amt, comment: reason }),
                        auth: true,
                      });
                      if (!res.ok) throw new Error('Cash Out failed');
-                     
+
                      const shiftSales = activeShift === 'Shift 1' ? shift1Sales : shift2Sales;
-                     setPrintData({ type: 'BILL', data: { orderType: 'Cash Out Receipt', cashOutAmount: amt, shiftSales, time: new Date().toLocaleString() }, printCount: 1 });
+                     setPrintData({ type: 'BILL', data: { orderType: 'Cash Out Receipt', cashOutAmount: amt, cashOutReason: reason, shiftSales, time: new Date().toLocaleString() }, printCount: 1 });
                      setToast({ message: `Cash Out of Rs. ${amt} recorded! Printing...`, type: 'success' });
-                     setIsCashedOut(true);
-                     setModalType('DAY_CLOSE');
+                     setModalType('NONE');
                    } catch (e) {
                      setToast({ message: 'Error recording Cash Out to server', type: 'error' });
                    }
@@ -4554,7 +4694,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           visual reskin of the website). */}
       {modalType === 'CUSTOMER_HISTORY' && crmHistoryModal && (
         <div className="modal-overlay" style={{ zIndex: 10002 }}>
-          <div className="modal-content animate-slide-up" style={{ width: '520px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="modal-content animate-slide-up" style={{ width: '720px', maxWidth: '90vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
             <div className="modal-header">
               <h2><Clock size={24} color="#4edea3" /> {crmHistoryModal.name}</h2>
               <X size={24} style={{ cursor: 'pointer' }} onClick={() => { setModalType('NONE'); setCrmHistoryModal(null); setCrmHistoryTab('orders'); }} />
@@ -4733,21 +4873,33 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               </div>
               <div style={{ marginBottom: '25px' }}>
                 <div style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', letterSpacing: '1px' }}>SELECT PAYMENT METHOD</div>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                   {['Cash', 'Card', 'Digital Link', 'Split'].map(method => (
-                     <div key={method} onClick={() => setPaymentMethod(method as any)} style={{ flex: 1, minWidth: '100px', border: paymentMethod === method ? '1px solid var(--accent-yellow)' : '1px solid #1e293b', borderRadius: '8px', padding: '15px 10px', textAlign: 'center', cursor: 'pointer', background: '#0f172a', color: paymentMethod === method ? 'var(--accent-yellow)' : '#cbd5e1' }}>
-                        {method === 'Cash' && <Banknote size={24} style={{ margin: '0 auto 5px' }} />}
-                        {method === 'Card' && <CreditCard size={24} style={{ margin: '0 auto 5px' }} />}
-                        {method === 'Digital Link' && <Landmark size={24} style={{ margin: '0 auto 5px' }} />}
-                        {method === 'Split' && <Banknote size={24} style={{ margin: '0 auto 5px' }} />}
-                        <div style={{ fontSize: '0.9rem', fontWeight: paymentMethod === method ? 'bold' : 'normal' }}>{method}</div>
-                     </div>
-                   ))}
-                </div>
+                {orderType === 'Delivery' ? (
+                  // A delivery order is settled when the rider hands it over,
+                  // not at this counter -- Cash/Card/Digital Link/Split (and
+                  // the tendered-amount entry below) don't apply yet.
+                  <div style={{ border: '1px solid var(--accent-yellow)', borderRadius: '8px', padding: '15px 10px', textAlign: 'center', background: '#0f172a', color: 'var(--accent-yellow)' }}>
+                    <Truck size={24} style={{ margin: '0 auto 5px' }} />
+                    <div style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>Cash on Delivery (COD)</div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>Rider collects payment on delivery</div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                     {['Cash', 'Card', 'Digital Link', 'Split'].map(method => (
+                       <div key={method} onClick={() => setPaymentMethod(method as any)} style={{ flex: 1, minWidth: '100px', border: paymentMethod === method ? '1px solid var(--accent-yellow)' : '1px solid #1e293b', borderRadius: '8px', padding: '15px 10px', textAlign: 'center', cursor: 'pointer', background: '#0f172a', color: paymentMethod === method ? 'var(--accent-yellow)' : '#cbd5e1' }}>
+                          {method === 'Cash' && <Banknote size={24} style={{ margin: '0 auto 5px' }} />}
+                          {method === 'Card' && <CreditCard size={24} style={{ margin: '0 auto 5px' }} />}
+                          {method === 'Digital Link' && <Landmark size={24} style={{ margin: '0 auto 5px' }} />}
+                          {method === 'Split' && <Banknote size={24} style={{ margin: '0 auto 5px' }} />}
+                          <div style={{ fontSize: '0.9rem', fontWeight: paymentMethod === method ? 'bold' : 'normal' }}>{method}</div>
+                       </div>
+                     ))}
+                  </div>
+                )}
               </div>
+              {paymentMethod !== 'COD' && (
               <div style={{ marginBottom: '25px' }}>
                 <div style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', letterSpacing: '1px' }}>AMOUNT RECEIVED</div>
-                
+
                 {paymentMethod === 'Split' ? (
                   <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
                     <div style={{ position: 'relative', flex: 1 }}>
@@ -4775,6 +4927,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   </>
                 )}
               </div>
+              )}
               <button className="btn-action" onClick={async () => {
                 let tendered = paymentMethod === 'Split' ? (Number(splitCash) + Number(splitCard)) : (paymentMethod === 'Cash' ? Number(cashGiven) : grandTotal);
                 if (tendered < grandTotal) return setToast({ message: 'Tendered amount is less than total', type: 'error' });
@@ -4801,7 +4954,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     discount: totalDiscountAmount,
                     payment_method: paymentMethod.toUpperCase(),
                     order_source: orderType,
-                    table_no: tableNumber || undefined,
+                    // Was previously sent unconditionally regardless of
+                    // order type -- tableNumber defaults to 'T1', so a
+                    // Delivery/Take Away sale could silently lock a real
+                    // dine-in table via assignTable even though it has
+                    // nothing to do with seating.
+                    table_no: orderType === 'Dine In' ? (tableNumber || undefined) : undefined,
                     // Was never sent here at all -- a Delivery order paid
                     // immediately (as opposed to KOT'd then paid later,
                     // which does send this) landed in the backend with no
@@ -4916,10 +5074,6 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 if (activeShift === 'Shift 1') setShift1Sales(prev => prev + grandTotal);
                 else setShift2Sales(prev => prev + grandTotal);
 
-                if (activeTerminalKotId) {
-                  db.kots.update(activeTerminalKotId, { status: 'PAID' });
-                  setActiveTerminalKotId(null);
-                }
                 setOrderNotes('');
                 setCart([]); setCashGiven(''); setModalType('NONE');
                 setPromotionOverrideActive(false); // one-transaction-only manual override

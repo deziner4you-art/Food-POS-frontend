@@ -194,7 +194,21 @@ export interface CartItem {
   totalPrice: number;
 }
 
-export type OrderStatus = 'pending' | 'preparing' | 'on_the_way' | 'delivered' | 'cancelled';
+export type OrderStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'preparing'
+  | 'kitchen_preparing'
+  | 'ready'
+  | 'rider_arrived'
+  | 'print_bill'
+  | 'dispatched'
+  | 'out_for_delivery'
+  | 'on_the_way'
+  | 'delivered'
+  | 'waiting_cash_settlement'
+  | 'settled'
+  | 'cancelled';
 export type OrderType = 'delivery' | 'pickup' | 'dine_in';
 
 export interface Order {

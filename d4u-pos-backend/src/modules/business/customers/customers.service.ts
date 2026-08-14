@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { LOYALTY_POINT_VALUE } from './loyalty.constants';
+import { normalizePhone } from '../../../common/utils/phone.util';
 
 type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
 
@@ -56,7 +57,7 @@ export class CustomersService {
   // فون نمبر سے گاہک تلاش
   async findByPhone(phone: string) {
     const customer = await this.prisma.customer.findUnique({
-      where: { phone },
+      where: { phone: normalizePhone(phone) },
       include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
     if (!customer) throw new NotFoundException('Customer not found');
@@ -79,7 +80,7 @@ export class CustomersService {
     if (!customer) throw new NotFoundException('Customer not found');
 
     const onlineOrders = await this.prisma.onlineOrder.findMany({
-      where: { customerPhone: customer.phone },
+      where: { customerPhone: normalizePhone(customer.phone) },
       orderBy: { id: 'desc' },
       take: 50,
     });
@@ -102,8 +103,9 @@ export class CustomersService {
     // lookupCustomerByPhone's own behavior) means "Add Customer" is
     // idempotent: an existing number resolves to that customer, a new one
     // creates a real new row.
+    const phone = normalizePhone(body.phone);
     const existing = await this.prisma.customer.findUnique({
-      where: { phone: body.phone },
+      where: { phone },
       include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
     if (existing) {
@@ -113,7 +115,7 @@ export class CustomersService {
     const customer = await this.prisma.customer.create({
       data: {
         brand_id: body.brand_id,
-        phone: body.phone,
+        phone,
         name: body.name,
         address: body.address ?? null,
       },

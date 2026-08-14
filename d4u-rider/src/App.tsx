@@ -226,7 +226,14 @@ export default function App() {
   const updateBridgeStatus = async (bridgeStatus: string): Promise<boolean> => {
     if (!activeOrder) return false;
     try {
-      const res = await fetch(`${BACKEND_URL}/online-orders/${activeOrder.id}`, {
+      // POS-native delivery orders (order_source: 'Delivery') live in the
+      // Order table, not OnlineOrder -- PATCHing /online-orders/:id for one
+      // of these always failed (wrong resource), which is why status buttons
+      // like "Confirm Picked Up" silently did nothing for POS orders.
+      const endpoint = activeOrder.isPos
+        ? `${BACKEND_URL}/pos-orders/${activeOrder.id}/status`
+        : `${BACKEND_URL}/online-orders/${activeOrder.id}`;
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -271,7 +278,8 @@ export default function App() {
     console.log('[RIDER] Restoring order state from REST payload:', targetOrder);
     const deliveryOrder: DeliveryOrder = {
       id: targetOrder.id,
-      source: 'ONLINE_ORDER',
+      source: targetOrder.isPos ? 'POS' : 'ONLINE_ORDER',
+      isPos: !!targetOrder.isPos,
       restaurantName: riderStoreName || 'Restaurant',
       restaurantX: 50, restaurantY: 50,
       restaurantAddress: riderStoreName || 'Branch Location',
@@ -288,7 +296,7 @@ export default function App() {
       estimatedReadyAt: targetOrder.estimatedReadyAt,
       bridgeStatus: targetOrder.status
     };
-    
+
     setActiveOrder(deliveryOrder as any);
 
     let hydratedStatus: DeliveryStatus = 'OFFERED';
@@ -337,18 +345,17 @@ export default function App() {
   const handleResumeOrder = (orderToResume: any) => {
     if (!orderToResume) return;
 
-    if (activeOrder) {
-      if (String(activeOrder.id) === String(orderToResume.id)) {
-        setActiveOrder(prev => prev ? { ...prev, bridgeStatus: orderToResume.status, estimatedReadyAt: orderToResume.estimatedReadyAt } : null);
-        setCurrentView('map');
-        return;
-      } else {
-        const { toast } = require('react-hot-toast');
-        toast.error('You already have another active delivery in progress.');
-        return;
-      }
+    if (activeOrder && String(activeOrder.id) === String(orderToResume.id)) {
+      setActiveOrder(prev => prev ? { ...prev, bridgeStatus: orderToResume.status, estimatedReadyAt: orderToResume.estimatedReadyAt } : null);
+      setCurrentView('map');
+      return;
     }
 
+    // Switching to a different one of the rider's own claimed orders used to
+    // be blocked here ("already have another active delivery"), which is
+    // what left orders permanently stuck once a rider had more than one
+    // claimed at once -- the previous order stays safely claimed server-side
+    // (nothing here touches its backend status), so switching is always safe.
     restoreOrderStateFromRest(orderToResume);
   };
 
@@ -390,6 +397,44 @@ export default function App() {
     if (!activeOrder) {
       hydrateActiveOrder();
     }
+  }, [riderStoreId, riderId]);
+
+  // Repeating "settle cash with cashier" reminder — checks ALL of this
+  // rider's own claimed orders (not just whichever one is currently
+  // activeOrder), since a rider can still have older claimed orders sitting
+  // at WAITING_CASH_SETTLEMENT after switching away via Resume Delivery.
+  // Fires immediately, then every 3 minutes for as long as any remain
+  // unsettled; the cashier marking one SETTLED on the POS side is what
+  // eventually makes this stop.
+  useEffect(() => {
+    if (!riderStoreId || !riderId) return;
+
+    const checkPendingSettlements = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/rider-orders?store_id=${riderStoreId}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}` },
+        });
+        if (!res.ok) return;
+
+        const orders: any[] = await res.json();
+        const pending = orders.filter(o =>
+          String(o.claimedByRiderId) === String(riderId) && o.status === 'WAITING_CASH_SETTLEMENT'
+        );
+
+        if (pending.length > 0) {
+          const { toast } = require('react-hot-toast');
+          const total = pending.reduce((sum, o) => sum + (parseFloat(o.totalAmount) || 0), 0);
+          const orderList = pending.map(o => `#${o.id}`).join(', ');
+          toast(`💵 Settle Rs. ${total.toFixed(2)} in cash with your Cashier — Order ${orderList}`, { duration: 8000, icon: '💵' });
+        }
+      } catch {
+        // Network hiccup — next tick will retry, nothing to surface here.
+      }
+    };
+
+    checkPendingSettlements();
+    const interval = setInterval(checkPendingSettlements, 3 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [riderStoreId, riderId]);
 
   // Brand currency — same source and same window.d4u_currency contract
@@ -441,7 +486,8 @@ export default function App() {
         console.log('[RIDER] Task 7B — new available order via realtime:', order.id, order.status, order.store_id);
         const deliveryOrder: DeliveryOrder = {
           id: order.id,
-          source: 'ONLINE_ORDER',
+          source: order.isPos ? 'POS' : 'ONLINE_ORDER',
+          isPos: !!order.isPos,
           restaurantName: riderStoreName || 'Restaurant',
           restaurantX: 50, restaurantY: 50,
           restaurantAddress: riderStoreName || 'Branch Location',
@@ -520,6 +566,18 @@ export default function App() {
       logout();
       return false;
     }
+
+    // Accepting a second order from the list while one is still open used to
+    // silently overwrite activeOrder and abandon the first one -- it stayed
+    // claimed server-side but became unreachable (handleResumeOrder used to
+    // block switching back). Block the claim here instead, before it ever
+    // reaches the server.
+    if (orderToClaim && activeOrder && String(activeOrder.id) !== String(orderToClaim.id)) {
+      const { toast } = require('react-hot-toast');
+      toast.error('Finish your current delivery before accepting a new one.');
+      return false;
+    }
+
     // Atomic server-side claim: whichever rider's request lands first wins
     // (RiderService.claimOrder), every other online rider trying to accept
     // the same order gets a 409 and their local offer is dropped. Without
@@ -568,7 +626,8 @@ export default function App() {
 
     const deliveryOrder: DeliveryOrder = orderToClaim ? {
       id: targetOrder.id,
-      source: 'ONLINE_ORDER',
+      source: targetOrder.isPos ? 'POS' : 'ONLINE_ORDER',
+      isPos: !!targetOrder.isPos,
       restaurantName: riderStoreName || 'Restaurant',
       restaurantX: 50, restaurantY: 50,
       restaurantAddress: riderStoreName || 'Branch Location',
