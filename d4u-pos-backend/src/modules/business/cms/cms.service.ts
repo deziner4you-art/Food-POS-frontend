@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../../database/prisma/prisma.service';
-import { LOYALTY_POINT_VALUE } from '../customers/loyalty.constants';
 
 @Injectable()
 export class CmsService {
@@ -136,16 +135,17 @@ export class CmsService {
       });
     }
 
-    // Echoes the single backend source of truth for the loyalty conversion
-    // rate so the POS client never has to hardcode it (reuses this existing
-    // settings response instead of adding a new endpoint/UI).
+    // loyalty_point_value/loyalty_points_per_purchase/loyalty_purchase_amount
+    // are real per-branch CmsSettings columns now (previously this echoed
+    // the hardcoded LOYALTY_POINT_VALUE constant here, clobbering whatever a
+    // branch had actually configured) — already included via ...safeSettings
+    // below, nothing further needed.
     // inventoryUnlockPinHash is never sent to any client, public or admin —
     // only whether one is currently set.
     const { inventoryUnlockPinHash, ...safeSettings } = settings as any;
     return {
       ...safeSettings,
       hasInventoryUnlockPin: !!inventoryUnlockPinHash,
-      loyalty_point_value: LOYALTY_POINT_VALUE,
     };
   }
 
@@ -174,6 +174,9 @@ export class CmsService {
         delivery_fee: data.delivery_fee,
         delivery_radius_km: data.delivery_radius_km,
         min_order_free_delivery: data.min_order_free_delivery,
+        loyalty_points_per_purchase: data.loyalty_points_per_purchase,
+        loyalty_purchase_amount: data.loyalty_purchase_amount,
+        loyalty_point_value: data.loyalty_point_value,
         // Blank/omitted = leave the existing PIN unchanged (password-field
         // semantics) — undefined tells Prisma to skip this field entirely,
         // never to null it out.

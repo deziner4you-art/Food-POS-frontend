@@ -120,6 +120,11 @@ export class OnlineOrdersController {
           take: 50,
         },
         addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] },
+        // Points earn/redeem ledger -- same phone-verified trust boundary as
+        // everything else this endpoint already returns, so the website's
+        // own Loyalty tab can show it without needing staff-only
+        // GET /customers/:id/wallet (which requires crm.customers.read).
+        loyaltyTransactions: { orderBy: { id: 'desc' }, take: 20 },
       },
     });
     if (!customer) {

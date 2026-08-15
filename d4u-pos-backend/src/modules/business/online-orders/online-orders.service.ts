@@ -69,41 +69,59 @@ export class OnlineOrdersService {
       couponCode: body.couponCode,
       orderType: orderType === 'DELIVERY' ? 'DELIVERY' : 'OTHER',
       customer_id: resolvedCustomerId,
-      redeemLoyaltyPoints: body.redeem_points === true,
+      pointsToRedeem: body.redeem_points,
     });
 
-    const order = await this.prisma.onlineOrder.create({
-      data: {
-        store_id: storeId,
-        customer: body.customer || 'Online Guest',
-        customerPhone: normalizedPhone,
-        customerAddress: body.customerAddress || 'No Address Provided',
-        items: JSON.stringify(parsedItems),
-        totalAmount: String(pricingResult.total.toFixed(2)),
-        tax_amount: pricingResult.tax,
-        delivery_fee: pricingResult.deliveryFee,
-        loyalty_discount: pricingResult.loyaltyDiscount,
-        points_redeemed: pricingResult.pointsRedeemed,
-        paymentMethod: body.payment_method || null,
-        source: body.source || 'Website',
-        notes: body.notes || '',
-        status: 'PENDING',
-        kdsStatus: 'PENDING',
-        // DELIVERY/PICKUP/DINE_IN -- drives the Walk-in/Pickup/Online
-        // territory label on the POS Kitchen Display (see
-        // KotsService.getActiveKots). Previously hardcoded to "Online",
-        // which nothing else read or matched.
-        type: body.order_type || 'DELIVERY',
-        timePlaced: new Date().toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      },
-    });
+    // Order creation + Loyalty Points redemption in one transaction — either
+    // both commit or neither does, matching PosOrdersService.createOrder's
+    // pattern (previously redeemPoints ran as a separate call after the
+    // order insert had already committed, so a redemption failure could
+    // leave an order charging a discounted total without ever deducting the
+    // points that justified it).
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      const order = await tx.onlineOrder.create({
+        data: {
+          store_id: storeId,
+          customer: body.customer || 'Online Guest',
+          customerPhone: normalizedPhone,
+          customerAddress: body.customerAddress || 'No Address Provided',
+          items: JSON.stringify(parsedItems),
+          totalAmount: String(pricingResult.total.toFixed(2)),
+          tax_amount: pricingResult.tax,
+          delivery_fee: pricingResult.deliveryFee,
+          loyalty_discount: pricingResult.loyaltyDiscount,
+          points_redeemed: pricingResult.pointsRedeemed,
+          paymentMethod: body.payment_method || null,
+          source: body.source || 'Website',
+          notes: body.notes || '',
+          status: 'PENDING',
+          kdsStatus: 'PENDING',
+          // DELIVERY/PICKUP/DINE_IN -- drives the Walk-in/Pickup/Online
+          // territory label on the POS Kitchen Display (see
+          // KotsService.getActiveKots). Previously hardcoded to "Online",
+          // which nothing else read or matched.
+          type: body.order_type || 'DELIVERY',
+          timePlaced: new Date().toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        },
+      });
 
-    const updatedOrder = await this.prisma.onlineOrder.update({
-      where: { id: order.id },
-      data: { orderId: order.id },
+      const updated = await tx.onlineOrder.update({
+        where: { id: order.id },
+        data: { orderId: order.id },
+      });
+
+      // Redeem Loyalty Points — uses pricingResult.pointsRedeemed (the real,
+      // capped number computed by calculatePricing from the customer's
+      // actual balance and their eligible, non-campaign-discounted subtotal
+      // + delivery fee), never a raw client-supplied points count.
+      if (resolvedCustomerId && pricingResult.pointsRedeemed > 0) {
+        await this.customers.redeemPoints(resolvedCustomerId, pricingResult.pointsRedeemed, tx, undefined, order.id);
+      }
+
+      return updated;
     });
 
     console.log(
@@ -111,22 +129,13 @@ export class OnlineOrdersService {
     );
     this.gateway.broadcast('new_order', updatedOrder, `store_${storeId}`);
 
-    // Redeem Loyalty Points — uses pricingResult.pointsRedeemed (the real,
-    // capped number computed by calculatePricing from the customer's actual
-    // balance and their eligible, non-campaign-discounted subtotal), never a
-    // raw client-supplied points count. No redemption support existed on
-    // this online-order path before at all.
-    if (resolvedCustomerId && pricingResult.pointsRedeemed > 0) {
-      await this.customers.redeemPoints(resolvedCustomerId, pricingResult.pointsRedeemed);
-    }
-
     // Award Loyalty Points — via the same CustomersService.earnPoints used by
     // PosOrdersService.createOrder, not a second, independent formula. The
     // previous inline version read body.totalAmount, a field the website
     // never sends, so it always computed 0; it also hardcoded a 1-point-per-
-    // rupee rate that doesn't match earnPoints' real 5-points-per-Rs-100
-    // rate, and never wrote a LoyaltyTransaction audit row. pricingResult.total
-    // is the same value already stored as this order's own totalAmount above.
+    // rupee rate that doesn't match earnPoints' real configurable rate, and
+    // never wrote a LoyaltyTransaction audit row. pricingResult.total is the
+    // same value already stored as this order's own totalAmount above.
     if (resolvedCustomerId) {
       // total_orders counts orders placed, independent of whether this
       // particular order's total cleared the minimum to earn a point.
@@ -138,7 +147,13 @@ export class OnlineOrdersService {
           data: { total_orders: { increment: 1 } },
         });
       }
-      await this.customers.earnPoints(resolvedCustomerId, updatedOrder.id, pricingResult.total);
+      // Skipped when this same order also redeemed points -- otherwise a
+      // customer could redeem for a discount and simultaneously earn back a
+      // similar (sometimes larger) amount from the same order's total, so
+      // their balance barely moved instead of dropping by what they redeemed.
+      if (pricingResult.pointsRedeemed === 0) {
+        await this.customers.earnPoints(resolvedCustomerId, updatedOrder.id, pricingResult.total, storeId);
+      }
     }
 
     return { success: true, order: updatedOrder };

@@ -85,14 +85,14 @@ export class PricingService {
     // Dine-In/offline-sync orders never carry one, regardless of branch
     // settings.
     orderType?: 'DELIVERY' | 'PICKUP' | 'DINE_IN' | 'OTHER';
-    // Loyalty Points redemption -- customer_id + a bare "wants to redeem"
-    // flag, never a client-supplied points number. The caller can't
-    // over-redeem or under-cap this: we look up the real balance and the
-    // real eligible (non-campaign-discounted) subtotal ourselves.
+    // Loyalty Points redemption -- customer_id + how many points the
+    // customer/cashier chose to redeem. This is never trusted blindly: it's
+    // re-capped here against the customer's real balance and the real
+    // eligible (non-campaign-discounted) subtotal + delivery fee.
     customer_id?: number;
-    redeemLoyaltyPoints?: boolean;
+    pointsToRedeem?: number;
   }) {
-    const { store_id, items, couponCode, orderType, customer_id, redeemLoyaltyPoints } = params;
+    const { store_id, items, couponCode, orderType, customer_id, pointsToRedeem } = params;
 
     let subtotal = 0;
     for (const item of items) {
@@ -230,12 +230,25 @@ export class PricingService {
       }
     }
 
+    // Tax % / delivery fee / loyalty rates are all per-branch settings
+    // (CmsSettings), never hardcoded -- fetched once up front since the
+    // loyalty redemption section below needs the configured point value and
+    // the module toggle before it can run.
+    const cmsSettings = await this.prisma.cmsSettings.findUnique({ where: { store_id } });
+    const taxPercent = cmsSettings?.tax_percentage ?? 0;
+    const pointValue = cmsSettings?.loyalty_point_value ?? LOYALTY_POINT_VALUE;
+    // No settings row at all -- never explicitly configured either way --
+    // defaults to enabled (matches the pre-toggle historical behavior). A
+    // branch only loses loyalty once someone explicitly flips it off.
+    const loyaltyModuleEnabled = cmsSettings ? cmsSettings.module_loyalty_enabled : true;
+
     // 6. Loyalty Points redemption — only against "flat price" lines that
     // aren't already campaign-discounted (discountedProductIds, built up
-    // above); capped by both the customer's real balance and the eligible
-    // subtotal. Pure calculation only — the actual points-ledger deduction
-    // happens in the caller (pos-orders/online-orders service) using
-    // pointsRedeemed below, once the order is confirmed.
+    // above), plus optionally the delivery fee; capped by both the
+    // customer's real balance and the real eligible amount. Pure
+    // calculation only — the actual points-ledger deduction happens in the
+    // caller (pos-orders/online-orders service) using pointsRedeemed below,
+    // once the order is confirmed.
     const eligibleForLoyaltySubtotal = items
       .filter((item) => {
         const itemId = item.product_id ?? item.id;
@@ -243,38 +256,48 @@ export class PricingService {
       })
       .reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-    let loyaltyDiscount = 0;
-    let pointsRedeemed = 0;
-    if (redeemLoyaltyPoints && customer_id) {
-      const customer = await this.prisma.customer.findUnique({ where: { id: customer_id }, select: { loyalty_points: true } });
-      const availableValue = (customer?.loyalty_points ?? 0) * LOYALTY_POINT_VALUE;
-      const rawLoyaltyDiscount = Math.min(availableValue, eligibleForLoyaltySubtotal);
-      pointsRedeemed = Math.floor(rawLoyaltyDiscount / LOYALTY_POINT_VALUE);
-      // Re-derive from the whole points actually being redeemed, not the raw
-      // (possibly fractional) cap -- what we charge must match what we deduct.
-      loyaltyDiscount = Math.round(pointsRedeemed * LOYALTY_POINT_VALUE * 100) / 100;
+    // Base delivery fee, computed from the free-delivery threshold BEFORE
+    // any loyalty discount -- this both avoids a circular dependency (how
+    // much delivery fee is redeemable would otherwise depend on how much
+    // loyalty discount is applied to the item subtotal, which itself can
+    // depend on how much is left over from the delivery portion) and keeps
+    // redeeming points from also unlocking a threshold it wouldn't have
+    // reached on its own merits.
+    let baseDeliveryFee = 0;
+    if (orderType === 'DELIVERY') {
+      const preLoyaltyAfterDiscount = subtotal - totalDiscount;
+      const freeThreshold = cmsSettings?.min_order_free_delivery ?? 0;
+      const qualifiesForFreeDelivery = freeThreshold > 0 && preLoyaltyAfterDiscount >= freeThreshold;
+      baseDeliveryFee = qualifiesForFreeDelivery ? 0 : cmsSettings?.delivery_fee ?? 0;
     }
 
-    // Tax % and delivery fee are per-branch settings (CmsSettings), never
-    // hardcoded -- previously this was always tax=0/deliveryFee=0 here, with
-    // every client (POS/website) independently hardcoding its own guess
-    // (10%, 13%) purely for on-screen display, never sent to or validated by
-    // the backend. This is now the single authoritative computation both
-    // channels' createOrder() persist onto the Order/OnlineOrder row.
-    const cmsSettings = await this.prisma.cmsSettings.findUnique({ where: { store_id } });
-    const taxPercent = cmsSettings?.tax_percentage ?? 0;
+    let loyaltyDiscount = 0;
+    let itemLoyaltyDiscount = 0;
+    let deliveryLoyaltyDiscount = 0;
+    let pointsRedeemed = 0;
+    const requestedPoints = Math.max(0, Math.floor(pointsToRedeem ?? 0));
+    if (loyaltyModuleEnabled && requestedPoints > 0 && customer_id) {
+      const customer = await this.prisma.customer.findUnique({ where: { id: customer_id }, select: { loyalty_points: true } });
+      const availablePoints = Math.min(requestedPoints, customer?.loyalty_points ?? 0);
+      const totalEligible = eligibleForLoyaltySubtotal + baseDeliveryFee;
+      const rawLoyaltyValue = Math.min(availablePoints * pointValue, totalEligible);
+      // Round down to a whole-point amount -- what we charge must never
+      // exceed what we later deduct from the ledger.
+      pointsRedeemed = Math.floor(rawLoyaltyValue / pointValue);
+      loyaltyDiscount = Math.round(pointsRedeemed * pointValue * 100) / 100;
+      // Split deterministically: items first, delivery fee absorbs whatever
+      // is left over (capped by baseDeliveryFee via totalEligible above).
+      itemLoyaltyDiscount = Math.min(loyaltyDiscount, eligibleForLoyaltySubtotal);
+      deliveryLoyaltyDiscount = Math.round((loyaltyDiscount - itemLoyaltyDiscount) * 100) / 100;
+    }
+
     // Loyalty discount reduces the taxable base exactly like a campaign
     // discount does -- one consistent formula for every discount type, not
     // a post-tax payment credit.
-    const afterDiscount = subtotal - totalDiscount - loyaltyDiscount;
+    const afterDiscount = subtotal - totalDiscount - itemLoyaltyDiscount;
     const tax = Math.round(afterDiscount * (taxPercent / 100) * 100) / 100;
 
-    let deliveryFee = 0;
-    if (orderType === 'DELIVERY') {
-      const freeThreshold = cmsSettings?.min_order_free_delivery ?? 0;
-      const qualifiesForFreeDelivery = freeThreshold > 0 && afterDiscount >= freeThreshold;
-      deliveryFee = qualifiesForFreeDelivery ? 0 : cmsSettings?.delivery_fee ?? 0;
-    }
+    const deliveryFee = Math.max(0, Math.round((baseDeliveryFee - deliveryLoyaltyDiscount) * 100) / 100);
 
     let finalTotal = Math.round((afterDiscount + tax + deliveryFee) * 100) / 100;
     if (finalTotal < 0) finalTotal = 0;
@@ -286,6 +309,8 @@ export class PricingService {
       taxPercent,
       deliveryFee,
       loyaltyDiscount,
+      itemLoyaltyDiscount,
+      deliveryLoyaltyDiscount,
       pointsRedeemed,
       eligibleForLoyaltySubtotal,
       total: finalTotal,

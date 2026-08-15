@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../context/StoreContext';
-import { getDeliveryFee, getGrandTotal, getPromoDiscount, getSubtotal, getTax } from '../../utils/cartMath';
+import { getDeliveryFee, getGrandTotal, getLoyaltyEligibleSubtotal, getPromoDiscount, getSubtotal, getTax } from '../../utils/cartMath';
 import { formatCurrency } from '../../utils/currency';
 import { AddOnsModal } from '../AddOnsModal';
 import {
@@ -10,7 +10,8 @@ import {
   Plus,
   Minus,
   Trash2,
-  ArrowRight
+  ArrowRight,
+  Gift
 } from 'lucide-react';
 
 interface CartDrawerProps {
@@ -19,7 +20,7 @@ interface CartDrawerProps {
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
-  const { cart, increaseQuantity, decreaseQuantity, removeFromCart, settings } = useStore();
+  const { cart, increaseQuantity, decreaseQuantity, removeFromCart, settings, loggedInUser, redeemPoints, setRedeemPoints } = useStore();
   const navigate = useNavigate();
   const [showAddOns, setShowAddOns] = useState(false);
 
@@ -41,9 +42,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
 
   const subtotal = getSubtotal(cart);
   const promoDiscount = getPromoDiscount(cart);
-  const deliveryFee = getDeliveryFee(cart, 'delivery', settings);
-  const tax = getTax(cart, settings);
-  const grandTotal = getGrandTotal(cart, 'delivery', settings);
+
+  // Same "redeem all eligible points" estimate CheckoutView computes --
+  // points can only pay down "flat price" lines that aren't already
+  // campaign-discounted; the backend recomputes and caps this
+  // authoritatively at order-creation time from the customer's real balance.
+  const loyaltyEligibleSubtotal = getLoyaltyEligibleSubtotal(cart);
+  const pointsBalance = loggedInUser?.loyalty_points ?? 0;
+  const pointsValue = pointsBalance * (settings?.loyalty_point_value ?? 0);
+  const canRedeemPoints = !!loggedInUser && pointsBalance > 0 && loyaltyEligibleSubtotal > 0;
+  const estimatedLoyaltyDiscount = redeemPoints && canRedeemPoints ? Math.min(pointsValue, loyaltyEligibleSubtotal) : 0;
+
+  const deliveryFee = getDeliveryFee(cart, 'delivery', settings, estimatedLoyaltyDiscount);
+  const tax = getTax(cart, settings, estimatedLoyaltyDiscount);
+  const grandTotal = getGrandTotal(cart, 'delivery', settings, estimatedLoyaltyDiscount);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-md animate-fade-in">
@@ -164,6 +176,21 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
               <Plus className="w-3.5 h-3.5" /> Add Ons
             </button>
 
+            {canRedeemPoints && (
+              <label className="flex items-center justify-between gap-2 bg-[#1A1A1D] border border-white/10 rounded-xl p-3 cursor-pointer">
+                <span className="flex items-center gap-2 text-xs font-bold text-white">
+                  <Gift className="w-4 h-4 text-[#D4AF37]" />
+                  Redeem Points ({pointsBalance} pts · up to {formatCurrency(Math.min(pointsValue, loyaltyEligibleSubtotal))})
+                </span>
+                <input
+                  type="checkbox"
+                  checked={redeemPoints}
+                  onChange={(e) => setRedeemPoints(e.target.checked)}
+                  className="accent-[#D4AF37] w-4 h-4"
+                />
+              </label>
+            )}
+
             {/* Price Breakdown — real D4U tax/delivery rules, not Stitch's demo math */}
             <div className="space-y-1.5 text-xs text-gray-300">
               <div className="flex justify-between">
@@ -174,6 +201,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
                 <div className="flex justify-between text-[#D4AF37]">
                   <span>Promotional Discount</span>
                   <span className="font-bold">-{formatCurrency(promoDiscount)}</span>
+                </div>
+              )}
+              {estimatedLoyaltyDiscount > 0 && (
+                <div className="flex justify-between text-[#D4AF37]">
+                  <span>Redeem Points</span>
+                  <span className="font-bold">-{formatCurrency(estimatedLoyaltyDiscount)}</span>
                 </div>
               )}
               <div className="flex justify-between">

@@ -66,12 +66,11 @@ export class PosOrdersService {
     store_id: number;
     created_by: number;
     customer_id?: number;
-    // A bare "customer wants to redeem" flag, never a client-supplied points
-    // number -- calculatePricing looks up the real balance and the real
-    // eligible (non-campaign-discounted) subtotal itself, so this can never
-    // over-redeem past what the customer actually has or what's actually
-    // usable.
-    redeem_points?: boolean;
+    // How many points the cashier chose to redeem -- calculatePricing still
+    // re-caps this against the real balance and the real eligible
+    // (non-campaign-discounted subtotal + delivery fee) amount itself, so
+    // this can never over-redeem past what's actually usable.
+    redeem_points?: number;
     items: {
       product_id: number;
       variant_id?: number;
@@ -104,7 +103,7 @@ export class PosOrdersService {
       couponCode: body.couponCode,
       orderType: body.order_source === 'Delivery' ? 'DELIVERY' : 'OTHER',
       customer_id: body.customer_id,
-      redeemLoyaltyPoints: body.redeem_points === true,
+      pointsToRedeem: body.redeem_points,
     });
 
     const total_amount = pricingResult.total;
@@ -217,6 +216,8 @@ export class PosOrdersService {
           body.customer_id,
           points_redeemed,
           tx,
+          undefined,
+          order.id,
         );
       }
 
@@ -252,10 +253,14 @@ export class PosOrdersService {
         ),
       );
 
-    // Auto-credit Loyalty Points
-    if (body.customer_id) {
+    // Auto-credit Loyalty Points — skipped when this same order also
+    // redeemed points. Without this, a customer could redeem points for a
+    // discount and simultaneously earn back a similar (sometimes larger)
+    // amount from the same order's total, so their balance barely moved (or
+    // even went up) instead of dropping by exactly what they redeemed.
+    if (body.customer_id && points_redeemed === 0) {
       this.customersService
-        .earnPoints(body.customer_id, result.id, total_amount)
+        .earnPoints(body.customer_id, result.id, total_amount, body.store_id)
         .catch((err) =>
           console.error(
             `[PosOrders] Failed to credit loyalty points for #${result.id}:`,

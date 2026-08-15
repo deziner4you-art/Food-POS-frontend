@@ -7,7 +7,7 @@ import * as cartEngine from './cart/cartEngine';
 import type { CartLineItem } from './cart/cartTypes';
 import { generateHeldOrderId } from './cart/heldOrderId';
 import { customConfirm } from './utils/alerts';
-import { validateDeliveryCustomerInfo, calculateLoyaltyDiscountPercent, resolveCustomerMode } from './customer/customerEngine';
+import { validateDeliveryCustomerInfo, resolveCustomerMode } from './customer/customerEngine';
 import { lookupCustomerByPhone, createCustomer, fetchCustomers } from './pos/api';
 import { getDeviceId, storeTokens, refreshAccessToken } from './pos/session';
 import { formatCurrency } from './utils/currency';
@@ -1779,7 +1779,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             .filter(Boolean);
         }
       } catch { /* wishlist is additive -- history still shows without it */ }
-      setCrmHistoryModal({ ...data, favoriteProducts });
+      // Loyalty ledger -- which order(s) earned/redeemed how many points, so
+      // the Loyalty tab can show more than just the current balance.
+      let loyaltyTransactions: any[] = [];
+      try {
+        const walletRes = await apiFetch(`/customers/${id}/wallet`, { auth: true });
+        if (walletRes.ok) loyaltyTransactions = (await walletRes.json()).transactions || [];
+      } catch { /* additive -- history still shows without it */ }
+      setCrmHistoryModal({ ...data, favoriteProducts, loyaltyTransactions });
       setModalType('CUSTOMER_HISTORY');
     } catch (e) {
       setToast({ message: 'Failed to load order history', type: 'error' });
@@ -1790,14 +1797,41 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [pendingDiscount, setPendingDiscount] = useState('');
   const [pendingDeliveryAction, setPendingDeliveryAction] = useState<'KOT' | 'PAY' | null>(null);
   const [tableNumber, setTableNumber] = useState<string>(isWaiterMode ? '' : 'T1');
+  // Cashier-chosen amount of the attached customer's points to redeem on
+  // this order (partial, not all-or-nothing).
+  const [pointsToRedeem, setPointsToRedeem] = useState<number>(0);
+  // Moved above the calculateOrderTotals call below, which reads
+  // liveCustomer?.loyalty_points -- was previously declared further down,
+  // which would be a temporal-dead-zone error at this new call site.
+  const [liveCustomer, setLiveCustomer] = useState<any>(null);
+
+  // Defensive reset: without this, pointsToRedeem only ever cleared after a
+  // successful order submit -- a cancelled/cleared cart left it stale, so
+  // the very next item added to a fresh order silently inherited a
+  // redemption the cashier never clicked "Redeem Points" for THIS order.
+  // Also resets if the attached customer changes mid-order, so a
+  // redemption never carries over onto a different customer's points.
+  useEffect(() => {
+    if (cart.length === 0 && pointsToRedeem > 0) setPointsToRedeem(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.length]);
+  useEffect(() => {
+    if (pointsToRedeem > 0) setPointsToRedeem(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveCustomer?.id]);
 
   const {
     subTotal, promoDiscountAmount, bogoDiscountAmount, bundleDiscountAmount, giftDiscountAmount, afterPromo, discountAmount,
+    loyaltyDiscount, itemLoyaltyDiscount, deliveryLoyaltyDiscount, pointsRedeemed,
     totalDiscountAmount, afterDiscount, tax, deliveryFee, grandTotal, giftApplications
   } = cartEngine.calculateOrderTotals(cart, activeCampaigns, currentUser?.store_id, discountPercent, taxRate, {
     isDelivery: orderType === 'Delivery',
     fee: branchSettings?.delivery_fee ?? 0,
     freeThreshold: branchSettings?.min_order_free_delivery ?? 0,
+  }, {
+    pointsToRedeem,
+    pointValue: (window as any).d4u_loyalty_point_value ?? 0,
+    availablePoints: liveCustomer?.loyalty_points ?? 0,
   });
 
   // CRM customer list -- was previously 3 hardcoded demo customers in a
@@ -1819,9 +1853,6 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [crmSearch, setCrmSearch] = useState('');
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '' });
-
-  const [liveCustomer, setLiveCustomer] = useState<any>(null);
-  const [redeemedPoints, setRedeemedPoints] = useState(0);
 
   useEffect(() => {
     if (customerPhone.length >= 10) {
@@ -2712,8 +2743,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                             });
                           }
                         } catch(e) {}
-                        const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(parsedCart, taxRate);
-                        setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: parsedCart, subTotal, tax, taxPercent: branchSettings?.tax_percentage ?? 0, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
+                        // Use the order's own real, already-decided figures (tax,
+                        // delivery fee, loyalty discount) instead of
+                        // calculateSubtotalWithTax's blind recompute, which has no
+                        // discount/loyalty awareness at all -- order already has
+                        // these fields straight from the backend, no extra fetch needed.
+                        const subTotal = parsedCart.reduce((s: number, i: any) => s + (i.price || 0) * (i.qty || 1), 0);
+                        const grandTotal = parseFloat(order.totalAmount) || 0;
+                        setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: parsedCart, orderId: order.id, subTotal, tax: order.tax_amount || 0, taxPercent: branchSettings?.tax_percentage ?? 0, loyaltyDiscount: order.loyalty_discount || 0, deliveryFee: order.delivery_fee || 0, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
                       }} style={{ padding: '12px 20px', background: 'var(--accent-yellow)', color: 'black', fontWeight: 'bold', borderRadius: '5px', border: 'none', cursor: 'pointer' }} title="Print Bill Slip">
                         <Printer size={18} />
                       </button>
@@ -2994,8 +3031,34 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                             <button className="btn-action bg-green-500 text-white font-bold px-4 py-2 flex justify-center items-center gap-2" style={{ width: '100%', borderRadius: '4px' }}
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                const { subTotal, tax, grandTotal } = calculateSubtotalWithTax(del.items, taxRate);
-                                setPrintData({ type: 'BILL', data: { orderType: 'Delivery', cart: del.items, subTotal, tax, taxPercent: branchSettings?.tax_percentage ?? 0, grandTotal, cashGiven: grandTotal, returnAmount: 0, time: new Date().toLocaleString() }, printCount: posSettings.billPrintQty || 1 });
+                                // Reprint must use the order's real, already-decided
+                                // figures -- calculateSubtotalWithTax has no discount/
+                                // loyalty awareness at all, so it silently dropped any
+                                // redemption, campaign discount, or delivery fee the
+                                // order actually charged (tax was also just a re-derived
+                                // guess, not the real persisted amount).
+                                const subTotal = (del.items || []).reduce((s: number, i: any) => s + (i.price || 0) * (i.qty || 1), 0);
+                                let printData: any = { orderType: 'Delivery', cart: del.items, orderId: del.id, subTotal, taxPercent: branchSettings?.tax_percentage ?? 0, time: new Date().toLocaleString() };
+                                try {
+                                  const res = await apiFetch(del.isPos ? `/pos-orders/${del.bridgeOrderId}` : `/online-orders/${del.bridgeOrderId}`, { auth: true });
+                                  if (!res.ok) throw new Error('fetch failed');
+                                  const order = await res.json();
+                                  const total = del.isPos ? (order.total_amount ?? 0) : (parseFloat(order.totalAmount) || 0);
+                                  printData = {
+                                    ...printData,
+                                    promoDiscount: del.isPos ? (order.discount || 0) : 0,
+                                    loyaltyDiscount: order.loyalty_discount || 0,
+                                    tax: order.tax_amount || 0,
+                                    deliveryFee: order.delivery_fee || 0,
+                                    grandTotal: total,
+                                    cashGiven: total,
+                                    returnAmount: 0,
+                                  };
+                                } catch {
+                                  const { tax, grandTotal } = calculateSubtotalWithTax(del.items, taxRate);
+                                  printData = { ...printData, tax, grandTotal, cashGiven: grandTotal, returnAmount: 0 };
+                                }
+                                setPrintData({ type: 'BILL', data: printData, printCount: posSettings.billPrintQty || 1 });
                                 try {
                                   const res = await apiFetch(del.isPos ? `/pos-orders/${del.bridgeOrderId}/status` : `/online-orders/${del.bridgeOrderId}`, {
                                     method: 'PATCH',
@@ -3187,7 +3250,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
               <div>
                 <h2 style={{ fontSize: '1.6rem', fontWeight: 'bold', color: 'white', marginBottom: '4px' }}>CRM Loyalty Program</h2>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Assign active customers to current bookings to grant reward points.</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Attach a customer to the current ticket to earn or redeem loyalty points.</p>
               </div>
               <button
                 onClick={() => setShowNewCustomerForm(true)}
@@ -3735,23 +3798,21 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     </button>
                     <button
                       onClick={() => {
-                        // Per-item promotion priority: loyalty redemption
-                        // shares discountPercent with the manual bill
-                        // discount, and cartEngine.calculateOrderTotals
-                        // already scopes it to non-promotional lines only —
-                        // no block needed here either.
+                        // Quick-fill to the customer's full balance — the
+                        // exact amount actually applied is still capped by
+                        // cartEngine (and re-capped by the backend) to
+                        // whatever's eligible (non-promo items + delivery
+                        // fee), so this can never over-redeem. The cashier
+                        // can dial it down to a partial amount in the
+                        // Payment modal's Redeem Points control.
                         if (liveCustomer.loyalty_points > 0) {
-                          setDiscountPercent(0);
-                          const pointValue = (window as any).d4u_loyalty_point_value ?? 0;
-                          const pct = calculateLoyaltyDiscountPercent(liveCustomer.loyalty_points, pointValue, subTotal);
-                          setDiscountPercent(pct);
-                          setRedeemedPoints(liveCustomer.loyalty_points);
-                          setToast({ message: `${liveCustomer.loyalty_points} Points applied!`, type: 'success' });
+                          setPointsToRedeem(liveCustomer.loyalty_points);
+                          setToast({ message: `${liveCustomer.loyalty_points} Points ready to redeem — adjust or confirm at Payment.`, type: 'success' });
                         }
                       }}
                       style={{ background: 'transparent', border: 'none', color: '#4edea3', cursor: 'pointer', fontWeight: 'bold' }}
                     >
-                      Redeem All
+                      Redeem Points
                     </button>
                   </div>
                 </div>
@@ -3886,6 +3947,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 <span style={{ marginLeft: '4px', color: '#fbbf24' }}>-Rs. {discountAmount.toFixed(2)}</span>
               </div>
             </div>
+            )}
+            {pointsRedeemed > 0 && (
+              <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem', color: '#4edea3' }}>
+                <span>Redeem Points ({pointsRedeemed} pts)</span><span>-Rs. {loyaltyDiscount.toFixed(2)}</span>
+              </div>
             )}
             <div className="totals-row" style={{ padding: '1px 0', fontSize: '0.75rem' }}><span>Tax ({branchSettings?.tax_percentage ?? 0}%)</span><span>Rs. {tax.toFixed(2)}</span></div>
             {deliveryFee > 0 && (
@@ -4788,10 +4854,29 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               )}
 
               {crmHistoryTab === 'loyalty' && (
-                <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#fbbf24' }}>{crmHistoryModal.loyalty_points ?? 0} Points</div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>Current Tier: {deriveLoyaltyTierLabel(crmHistoryModal.loyalty_points ?? 0)}</div>
-                </div>
+                <>
+                  <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                    <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#fbbf24' }}>{crmHistoryModal.loyalty_points ?? 0} Points</div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>Current Tier: {deriveLoyaltyTierLabel(crmHistoryModal.loyalty_points ?? 0)}</div>
+                  </div>
+                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>POINTS HISTORY</div>
+                    {(crmHistoryModal.loyaltyTransactions || []).map((t: any) => (
+                      <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
+                        <div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: t.type === 'EARN' ? '#4edea3' : '#f87171' }}>
+                            {t.type === 'EARN' ? 'Earned' : 'Redeemed'}{t.order_id ? ` — Order #${t.order_id}` : ''}
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{new Date(t.createdAt).toLocaleString()}</div>
+                        </div>
+                        <div style={{ fontWeight: 'bold', color: t.points > 0 ? '#4edea3' : '#f87171' }}>{t.points > 0 ? '+' : ''}{t.points} pts</div>
+                      </div>
+                    ))}
+                    {(!crmHistoryModal.loyaltyTransactions || crmHistoryModal.loyaltyTransactions.length === 0) && (
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '12px 0', textAlign: 'center' }}>No points activity yet.</div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -4871,6 +4956,55 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                    <span style={{ color: 'var(--accent-green)', fontSize: '1.8rem', fontWeight: 'bold' }}>Rs. {grandTotal.toFixed(2)}</span>
                 </div>
               </div>
+              {liveCustomer && liveCustomer.loyalty_points > 0 && (
+                <div style={{ border: '1px solid #1e293b', borderRadius: '8px', padding: '15px', marginBottom: '25px', background: '#0f172a' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ color: '#fbbf24', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px' }}>REDEEM LOYALTY POINTS</span>
+                    <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Available: {liveCustomer.loyalty_points} pts</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={liveCustomer.loyalty_points}
+                      value={pointsToRedeem || ''}
+                      placeholder="0"
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.min(liveCustomer.loyalty_points, parseInt(e.target.value) || 0));
+                        setPointsToRedeem(v);
+                      }}
+                      style={{ flex: 1, padding: '10px', background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: 'white', fontSize: '0.95rem' }}
+                    />
+                    <button
+                      onClick={() => setPointsToRedeem(liveCustomer.loyalty_points)}
+                      style={{ padding: '10px 14px', background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#4edea3', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      Max
+                    </button>
+                    {pointsToRedeem > 0 && (
+                      <button
+                        onClick={() => setPointsToRedeem(0)}
+                        style={{ padding: '10px 14px', background: 'transparent', border: '1px solid #334155', borderRadius: '6px', color: '#94a3b8', cursor: 'pointer' }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {pointsRedeemed > 0 ? (
+                    <div style={{ marginTop: '10px', fontSize: '0.85rem', color: '#4edea3', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>{pointsRedeemed} pts applied</span>
+                      <span>
+                        -Rs. {loyaltyDiscount.toFixed(2)}
+                        {deliveryLoyaltyDiscount > 0 ? ` (incl. Rs. ${deliveryLoyaltyDiscount.toFixed(2)} off delivery)` : ''}
+                      </span>
+                    </div>
+                  ) : pointsToRedeem > 0 ? (
+                    <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#94a3b8' }}>
+                      No eligible amount to redeem against (already-discounted items only, or delivery fee already free).
+                    </div>
+                  ) : null}
+                </div>
+              )}
               <div style={{ marginBottom: '25px' }}>
                 <div style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', letterSpacing: '1px' }}>SELECT PAYMENT METHOD</div>
                 {orderType === 'Delivery' ? (
@@ -4967,14 +5101,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     // entered in the Delivery Details modal.
                     delivery_address: orderType === 'Delivery' ? customerAddress : undefined,
                     notes: orderNotes,
-                    // A bare "redeem eligible points" flag, not the raw points count --
-                    // the backend computes the real, capped amount itself (customer's real
-                    // balance x eligible/non-discounted subtotal), redeemed atomically with
-                    // the order (see PosOrdersService.createOrder). Previously this sent
-                    // redeemedPoints directly, so a customer with more points than their
-                    // cart's eligible value had their ENTIRE balance deducted even though
-                    // the charged total only ever reflected the properly capped discount.
-                    redeem_points: redeemedPoints > 0 ? true : undefined,
+                    // How many points the cashier chose to redeem -- the backend still
+                    // re-caps this itself (customer's real balance x eligible/non-discounted
+                    // subtotal + delivery fee), redeemed atomically with the order (see
+                    // PosOrdersService.createOrder), so this can never over-redeem past
+                    // what's actually usable regardless of what's sent here.
+                    redeem_points: pointsToRedeem > 0 ? pointsToRedeem : undefined,
                     items: cart.map(i => ({
                       product_id: i.id || 1,
                       variant_id: i.variant_id,
@@ -5012,7 +5144,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     }
                     if (!res.ok) throw new Error(data.message || 'Order failed');
 
-                    if (redeemedPoints > 0) setRedeemedPoints(0);
+                    if (pointsToRedeem > 0) setPointsToRedeem(0);
                   } catch (e) {
                     console.error('API Error:', e);
                     setToast({ message: 'Error submitting order to backend, falling back to local.', type: 'error' });
@@ -5058,12 +5190,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   deliveryFee,
                   discount: totalDiscountAmount,
                   promoDiscount: promoDiscountAmount,
-                  // "Redeem All" drives this same discountPercent/discountAmount
-                  // pair (see the button above) -- when it was points that
-                  // produced this discount, label it as Loyalty on the
-                  // receipt instead of the generic manual-discount line.
-                  manualDiscount: redeemedPoints > 0 ? 0 : discountAmount,
-                  loyaltyDiscount: redeemedPoints > 0 ? discountAmount : 0,
+                  // Independently computed now (see cartEngine.calculateOrderTotals)
+                  // instead of the old single discountPercent relabeling trick, so
+                  // manual discount and loyalty redemption can coexist on one order.
+                  manualDiscount: discountAmount,
+                  loyaltyDiscount,
                   grandTotal,
                   cashGiven: tendered,
                   returnAmount,

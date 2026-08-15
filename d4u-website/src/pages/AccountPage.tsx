@@ -32,6 +32,7 @@ interface CustomerAccountPageProps {
   onUpdateAddress: (id: number, patch: { label?: string; address?: string; is_default?: boolean }) => Promise<{ success: boolean; message?: string }>;
   onDeleteAddress: (id: number) => Promise<{ success: boolean; message?: string }>;
   onLogout: () => void;
+  loyaltyTransactions?: { id: number; type: 'EARN' | 'REDEEM'; points: number; order_id: number | null; createdAt: string }[];
 }
 
 export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
@@ -46,8 +47,21 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
   onUpdateAddress,
   onDeleteAddress,
   onLogout,
+  loyaltyTransactions = [],
 }) => {
   const [activeTab, setActiveTab] = useState<'orders' | 'wishlist' | 'addresses' | 'loyalty'>('orders');
+
+  // Matches App.tsx's deriveLoyaltyTier thresholds exactly (Gold <500,
+  // Platinum <2000, VIP >=2000) -- previously this tab hardcoded "Gold
+  // Loyalty VIP" and "Next Tier (Platinum): 2000" regardless of the
+  // customer's real tier (already computed correctly for the profile
+  // banner badge above, just not reused down here).
+  const nextLoyaltyTier =
+    userProfile.loyaltyTier === 'VIP'
+      ? null
+      : userProfile.loyaltyTier === 'Platinum Member'
+      ? { label: 'VIP', threshold: 2000 }
+      : { label: 'Platinum', threshold: 500 };
 
   const favoriteProducts = products.filter((p) => favoriteProductIds.includes(p.id));
 
@@ -263,12 +277,18 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
                 </div>
 
                 <div className="flex items-center gap-3 w-full sm:w-auto">
-                  <button
-                    onClick={() => onOpenOrderTracker(order)}
-                    className="flex-1 sm:flex-none bg-[#D4AF37] text-black font-extrabold text-xs px-4 py-2 rounded-xl gold-glow hover:bg-[#ffe088]"
-                  >
-                    <Truck className="w-3.5 h-3.5 inline mr-1" /> Live POS Tracker
-                  </button>
+                  {order.status === 'delivered' || order.status === 'settled' ? (
+                    <span className="flex-1 sm:flex-none bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-extrabold text-xs px-4 py-2 rounded-xl text-center">
+                      <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" /> Completed
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => onOpenOrderTracker(order)}
+                      className="flex-1 sm:flex-none bg-[#D4AF37] text-black font-extrabold text-xs px-4 py-2 rounded-xl gold-glow hover:bg-[#ffe088]"
+                    >
+                      <Truck className="w-3.5 h-3.5 inline mr-1" /> Live POS Tracker
+                    </button>
+                  )}
                   <button
                     onClick={() => onReorder(order)}
                     className="flex-1 sm:flex-none bg-[#1A1A1D] border border-white/10 text-white font-bold text-xs px-4 py-2 rounded-xl hover:border-white/30"
@@ -425,7 +445,7 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
                 D4U Enterprise Tier Status
               </div>
               <h3 className="text-2xl font-extrabold text-white font-display">
-                Gold Loyalty VIP
+                {userProfile.loyaltyTier}
               </h3>
             </div>
             <Award className="w-12 h-12 text-[#D4AF37]" />
@@ -434,17 +454,17 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
           <div className="space-y-2">
             <div className="flex justify-between text-xs text-gray-300 font-semibold">
               <span>Current Balance: {userProfile.loyaltyPoints} Points</span>
-              <span>Next Tier (Platinum): 2000 Points</span>
+              <span>{nextLoyaltyTier ? `Next Tier (${nextLoyaltyTier.label}): ${nextLoyaltyTier.threshold} Points` : 'Top Tier Reached'}</span>
             </div>
             <div className="w-full bg-[#1A1A1D] h-3 rounded-full overflow-hidden border border-white/10">
               <div
                 className="bg-gradient-to-r from-[#D4AF37] to-amber-300 h-full gold-glow"
-                style={{ width: `${(userProfile.loyaltyPoints / 2000) * 100}%` }}
+                style={{ width: `${nextLoyaltyTier ? Math.min(100, (userProfile.loyaltyPoints / nextLoyaltyTier.threshold) * 100) : 100}%` }}
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-gray-300 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-gray-300 pt-2">
             <div className="bg-[#1A1A1D] p-4 rounded-xl space-y-1 border border-white/10">
               <div className="font-bold text-white">10% Cash Points Back</div>
               <div className="text-gray-400">Earn points automatically on every POS web order.</div>
@@ -453,9 +473,27 @@ export const CustomerAccountPage: React.FC<CustomerAccountPageProps> = ({
               <div className="font-bold text-white">Free Priority Express</div>
               <div className="text-gray-400">Zero delivery fees on orders above $30.00.</div>
             </div>
-            <div className="bg-[#1A1A1D] p-4 rounded-xl space-y-1 border border-white/10">
-              <div className="font-bold text-white">Chef Table Access</div>
-              <div className="text-gray-400">Early access to seasonal weekend tasting menus.</div>
+          </div>
+
+          <div className="pt-2">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Points History</div>
+            <div className="space-y-2">
+              {loyaltyTransactions.map((t) => (
+                <div key={t.id} className="flex items-center justify-between bg-[#1A1A1D] border border-white/10 rounded-xl px-4 py-3">
+                  <div>
+                    <div className={`text-xs font-bold ${t.type === 'EARN' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {t.type === 'EARN' ? 'Earned' : 'Redeemed'}{t.order_id ? ` — Order #${t.order_id}` : ''}
+                    </div>
+                    <div className="text-[10px] text-gray-500">{new Date(t.createdAt).toLocaleString()}</div>
+                  </div>
+                  <div className={`text-sm font-extrabold ${t.points > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {t.points > 0 ? '+' : ''}{t.points} pts
+                  </div>
+                </div>
+              ))}
+              {loyaltyTransactions.length === 0 && (
+                <div className="text-center text-xs text-gray-500 py-6">No points activity yet.</div>
+              )}
             </div>
           </div>
         </div>

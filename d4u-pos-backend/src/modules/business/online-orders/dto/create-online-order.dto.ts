@@ -47,9 +47,8 @@ export class CreateOnlineOrderDto {
   @IsOptional()
   customer_id?: number | string;
 
-  // "Redeem all eligible points" flag -- see PosOrdersService's identical
-  // field for why this is a bare boolean, never a client-supplied points
-  // number.
+  // How many points the customer chose to redeem -- calculatePricing still
+  // re-caps this against the real balance/eligible amount server-side.
   @IsOptional()
-  redeem_points?: boolean;
+  redeem_points?: number;
 }

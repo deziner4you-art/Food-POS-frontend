@@ -73,6 +73,21 @@ export class UpdateSettingsDto {
   @IsNumber()
   min_order_free_delivery?: number;
 
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  loyalty_points_per_purchase?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  loyalty_purchase_amount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  loyalty_point_value?: number;
+
   @IsBoolean()
   @IsOptional()
   module_auth_enabled?: boolean;

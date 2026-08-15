@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, MapPin } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { CheckCircle2, MapPin, X } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 import { BACKEND_URL } from '../hooks/useStoreData';
 import { formatCurrency } from '../utils/currency';
@@ -23,6 +23,7 @@ const STATUS_INDEX: Record<string, number> = {
 
 export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
   const { orderUpdate, riderPosition } = useStore();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryOrder = searchParams.get('order') || '';
   const [trackInput, setTrackInput] = useState(queryOrder || (activeOrder?.id ? String(activeOrder.id) : ''));
@@ -80,8 +81,15 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
 
   return (
     <div className="max-w-lg mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      <div className="bg-stitch-panel border border-stitch-border rounded-3xl p-6 space-y-6">
-        <h3 className="text-xl font-black text-stitch-ink flex items-center gap-2">
+      <div className="bg-stitch-panel border border-stitch-border rounded-3xl p-6 space-y-6 relative">
+        <button
+          onClick={() => navigate('/')}
+          aria-label="Close"
+          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-stitch-surface border border-stitch-border hover:border-stitch-danger/50 text-stitch-muted hover:text-stitch-danger flex items-center justify-center transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+        <h3 className="text-xl font-black text-stitch-ink flex items-center gap-2 pr-8">
           <MapPin className="w-5 h-5 text-stitch-success" /> Track Your Order
         </h3>
 
@@ -140,9 +148,14 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
               })}
             </div>
 
-            <button onClick={() => { setResult(null); setTrackInput(''); }} className="w-full py-2.5 border border-stitch-border hover:border-stitch-accent/50 text-stitch-muted font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all">
-              Search Again
-            </button>
+            <div className="flex gap-3">
+              <button onClick={() => { setResult(null); setTrackInput(''); }} className="flex-1 py-2.5 border border-stitch-border hover:border-stitch-accent/50 text-stitch-muted font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all">
+                Search Again
+              </button>
+              <button onClick={() => navigate('/')} className="flex-1 py-2.5 bg-stitch-success text-stitch-bg font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all hover:opacity-90">
+                Close
+              </button>
+            </div>
           </div>
         )}
       </div>

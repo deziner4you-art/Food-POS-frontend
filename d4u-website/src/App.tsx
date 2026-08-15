@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { BACKEND_URL } from './hooks/useStoreData';
 import BranchSelectorModal from './components/BranchSelectorModal';
+import { customSuccess, customAlert } from './utils/alerts';
 import PublicLayout, { type PublicOutletContext } from './routes/PublicLayout';
 import type { ActiveWebsitePage } from './types';
 
@@ -179,11 +180,15 @@ function mapOrderForHistoryDisplay(o: any, customerName: string, customerPhone: 
   const isPos = o.__source === 'pos';
   const totalAmount = isPos ? Number(o.total_amount) || 0 : Number(o.totalAmount) || 0;
   const createdAt = isPos ? o.business_date : o.createdAt;
+  // productId carried through for Re-Order to look up the current catalog
+  // product and re-add it at today's price -- previously dropped here, so
+  // Re-Order had no way to know which product a historic line even was.
   const items = isPos
     ? (o.items || []).map((i: any) => ({
         cartItemId: String(i.id),
         quantity: i.quantity,
         totalPrice: i.price * i.quantity,
+        productId: i.product?.id ?? i.product_id,
         product: { name: i.product?.name || `Item #${i.product_id}` },
       }))
     : (() => {
@@ -193,6 +198,7 @@ function mapOrderForHistoryDisplay(o: any, customerName: string, customerPhone: 
             cartItemId: `${o.id}-${idx}`,
             quantity: i.quantity || 1,
             totalPrice: (i.price || 0) * (i.quantity || 1),
+            productId: i.product_id,
             // Online-order line items only ever stored product_id, never a
             // name -- an honest fallback label, not a fabricated one.
             product: { name: `Item #${i.product_id}` },
@@ -221,7 +227,7 @@ function mapOrderForHistoryDisplay(o: any, customerName: string, customerPhone: 
 }
 
 function AccountRoute() {
-  const { loggedInUser, loginOrRegister, logout, addAddress, updateAddress, deleteAddress, products, favoriteProductIds, toggleFavorite } = useStore();
+  const { loggedInUser, loginOrRegister, logout, addAddress, updateAddress, deleteAddress, products, favoriteProductIds, toggleFavorite, addToCart } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const navigate = useNavigate();
   const [phone, setPhone] = useState('');
@@ -230,6 +236,7 @@ function AccountRoute() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
+  const [loyaltyTransactions, setLoyaltyTransactions] = useState<any[]>([]);
 
   useEffect(() => {
     if (!loggedInUser) return;
@@ -251,9 +258,35 @@ function AccountRoute() {
             .sort((a: any, b: any) => b.id - a.id)
             .map((o: any) => mapOrderForHistoryDisplay(o, loggedInUser.name, loggedInUser.phone)),
         );
+        setLoyaltyTransactions(data.loyaltyTransactions || []);
       })
       .catch(() => {});
   }, [loggedInUser]);
+
+  // Re-adds a historic order's items to the cart at TODAY's catalog price
+  // (addToCart always prices off the live Product, never a stored historic
+  // price) -- items whose product no longer exists in the catalog are
+  // skipped rather than added at a stale/guessed price.
+  const handleReorder = (order: any) => {
+    let addedCount = 0;
+    let skippedCount = 0;
+    for (const item of order.items || []) {
+      const product = products.find((p: any) => p.id === String(item.productId));
+      if (product) {
+        addToCart(product, {}, item.quantity || 1);
+        addedCount++;
+      } else {
+        skippedCount++;
+      }
+    }
+    if (addedCount === 0) {
+      customAlert('None of these items are available anymore.');
+    } else if (skippedCount > 0) {
+      customSuccess(`${addedCount} item(s) added to cart at today's prices (${skippedCount} no longer available).`);
+    } else {
+      customSuccess(`${addedCount} item(s) added to cart at today's prices.`);
+    }
+  };
 
   const handleAuthSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -308,9 +341,10 @@ function AccountRoute() {
       orders={orders}
       products={products}
       onOpenOrderTracker={(order) => navigate(`/track?order=${encodeURIComponent(order.orderNumber || order.id)}`)}
-      onReorder={() => {}}
+      onReorder={handleReorder}
       favoriteProductIds={favoriteProductIds}
       onQuickViewProduct={setQuickViewProduct}
+      loyaltyTransactions={loyaltyTransactions}
     />
   );
 }

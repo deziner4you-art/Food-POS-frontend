@@ -142,9 +142,20 @@ export class CustomersService {
     customer_id: number,
     order_id: number,
     order_amount: number,
+    store_id?: number,
   ) {
-    // ہر 100 روپے پر 5 پوائنٹس
-    const points = Math.floor(order_amount / 100) * 5;
+    const settings = store_id
+      ? await this.prisma.cmsSettings.findUnique({ where: { store_id } })
+      : null;
+    // No settings row at all -- never explicitly configured either way --
+    // defaults to enabled, matching the pre-toggle historical behavior.
+    const loyaltyModuleEnabled = settings ? settings.module_loyalty_enabled : true;
+    if (!loyaltyModuleEnabled) return { points: 0 };
+
+    const pointsPerPurchase = settings?.loyalty_points_per_purchase ?? 5;
+    const purchaseAmount = settings?.loyalty_purchase_amount ?? 100;
+    if (purchaseAmount <= 0) return { points: 0 };
+    const points = Math.floor(order_amount / purchaseAmount) * pointsPerPurchase;
     if (points <= 0) return { points: 0 };
 
     await this.prisma.$transaction([
@@ -177,6 +188,8 @@ export class CustomersService {
     customer_id: number,
     points: number,
     client?: Prisma.TransactionClient,
+    pointValue: number = LOYALTY_POINT_VALUE,
+    order_id?: number,
   ) {
     const run = async (tx: PrismaClientOrTx) => {
       const customer = await tx.customer.findUnique({
@@ -192,9 +205,10 @@ export class CustomersService {
       await tx.loyaltyTransaction.create({
         data: {
           customer_id,
+          order_id,
           type: 'REDEEM',
           points: -points,
-          description: 'Points redeemed at POS',
+          description: order_id ? `Points redeemed on Order #${order_id}` : 'Points redeemed at POS',
         },
       });
       await tx.customer.update({
@@ -202,7 +216,7 @@ export class CustomersService {
         data: { loyalty_points: { decrement: points } },
       });
 
-      const discount = points * LOYALTY_POINT_VALUE;
+      const discount = points * pointValue;
       console.log(
         `[LOYALTY REDEEM] Customer #${customer_id} used ${points} points = Rs.${discount}`,
       );

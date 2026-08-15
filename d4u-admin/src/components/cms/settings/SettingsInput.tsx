@@ -5,9 +5,11 @@ interface SettingsInputProps {
   type?: 'text' | 'email' | 'number';
   placeholder?: string;
   error?: string;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }
 
-export default function SettingsInput({ label, value, onChange, type = 'text', placeholder, error }: SettingsInputProps) {
+export default function SettingsInput({ label, value, onChange, type = 'text', placeholder, error, onFocus, onBlur }: SettingsInputProps) {
   return (
     <div>
       <label className="block text-xs font-bold text-stitch-muted mb-1">{label}</label>
@@ -15,6 +17,8 @@ export default function SettingsInput({ label, value, onChange, type = 'text', p
         type={type}
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
+        onBlur={onBlur}
         placeholder={placeholder}
         className={`w-full bg-stitch-surface border rounded-lg p-3 text-stitch-ink focus:outline-none focus:border-stitch-accent ${
           error ? 'border-stitch-danger' : 'border-stitch-border'

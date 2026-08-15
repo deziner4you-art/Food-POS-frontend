@@ -48,14 +48,15 @@ export class CreatePosOrderDto {
   @IsOptional()
   customer_id?: number;
 
-  // "Redeem all eligible points" flag, atomic with this order (see
-  // PosOrdersService.createOrder). Requires customer_id -- the actual number
-  // of points redeemed is computed server-side by PricingService, capped by
-  // the customer's real balance and by cart lines that aren't already
-  // campaign-discounted, never trusted from the client.
-  @IsBoolean()
+  // How many points the cashier chose to redeem, atomic with this order (see
+  // PosOrdersService.createOrder). Requires customer_id -- the actual amount
+  // credited is re-capped server-side by PricingService against the
+  // customer's real balance and the real eligible (non-campaign-discounted
+  // subtotal + delivery fee) amount, never trusted as-is from the client.
   @IsOptional()
-  redeem_points?: boolean;
+  @Type(() => Number)
+  @IsNumber()
+  redeem_points?: number;
 
   @IsArray()
   @ValidateNested({ each: true })

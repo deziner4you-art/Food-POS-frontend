@@ -219,6 +219,10 @@ export interface OrderTotals {
   giftDiscountAmount: number;
   afterPromo: number;
   discountAmount: number;
+  loyaltyDiscount: number;
+  itemLoyaltyDiscount: number;
+  deliveryLoyaltyDiscount: number;
+  pointsRedeemed: number;
   totalDiscountAmount: number;
   afterDiscount: number;
   tax: number;
@@ -227,6 +231,12 @@ export interface OrderTotals {
   bogoApplications: BogoApplication[];
   bundleApplications: { campaignId: number; title: string; discount: number }[];
   giftApplications: FreeGiftApplication[];
+}
+
+export interface LoyaltyRedemptionInput {
+  pointsToRedeem: number;
+  pointValue: number;
+  availablePoints: number;
 }
 
 /**
@@ -245,7 +255,12 @@ export function calculateOrderTotals(
   // Delivery fee only ever applies for a Delivery order, mirroring
   // PricingService.calculatePricing()'s server-side formula exactly so the
   // cashier's screen/printed bill always matches what actually gets billed.
-  delivery: { isDelivery: boolean; fee: number; freeThreshold: number } = { isDelivery: false, fee: 0, freeThreshold: 0 }
+  delivery: { isDelivery: boolean; fee: number; freeThreshold: number } = { isDelivery: false, fee: 0, freeThreshold: 0 },
+  // Loyalty Points redemption -- mirrors PricingService.calculatePricing()'s
+  // server-side split exactly (items first, delivery fee absorbs the rest),
+  // so this is a preview only; the backend independently recomputes and
+  // caps the real amount at order-creation time.
+  loyalty: LoyaltyRedemptionInput = { pointsToRedeem: 0, pointValue: 0, availablePoints: 0 }
 ): OrderTotals {
   const subTotal = sumLineItems(cart);
   const promoDiscountAmount = cart.reduce((sum, item) => {
@@ -276,23 +291,54 @@ export function calculateOrderTotals(
     return sum + item.price * item.qty * (1 - pct / 100);
   }, 0);
   const discountAmount = discountEligibleSubtotal * (discountPercent / 100);
+  // What's left of the eligible (non-promo) subtotal after the manual
+  // discount -- loyalty redemption applies on top of that remainder, never
+  // stacking past 100% of the eligible portion combined.
+  const remainingEligibleForLoyalty = Math.max(0, discountEligibleSubtotal - discountAmount);
 
-  const totalDiscountAmount = promoDiscountAmount + bogoDiscountAmount + bundleDiscountAmount + giftDiscountAmount + discountAmount;
+  // Base delivery fee, computed BEFORE loyalty -- mirrors the backend's
+  // pre-loyalty threshold check exactly (see PricingService.calculatePricing
+  // for why: avoids a circular dependency and keeps redemption from also
+  // unlocking a threshold it wouldn't have reached on its own).
+  let baseDeliveryFee = 0;
+  if (delivery.isDelivery) {
+    const preLoyaltyAfterDiscount = subTotal - promoDiscountAmount - bogoDiscountAmount - bundleDiscountAmount - giftDiscountAmount - discountAmount;
+    const qualifiesForFreeDelivery = delivery.freeThreshold > 0 && preLoyaltyAfterDiscount >= delivery.freeThreshold;
+    baseDeliveryFee = qualifiesForFreeDelivery ? 0 : delivery.fee;
+  }
+
+  // Loyalty Points redemption -- items first, delivery fee absorbs whatever
+  // value is left over. Rounds down to a whole-point amount so the preview
+  // never shows more discount than the points actually justify.
+  let loyaltyDiscount = 0;
+  let itemLoyaltyDiscount = 0;
+  let deliveryLoyaltyDiscount = 0;
+  let pointsRedeemed = 0;
+  const requestedPoints = Math.max(0, Math.floor(loyalty.pointsToRedeem || 0));
+  if (requestedPoints > 0 && loyalty.pointValue > 0) {
+    const availablePoints = Math.min(requestedPoints, loyalty.availablePoints);
+    const eligibleDeliveryBase = delivery.isDelivery ? baseDeliveryFee : 0;
+    const totalEligible = remainingEligibleForLoyalty + eligibleDeliveryBase;
+    const rawLoyaltyValue = Math.min(availablePoints * loyalty.pointValue, totalEligible);
+    pointsRedeemed = Math.floor(rawLoyaltyValue / loyalty.pointValue);
+    loyaltyDiscount = Math.round(pointsRedeemed * loyalty.pointValue * 100) / 100;
+    itemLoyaltyDiscount = Math.min(loyaltyDiscount, remainingEligibleForLoyalty);
+    deliveryLoyaltyDiscount = Math.round((loyaltyDiscount - itemLoyaltyDiscount) * 100) / 100;
+  }
+
+  const totalDiscountAmount = promoDiscountAmount + bogoDiscountAmount + bundleDiscountAmount + giftDiscountAmount + discountAmount + itemLoyaltyDiscount;
   const afterDiscount = subTotal - totalDiscountAmount;
   // Rounded here, at the source, rather than leaving accumulated float drift
   // (e.g. 1958.4180000000001) for every downstream display to individually
   // remember to .toFixed(2) -- one quick-cash button in Complete Payment was
   // missing that and showed the raw float straight to the cashier.
   const tax = Math.round(afterDiscount * taxRate * 100) / 100;
-  let deliveryFee = 0;
-  if (delivery.isDelivery) {
-    const qualifiesForFreeDelivery = delivery.freeThreshold > 0 && afterDiscount >= delivery.freeThreshold;
-    deliveryFee = qualifiesForFreeDelivery ? 0 : delivery.fee;
-  }
+  const deliveryFee = Math.max(0, Math.round((baseDeliveryFee - deliveryLoyaltyDiscount) * 100) / 100);
   const grandTotal = Math.round((afterDiscount + tax + deliveryFee) * 100) / 100;
   return {
     subTotal, promoDiscountAmount, bogoDiscountAmount, bundleDiscountAmount, giftDiscountAmount,
-    afterPromo, discountAmount, totalDiscountAmount, afterDiscount, tax, deliveryFee, grandTotal,
+    afterPromo, discountAmount, loyaltyDiscount, itemLoyaltyDiscount, deliveryLoyaltyDiscount, pointsRedeemed,
+    totalDiscountAmount, afterDiscount, tax, deliveryFee, grandTotal,
     bogoApplications, bundleApplications, giftApplications,
   };
 }

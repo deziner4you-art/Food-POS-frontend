@@ -1342,6 +1342,14 @@ model CmsSettings {
   delivery_radius_km      Float @default(0)
   min_order_free_delivery Float @default(0)
 
+  // Loyalty points program — configurable per branch. Previously hardcoded
+  // constants (5 pts / Rs 100 earn rate, Rs 0.20/point redemption value) in
+  // customers.service.ts / loyalty.constants.ts; those now serve only as the
+  // fallback defaults below when a branch hasn't been explicitly configured.
+  loyalty_points_per_purchase Int   @default(5)
+  loyalty_purchase_amount     Float @default(100)
+  loyalty_point_value         Float @default(0.2)
+
   // Feature Flags / Module Toggles
   module_auth_enabled     Boolean @default(false)
   module_kds_enabled      Boolean @default(true)

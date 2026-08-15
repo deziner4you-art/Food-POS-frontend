@@ -29,7 +29,7 @@ interface CheckoutViewProps {
 }
 
 export const CheckoutView: React.FC<CheckoutViewProps> = ({ onBackToMenu, onOrderPlaced }) => {
-  const { storeId, cart, clearCart, loggedInUser, kioskMode, addAddress, settings } = useStore();
+  const { storeId, cart, clearCart, loggedInUser, kioskMode, addAddress, settings, redeemPoints, setRedeemPoints } = useStore();
   const navigate = useNavigate();
 
   const savedAddresses = loggedInUser?.addresses || [];
@@ -48,7 +48,6 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ onBackToMenu, onOrde
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(kioskMode ? 'CASH' : 'COD');
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [error, setError] = useState('');
-  const [redeemPoints, setRedeemPoints] = useState(false);
 
   const subtotal = getSubtotal(cart);
   const promoDiscount = getPromoDiscount(cart);
@@ -122,7 +121,11 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ onBackToMenu, onOrde
           notes: '',
           payment_method: paymentMethod,
           customer_id: loggedInUser?.id,
-          redeem_points: redeemPoints && canRedeemPoints,
+          // The backend expects how many points to redeem, not a bare
+          // true/false flag -- sending the customer's whole balance is safe
+          // ("redeem all eligible") since calculatePricing re-caps it itself
+          // against both the real balance and what's actually eligible.
+          redeem_points: redeemPoints && canRedeemPoints ? pointsBalance : undefined,
         }),
       });
       if (!res.ok) throw new Error(await res.text());

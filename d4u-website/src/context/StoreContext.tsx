@@ -124,6 +124,10 @@ interface StoreContextValue {
   decreaseQuantity: (cartItemId: string) => void;
   removeFromCart: (cartItemId: string) => void;
   clearCart: () => void;
+  // "Redeem all eligible loyalty points" -- shared between CartDrawer and
+  // CheckoutView so toggling it in one is reflected in the other.
+  redeemPoints: boolean;
+  setRedeemPoints: (value: boolean) => void;
 
   loggedInUser: CustomerProfile | null;
   loginOrRegister: (phone: string, name?: string) => Promise<{ success: boolean; needsName?: boolean; message?: string }>;
@@ -149,6 +153,9 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
     return saved ? Number(saved) : null;
   });
   const [cart, setCart] = useState<CartItem[]>([]);
+  // Shared between CartDrawer and CheckoutView so the choice made in one
+  // carries through to the other instead of resetting on navigation.
+  const [redeemPoints, setRedeemPoints] = useState(false);
   const { foodItems, banners, campaigns, settings, categoryMeta, orderUpdate, riderPosition } = useStoreData(storeId);
 
   const [loggedInUser, setLoggedInUser] = useState<CustomerProfile | null>(() => {
@@ -290,7 +297,7 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
     setCart((prev) => prev.filter((c) => c.cartItemId !== cartItemId));
   };
 
-  const clearCart = () => setCart([]);
+  const clearCart = () => { setCart([]); setRedeemPoints(false); };
 
   const loginOrRegister = async (phone: string, name?: string) => {
     try {
@@ -323,6 +330,18 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
   const logout = () => {
     setLoggedInUser(null);
     localStorage.removeItem('d4u_web_user');
+    // Without this, favoriteProductIds keeps holding this account's full
+    // backend wishlist in memory after logout (it's only ever written back
+    // to localStorage while logged OUT -- see toggleFavorite). The next
+    // login's merge effect treats leftover React state as "guest picks made
+    // before logging in" and pushes every one of them onto the NEW account,
+    // so a brand-new user could see the previous account's wishlist. Wiping
+    // both the state and the localStorage guest list on logout gives every
+    // subsequent login (same device, same or different account) a clean
+    // slate to merge from.
+    setFavoriteProductIds([]);
+    localStorage.removeItem('d4u_web_favorites');
+    setRedeemPoints(false);
   };
 
   // Saved delivery addresses -- persist the updated customer object back to
@@ -482,6 +501,8 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       decreaseQuantity,
       removeFromCart,
       clearCart,
+      redeemPoints,
+      setRedeemPoints,
       loggedInUser,
       loginOrRegister,
       logout,
@@ -493,7 +514,7 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       kioskMode,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, riderPosition, discountedProducts, categories, categoryGroups, heroSlides, promotions, cart, loggedInUser, favoriteProductIds, kioskMode],
+    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, riderPosition, discountedProducts, categories, categoryGroups, heroSlides, promotions, cart, redeemPoints, loggedInUser, favoriteProductIds, kioskMode],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

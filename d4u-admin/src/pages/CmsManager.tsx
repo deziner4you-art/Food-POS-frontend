@@ -52,6 +52,7 @@ export default function CmsManager() {
     facebookUrl: '', instagramUrl: '', whatsappNumber: '',
     twitterUrl: '', youtubeUrl: '', aboutText: '', companyText: '',
     tax_percentage: 0, delivery_fee: 0, delivery_radius_km: 0, min_order_free_delivery: 0,
+    loyalty_points_per_purchase: 5, loyalty_purchase_amount: 100, loyalty_point_value: 0.2,
     module_auth_enabled: false, module_kds_enabled: true, module_loyalty_enabled: false, module_payments_enabled: false,
     hasInventoryUnlockPin: false
   });

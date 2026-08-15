@@ -33,8 +33,20 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      - ./uploads:/app/uploads
+      # A host bind-mount here (./uploads:/app/uploads) uses Docker Desktop's
+      # Windows file-sharing layer (grpcfuse), which hung completely under
+      # this folder's size/file count -- every request under /uploads/* (even
+      # a plain `ls` inside the container) would hang indefinitely until
+      # Docker Desktop was restarted, which is why banner/product images kept
+      # intermittently vanishing. A named volume lives natively inside the
+      # Linux VM, bypassing that bridge entirely. One-time migration of the
+      # existing files out of the old bind-mounted folder into this volume is
+      # a manual step (see MEMORY.md / session notes), not automatic.
+      - d4u_uploads:/app/uploads
     restart: unless-stopped
 
-# volumes:
-#   postgres_data:
+volumes:
+  d4u_uploads:
+    external: true
+    name: d4u-pos-backend_d4u_uploads
+  # postgres_data: (would pair with the commented-out postgres service above)

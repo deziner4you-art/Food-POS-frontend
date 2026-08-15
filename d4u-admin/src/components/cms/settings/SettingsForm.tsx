@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Building2, MapPin, Share2, Truck } from 'lucide-react';
+import { Building2, MapPin, Share2, Truck, Award } from 'lucide-react';
 import SettingsSectionCard from './SettingsSectionCard';
 import SettingsFieldGroup from './SettingsFieldGroup';
 import SettingsInput from './SettingsInput';
@@ -14,6 +15,39 @@ interface SettingsFormProps {
 }
 
 export default function SettingsForm({ settings, errors = {}, loading, onFieldChange, onSubmit }: SettingsFormProps) {
+  // Reward Percentage isn't its own stored field -- it's a computed, editable
+  // mirror of Point Value: percentage = pointsPerPurchase * pointValue /
+  // purchaseAmount * 100 (the % of each sale a customer effectively gets
+  // back once they redeem). Editing this box solves back for Point Value
+  // only (Points Earned Per Purchase / Purchase Amount -- the earning
+  // granularity a customer sees -- are left alone); editing any of those
+  // three fields directly recomputes this display automatically, since it's
+  // just a function of them. The focus/blur-tracked draft state stops the
+  // recompute effect from fighting the admin's cursor mid-keystroke (e.g.
+  // clobbering a trailing "0." while they're still typing "0.25").
+  const isEditingPercentRef = useRef(false);
+  const [percentDraft, setPercentDraft] = useState('');
+
+  const pointsPerPurchase = Number(settings?.loyalty_points_per_purchase) || 0;
+  const purchaseAmount = Number(settings?.loyalty_purchase_amount) || 0;
+  const pointValue = Number(settings?.loyalty_point_value) || 0;
+  const computedPercent =
+    purchaseAmount > 0 && pointsPerPurchase > 0 ? (pointsPerPurchase * pointValue / purchaseAmount) * 100 : 0;
+
+  useEffect(() => {
+    if (isEditingPercentRef.current) return;
+    setPercentDraft(computedPercent ? String(Math.round(computedPercent * 100) / 100) : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointsPerPurchase, purchaseAmount, pointValue]);
+
+  const handlePercentChange = (v: string) => {
+    setPercentDraft(v);
+    const pct = parseFloat(v);
+    if (isNaN(pct) || pointsPerPurchase <= 0 || purchaseAmount <= 0) return;
+    const newPointValue = ((pct / 100) * purchaseAmount) / pointsPerPurchase;
+    onFieldChange('loyalty_point_value', String(Math.round(newPointValue * 10000) / 10000));
+  };
+
   if (loading) {
     return (
       <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -153,6 +187,44 @@ export default function SettingsForm({ settings, errors = {}, loading, onFieldCh
               onChange={(v) => onFieldChange('min_order_free_delivery', v)}
               placeholder="e.g. 2000"
               error={errors.min_order_free_delivery}
+            />
+          </SettingsFieldGroup>
+        </SettingsSectionCard>
+
+        <SettingsSectionCard title="Loyalty Program" icon={Award}>
+          <SettingsFieldGroup>
+            <SettingsInput
+              label="Points Earned Per Purchase"
+              type="number"
+              value={settings?.loyalty_points_per_purchase}
+              onChange={(v) => onFieldChange('loyalty_points_per_purchase', v)}
+              placeholder="e.g. 5"
+              error={errors.loyalty_points_per_purchase}
+            />
+            <SettingsInput
+              label="Purchase Amount (Rs.) — points earned per this much spent"
+              type="number"
+              value={settings?.loyalty_purchase_amount}
+              onChange={(v) => onFieldChange('loyalty_purchase_amount', v)}
+              placeholder="e.g. 100"
+              error={errors.loyalty_purchase_amount}
+            />
+            <SettingsInput
+              label="Point Value (Rs.) — rupees credited per point on redemption"
+              type="number"
+              value={settings?.loyalty_point_value}
+              onChange={(v) => onFieldChange('loyalty_point_value', v)}
+              placeholder="e.g. 0.2"
+              error={errors.loyalty_point_value}
+            />
+            <SettingsInput
+              label="Reward Percentage (%) — equivalent % of each sale shared back"
+              type="number"
+              value={percentDraft}
+              onChange={handlePercentChange}
+              onFocus={() => { isEditingPercentRef.current = true; }}
+              onBlur={() => { isEditingPercentRef.current = false; setPercentDraft(computedPercent ? String(Math.round(computedPercent * 100) / 100) : ''); }}
+              placeholder="e.g. 2"
             />
           </SettingsFieldGroup>
         </SettingsSectionCard>
