@@ -137,7 +137,12 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({ onBackToMenu, onOrde
         addAddress(newAddressLabel.trim() || 'Saved Address', customAddress.trim(), savedAddresses.length === 0).catch(() => {});
       }
 
-      onOrderPlaced({ id: data.order?.id, status: 'PENDING', eta: orderType === 'delivery' ? 30 : 15 });
+      // The real, complete order record -- previously this hand-picked just
+      // {id, status, eta}, dropping totalAmount (and everything else)
+      // entirely. TrackOrderPage showed "Rs. NaN" for the amount until the
+      // first order_updated socket event happened to arrive and backfill
+      // the real fields; now it has them from the very first render.
+      onOrderPlaced(data.order);
       clearCart();
       navigate('/track');
     } catch (err) {

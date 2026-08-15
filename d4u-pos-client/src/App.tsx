@@ -292,7 +292,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [completedDeliveries, setCompletedDeliveries] = useState<any[]>([])
 
   const [showMoreMenu, setShowMoreMenu] = useState(false)
-  const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'CASHIER_LOGIN' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH' | 'SELECT_VARIANT' | 'ADD_ONS' | 'CUSTOMER_HISTORY'>('NONE');
+  const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH' | 'SELECT_VARIANT' | 'ADD_ONS' | 'CUSTOMER_HISTORY'>('NONE');
   const [pendingVariantProduct, setPendingVariantProduct] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'SIZES' | 'TOPPINGS'>('SIZES');
   // Accumulated Extra Toppings picks for the SELECT_VARIANT modal, keyed by
@@ -313,10 +313,6 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [alertModalMessage, setAlertModalMessage] = useState<string | null>(null);
   const [activeWaiters, setActiveWaiters] = useState<any[]>([]);
   const [terminalSessions, setTerminalSessions] = useState<any[]>([]);
-  const [cashier, setCashier] = useState<{ name: string } | null>(() => {
-    try { return JSON.parse(localStorage.getItem('d4u_cashier') || 'null'); } catch { return null; }
-  });
-  const [cashierLoginName, setCashierLoginName] = useState('');
   // Held orders are persisted in Dexie (see db.ts `heldOrders` table) so they survive
   // a reload/crash instead of living only in React state.
   const heldOrders = useLiveQuery(() => db.heldOrders.toArray()) || [];
@@ -410,7 +406,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const [selectedChatId, setSelectedChatId] = useState(1)
 
-  const [activeShift] = useState<'Shift 1' | 'Shift 2'>('Shift 1');
+  const [activeShift, setActiveShift] = useState<'Shift 1' | 'Shift 2'>(() => (localStorage.getItem('d4u_active_shift') as 'Shift 1' | 'Shift 2') || 'Shift 1');
   const [shift1Sales, setShift1Sales] = useState(14500);
   const [shift2Sales, setShift2Sales] = useState(10000);
 
@@ -2150,32 +2146,24 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               </div>
             )}
 
-            {/* Cashier Login */}
+            {/* Logged-in cashier + logout -- this used to be a separate,
+                decorative "Cashier Login" free-text name field with no PIN,
+                no backend call, and no gate of its own, sitting alongside
+                the real authenticated session (currentUser, from the real
+                LoginScreen/DayStartPage/CashInPage sequence in App()). Since
+                POSApp never renders without a real currentUser already
+                established, there's no "not logged in" state to show here
+                any more -- just the real identity and a real logout. */}
             {!isWaiterMode && (
             <div>
-              {cashier ? (
-                <button
-                  onClick={() => { 
-                    setCashier(null); 
-                    localStorage.removeItem('d4u_cashier'); 
-                    setToast({ message: 'Cashier Logged Out', type: 'info' }); 
-                  }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.5)', color: '#ef4444', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
-                >
-                  <User size={16} /> {cashier.name} (Logout)
-                </button>
-              ) : (
-                <button
-                  onClick={() => { setCashierLoginName(''); setModalType('CASHIER_LOGIN'); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--accent-yellow)', border: 'none', color: 'black', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s', boxShadow: '0 4px 6px -1px rgba(251, 191, 36, 0.2)' }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
-                >
-                  <User size={16} /> Cashier Login
-                </button>
-              )}
+              <button
+                onClick={onLogout}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.5)', color: '#ef4444', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
+              >
+                <User size={16} /> {currentUser?.name} (Logout)
+              </button>
             </div>
             )}
 
@@ -3201,7 +3189,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                             <div className="delivery-card-title">Order #{del.id}</div>
                             <div className="delivery-card-subtitle">{del.rider}</div>
                           </div>
-                          <span className="delivery-status delivered">Completed</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                            <span className="delivery-status delivered">Completed</span>
+                            <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: 'var(--accent-yellow)' }}>Rs. {Number(del.totalAmount || del.cod || 0).toFixed(2)}</span>
+                          </div>
                         </div>
                         <div className="delivery-address"><MapPin size={14} /><span>{del.address}</span></div>
                       </div>
@@ -4069,45 +4060,6 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         </div>
       )}
 
-      {/* CASHIER LOGIN MODAL */}
-      {modalType === 'CASHIER_LOGIN' && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ width: '400px' }}>
-            <div className="modal-header">
-              <h2><User size={24} /> Cashier Login</h2>
-              <X size={24} style={{cursor:'pointer'}} onClick={() => setModalType('NONE')} />
-            </div>
-            <div className="modal-body">
-              <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Cashier Full Name / ID</label>
-              <input 
-                type="text" 
-                value={cashierLoginName}
-                onChange={e => setCashierLoginName(e.target.value)}
-                style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '5px', fontSize: '1.1rem', marginBottom: '20px' }}
-                placeholder="Enter Name e.g., Ahmed"
-                autoFocus
-              />
-              <button 
-                className="btn-action btn-order" 
-                onClick={() => { 
-                  if(cashierLoginName.trim().length > 0) {
-                    const c = { name: cashierLoginName.trim() };
-                    setCashier(c);
-                    localStorage.setItem('d4u_cashier', JSON.stringify(c));
-                    setModalType('NONE');
-                    setToast({ message: `Welcome, ${c.name}!`, type: 'success' });
-                  } else {
-                    setToast({ message: 'Please enter a valid name', type: 'error' });
-                  }
-                }} 
-                style={{ padding: '15px', fontSize: '1.1rem', width: '100%' }}
-              >
-                Login to POS
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* CASH OUT MODAL */}
       {modalType === 'CASH_OUT' && (
@@ -4197,7 +4149,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
                 const getHandoverPayload = () => ({
                   storeName: currentUser?.store?.name || 'D4U POS Restaurant',
-                  cashierName: cashier?.name || currentUser?.name || 'Cashier',
+                  cashierName: currentUser?.name || 'Cashier',
                   managerName: handoverManagerName || 'Manager',
                   time: new Date().toLocaleString(),
                   dayId: 1,
@@ -4215,13 +4167,21 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   notes: handoverNotes
                 });
 
-                const handlePrintSlipOnly = () => {
+                const handleShiftClose = () => {
                   setPrintData({
                     type: 'SHIFT_CLOSE',
                     data: getHandoverPayload(),
                     printCount: 1
                   });
-                  setToast({ message: 'Printing Handover Receipt...', type: 'success' });
+                  setToast({ message: 'Shift Closed! Printing Handover Slip...', type: 'success' });
+                  setActiveShift('Shift 2');
+                  setTimeout(() => {
+                    localStorage.setItem('d4u_active_shift', 'Shift 2');
+                    localStorage.removeItem('d4u_main_user');
+                    localStorage.removeItem('d4u_is_cashed_in');
+                    localStorage.removeItem('d4u_cashin_amt');
+                    window.location.reload();
+                  }, 1200);
                 };
 
                 const handleConfirmClose = async () => {
@@ -4255,13 +4215,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     console.error('Day close failed', e);
                   }
 
-                  setToast({ message: 'Shift Closed & Handover Recorded!', type: 'success' });
+                  setToast({ message: 'Day Closed & Handover Recorded!', type: 'success' });
                   setTimeout(() => {
                     localStorage.removeItem('d4u_day_start');
                     localStorage.removeItem('d4u_is_cashed_in');
                     localStorage.removeItem('d4u_cashin_amt');
                     localStorage.removeItem('d4u_cashier');
                     localStorage.removeItem('d4u_main_user');
+                    localStorage.removeItem('d4u_active_shift');
                     window.location.reload();
                   }, 1200);
                 };
@@ -4441,23 +4402,26 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                         Cancel
                       </button>
 
-                      <button
-                        type="button"
-                        className="btn-action"
-                        onClick={handlePrintSlipOnly}
-                        style={{ padding: '14px 20px', background: '#334155', border: '1px solid #475569', color: 'white', borderRadius: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <Printer size={18} /> Print Handover Slip
-                      </button>
-
-                      <button 
-                        className="btn-action" 
-                        disabled={requiresPin && dayClosePin !== '9999'}
-                        onClick={handleConfirmClose}
-                        style={{ flex: 1, padding: '14px 20px', background: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: (requiresPin && dayClosePin !== '9999') ? 'not-allowed' : 'pointer', opacity: (requiresPin && dayClosePin !== '9999') ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                      >
-                        <CheckCircle size={18} /> Confirm Handover & Close Day
-                      </button>
+                      {activeShift === 'Shift 1' ? (
+                        <button
+                          type="button"
+                          className="btn-action"
+                          disabled={requiresPin && dayClosePin !== '9999'}
+                          onClick={handleShiftClose}
+                          style={{ flex: 1, padding: '14px 20px', background: '#334155', border: '1px solid #475569', color: 'white', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: (requiresPin && dayClosePin !== '9999') ? 'not-allowed' : 'pointer', opacity: (requiresPin && dayClosePin !== '9999') ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                        >
+                          <Printer size={18} /> Print Handover Slip & Shift Close
+                        </button>
+                      ) : (
+                        <button
+                          className="btn-action"
+                          disabled={requiresPin && dayClosePin !== '9999'}
+                          onClick={handleConfirmClose}
+                          style={{ flex: 1, padding: '14px 20px', background: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: (requiresPin && dayClosePin !== '9999') ? 'not-allowed' : 'pointer', opacity: (requiresPin && dayClosePin !== '9999') ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                        >
+                          <CheckCircle size={18} /> Confirm Handover & Close Day
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -5655,7 +5619,12 @@ import WaiterTerminalLogin from './WaiterTerminalLogin'
 
 export default function App() {
   const isWaiterModeURL = window.location.pathname.endsWith('/waiter') || window.location.search.includes('mode=waiter');
-  const userStorageKey = isWaiterModeURL ? 'd4u_waiter_user' : 'd4u_main_user';
+  // KDS ("/kitchen") gets its own storage key so a POS session and a KDS
+  // session on the same browser never share (and therefore never clobber
+  // or co-logout) each other -- previously both fell through to the same
+  // 'd4u_main_user' key, so logging out of one wiped the other's session too.
+  const isKdsModeURL = window.location.pathname === '/kitchen';
+  const userStorageKey = isWaiterModeURL ? 'd4u_waiter_user' : isKdsModeURL ? 'd4u_kds_user' : 'd4u_main_user';
 
   const [settings, setSettings] = useState<any>(null);
   const [loggedInUser, setLoggedInUser] = useState<typeof USERS[0] | null>(() => {
@@ -5765,6 +5734,7 @@ export default function App() {
             onClick={() => {
               localStorage.removeItem('d4u_main_user');
               localStorage.removeItem('d4u_waiter_user');
+              localStorage.removeItem('d4u_kds_user');
               window.location.reload();
             }}
             style={{width:'100%', backgroundColor:'#334155', color:'white', fontWeight:'bold', padding:'12px 16px', borderRadius:'12px', border:'none', cursor:'pointer'}}
@@ -5782,7 +5752,7 @@ export default function App() {
 
   // Prevent Waiter from accessing the main link (Auto-logout if stuck)
   if (!isWaiterModeURL && loggedInUser?.role === 'Waiter') {
-    localStorage.removeItem('d4u_main_user');
+    localStorage.removeItem(userStorageKey);
     setLoggedInUser(null);
     return null;
   }
@@ -5808,7 +5778,7 @@ export default function App() {
     // WHATEVER path was open (including "/", the POS's own root), so a
     // browser that had a Chef logged in showed Kitchen at "/" instead of the
     // POS register. "/kitchen" is the one canonical URL for this view; land
-    // there via a real redirect instead, so "/" is reserved for POS/login
+    // there via a real redirect instead, so "/pos" is reserved for POS/login
     // and the address bar always matches what's on screen.
     if (window.location.pathname !== '/kitchen') {
       window.location.replace('/kitchen');
@@ -5820,8 +5790,8 @@ export default function App() {
           <ChefHat size={64} color="#ef4444" style={{ marginBottom: '20px' }} />
           <h1 style={{ fontSize: '2rem', margin: 0 }}>Kitchen Display is Disabled</h1>
           <p style={{ color: '#94a3b8', marginTop: '10px' }}>The KDS module has been turned off by the Head Office.</p>
-          <button 
-            onClick={() => { setLoggedInUser(null); localStorage.removeItem('d4u_main_user'); }}
+          <button
+            onClick={() => { setLoggedInUser(null); localStorage.removeItem(userStorageKey); }}
             style={{ marginTop: '20px', background: '#3b82f6', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
           >
             Logout
@@ -5835,6 +5805,15 @@ export default function App() {
         <KitchenDisplay currentUser={activeUser} onLogout={() => setLoggedInUser(null)} />
       </div>
     );
+  }
+
+  // POS is canonically served at "/pos" -- mirrors "/kitchen" for Chef and
+  // "/tv-board" for TV above, so the address bar always matches what's on
+  // screen and POS's session (userStorageKey, 'd4u_main_user') never gets
+  // computed against the "/kitchen" URL by mistake.
+  if (!isWaiterModeURL && window.location.pathname !== '/pos') {
+    window.location.replace('/pos');
+    return null;
   }
 
   // We will remove WaiterMode and just use POSApp with isWaiterMode=true
