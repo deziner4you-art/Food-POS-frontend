@@ -37,7 +37,7 @@ async function main() {
   const riderRole = await prisma.role.findFirst({ where: { name: 'Rider' } });
 
   // 4. Create/Upsert Demo Users
-  const users = [
+  const users: { phone: string; name: string; role_id: number; pin: string }[] = [
     {
       phone: '03000000001',
       name: 'Ali Cashier',
@@ -51,18 +51,27 @@ async function main() {
       pin: 'manager123',
     },
     {
-      phone: 'deziner4you',
-      name: 'Super Admin',
-      role_id: superAdminRole?.id || 3,
-      pin: '!765Bjs!',
-    },
-    {
       phone: '03000000007',
       name: 'Ali Rider',
       role_id: riderRole?.id || 11,
       pin: '1234',
     },
   ];
+
+  // The Super Admin account's PIN is never hardcoded here -- it must be
+  // supplied via SUPER_ADMIN_PIN in the environment. If it's not set, this
+  // one account is skipped (idempotent seeding of the other demo users
+  // still proceeds) rather than falling back to any built-in default.
+  if (process.env.SUPER_ADMIN_PIN) {
+    users.push({
+      phone: 'deziner4you',
+      name: 'Super Admin',
+      role_id: superAdminRole?.id || 3,
+      pin: process.env.SUPER_ADMIN_PIN,
+    });
+  } else {
+    console.warn('SUPER_ADMIN_PIN not set in environment -- skipping Super Admin account seed/update.');
+  }
 
   for (const u of users) {
     await prisma.user.upsert({

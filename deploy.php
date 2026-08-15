@@ -1,8 +1,15 @@
 <?php
-// Secret token to prevent unauthorized access
-$secret = "deziner4you-deploy-secret";
+// Secret token to prevent unauthorized access. Must be set in the server's
+// environment (e.g. an Apache SetEnv / nginx fastcgi_param / systemd
+// Environment= directive on the production host) -- never hardcoded here.
+$secret = getenv('DEPLOY_SECRET');
 
-if (!isset($_GET['token']) || $_GET['token'] !== $secret) {
+if ($secret === false || $secret === '') {
+    http_response_code(500);
+    die("Server misconfigured: DEPLOY_SECRET environment variable is not set.");
+}
+
+if (!isset($_GET['token']) || !hash_equals($secret, (string) $_GET['token'])) {
     http_response_code(403);
     die("Unauthorized");
 }

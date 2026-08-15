@@ -63,11 +63,17 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Authentication token is missing');
     }
 
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET environment variable is not set');
+    }
+
     try {
       // In AuthModule we set a global secret, here we verify it.
-      // We assume the secret is 'D4U_SUPER_SECRET_KEY' or loaded via process.env
+      // The secret is loaded strictly from process.env -- no hardcoded
+      // fallback, so a missing JWT_SECRET fails startup/requests loudly
+      // instead of silently accepting a known default.
       const payload = await this.jwtService.verifyAsync(token, {
-        secret: process.env.JWT_SECRET || 'D4U_SUPER_SECRET_KEY'
+        secret: process.env.JWT_SECRET
       });
       request['user'] = payload;
     } catch {
