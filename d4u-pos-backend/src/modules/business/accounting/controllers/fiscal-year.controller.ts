@@ -8,19 +8,19 @@ import { UpdateFiscalYearDto } from '../dto/update-fiscal-year.dto';
 export class FiscalYearController {
   constructor(private readonly fyService: FiscalYearService) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.fiscal_years.read')
   @Get('active')
   async getActive(@Query('store_id', ParseIntPipe) store_id: number) {
     return this.fyService.getActive(store_id);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.fiscal_years.read')
   @Get()
   async findAll(@Query('store_id', ParseIntPipe) store_id: number) {
     return this.fyService.findAll(store_id);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.fiscal_years.create')
   @Post()
   async create(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -29,7 +29,7 @@ export class FiscalYearController {
     return this.fyService.create(store_id, dto);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.fiscal_years.update')
   @Patch(':id')
   async update(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -39,7 +39,7 @@ export class FiscalYearController {
     return this.fyService.update(store_id, id, dto);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.fiscal_years.close')
   @Patch(':id/close')
   async close(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -48,7 +48,7 @@ export class FiscalYearController {
     return this.fyService.close(store_id, id);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.fiscal_years.open')
   @Patch(':id/open')
   async open(
     @Query('store_id', ParseIntPipe) store_id: number,

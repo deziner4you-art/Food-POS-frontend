@@ -13,27 +13,27 @@ export class FinancialStatementController {
     private readonly builderService: FinancialStatementBuilderService
   ) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.financial_statements.create')
   @Post()
   async createStatement(@Body() body: any, @Req() req: any) {
     const storeId = body.store_id ?? getSessionStoreId(req.user);
     return this.mappingService.createStatement(storeId, body.name, body.type, body.description);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.financial_statements.create')
   @Post('sections')
   async createSection(@Body() dto: any, @Body('store_id') storeId: number, @Req() req: any) {
     return this.mappingService.createSection(storeId ?? getSessionStoreId(req.user), dto);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.financial_statements.create')
   @Post('mappings')
   async createMapping(@Body() dto: any, @Body('store_id') storeId: number, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.mappingService.mapAccount(storeId ?? getSessionStoreId(req.user), dto, userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.financial_statements.build')
   @Get(':id/build')
   async buildStatement(
     @Param('id', ParseIntPipe) id: number,

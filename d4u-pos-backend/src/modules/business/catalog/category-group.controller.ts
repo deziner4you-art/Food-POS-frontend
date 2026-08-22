@@ -13,7 +13,7 @@ import {
 export class CategoryGroupController {
   constructor(private readonly service: CategoryGroupService) {}
 
-  @RequirePermissions('category_group.view')
+  @RequirePermissions('catalog.category_group.view')
   @Get()
   list(
     @Query('menu_id') menu_id?: string,
@@ -31,55 +31,55 @@ export class CategoryGroupController {
     });
   }
 
-  @RequirePermissions('category_group.view')
+  @RequirePermissions('catalog.category_group.view')
   @Get(':id')
   details(@Param('id') id: string) {
     return this.service.details(Number(id));
   }
 
-  @RequirePermissions('category_group.create')
+  @RequirePermissions('catalog.category_group.create')
   @Post()
   create(@Body() body: CreateCategoryGroupDto) {
     console.log(`[NEW CATEGORY GROUP] ${body.name} (menu #${body.menu_id})`);
     return this.service.create(body);
   }
 
-  @RequirePermissions('category_group.update')
+  @RequirePermissions('catalog.category_group.update')
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: UpdateCategoryGroupDto) {
     console.log(`[UPDATE CATEGORY GROUP] #${id}`);
     return this.service.update(Number(id), body);
   }
 
-  @RequirePermissions('category_group.update')
+  @RequirePermissions('catalog.category_group.update')
   @Post('reorder')
   reorder(@Body() body: ReorderCategoryGroupsDto) {
     console.log(`[REORDER CATEGORY GROUPS] ${body.items.length} item(s)`);
     return this.service.reorder(body);
   }
 
-  @RequirePermissions('category_group.update')
+  @RequirePermissions('catalog.category_group.update')
   @Post(':id/branches')
   assignBranches(@Param('id') id: string, @Body() body: AssignCategoryGroupBranchesDto) {
     console.log(`[CATEGORY GROUP BRANCHES] #${id} -> [${body.store_ids.join(', ')}]`);
     return this.service.assignBranches(Number(id), body);
   }
 
-  @RequirePermissions('category_group.update')
+  @RequirePermissions('catalog.category_group.update')
   @Post(':id/channels')
   assignChannels(@Param('id') id: string, @Body() body: AssignCategoryGroupChannelsDto) {
     console.log(`[CATEGORY GROUP CHANNELS] #${id}`);
     return this.service.assignChannels(Number(id), body);
   }
 
-  @RequirePermissions('category_group.delete')
+  @RequirePermissions('catalog.category_group.delete')
   @Delete(':id')
   softDelete(@Param('id') id: string, @Query('deleted_by') deleted_by?: string) {
     console.log(`[DELETE CATEGORY GROUP] #${id}`);
     return this.service.softDelete(Number(id), deleted_by ? Number(deleted_by) : undefined);
   }
 
-  @RequirePermissions('category_group.restore')
+  @RequirePermissions('catalog.category_group.restore')
   @Post(':id/restore')
   restore(@Param('id') id: string, @Query('restored_by') restored_by?: string) {
     console.log(`[RESTORE CATEGORY GROUP] #${id}`);
@@ -89,7 +89,11 @@ export class CategoryGroupController {
   // -------------------------------------------------------------
   // NESTED HIERARCHY — Menu Collection -> Category Group -> Category -> Product
   // -------------------------------------------------------------
-  @RequirePermissions('catalog.view')
+  // Task #2R-B1: 'catalog.view' kept alongside the real 'catalog.category_group.view'
+  // grant (additive OR, same pattern as #2Q-B2) -- a straight swap would drop
+  // bridge-based access for Cashier/Manager/Business Admin/Business Owner/Branch
+  // Owner, none of which hold catalog.category_group.view as a real grant.
+  @RequirePermissions('catalog.view', 'catalog.category_group.view')
   @Get('hierarchy/menu/:menu_id')
   getMenuHierarchy(@Param('menu_id') menu_id: string) {
     return this.service.getMenuHierarchy(Number(menu_id));

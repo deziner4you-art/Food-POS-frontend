@@ -12,7 +12,7 @@ export class GeneralLedgerReportController {
     private readonly glDrilldownService: GeneralLedgerDrilldownService
   ) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.reports.view')
   @Get()
   async getGeneralLedger(@Query() query: any, @Req() req: any) {
     const filter: GeneralLedgerFilter = {
@@ -28,7 +28,7 @@ export class GeneralLedgerReportController {
     return this.glReportService.generateReport(filter, userId);
   }
 
-  @RequirePermissions('finance.accounting.export')
+  @RequirePermissions('finance.reports.export')
   @Get('export')
   async exportGeneralLedger(@Query() query: any, @Req() req: any) {
     const filter: GeneralLedgerFilter = {
@@ -49,7 +49,7 @@ export class GeneralLedgerReportController {
     return { type: 'csv', data: csv };
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.reports.view')
   @Get(':glLineId/drilldown')
   async drilldown(
     @Param('glLineId', ParseIntPipe) glLineId: number,

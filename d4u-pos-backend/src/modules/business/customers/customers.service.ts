@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -15,7 +16,32 @@ export class CustomersService {
   constructor(private prisma: PrismaService) {}
 
   // تمام گاہک (CRM Grid)
-  async getCustomers(brand_id: number, store_id?: number, search?: string) {
+  //
+  // Task #2Q-D1: brand_id used to be a client-supplied argument, trusted
+  // outright -- any caller holding crm.customers.read could list/search
+  // another brand's entire customer base just by passing a different
+  // brand_id query param. It's now resolved server-side from the
+  // authenticated session's own active_brand_id (same JWT claim
+  // AuthService.buildTokenPayload already sets), never from the request.
+  // store_id, if supplied, is verified to actually belong to that brand
+  // before being used as the existing in-brand narrowing filter below --
+  // otherwise a caller could still probe another brand's stores indirectly.
+  async getCustomers(authenticatedUser: any, store_id?: number, search?: string) {
+    const brand_id = Number(authenticatedUser?.active_brand_id);
+    if (!authenticatedUser || !Number.isFinite(brand_id) || brand_id <= 0) {
+      throw new BadRequestException('A valid authenticated brand context is required.');
+    }
+
+    if (store_id) {
+      const store = await this.prisma.store.findUnique({
+        where: { id: store_id },
+        select: { brand_id: true },
+      });
+      if (!store || store.brand_id !== brand_id) {
+        throw new BadRequestException('Store not found for authenticated brand.');
+      }
+    }
+
     const where: any = { brand_id };
     // Both conditions below are their own OR clause -- combined via AND (not
     // both assigned to where.OR, which would let whichever runs second
@@ -55,17 +81,67 @@ export class CustomersService {
   }
 
   // فون نمبر سے گاہک تلاش
-  async findByPhone(phone: string) {
+  //
+  // Task #2M: this used to filter by phone alone -- any caller holding
+  // crm.customers.read could look up any customer at any brand just by
+  // knowing (or guessing) their phone number. Customer.phone is globally
+  // unique (see schema.prisma), so two different brands can never actually
+  // have two different customers sharing one phone -- the real risk was a
+  // wrong-brand caller being able to see the one real customer that phone
+  // belongs to, even though they have no authorization over that brand at
+  // all. The fix resolves the caller's own brand server-side (from their
+  // authenticated store, never from anything client-supplied) and treats a
+  // cross-brand match exactly like no match -- same NotFoundException,
+  // same message, so a wrong-brand caller can't distinguish "doesn't exist"
+  // from "exists somewhere I can't see" via a different response shape.
+  //
+  // Real staff sessions carry active_store_id; Waiter/Chef's synthetic
+  // terminal-session tokens carry only store_id (see TerminalService/
+  // ChefSessionService) -- neither shape has a brand_id claim on Waiter's
+  // token at all, so the brand is derived from Store.brand_id rather than
+  // trusting (or requiring) a brand claim on the token.
+  async findByPhone(phone: string, authenticatedUser: any) {
+    const storeId = Number(authenticatedUser?.active_store_id ?? authenticatedUser?.store_id);
+    if (!authenticatedUser || !Number.isFinite(storeId) || storeId <= 0) {
+      throw new BadRequestException('A valid authenticated store context is required.');
+    }
+
+    const store = await this.prisma.store.findUnique({
+      where: { id: storeId },
+      select: { brand_id: true },
+    });
+    if (!store) {
+      throw new BadRequestException('Store not found for authenticated session.');
+    }
+
     const customer = await this.prisma.customer.findUnique({
       where: { phone: normalizePhone(phone) },
       include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
-    if (!customer) throw new NotFoundException('Customer not found');
+
+    if (!customer || customer.brand_id !== store.brand_id) {
+      throw new NotFoundException('Customer not found');
+    }
     return customer;
   }
 
   // ایک گاہک کی تمام آرڈر ہسٹری
-  async getCustomerOrders(id: number) {
+  // Task #2Q-D1: the internal OnlineOrder lookup below used to be unscoped
+  // by any tenant boundary -- the same class of leak as
+  // OnlineOrdersService.getOrdersByPhone (see #2Q-D's audit), just reached
+  // through a customer id instead of a phone query param. The customer
+  // lookup itself is unchanged -- only the OnlineOrder query gets the fix.
+  async getCustomerOrders(id: number, authenticatedUser?: any) {
+    const storeId = Number(authenticatedUser?.active_store_id ?? authenticatedUser?.store_id);
+    if (!authenticatedUser || !Number.isFinite(storeId) || storeId <= 0) {
+      throw new BadRequestException('A valid authenticated store context is required.');
+    }
+
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    if (!store) {
+      throw new BadRequestException('Store not found for authenticated session.');
+    }
+
     const customer = await this.prisma.customer.findUnique({
       where: { id },
       include: {
@@ -80,7 +156,7 @@ export class CustomersService {
     if (!customer) throw new NotFoundException('Customer not found');
 
     const onlineOrders = await this.prisma.onlineOrder.findMany({
-      where: { customerPhone: normalizePhone(customer.phone) },
+      where: { customerPhone: normalizePhone(customer.phone), store_id: storeId },
       orderBy: { id: 'desc' },
       take: 50,
     });

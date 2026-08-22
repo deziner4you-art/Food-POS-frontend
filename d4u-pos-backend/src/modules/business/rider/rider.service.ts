@@ -55,13 +55,40 @@ export class RiderService {
     return allOrders;
   }
 
-  async updateRiderGps(body: any) {
+  // Task #2K: the rider identity recorded here used to come from
+  // `body.riderId`, defaulting to the hardcoded literal 'R1' whenever it was
+  // absent -- and the real rider app (d4u-rider/src/App.tsx) never actually
+  // sends riderId on this call at all, so in practice every GPS ping was
+  // already being recorded as 'R1' for every rider, always. The identity is
+  // now taken exclusively from the verified JWT (`authenticatedUser.sub`),
+  // matching the same trusted-identity pattern used by claimOrder (Task
+  // #2J). No hardcoded fallback identity remains: a missing/invalid
+  // authenticated identity is rejected instead of defaulting to anything.
+  async updateRiderGps(body: any, authenticatedUser: any) {
+    const riderId = Number(authenticatedUser?.sub);
+    if (!authenticatedUser || !Number.isFinite(riderId) || riderId <= 0) {
+      throw new BadRequestException('A valid authenticated rider identity is required.');
+    }
+
+    const riderUser = await this.prisma.user.findUnique({
+      where: { id: riderId },
+      include: { role: true },
+    });
+
+    if (!riderUser) {
+      throw new BadRequestException('Rider does not exist.');
+    }
+
+    if (riderUser.role?.name !== 'Rider') {
+      throw new BadRequestException('Authenticated user is not a rider.');
+    }
+
     const orderId = Number(body.orderId);
     const lat = Number(body.lat);
     const lng = Number(body.lng);
 
     const deliveryInfo = {
-      riderId: body.riderId || 'R1',
+      riderId,
       lat,
       lng,
       lastUpdated: new Date().toISOString(),
@@ -105,17 +132,31 @@ export class RiderService {
   // back to Order" pattern already used by updateRiderGps/getRiderGps above.
   // Order.rider_id (pre-existing) is reused for POS-native delivery orders
   // instead of adding a duplicate column there.
-  async claimOrder(id: number, riderId: number, riderName?: string) {
-    if (!riderId || isNaN(riderId) || riderId <= 0) {
-      throw new BadRequestException('Invalid rider ID provided.');
+  //
+  // Task #2J: `riderId` used to come straight from the request body (client-
+  // controlled) — any authenticated caller could claim an order "as" any
+  // other rider by just naming a different id in ClaimOrderDto. The claiming
+  // identity is now taken exclusively from the verified JWT (`authenticatedUser.sub`,
+  // set by JwtAuthGuard). There's no separate Rider profile table in this
+  // schema — User.id *is* the rider identity — so this only had to stop
+  // trusting the body, not resolve through a different model.
+  async claimOrder(id: number, authenticatedUser: any) {
+    const riderId = Number(authenticatedUser?.sub);
+    if (!authenticatedUser || !Number.isFinite(riderId) || riderId <= 0) {
+      throw new BadRequestException('A valid authenticated rider identity is required.');
     }
 
     const riderUser = await this.prisma.user.findUnique({
       where: { id: riderId },
+      include: { role: true },
     });
 
     if (!riderUser) {
       throw new BadRequestException('Rider does not exist.');
+    }
+
+    if (riderUser.role?.name !== 'Rider') {
+      throw new BadRequestException('Authenticated user is not a rider.');
     }
 
     let orderStoreId: number | undefined;
@@ -139,7 +180,7 @@ export class RiderService {
 
     const onlineClaim = await this.prisma.onlineOrder.updateMany({
       where: { id, claimedByRiderId: null },
-      data: { claimedByRiderId: riderId, claimedByRiderName: riderName || null },
+      data: { claimedByRiderId: riderId, claimedByRiderName: riderUser.name || null },
     });
     if (onlineClaim.count > 0) {
       const updated = await this.prisma.onlineOrder.findUniqueOrThrow({ where: { id } });

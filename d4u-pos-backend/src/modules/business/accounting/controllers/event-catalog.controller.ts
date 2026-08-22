@@ -7,7 +7,7 @@ import { ACCOUNTING_EVENT_MAPPING } from '../catalog/accounting-event-mapping';
 @Controller('accounting/event-catalog')
 export class EventCatalogController {
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.system_accounts.read')
   @Get()
   getCatalog() {
     return {
@@ -16,7 +16,7 @@ export class EventCatalogController {
     };
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.system_accounts.read')
   @Get(':event')
   getEventMapping(@Param('event') event: string) {
     if (!Object.values(BusinessEvent).includes(event as BusinessEvent)) {

@@ -8,7 +8,7 @@ import { getSessionUserId } from '../../../../common/utils/session-context.util'
 export class CashFlowController {
   constructor(private readonly cfService: CashFlowService) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.reports.view')
   @Get()
   async getCashFlow(@Query() query: any, @Req() req: any) {
     const filter: CashFlowFilter = {
@@ -22,7 +22,7 @@ export class CashFlowController {
     return this.cfService.generateCashFlow(filter, userId);
   }
 
-  @RequirePermissions('finance.accounting.export')
+  @RequirePermissions('finance.reports.export')
   @Get('export')
   async exportCashFlow(@Query() query: any, @Req() req: any) {
     const filter: CashFlowFilter = {

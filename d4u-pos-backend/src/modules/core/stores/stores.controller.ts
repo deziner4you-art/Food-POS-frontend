@@ -18,44 +18,53 @@ export class StoresController {
   constructor(private readonly storesService: StoresService) {}
 
   @Public()
-  @RequirePermissions('system.view')
+  @RequirePermissions('workspace.branches.read')
   @Get()
   getAllStores(@Req() req: any) {
     return this.storesService.getAllStores(req.user);
   }
 
-  @RequirePermissions('system.view')
+  @RequirePermissions('workspace.branches.read')
   @Get('recycle-bin/stores')
   getDeletedStores() {
     return this.storesService.getDeletedStores();
   }
 
-  @RequirePermissions('system.view')
+  @RequirePermissions('workspace.brands.read')
   @Get('recycle-bin/brands')
   getDeletedBrands() {
     return this.storesService.getDeletedBrands();
   }
 
-  @RequirePermissions('system.delete')
+  @RequirePermissions('workspace.brands.delete')
   @Post('bulk-delete-brands')
   bulkDeleteBrands(@Body() body: { brandIds: number[], password: string, reason: string }, @Req() req: any) {
     return this.storesService.bulkDeleteBrandsWithPassword(body.brandIds, req.user.sub, body.password, body.reason || 'User requested deletion');
   }
 
-  @RequirePermissions('system.delete')
+  @RequirePermissions('workspace.branches.delete')
   @Post('bulk-delete')
   bulkDeleteStores(@Body() body: { storeIds: number[], password: string, reason: string }, @Req() req: any) {
     return this.storesService.bulkDeleteStoresWithPassword(body.storeIds, req.user.sub, body.password, body.reason || 'User requested deletion');
   }
 
-  @RequirePermissions('system.update')
+  // Task #2R-B2: migrated off the legacy 2-segment 'system.update' onto the
+  // real 'workspace.branches.restore' catalog permission -- every other
+  // route in this controller already correctly used 'workspace.branches.*'.
+  // Straight swap, not additive -- 'system.update' was never in the
+  // posPermissions bridge, so this route was Super-Admin-only before and
+  // remains Super-Admin-only after (no role grant added for the new
+  // permission), a pure rename with zero access change.
+  @RequirePermissions('workspace.branches.restore')
   @Post('recycle-bin/restore-stores')
   restoreStores(@Body() body: { storeIds: number[] }, @Req() req: any) {
     const masterKey = req.headers['x-master-key'] as string;
     return this.storesService.restoreStores(body.storeIds, masterKey);
   }
 
-  @RequirePermissions('system.update')
+  // Task #2R-B2: same reasoning as restoreStores above, onto
+  // 'workspace.brands.restore'.
+  @RequirePermissions('workspace.brands.restore')
   @Post('recycle-bin/restore-brands')
   restoreBrands(@Body() body: { brandIds: number[] }, @Req() req: any) {
     const masterKey = req.headers['x-master-key'] as string;
@@ -63,26 +72,26 @@ export class StoresController {
   }
 
   @Public()
-  @RequirePermissions('system.view')
+  @RequirePermissions('workspace.brands.read')
   @Get('brands')
   getAllBrands(@Req() req: any) {
     const tenantBrandId = req.user?.role === 'Super Admin' ? undefined : req.user?.brand_id;
     return this.storesService.getAllBrands(tenantBrandId);
   }
 
-  @RequirePermissions('system.view')
+  @RequirePermissions('workspace.branches.read')
   @Get(':id')
   getStore(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     return this.storesService.getStore(id, req.user);
   }
 
-  @RequirePermissions('system.create')
+  @RequirePermissions('workspace.branches.create')
   @Post()
   createStore(@Body() body: CreateStoreDto) {
     return this.storesService.createStore(body);
   }
 
-  @RequirePermissions('system.update')
+  @RequirePermissions('workspace.branches.update')
   @Patch(':id/lifecycle')
   updateStoreLifecycle(
     @Param('id', ParseIntPipe) id: number,
@@ -95,7 +104,7 @@ export class StoresController {
     });
   }
 
-  @RequirePermissions('system.update')
+  @RequirePermissions('workspace.branches.update')
   @Patch(':id')
   updateStore(
     @Param('id', ParseIntPipe) id: number,
@@ -104,7 +113,7 @@ export class StoresController {
     return this.storesService.updateStore(id, body);
   }
 
-  @RequirePermissions('system.delete')
+  @RequirePermissions('workspace.branches.delete')
   @Delete(':id')
   deleteStore(@Param('id', ParseIntPipe) id: number) {
     return this.storesService.deleteStore(id);

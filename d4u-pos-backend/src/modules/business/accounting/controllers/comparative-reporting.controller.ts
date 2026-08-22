@@ -8,7 +8,7 @@ import { getSessionUserId } from '../../../../common/utils/session-context.util'
 export class ComparativeReportingController {
   constructor(private readonly compService: ComparativeReportingService) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.reports.view')
   @Get()
   async getComparativeReport(@Query() query: any, @Req() req: any) {
     const filter: ComparativeFilter = {

@@ -3,13 +3,11 @@ import {
   Get,
   Patch,
   Post,
-  Body,
   Param,
   Query,
 } from '@nestjs/common';
 import { RequirePermissions } from '../../../common/decorators';
 import { KotsService } from './kots.service';
-import { UpdateKotStatusDto } from './dto';
 
 @Controller('kots')
 export class KotsController {
@@ -19,7 +17,7 @@ export class KotsController {
   // includeReady=true additionally returns READY tickets from the last 5
   // minutes — opt-in, default omitted (false) preserves the exact prior
   // response for any caller not passing it.
-  @RequirePermissions('sales.view')
+  @RequirePermissions('kitchen.tickets.read')
   @Get()
   getActiveKots(
     @Query('store_id') store_id: string,
@@ -30,7 +28,7 @@ export class KotsController {
   }
 
   // GET /kots/history?store_id=1&business_day_id=5
-  @RequirePermissions('sales.view')
+  @RequirePermissions('kitchen.tickets.read')
   @Get('history')
   getKotsByDay(
     @Query('store_id') store_id: string,
@@ -40,18 +38,36 @@ export class KotsController {
   }
 
   // GET /kots/:id
-  @RequirePermissions('sales.view')
+  @RequirePermissions('kitchen.tickets.read')
   @Get(':id')
   getKot(@Param('id') id: string) {
     return this.service.getKot(Number(id));
   }
 
-  // PATCH /kots/:id/status — Chef نے Accept یا Ready کیا
-  @RequirePermissions('sales.update')
-  @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body() body: UpdateKotStatusDto) {
-    console.log(`[KDS] KOT #${id} → ${body.status}`);
-    return this.service.updateKotStatus(Number(id), body.status);
+  // PATCH /kots/:id/accept — Chef accepts an incoming ticket into preparation
+  @RequirePermissions('kitchen.tickets.accept')
+  @Patch(':id/accept')
+  acceptKot(@Param('id') id: string) {
+    console.log(`[KDS] KOT #${id} → PREPARING (accept)`);
+    return this.service.acceptKOT(Number(id));
+  }
+
+  // PATCH /kots/:id/bump — Chef marks a ticket ready (may trigger a
+  // Rider-facing delivery offer / Website order-tracking update)
+  @RequirePermissions('kitchen.tickets.bump')
+  @Patch(':id/bump')
+  bumpKot(@Param('id') id: string) {
+    console.log(`[KDS] KOT #${id} → READY (bump)`);
+    return this.service.bumpKOT(Number(id));
+  }
+
+  // PATCH /kots/:id/cancel — cancel a kitchen ticket only; does NOT cancel
+  // the underlying Order (see KotsService.updateKotStatus)
+  @RequirePermissions('kitchen.tickets.cancel')
+  @Patch(':id/cancel')
+  cancelKot(@Param('id') id: string) {
+    console.log(`[KDS] KOT #${id} → CANCELLED (cancel)`);
+    return this.service.cancelKOT(Number(id));
   }
 
   // POST /kots/:id/print — Print button دبایا

@@ -9,7 +9,7 @@ import { SystemAccountType } from '../enums/system-account-type.enum';
 export class SystemAccountMappingController {
   constructor(private readonly mappingService: SystemAccountMappingService) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.system_accounts.create')
   @Post()
   async create(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -18,13 +18,13 @@ export class SystemAccountMappingController {
     return this.mappingService.createMapping(store_id, dto);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.system_accounts.read')
   @Get()
   async findAll(@Query('store_id', ParseIntPipe) store_id: number) {
     return this.mappingService.findAll(store_id);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.system_accounts.read')
   @Get('type/:type')
   async findByType(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -33,7 +33,7 @@ export class SystemAccountMappingController {
     return this.mappingService.findByType(store_id, type);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.system_accounts.update')
   @Patch(':id')
   async update(
     @Query('store_id', ParseIntPipe) store_id: number,

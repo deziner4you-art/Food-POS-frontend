@@ -7,7 +7,7 @@ import { getSessionUserId } from '../../../../common/utils/session-context.util'
 export class YearEndClosingController {
   constructor(private readonly yearEndService: YearEndClosingService) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.period_closing.execute')
   @Post('execute')
   async executeYearEndClosing(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);

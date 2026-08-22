@@ -11,33 +11,33 @@ export class ComplianceController {
     private readonly certificationService: SystemCertificationService
   ) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.compliance.create')
   @Post('compliance/run')
   async runCompliance(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.complianceService.runChecks({ store_id: getSessionStoreId(req.user) }, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.compliance.create')
   @Post('certification/run')
   async runCertification(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.certificationService.runCertification(getSessionStoreId(req.user), userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.compliance.read')
   @Get('compliance')
   async getComplianceChecks(@Req() req: any) {
     return this.complianceService.getChecks(getSessionStoreId(req.user));
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.compliance.read')
   @Get('certification')
   async getCertification(@Req() req: any) {
     return this.certificationService.getStatus(getSessionStoreId(req.user));
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.compliance.read')
   @Get('golive-status')
   async getGoLiveStatus(@Req() req: any) {
     return this.certificationService.getStatus(getSessionStoreId(req.user));

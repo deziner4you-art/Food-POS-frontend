@@ -8,14 +8,14 @@ import { getSessionUserId } from '../../../../common/utils/session-context.util'
 export class MonthEndController {
   constructor(private readonly monthEndService: MonthEndClosingService) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.period_closing.execute')
   @Post('execute')
   async executeMonthEnd(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.monthEndService.executeClosing(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.period_closing.rollback')
   @Post('rollback/:periodId')
   async rollbackMonthEnd(@Param('periodId') periodId: string, @Req() req: any) {
     const userId = getSessionUserId(req.user);

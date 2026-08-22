@@ -171,6 +171,24 @@ export class KotsService {
     return { success: true, kot };
   }
 
+  // Task #2P-G: thin, status-locked wrappers around updateKotStatus, so each
+  // has its own callable identity for the split /accept, /bump, /cancel
+  // routes without duplicating any of the transition/broadcast logic above.
+  // The status passed is always the literal for this operation -- never
+  // client-supplied -- so a caller of acceptKOT can never produce READY or
+  // CANCELLED behavior, and so on for the other two.
+  async acceptKOT(id: number) {
+    return this.updateKotStatus(id, 'PREPARING');
+  }
+
+  async bumpKOT(id: number) {
+    return this.updateKotStatus(id, 'READY');
+  }
+
+  async cancelKOT(id: number) {
+    return this.updateKotStatus(id, 'CANCELLED');
+  }
+
   // Print Count بڑھائیں (Duplicate print track کریں)
   async incrementPrintCount(id: number) {
     const kot = await this.prisma.kOT.update({

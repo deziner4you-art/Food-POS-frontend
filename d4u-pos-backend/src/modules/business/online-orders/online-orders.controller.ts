@@ -33,15 +33,21 @@ export class OnlineOrdersController {
   // in kitchen, out for delivery, etc.) up to but excluding SETTLED —
   // opt-in, default omitted (false) preserves the exact prior response
   // for any caller not passing it. See getAllOnlineOrders.
-  @RequirePermissions('sales.view')
+  // Task #2R-B1: 'sales.view' kept alongside the real 'pos.orders.read' grant
+  // (additive OR, same pattern as #2Q-B2) -- a straight swap would drop
+  // bridge-based access for Business Admin/Business Owner/Branch Owner, none
+  // of which hold pos.orders.read as a real grant (Cashier/Manager/Branch
+  // Manager/Waiter already do, so they're unaffected either way).
+  @RequirePermissions('sales.view', 'pos.orders.read')
   @Get()
   getOrders(
     @Query('phone') phone?: string,
     @Query('store_id') store_id?: string,
     @Query('activeOnly') activeOnly?: string,
+    @CurrentUser() authenticatedUser?: any,
   ) {
     if (phone) {
-      return this.service.getOrdersByPhone(phone);
+      return this.service.getOrdersByPhone(phone, authenticatedUser);
     }
     return this.service.getAllOnlineOrders(
       store_id ? Number(store_id) : undefined,
@@ -49,7 +55,7 @@ export class OnlineOrdersController {
     );
   }
 
-  @RequirePermissions('sales.view')
+  @RequirePermissions('sales.view', 'pos.orders.read')
   @Get(':id')
   getOrder(@Param('id') id: string) {
     return this.service.getOrder(Number(id));
@@ -186,17 +192,40 @@ export class OnlineOrdersController {
     return this.service.createOrder(body);
   }
 
-  @RequirePermissions('sales.update')
+  // Task #2Q-B2: delivery.dispatch.update_status added as an additional
+  // accepted permission (OR semantics -- PermissionsGuard passes if the
+  // caller holds ANY listed permission) so a Rider progressing their own
+  // claimed delivery (RIDER_ARRIVED/OUT_FOR_DELIVERY/DELIVERED/etc., see
+  // d4u-rider's updateBridgeStatus) can reach this route without touching
+  // staff's existing sales.update-based access at all. Per-order rider
+  // ownership enforcement (claimedByRiderId match) is Task #2Q-B3, lives in
+  // OnlineOrdersService.updateOrderStatus -- untouched by #2R-B2.
+  //
+  // Task #2R-B2: pos.orders.update added alongside sales.update (still
+  // additive OR, not a swap). #2R-A found sales.update is only reachable via
+  // the posPermissions bridge; pos.orders.update is a real grant already
+  // held by Cashier/Manager/Branch Manager. sales.update is kept, not
+  // removed, because Business Admin/Business Owner/Branch Owner reach this
+  // route via the bridge today and hold no real pos.orders.update grant -- a
+  // straight swap would have silently dropped their access.
+  @RequirePermissions('sales.update', 'pos.orders.update', 'delivery.dispatch.update_status')
   @Patch(':id')
   updateOrderStatus(
     @Param('id') id: string,
     @Body() body: UpdateOnlineOrderStatusDto,
     @CurrentUser() user?: any,
   ) {
-    return this.service.updateOrderStatus(Number(id), body, user?.store_id);
+    return this.service.updateOrderStatus(Number(id), body, user);
   }
 
-  @RequirePermissions('sales.create')
+  // Task #2Q-E1: matches its 11 sibling customer-self-service routes in
+  // this controller (trackOrder, webLogin, webRegister, webHistory,
+  // addresses/*, favorites/*, createOrder) -- see #2Q-E's audit for why
+  // staff-only sales.create was almost certainly an unintentional omission
+  // from that pattern (the original frontend caller never attached an auth
+  // token, and the project's own migration handover doc describes this as
+  // a customer-facing "working post-delivery star-rating + comment flow").
+  @Public()
   @Post(':id/feedback')
   postFeedback(@Param('id') id: string, @Body() body: PostFeedbackDto) {
     return this.service.postFeedback(
@@ -204,11 +233,5 @@ export class OnlineOrdersController {
       body.rating as any,
       body.comment as any,
     );
-  }
-
-  @RequirePermissions('sales.delete')
-  @Delete(':id')
-  acceptOnlineOrder(@Param('id') id: string) {
-    return this.service.acceptOnlineOrder(Number(id));
   }
 }

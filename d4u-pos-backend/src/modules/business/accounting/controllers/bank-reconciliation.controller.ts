@@ -13,42 +13,42 @@ export class BankReconciliationController {
     private readonly matchingService: ReconciliationMatchingService
   ) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.bank_reconciliation.create')
   @Post('import-statement')
   async importStatement(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.statementService.importStatement(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.bank_reconciliation.create')
   @Post('run')
   async runReconciliation(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.reconciliationService.runReconciliation(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.bank_reconciliation.create')
   @Post('match')
   async manualMatch(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.matchingService.manualMatch(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.bank_reconciliation.create')
   @Post('adjustment')
   async createAdjustment(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.reconciliationService.createAdjustment(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.bank_reconciliation.create')
   @Post(':id/finalize')
   async finalize(@Param('id') id: string, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.reconciliationService.finalizeReconciliation(Number(id), userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.bank_reconciliation.read')
   @Get(':id')
   async getReconciliation(@Param('id') id: string) {
     return this.reconciliationService.getReconciliation(Number(id));

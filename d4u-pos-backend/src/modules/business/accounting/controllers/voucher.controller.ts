@@ -9,7 +9,7 @@ import { CancelVoucherDto } from '../dto/cancel-voucher.dto';
 export class VoucherController {
   constructor(private readonly service: VoucherService) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.vouchers.create')
   @Post()
   async createVoucher(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -19,7 +19,7 @@ export class VoucherController {
     return this.service.createVoucher(store_id, userId, dto);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.vouchers.update')
   @Put(':id')
   async updateVoucher(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -30,7 +30,7 @@ export class VoucherController {
     return this.service.updateVoucher(store_id, id, userId, dto);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.vouchers.submit')
   @Patch(':id/submit')
   async submitVoucher(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -40,7 +40,7 @@ export class VoucherController {
     return this.service.submitVoucher(store_id, id, userId);
   }
 
-  @RequirePermissions('finance.accounting.approve')
+  @RequirePermissions('finance.vouchers.approve')
   @Patch(':id/approve')
   async approveVoucher(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -50,7 +50,7 @@ export class VoucherController {
     return this.service.approveVoucher(store_id, id, userId);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.vouchers.cancel')
   @Patch(':id/cancel')
   async cancelVoucher(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -61,7 +61,7 @@ export class VoucherController {
     return this.service.cancelVoucher(store_id, id, userId, dto.reason);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.vouchers.reverse')
   @Patch(':id/reverse')
   async reverseVoucher(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -71,7 +71,7 @@ export class VoucherController {
     return this.service.reverseVoucher(store_id, id, userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.vouchers.read')
   @Get(':id')
   async getVoucher(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -80,7 +80,7 @@ export class VoucherController {
     return this.service.getVoucher(store_id, id);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.vouchers.read')
   @Get()
   async listVouchers(
     @Query('store_id', ParseIntPipe) store_id: number,

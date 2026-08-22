@@ -8,7 +8,7 @@ import { getSessionUserId } from '../../../../common/utils/session-context.util'
 export class TrialBalanceController {
   constructor(private readonly trialBalanceService: TrialBalanceService) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.reports.view')
   @Get()
   async getTrialBalance(@Query() query: any, @Req() req: any) {
     const filter: TrialBalanceFilter = {
@@ -22,7 +22,7 @@ export class TrialBalanceController {
     return this.trialBalanceService.generateTrialBalance(filter, userId);
   }
 
-  @RequirePermissions('finance.accounting.export')
+  @RequirePermissions('finance.reports.export')
   @Get('export')
   async exportTrialBalance(@Query() query: any, @Req() req: any) {
     const filter: TrialBalanceFilter = {

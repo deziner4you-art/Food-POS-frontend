@@ -8,7 +8,7 @@ import { getSessionUserId } from '../../../../common/utils/session-context.util'
 export class ProfitLossController {
   constructor(private readonly plService: ProfitLossService) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.reports.view')
   @Get()
   async getProfitLoss(@Query() query: any, @Req() req: any) {
     const filter: ProfitLossFilter = {
@@ -22,7 +22,7 @@ export class ProfitLossController {
     return this.plService.generateProfitLoss(filter, userId);
   }
 
-  @RequirePermissions('finance.accounting.export')
+  @RequirePermissions('finance.reports.export')
   @Get('export')
   async exportProfitLoss(@Query() query: any, @Req() req: any) {
     const filter: ProfitLossFilter = {

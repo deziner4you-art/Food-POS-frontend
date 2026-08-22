@@ -22,7 +22,7 @@ import { CreateUserDto, UpdateUserDto } from './dto';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @RequirePermissions('system.view')
+  @RequirePermissions('auth.users.read')
   @Get()
   getAllUsers(
     @Query('brand_id') brand_id?: string,
@@ -33,20 +33,20 @@ export class UsersController {
     return this.usersService.getAllUsers();
   }
 
-  @RequirePermissions('system.view')
+  @RequirePermissions('auth.users.read')
   @Get('roles')
   getRoles() {
     return this.usersService.getRoles();
   }
 
-  @RequirePermissions('system.create')
+  @RequirePermissions('auth.users.create')
   @Post()
   createUser(@Body() body: CreateUserDto) {
     console.log(`[NEW USER] ${body.name} → Store #${body.store_id || 'HQ'}`);
     return this.usersService.createUser(body);
   }
 
-  @RequirePermissions('system.update')
+  @RequirePermissions('auth.users.update')
   @Patch(':id')
   updateUser(
     @Param('id', ParseIntPipe) id: number,
@@ -56,14 +56,14 @@ export class UsersController {
     return this.usersService.updateUser(id, body);
   }
 
-  @RequirePermissions('system.delete')
+  @RequirePermissions('auth.users.delete')
   @Delete(':id')
   deleteUser(@Param('id', ParseIntPipe) id: number) {
     console.log(`[DELETE USER] #${id}`);
     return this.usersService.deleteUser(id);
   }
 
-  @RequirePermissions('system.create')
+  @RequirePermissions('auth.users.create')
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {

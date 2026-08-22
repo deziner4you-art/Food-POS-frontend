@@ -56,7 +56,14 @@ export class InventoryController {
   }
 
   // --- CRUD for Inventory Items ---
-  @RequirePermissions('inventory.view')
+  // Task #2R-B1: migrated off the legacy 2-segment 'inventory.*' strings onto
+  // the real 'inventory.products.*' catalog permissions (#2R-A confirmed these
+  // already exist and are already granted to Inventory Manager/Branch Manager).
+  // Straight swap, not additive -- 'inventory.*' was never in the posPermissions
+  // bridge, so nobody had access via any path except Super Admin before this;
+  // this is a pure widening (Inventory Manager/Branch Manager gain access),
+  // never a narrowing.
+  @RequirePermissions('inventory.products.read')
   @Get('items/:store_id')
   async getInventoryItems(
     @CurrentUser() user: any,
@@ -66,7 +73,7 @@ export class InventoryController {
     return this.inventoryService.getInventoryItems(storeId);
   }
 
-  @RequirePermissions('inventory.view')
+  @RequirePermissions('inventory.products.read')
   @Get('item/:id')
   async getInventoryItem(
     @CurrentUser() user: any,
@@ -77,7 +84,7 @@ export class InventoryController {
     return item;
   }
 
-  @RequirePermissions('inventory.create')
+  @RequirePermissions('inventory.products.create')
   @Post('items')
   async createInventoryItem(
     @CurrentUser() user: any,
@@ -87,7 +94,7 @@ export class InventoryController {
     return this.inventoryService.createInventoryItem(body);
   }
 
-  @RequirePermissions('inventory.update')
+  @RequirePermissions('inventory.products.update')
   @Patch('items/:id')
   async updateInventoryItem(
     @CurrentUser() user: any,
@@ -99,7 +106,7 @@ export class InventoryController {
     return this.inventoryService.updateInventoryItem(id, body);
   }
 
-  @RequirePermissions('inventory.delete')
+  @RequirePermissions('inventory.products.delete')
   @Delete('items/:id')
   async deleteInventoryItem(
     @CurrentUser() user: any,

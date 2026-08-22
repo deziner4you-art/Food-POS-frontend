@@ -8,7 +8,7 @@ import { AccountingPeriodStatus } from '../enums/accounting-period-status.enum';
 export class AccountingPeriodController {
   constructor(private readonly periodService: AccountingPeriodService) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.periods.read')
   @Get('fiscal-year/:fy_id')
   async findAllByFiscalYear(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -17,7 +17,7 @@ export class AccountingPeriodController {
     return this.periodService.findAllByFiscalYear(store_id, fy_id);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.periods.create')
   @Post('monthly')
   async createMonthly(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -26,7 +26,7 @@ export class AccountingPeriodController {
     return this.periodService.createMonthlyPeriods(store_id, dto);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.periods.close')
   @Patch(':id/close')
   async close(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -35,7 +35,7 @@ export class AccountingPeriodController {
     return this.periodService.updateStatus(store_id, id, AccountingPeriodStatus.CLOSED);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.periods.open')
   @Patch(':id/open')
   async open(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -44,7 +44,7 @@ export class AccountingPeriodController {
     return this.periodService.updateStatus(store_id, id, AccountingPeriodStatus.OPEN);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.periods.lock')
   @Patch(':id/lock')
   async lock(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -53,7 +53,7 @@ export class AccountingPeriodController {
     return this.periodService.updateStatus(store_id, id, AccountingPeriodStatus.LOCKED);
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.periods.unlock')
   @Patch(':id/unlock')
   async unlock(
     @Query('store_id', ParseIntPipe) store_id: number,

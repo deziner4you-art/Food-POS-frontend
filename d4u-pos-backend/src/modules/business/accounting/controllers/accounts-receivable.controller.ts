@@ -13,33 +13,33 @@ export class AccountsReceivableController {
     private readonly agingService: CustomerAgingService
   ) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.accounts_receivable.create')
   @Post('accounts-receivable')
   async createReceivable(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.receivableService.createReceivable(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.accounts_receivable.create')
   @Post('customer-receipts')
   async createReceipt(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.receiptService.postReceipt(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.accounts_receivable.read')
   @Get('accounts-receivable')
   async getReceivables(@Req() req: any) {
     return this.receivableService.getReceivables(getSessionStoreId(req.user));
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.accounts_receivable.read')
   @Get('accounts-receivable/:customerId')
   async getCustomerReceivables(@Param('customerId') customerId: string, @Req() req: any) {
     return this.receivableService.getCustomerReceivables(getSessionStoreId(req.user), Number(customerId));
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.accounts_receivable.read')
   @Get('customer-aging/:customerId')
   async getCustomerAging(@Param('customerId') customerId: string, @Req() req: any) {
     return this.agingService.calculateAging({ store_id: getSessionStoreId(req.user), customer_id: Number(customerId) }, getSessionUserId(req.user));

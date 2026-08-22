@@ -22,7 +22,7 @@ export class PosOrdersController {
   constructor(private readonly service: PosOrdersService) {}
 
   // GET /pos-orders?store_id=1&business_day_id=2
-  @RequirePermissions('sales.view')
+  @RequirePermissions('pos.orders.read')
   @Get()
   getOrders(
     @CurrentUser() user: any,
@@ -40,7 +40,7 @@ export class PosOrdersController {
   }
 
   // GET /pos-orders/summary?store_id=1
-  @RequirePermissions('sales.view')
+  @RequirePermissions('pos.orders.read')
   @Get('summary')
   getSummary(
     @CurrentUser() user: any,
@@ -56,7 +56,7 @@ export class PosOrdersController {
   }
 
   // GET /pos-orders/:id
-  @RequirePermissions('sales.view')
+  @RequirePermissions('pos.orders.read')
   @Get(':id')
   async getOrder(
     @CurrentUser() user: any,
@@ -69,7 +69,7 @@ export class PosOrdersController {
   }
 
   // POST /pos-orders — نیا آرڈر
-  @RequirePermissions('sales.create')
+  @RequirePermissions('pos.orders.create')
   @Post()
   createOrder(
     @CurrentUser() user: any,
@@ -83,7 +83,7 @@ export class PosOrdersController {
   }
 
   // PATCH /pos-orders/:id/void — آرڈر کینسل (مینیجر PIN درکار)
-  @RequirePermissions('sales.update')
+  @RequirePermissions('pos.orders.update')
   @Patch(':id/void')
   async voidOrder(
     @CurrentUser() user: any,
@@ -97,7 +97,7 @@ export class PosOrdersController {
   }
 
   // PATCH /pos-orders/:id/settle — پیمنٹ وصول
-  @RequirePermissions('sales.update')
+  @RequirePermissions('pos.orders.update')
   @Patch(':id/settle')
   async settleOrder(
     @CurrentUser() user: any,
@@ -113,7 +113,11 @@ export class PosOrdersController {
   // PATCH /pos-orders/:id/status — delivery lifecycle progression for
   // POS-native delivery orders (Rider Arrived / Print Bill / Dispatch /
   // Settle Cash) — see PosOrdersService.updateDeliveryStatus.
-  @RequirePermissions('sales.update')
+  // Task #2Q-B2: delivery.dispatch.update_status added as an additional
+  // accepted permission (OR semantics), the POS-native sibling of the same
+  // rider-side fix on online-orders.controller.ts's PATCH /:id -- see that
+  // file's comment for the full rationale.
+  @RequirePermissions('pos.orders.update', 'delivery.dispatch.update_status')
   @Patch(':id/status')
   async updateDeliveryStatus(
     @CurrentUser() user: any,
@@ -122,11 +126,11 @@ export class PosOrdersController {
   ) {
     const order = await this.service.getOrder(Number(id));
     if (order) validateTenantAccess(user, order.store_id);
-    return this.service.updateDeliveryStatus(Number(id), body.status);
+    return this.service.updateDeliveryStatus(Number(id), body.status, user);
   }
 
   // POST /pos-orders/sync-offline — Sync locally stored Dexie KOTs
-  @RequirePermissions('sales.create')
+  @RequirePermissions('pos.orders.create')
   @Post('sync-offline')
   syncOffline(
     @CurrentUser() user: any,

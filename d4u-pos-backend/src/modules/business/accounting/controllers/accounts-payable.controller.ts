@@ -13,33 +13,33 @@ export class AccountsPayableController {
     private readonly agingService: VendorAgingService
   ) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.accounts_payable.create')
   @Post('accounts-payable')
   async createPayable(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.payableService.createPayable(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.accounts_payable.create')
   @Post('vendor-payments')
   async createPayment(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.paymentService.postPayment(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.accounts_payable.read')
   @Get('accounts-payable')
   async getPayables(@Req() req: any) {
     return this.payableService.getPayables(getSessionStoreId(req.user));
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.accounts_payable.read')
   @Get('accounts-payable/:vendorId')
   async getVendorPayables(@Param('vendorId') vendorId: string, @Req() req: any) {
     return this.payableService.getVendorPayables(getSessionStoreId(req.user), Number(vendorId));
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.accounts_payable.read')
   @Get('vendor-aging/:vendorId')
   async getVendorAging(@Param('vendorId') vendorId: string, @Req() req: any) {
     return this.agingService.calculateAging({ store_id: getSessionStoreId(req.user), vendor_id: Number(vendorId) }, getSessionUserId(req.user));

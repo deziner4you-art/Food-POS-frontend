@@ -13,21 +13,21 @@ export class BudgetController {
     private readonly analysisService: BudgetAnalysisService
   ) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.budgets.create')
   @Post()
   async createBudget(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.budgetService.createBudget(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.approve')
+  @RequirePermissions('finance.budgets.approve')
   @Put(':id/approve')
   async approveBudget(@Param('id') id: string, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.budgetService.approveBudget(Number(id), userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.budgets.read')
   @Get('vs-actual')
   async getBudgetVsActual(@Query() query: any, @Req() req: any) {
     const filter: BudgetAnalysisFilter = {

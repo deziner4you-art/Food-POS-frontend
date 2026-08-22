@@ -541,13 +541,33 @@ export class PosOrdersService {
     'SETTLED',
   ];
 
-  async updateDeliveryStatus(id: number, status: string) {
+  async updateDeliveryStatus(id: number, status: string, authenticatedUser?: any) {
     if (!PosOrdersService.DELIVERY_STATUSES.includes(status)) {
       throw new BadRequestException(`Invalid delivery status: ${status}`);
     }
 
     const existing = await this.prisma.order.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Order #${id} not found`);
+
+    // --- RIDER OWNERSHIP ENFORCEMENT (Task #2Q-B3) ---
+    // Staff (Cashier/Manager/etc.) may still update any order, exactly as
+    // before -- this only activates for a caller whose real, DB-resolved
+    // role is Rider (the JWT itself carries no role for real logins -- see
+    // AuthService.buildTokenPayload). Mirrors OnlineOrdersService's
+    // equivalent check: a Rider may only progress a delivery they've
+    // actually claimed (RiderService.claimOrder sets Order.rider_id for
+    // POS-native orders) -- unassigned, or assigned to a different rider,
+    // is rejected.
+    const callerId = Number(authenticatedUser?.sub);
+    if (Number.isFinite(callerId)) {
+      const callerUser = await this.prisma.user.findUnique({
+        where: { id: callerId },
+        select: { role: { select: { name: true } } },
+      });
+      if (callerUser?.role?.name === 'Rider' && existing.rider_id !== callerId) {
+        throw new ForbiddenException('This delivery is not assigned to you.');
+      }
+    }
 
     const updated = await this.prisma.order.update({
       where: { id },

@@ -18,13 +18,13 @@ export class RecipesController {
   // ==========================================
   // Recipe Categories
   // ==========================================
-  @RequirePermissions('production.view')
+  @RequirePermissions('recipe.recipes.read')
   @Get('categories/:store_id')
   getCategories(@Param('store_id', ParseIntPipe) storeId: number) {
     return this.recipesService.getCategories(storeId);
   }
 
-  @RequirePermissions('production.create')
+  @RequirePermissions('recipe.recipes.manage')
   @Post('categories')
   createCategory(@Body() body: { store_id: number; name: string }) {
     return this.recipesService.createCategory(body);
@@ -33,25 +33,25 @@ export class RecipesController {
   // ==========================================
   // Recipes
   // ==========================================
-  @RequirePermissions('production.view')
+  @RequirePermissions('recipe.recipes.read')
   @Get('store/:store_id')
   getRecipes(@Param('store_id', ParseIntPipe) storeId: number) {
     return this.recipesService.getRecipes(storeId);
   }
 
-  @RequirePermissions('production.view')
+  @RequirePermissions('recipe.recipes.read')
   @Get(':id')
   getRecipe(@Param('id', ParseIntPipe) id: number) {
     return this.recipesService.getRecipe(id);
   }
 
-  @RequirePermissions('production.create')
+  @RequirePermissions('recipe.recipes.manage')
   @Post()
   createRecipe(@Body() body: any) {
     return this.recipesService.createRecipe(body);
   }
 
-  @RequirePermissions('production.edit')
+  @RequirePermissions('recipe.recipes.manage')
   @Patch(':id')
   updateRecipe(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
     return this.recipesService.updateRecipe(id, body);
@@ -66,7 +66,7 @@ export class RecipesController {
   // ==========================================
   // Recipe Ingredients (Bulk Save)
   // ==========================================
-  @RequirePermissions('production.create')
+  @RequirePermissions('recipe.recipes.manage')
   @Post(':recipe_id/ingredients')
   saveIngredients(
     @Param('recipe_id', ParseIntPipe) recipeId: number,

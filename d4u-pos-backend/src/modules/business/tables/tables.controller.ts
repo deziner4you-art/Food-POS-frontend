@@ -9,7 +9,7 @@ export class TablesController {
   constructor(private readonly service: TablesService) {}
 
   // GET /tables?store_id=1
-  @RequirePermissions('sales.view')
+  @RequirePermissions('pos.tables.manage')
   @Get()
   list(@CurrentUser() user: any, @Query('store_id') store_id: string) {
     validateTenantAccess(user, Number(store_id));
@@ -17,7 +17,7 @@ export class TablesController {
   }
 
   // PATCH /tables/:id/release — manual release (Manager permission)
-  @RequirePermissions('sales.update')
+  @RequirePermissions('pos.tables.manage')
   @Patch(':id/release')
   release(
     @CurrentUser() user: any,

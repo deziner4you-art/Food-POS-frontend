@@ -11,27 +11,27 @@ export class DepreciationController {
     private readonly postingService: DepreciationPostingService
   ) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.depreciation.create')
   @Post('run')
   async runDepreciation(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.depreciationService.runMonthlyDepreciation(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.depreciation.create')
   @Post('post')
   async postDepreciation(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.postingService.postDepreciation(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.depreciation.read')
   @Get('pending')
   async getPendingSchedules(@Query('store_id') storeId: string, @Query('period_end') periodEnd: string) {
     return this.depreciationService.getPendingSchedules(Number(storeId), new Date(periodEnd));
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.depreciation.read')
   @Get(':assetId')
   async getDepreciationHistory(@Param('assetId') assetId: string) {
     return this.depreciationService.getDepreciationHistory(Number(assetId));

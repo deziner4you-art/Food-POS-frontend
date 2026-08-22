@@ -15,33 +15,33 @@ export class TreasuryController {
     private readonly forecastService: CashForecastService
   ) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.treasury.create')
   @Post('bank-transfer')
   async createTransfer(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.transferService.transfer(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.treasury.create')
   @Post('cash-adjustment')
   async createAdjustment(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.treasuryService.createCashAdjustment(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.treasury.read')
   @Get('bank-accounts')
   async getBankAccounts(@Req() req: any) {
     return this.treasuryService.getBankAccounts(getSessionStoreId(req.user));
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.treasury.read')
   @Get('cash-position/:accountId')
   async getCashPosition(@Param('accountId') accountId: string, @Req() req: any) {
     return this.positionService.updateCashPosition({ store_id: getSessionStoreId(req.user), bank_account_id: Number(accountId) }, getSessionUserId(req.user));
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.treasury.create')
   @Post('cash-forecast')
   async generateForecast(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);

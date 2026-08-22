@@ -8,7 +8,7 @@ import { getSessionUserId } from '../../../../common/utils/session-context.util'
 export class FinancialDashboardController {
   constructor(private readonly dashboardService: FinancialDashboardService) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.reports.view')
   @Get()
   async getDashboard(@Query() query: any, @Req() req: any) {
     const filter: DashboardFilter = {

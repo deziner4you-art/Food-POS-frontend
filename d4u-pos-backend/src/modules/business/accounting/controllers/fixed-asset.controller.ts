@@ -13,40 +13,40 @@ export class FixedAssetController {
     private readonly disposalService: AssetDisposalService
   ) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.fixed_assets.create')
   @Post()
   async createAsset(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.assetService.createAsset(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.fixed_assets.read')
   @Get()
   async getAssets(@Query('store_id') storeId: string) {
     return this.assetService.getAssets(Number(storeId));
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.fixed_assets.read')
   @Get(':id')
   async getAssetById(@Param('id') id: string) {
     return this.assetService.getAssetById(Number(id));
   }
 
-  @RequirePermissions('finance.accounting.update')
+  @RequirePermissions('finance.fixed_assets.update')
   @Patch(':id')
   async updateAsset(@Param('id') id: string, @Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.assetService.updateAsset(Number(id), body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.fixed_assets.transfer')
   @Post('transfer')
   async transferAsset(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);
     return this.transferService.transferAsset(body, userId);
   }
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.fixed_assets.dispose')
   @Post('dispose')
   async disposeAsset(@Body() body: any, @Req() req: any) {
     const userId = getSessionUserId(req.user);

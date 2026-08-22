@@ -159,9 +159,26 @@ export class OnlineOrdersService {
     return { success: true, order: updatedOrder };
   }
 
-  async getOrdersByPhone(phone: string) {
+  // Task #2Q-D1: previously unscoped by any tenant boundary -- any caller
+  // holding sales.view could retrieve any phone number's full order history
+  // across every store/brand in the system. authenticatedUser is the
+  // verified JWT payload (never client-supplied); its store is the only
+  // tenant boundary trusted here -- see #2Q-D's audit for why store_id
+  // (OnlineOrder's own native field) rather than brand_id was chosen for
+  // this specific endpoint.
+  async getOrdersByPhone(phone: string, authenticatedUser?: any) {
+    const storeId = Number(authenticatedUser?.active_store_id ?? authenticatedUser?.store_id);
+    if (!authenticatedUser || !Number.isFinite(storeId) || storeId <= 0) {
+      throw new BadRequestException('A valid authenticated store context is required.');
+    }
+
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    if (!store) {
+      throw new BadRequestException('Store not found for authenticated session.');
+    }
+
     return this.prisma.onlineOrder.findMany({
-      where: { customerPhone: normalizePhone(phone) },
+      where: { customerPhone: normalizePhone(phone), store_id: storeId },
       orderBy: { id: 'desc' },
     });
   }
@@ -295,7 +312,8 @@ export class OnlineOrdersService {
     return order;
   }
 
-  async updateOrderStatus(id: number, data: any, userStoreId?: number) {
+  async updateOrderStatus(id: number, data: any, authenticatedUser?: any) {
+    const userStoreId = authenticatedUser?.store_id;
     const allowedKeys = [
       'orderId',
       'status',
@@ -332,6 +350,29 @@ export class OnlineOrdersService {
       // --- SECURITY ENFORCEMENT ---
       if (userStoreId && existingOrder.store_id !== userStoreId) {
         throw new Error('Unauthorized: Cannot modify orders belonging to another branch.');
+      }
+
+      // --- RIDER OWNERSHIP ENFORCEMENT (Task #2Q-B3) ---
+      // Staff (Cashier/Manager/etc.) may still update any order in their own
+      // store, exactly as above -- this only activates for a caller whose
+      // real, DB-resolved role is Rider. Never trust a role claim off the
+      // JWT itself: real staff/rider logins carry no role in the token at
+      // all (see AuthService.buildTokenPayload), so the caller's role is
+      // looked up fresh, the same pattern RiderService.claimOrder/
+      // updateRiderGps already use (Tasks #2J/#2K). A Rider may only
+      // progress a delivery they've actually claimed (see
+      // RiderService.claimOrder, which sets claimedByRiderId) -- an
+      // unclaimed order, or one claimed by a different rider, is rejected
+      // rather than letting one rider manipulate another's delivery.
+      const callerId = Number(authenticatedUser?.sub);
+      if (Number.isFinite(callerId)) {
+        const callerUser = await this.prisma.user.findUnique({
+          where: { id: callerId },
+          select: { role: { select: { name: true } } },
+        });
+        if (callerUser?.role?.name === 'Rider' && existingOrder.claimedByRiderId !== callerId) {
+          throw new Error('Unauthorized: This delivery is not assigned to you.');
+        }
       }
 
       // --- STATE MACHINE ENFORCEMENT ---
@@ -635,26 +676,6 @@ export class OnlineOrdersService {
 
       console.log(`[FEEDBACK] Order #${id} — Rating: ${rating}`);
       return { success: true, order: updated };
-    } catch (error) {
-      throw new NotFoundException('Order not found');
-    }
-  }
-
-  async acceptOnlineOrder(id: number) {
-    try {
-      const updated = await this.prisma.onlineOrder.update({
-        where: { id },
-        data: { status: 'ACCEPTED', kdsStatus: 'ACCEPTED' },
-      });
-
-      console.log(`[ACCEPTED] Order #${id}`);
-      this.gateway.broadcast(
-        'order_updated',
-        updated,
-        `store_${updated.store_id}`,
-      );
-
-      return { success: true };
     } catch (error) {
       throw new NotFoundException('Order not found');
     }

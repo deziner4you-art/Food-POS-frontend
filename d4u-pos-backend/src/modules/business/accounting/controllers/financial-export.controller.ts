@@ -8,7 +8,7 @@ import { getSessionStoreId, getSessionUserId } from '../../../../common/utils/se
 export class FinancialExportController {
   constructor(private readonly exportService: FinancialExportService) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.reports.export')
   @Post()
   async exportReport(@Body() request: any, @Req() req: any, @Res() res: any) {
     const storeId = req.body.store_id ?? getSessionStoreId(req.user);

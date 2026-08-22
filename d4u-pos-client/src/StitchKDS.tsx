@@ -465,10 +465,13 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     const kotToUpdate = (kots || []).find(k => (k.id && k.id.toString() === orderId) || k.orderId.toString() === orderId);
     if (kotToUpdate && kotToUpdate.id) {
       try {
-        const res = await apiFetch(`/kots/${kotToUpdate.id}/status`, {
+        // Task #2P-H: migrated off the shared, undifferentiated /status
+        // route onto /accept (kitchen.tickets.accept) -- see kots.controller.ts.
+        // The route itself now determines PREPARING; no body is read by the
+        // backend for this endpoint.
+        const res = await apiFetch(`/kots/${kotToUpdate.id}/accept`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'PREPARING' }),
           auth: true
         });
         if (!res.ok) throw new Error('Backend update failed');
@@ -509,10 +512,13 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     const kotToUpdate = (kots || []).find(k => (k.id && k.id.toString() === orderId) || k.orderId.toString() === orderId);
     if (kotToUpdate && kotToUpdate.id) {
       try {
-        const res = await apiFetch(`/kots/${kotToUpdate.id}/status`, {
+        // Task #2P-H: migrated off the shared, undifferentiated /status
+        // route onto /bump (kitchen.tickets.bump) -- see kots.controller.ts.
+        // The route itself now determines READY; no body is read by the
+        // backend for this endpoint.
+        const res = await apiFetch(`/kots/${kotToUpdate.id}/bump`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'READY' }),
           auth: true
         });
         if (!res.ok) throw new Error('Backend update failed');

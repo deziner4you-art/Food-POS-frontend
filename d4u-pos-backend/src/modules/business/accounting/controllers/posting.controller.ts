@@ -6,7 +6,7 @@ import { PostingEngineService } from '../services/posting-engine.service';
 export class PostingController {
   constructor(private readonly service: PostingEngineService) {}
 
-  @RequirePermissions('finance.accounting.create')
+  @RequirePermissions('finance.journal_entries.post')
   @Post('manual/:journalEntryId')
   async postManualEntry(
     @Query('store_id', ParseIntPipe) store_id: number,

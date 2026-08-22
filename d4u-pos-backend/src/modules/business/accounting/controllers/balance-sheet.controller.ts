@@ -8,7 +8,7 @@ import { getSessionUserId } from '../../../../common/utils/session-context.util'
 export class BalanceSheetController {
   constructor(private readonly bsService: BalanceSheetService) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.reports.view')
   @Get()
   async getBalanceSheet(@Query() query: any, @Req() req: any) {
     const filter: BalanceSheetFilter = {
@@ -21,7 +21,7 @@ export class BalanceSheetController {
     return this.bsService.generateBalanceSheet(filter, userId);
   }
 
-  @RequirePermissions('finance.accounting.export')
+  @RequirePermissions('finance.reports.export')
   @Get('export')
   async exportBalanceSheet(@Query() query: any, @Req() req: any) {
     const filter: BalanceSheetFilter = {

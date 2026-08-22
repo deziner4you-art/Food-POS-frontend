@@ -7,7 +7,7 @@ import { LedgerQueryDto } from '../dto/ledger-query.dto';
 export class GeneralLedgerController {
   constructor(private readonly service: GeneralLedgerService) {}
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.ledgers.read')
   @Get()
   async queryLedger(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -16,7 +16,7 @@ export class GeneralLedgerController {
     return this.service.queryLedger(store_id, query);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.ledgers.read')
   @Get('account/:id/balance')
   async getAccountBalance(
     @Query('store_id', ParseIntPipe) store_id: number,
@@ -25,7 +25,7 @@ export class GeneralLedgerController {
     return this.service.getAccountBalance(store_id, id);
   }
 
-  @RequirePermissions('finance.accounting.view')
+  @RequirePermissions('finance.ledgers.read')
   @Get('trial-balance')
   async getTrialBalanceData(
     @Query('store_id', ParseIntPipe) store_id: number,
