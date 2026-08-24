@@ -34,6 +34,39 @@ export class MarketingService {
     return this.subscriptions.getMarketingCapabilities(store_id);
   }
 
+  // Task #2R-F2a: same brand-boundary helper pattern as
+  // CatalogService.resolveBrandStoreScope (#2R-F1) — resolves the caller's
+  // own brand_id server-side (never trusts a client-supplied brand_id), and
+  // if a specific store_id is supplied, verifies it actually belongs to that
+  // brand before it's used to scope any query. Omitting store_id returns
+  // every store id in the caller's own brand (never a global/unfiltered list).
+  private async resolveBrandStoreScope(
+    authenticatedUser: any,
+    store_id?: number,
+  ): Promise<{ brand_id: number; storeIds: number[] }> {
+    const brand_id = Number(authenticatedUser?.active_brand_id);
+    if (!authenticatedUser || !Number.isFinite(brand_id) || brand_id <= 0) {
+      throw new BadRequestException('A valid authenticated brand context is required.');
+    }
+
+    if (store_id) {
+      const store = await this.prisma.store.findUnique({
+        where: { id: store_id },
+        select: { brand_id: true },
+      });
+      if (!store || store.brand_id !== brand_id) {
+        throw new BadRequestException('Store not found for authenticated brand.');
+      }
+      return { brand_id, storeIds: [store_id] };
+    }
+
+    const brandStores = await this.prisma.store.findMany({
+      where: { brand_id },
+      select: { id: true },
+    });
+    return { brand_id, storeIds: brandStores.map((s) => s.id) };
+  }
+
   /**
    * Best-effort creation-time gate: if the campaign explicitly targets one or
    * more stores, reject if any of them isn't entitled to this campaign_type.
@@ -401,16 +434,21 @@ export class MarketingService {
   }
 
   /** Admin CRUD list — sees everything (including PAUSED/DRAFT/PENDING) except soft-deleted, unless includeArchived is set. */
-  async getCampaigns(store_id?: number, includeArchived = false) {
+  // Task #2R-F2a: the store_id-supplied case previously trusted that store's
+  // OWN brand_id with no check that it matched the caller's brand at all --
+  // any authenticated caller could read another brand's campaigns just by
+  // passing a store_id belonging to it. The omitted case was fully
+  // unfiltered across every brand. resolveBrandStoreScope now enforces the
+  // caller's own active_brand_id in both cases; the existing brand-wide
+  // (target_stores: none) OR same-store-match filter is preserved exactly
+  // as before whenever store_id is supplied.
+  async getCampaigns(store_id?: number, includeArchived = false, authenticatedUser?: any) {
+    const { brand_id } = await this.resolveBrandStoreScope(authenticatedUser, store_id);
+
     const whereClause: any = includeArchived ? {} : { deleted_at: null };
+    whereClause.brand_id = brand_id;
 
     if (store_id) {
-      // Same brand-isolation fix as CampaignResolverService.getCoreActiveCampaigns
-      // -- a brand-wide (target_stores: none) campaign must never be listed
-      // for a store belonging to a different brand.
-      const store = await this.prisma.store.findUnique({ where: { id: store_id }, select: { brand_id: true } });
-      if (!store) return [];
-      whereClause.brand_id = store.brand_id;
       whereClause.OR = [
         { target_stores: { none: {} } },
         { target_stores: { some: { id: store_id } } },
@@ -673,11 +711,28 @@ export class MarketingService {
     });
     if (!source) throw new BadRequestException('Campaign not found');
 
+    // Task #2R-F2a: 'ALL' previously resolved to every store across every
+    // brand in the database. #2R-F2-D established -- from the frontend's own
+    // "Clone to this branch" label and the enterprise multi-branch-cloning
+    // intent behind this route -- that 'ALL' means every store in the SOURCE
+    // campaign's own brand, never a cross-brand operation. Explicit target
+    // store ids are now validated against that same boundary; ownership of
+    // the clone itself is unchanged (still brand_id: source.brand_id below).
     let storeIds: number[];
     if (targetStoreIds === 'ALL') {
-      const allStores = await this.prisma.store.findMany({ where: { deleted_at: null }, select: { id: true } });
-      storeIds = allStores.map((s) => s.id);
+      const brandStores = await this.prisma.store.findMany({
+        where: { brand_id: source.brand_id, deleted_at: null },
+        select: { id: true },
+      });
+      storeIds = brandStores.map((s) => s.id);
     } else {
+      const uniqueRequestedIds = Array.from(new Set(targetStoreIds));
+      const validCount = await this.prisma.store.count({
+        where: { id: { in: uniqueRequestedIds }, brand_id: source.brand_id },
+      });
+      if (validCount !== uniqueRequestedIds.length) {
+        throw new BadRequestException("One or more target stores do not belong to this campaign's brand.");
+      }
       storeIds = targetStoreIds;
     }
 
@@ -730,8 +785,14 @@ export class MarketingService {
   }
 
   // MARKETING-003 §17 — Import / Export
-  async exportCampaignsJson(store_id?: number) {
-    const where: any = { deleted_at: null };
+  // Task #2R-F2a: previously had NO brand check at all, even when store_id
+  // was supplied (only filtered by target_stores, never verified store
+  // ownership), and the omitted case was a fully unfiltered cross-brand
+  // dump -- worse than getCampaigns' pre-fix gap. resolveBrandStoreScope now
+  // enforces the caller's own active_brand_id in both cases.
+  async exportCampaignsJson(store_id?: number, authenticatedUser?: any) {
+    const { brand_id } = await this.resolveBrandStoreScope(authenticatedUser, store_id);
+    const where: any = { deleted_at: null, brand_id };
     if (store_id) where.OR = [{ target_stores: { none: {} } }, { target_stores: { some: { id: store_id } } }];
     return this.prisma.marketingCampaign.findMany({
       where,
@@ -739,8 +800,8 @@ export class MarketingService {
     });
   }
 
-  async exportCampaignsCsv(store_id?: number): Promise<string> {
-    const campaigns = await this.exportCampaignsJson(store_id);
+  async exportCampaignsCsv(store_id?: number, authenticatedUser?: any): Promise<string> {
+    const campaigns = await this.exportCampaignsJson(store_id, authenticatedUser);
     const headers = [
       'id', 'title', 'campaign_type', 'discount_pct', 'flat_discount_amount', 'status',
       'priority', 'published_pos', 'published_web', 'published_tv', 'allow_stacking', 'end_date',

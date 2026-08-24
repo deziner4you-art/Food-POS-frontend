@@ -181,8 +181,9 @@ export default function TvBoard() {
       // 5-minute throttle (300,000 ms)
       if (!lastView || now - parseInt(lastView) > 300000) {
         localStorage.setItem(lastViewKey, now.toString());
-        fetch(`${BACKEND_URL}/marketing/analytics/${campId}/view`, {
+        apiFetch(`/marketing/analytics/${campId}/view`, {
           method: 'POST',
+          auth: true,
         }).catch(console.error);
       }
     }

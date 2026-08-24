@@ -103,12 +103,13 @@ export class MarketingController {
     @Query('store_id') store_id?: string,
     @Query('channel') channel?: MarketingChannel,
     @Query('includeArchived') includeArchived?: string,
+    @CurrentUser() authenticatedUser?: any,
   ) {
     const storeId = store_id ? parseInt(store_id, 10) : undefined;
     if (channel) {
       return this.marketingService.getVisibleCampaigns(storeId, channel);
     }
-    return this.marketingService.getCampaigns(storeId, includeArchived === 'true');
+    return this.marketingService.getCampaigns(storeId, includeArchived === 'true', authenticatedUser);
   }
 
   // Public counterpart of GET /marketing/campaign?channel=X — that route
@@ -198,14 +199,14 @@ export class MarketingController {
   // MARKETING-003 §17 — Import / Export
   @RequirePermissions('crm.view')
   @Get('campaign/export/json')
-  exportJson(@Query('store_id') store_id?: string) {
-    return this.marketingService.exportCampaignsJson(store_id ? Number(store_id) : undefined);
+  exportJson(@Query('store_id') store_id?: string, @CurrentUser() authenticatedUser?: any) {
+    return this.marketingService.exportCampaignsJson(store_id ? Number(store_id) : undefined, authenticatedUser);
   }
 
   @RequirePermissions('crm.view')
   @Get('campaign/export/csv')
-  async exportCsv(@Query('store_id') store_id?: string) {
-    return this.marketingService.exportCampaignsCsv(store_id ? Number(store_id) : undefined);
+  async exportCsv(@Query('store_id') store_id?: string, @CurrentUser() authenticatedUser?: any) {
+    return this.marketingService.exportCampaignsCsv(store_id ? Number(store_id) : undefined, authenticatedUser);
   }
 
   @RequirePermissions('crm.create')
