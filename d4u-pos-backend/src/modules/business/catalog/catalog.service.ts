@@ -65,6 +65,59 @@ interface ProductCsvRow {
 export class CatalogService {
   constructor(private prisma: PrismaService) {}
 
+  // Task #2R-F1: shared tenant-boundary resolver for the admin/menu-builder
+  // catalog reads (getCategories/getProducts/getMenus/exportProductsCsv/
+  // importProductsCsv). #2R-F established the brand -- not the individual
+  // store -- is the real ownership boundary for catalog data (Category.
+  // store_id is a "Creator Store (Admin)" provenance field, not an ACL;
+  // Category/Product both carry a genuine assigned_stores many-to-many
+  // relation; Menu is natively brand_id-scoped and multi-store-assignable).
+  // Mirrors the exact pattern already established in
+  // CustomersService.getCustomers (#2Q-D1): resolve brand_id from the
+  // authenticated user server-side, never trust a client-supplied brand_id;
+  // if a specific store_id is supplied, verify it belongs to that brand
+  // before using it, rejecting a cross-brand store id the same
+  // indistinguishable-from-not-found way. When no store_id is supplied, this
+  // returns every store_id belonging to the caller's own brand (never a
+  // global, all-brand result) -- #2R-F found this omitted-parameter default
+  // is the one point needing direct evidence rather than assumption:
+  // d4u-admin's MarketingHub.tsx unconditionally omits store_id on these
+  // exact two calls while expecting brand-wide category/product results for
+  // its campaign-builder UI (its selectedBranchId is genuinely nullable --
+  // AdminContext.tsx:39 -- confirming "no store selected" is an intentional,
+  // reachable state, not just a loading edge case), and #2R-F's schema
+  // findings independently support brand-wide sharing as the intended model.
+  // This does not change the SHAPE of the existing store_id-supplied filter
+  // (still an exact store_id match, not the fuller assigned_stores-aware
+  // logic syncCatalogForPos below uses) -- only adds the missing brand
+  // ownership check on top of what already existed, per this task's scope.
+  private async resolveBrandStoreScope(
+    authenticatedUser: any,
+    store_id?: number,
+  ): Promise<{ brand_id: number; storeIds: number[] }> {
+    const brand_id = Number(authenticatedUser?.active_brand_id);
+    if (!authenticatedUser || !Number.isFinite(brand_id) || brand_id <= 0) {
+      throw new BadRequestException('A valid authenticated brand context is required.');
+    }
+
+    if (store_id) {
+      const store = await this.prisma.store.findUnique({
+        where: { id: store_id },
+        select: { brand_id: true },
+      });
+      if (!store || store.brand_id !== brand_id) {
+        throw new BadRequestException('Store not found for authenticated brand.');
+      }
+      return { brand_id, storeIds: [store_id] };
+    }
+
+    const brandStores = await this.prisma.store.findMany({
+      where: { brand_id },
+      select: { id: true },
+    });
+    return { brand_id, storeIds: brandStores.map((s) => s.id) };
+  }
+
   // -------------------------------------------------------------
   // POS SYNC (STORE-SPECIFIC)
   // -------------------------------------------------------------
@@ -123,9 +176,19 @@ export class CatalogService {
   // -------------------------------------------------------------
   // ADMIN PANEL: MENUS
   // -------------------------------------------------------------
-  async getMenus(params: { sort_by?: string; sort_dir?: string } = {}) {
+  // Task #2R-F1: Menu already carries a native brand_id -- was previously
+  // completely unfiltered (every brand's menus returned to every caller).
+  // No store_id parameter existed on this route before and none is added
+  // now; this only adds the caller's own brand as a filter.
+  async getMenus(params: { sort_by?: string; sort_dir?: string } = {}, authenticatedUser?: any) {
+    const brand_id = Number(authenticatedUser?.active_brand_id);
+    if (!authenticatedUser || !Number.isFinite(brand_id) || brand_id <= 0) {
+      throw new BadRequestException('A valid authenticated brand context is required.');
+    }
+
     const orderBy = resolveOrderBy(params.sort_by, params.sort_dir, MENU_SORT_FIELDS, 'name');
     return this.prisma.menu.findMany({
+      where: { brand_id },
       include: { stores: true, categories: true },
       orderBy,
     });
@@ -316,10 +379,20 @@ export class CatalogService {
    * (existing callers that always pass it keep working identically) so an
    * enterprise/HQ view can list categories across every branch at once.
    * `_count` computes product_count in the same query — no N+1.
+   *
+   * Task #2R-F1: "across every branch" was never actually bounded to the
+   * caller's OWN enterprise -- any store_id (or none at all) worked for
+   * anyone. resolveBrandStoreScope now confines "every branch" to every
+   * branch of the caller's own brand, matching this docstring's original
+   * intent exactly rather than the unbounded behavior it had shipped with.
    */
-  async getCategories(params: { store_id?: number; menu_id?: number; category_group_id?: number; sort_by?: string; sort_dir?: string } = {}) {
-    const where: Prisma.CategoryWhereInput = {};
-    if (params.store_id) where.store_id = params.store_id;
+  async getCategories(
+    params: { store_id?: number; menu_id?: number; category_group_id?: number; sort_by?: string; sort_dir?: string } = {},
+    authenticatedUser?: any,
+  ) {
+    const { storeIds } = await this.resolveBrandStoreScope(authenticatedUser, params.store_id);
+
+    const where: Prisma.CategoryWhereInput = { store_id: { in: storeIds } };
     if (params.menu_id) where.menu_id = params.menu_id;
     if (params.category_group_id) where.category_group_id = params.category_group_id;
 
@@ -426,6 +499,10 @@ export class CatalogService {
    * Omitting it lists across every branch, matching "Branch" being one of
    * several optional Filters rather than a mandatory scope.
    * Single query with nested includes — no per-row follow-up queries.
+   *
+   * Task #2R-F1: "every branch" was never actually bounded to the caller's
+   * own brand -- resolveBrandStoreScope now confines it to the caller's own
+   * brand's branches, matching this docstring's original intent exactly.
    */
   async getProducts(
     params: {
@@ -438,9 +515,11 @@ export class CatalogService {
       sort_by?: string;
       sort_dir?: string;
     } = {},
+    authenticatedUser?: any,
   ) {
-    const where: Prisma.ProductWhereInput = { is_active: true };
-    if (params.store_id) where.store_id = params.store_id;
+    const { storeIds } = await this.resolveBrandStoreScope(authenticatedUser, params.store_id);
+
+    const where: Prisma.ProductWhereInput = { is_active: true, store_id: { in: storeIds } };
     if (params.status) where.status = params.status;
     if (params.search) {
       where.OR = [
@@ -805,8 +884,10 @@ export class CatalogService {
   // PRODUCT CSV IMPORT / EXPORT (Menu Builder bulk editing, Sprint 28.8D)
   // -------------------------------------------------------------
   /** Exports the complete Product hierarchy — same shape getProducts()/shapeProductRow() already compute, no separate query logic to keep in sync. */
-  async exportProductsCsv(store_id?: number): Promise<string> {
-    const products = await this.getProducts({ store_id });
+  // Task #2R-F1: inherits the brand-boundary fix from getProducts by simply
+  // passing authenticatedUser through -- no separate check needed here.
+  async exportProductsCsv(store_id?: number, authenticatedUser?: any): Promise<string> {
+    const products = await this.getProducts({ store_id }, authenticatedUser);
 
     const rows = products.map((p: any) => ({
       product_name: p.name,
@@ -917,7 +998,15 @@ export class CatalogService {
     return ids;
   }
 
-  async importProductsCsv(store_id: number, fileBuffer: Buffer) {
+  // Task #2R-F1: store_id is mandatory here (enforced by the controller
+  // already) but was never verified to belong to the caller's own brand --
+  // a caller could import a CSV of products into another brand's store by
+  // supplying its id. resolveBrandStoreScope rejects that the same way the
+  // read paths do; its returned storeIds is discarded here since the single
+  // required store_id is what the rest of this method already uses.
+  async importProductsCsv(store_id: number, fileBuffer: Buffer, authenticatedUser?: any) {
+    await this.resolveBrandStoreScope(authenticatedUser, store_id);
+
     let rawRecords: ProductCsvRow[];
     try {
       rawRecords = parseCsv(fileBuffer, {

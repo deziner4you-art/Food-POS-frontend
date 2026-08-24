@@ -13,7 +13,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { RequirePermissions, Public } from '../../../common/decorators';
+import { RequirePermissions, Public, CurrentUser } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage, memoryStorage } from 'multer';
 import { extname, join } from 'path';
@@ -72,10 +72,15 @@ export class CatalogController {
   // -------------------------------------------------------------
   // MENUS
   // -------------------------------------------------------------
+  // Task #2R-F1: brand-boundary tenant isolation -- see CatalogService.getMenus.
   @RequirePermissions('catalog.view')
   @Get('menus')
-  getMenus(@Query('sort_by') sort_by?: string, @Query('sort_dir') sort_dir?: string) {
-    return this.service.getMenus({ sort_by, sort_dir });
+  getMenus(
+    @Query('sort_by') sort_by?: string,
+    @Query('sort_dir') sort_dir?: string,
+    @CurrentUser() authenticatedUser?: any,
+  ) {
+    return this.service.getMenus({ sort_by, sort_dir }, authenticatedUser);
   }
 
   @RequirePermissions('catalog.create')
@@ -109,6 +114,7 @@ export class CatalogController {
   // -------------------------------------------------------------
   // CATEGORIES
   // -------------------------------------------------------------
+  // Task #2R-F1: brand-boundary tenant isolation -- see CatalogService.getCategories.
   @RequirePermissions('catalog.view')
   @Get('categories')
   getCategories(
@@ -117,6 +123,7 @@ export class CatalogController {
     @Query('category_group_id') category_group_id?: string,
     @Query('sort_by') sort_by?: string,
     @Query('sort_dir') sort_dir?: string,
+    @CurrentUser() authenticatedUser?: any,
   ) {
     return this.service.getCategories({
       store_id: store_id ? Number(store_id) : undefined,
@@ -124,7 +131,7 @@ export class CatalogController {
       category_group_id: category_group_id ? Number(category_group_id) : undefined,
       sort_by,
       sort_dir,
-    });
+    }, authenticatedUser);
   }
 
   // Sprint 28.8D — assign many Categories to one Category Group in one transaction.
@@ -169,6 +176,7 @@ export class CatalogController {
   // -------------------------------------------------------------
   // PRODUCTS
   // -------------------------------------------------------------
+  // Task #2R-F1: brand-boundary tenant isolation -- see CatalogService.getProducts.
   @RequirePermissions('catalog.view')
   @Get('products')
   getProducts(
@@ -180,6 +188,7 @@ export class CatalogController {
     @Query('search') search?: string,
     @Query('sort_by') sort_by?: string,
     @Query('sort_dir') sort_dir?: string,
+    @CurrentUser() authenticatedUser?: any,
   ) {
     return this.service.getProducts({
       store_id: store_id ? Number(store_id) : undefined,
@@ -190,7 +199,7 @@ export class CatalogController {
       search,
       sort_by,
       sort_dir,
-    });
+    }, authenticatedUser);
   }
 
   // Sprint 28.8D — assign many Products to one Category (adds the category; doesn't replace a product's existing ones) in one transaction.
@@ -232,10 +241,15 @@ export class CatalogController {
   // -------------------------------------------------------------
   // PRODUCT CSV IMPORT / EXPORT (Menu Builder bulk editing)
   // -------------------------------------------------------------
+  // Task #2R-F1: brand-boundary tenant isolation -- see CatalogService.exportProductsCsv.
   @RequirePermissions('catalog.view')
   @Get('products/export')
-  async exportProducts(@Res() res: Response, @Query('store_id') store_id?: string) {
-    const csv = await this.service.exportProductsCsv(store_id ? Number(store_id) : undefined);
+  async exportProducts(
+    @Res() res: Response,
+    @Query('store_id') store_id?: string,
+    @CurrentUser() authenticatedUser?: any,
+  ) {
+    const csv = await this.service.exportProductsCsv(store_id ? Number(store_id) : undefined, authenticatedUser);
     res.set({
       'Content-Type': 'text/csv',
       'Content-Disposition': 'attachment; filename="menu-products.csv"',
@@ -243,14 +257,19 @@ export class CatalogController {
     res.send(csv);
   }
 
+  // Task #2R-F1: brand-boundary tenant isolation -- see CatalogService.importProductsCsv.
   @RequirePermissions('catalog.create')
   @Post('products/import')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
-  importProducts(@Query('store_id') store_id: string, @UploadedFile() file: Express.Multer.File) {
+  importProducts(
+    @Query('store_id') store_id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() authenticatedUser?: any,
+  ) {
     if (!file) throw new BadRequestException('No CSV file received.');
     if (!store_id) throw new BadRequestException('store_id is required.');
     console.log(`[PRODUCT IMPORT] CSV upload for store ${store_id} — ${file.originalname}`);
-    return this.service.importProductsCsv(Number(store_id), file.buffer);
+    return this.service.importProductsCsv(Number(store_id), file.buffer, authenticatedUser);
   }
 
   // -------------------------------------------------------------
