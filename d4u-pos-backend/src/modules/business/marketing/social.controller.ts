@@ -10,7 +10,7 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequirePermissions, CurrentUser } from '../../../common/decorators';
 import { SocialService } from './social.service';
 import { SelectFacebookPageDto, SelectInstagramAccountDto } from './dto';
 
@@ -20,9 +20,9 @@ export class SocialController {
 
   @RequirePermissions('crm.view')
   @Get('status')
-  async getStatus(@Query('branchId') branchId: string) {
+  async getStatus(@Query('branchId') branchId: string, @CurrentUser() authenticatedUser?: any) {
     if (!branchId) return {};
-    return this.socialService.getSocialStatus(parseInt(branchId, 10));
+    return this.socialService.getSocialStatus(parseInt(branchId, 10), authenticatedUser);
   }
 
   // META OAUTH FLOW
@@ -96,19 +96,20 @@ export class SocialController {
 
   @RequirePermissions('crm.create')
   @Post('facebook/select')
-  async selectFacebookPage(@Body() body: SelectFacebookPageDto) {
+  async selectFacebookPage(@Body() body: SelectFacebookPageDto, @CurrentUser() authenticatedUser?: any) {
     return this.socialService.saveFacebookPage(
       parseInt(body.branchId, 10),
       body.pageId,
       body.pageName,
       body.token,
+      authenticatedUser,
     );
   }
 
   @RequirePermissions('crm.delete')
   @Delete('facebook/disconnect')
-  async disconnectFacebook(@Query('branchId') branchId: string) {
-    return this.socialService.disconnectFacebook(parseInt(branchId, 10));
+  async disconnectFacebook(@Query('branchId') branchId: string, @CurrentUser() authenticatedUser?: any) {
+    return this.socialService.disconnectFacebook(parseInt(branchId, 10), authenticatedUser);
   }
 
   // INSTAGRAM SPECIFIC
@@ -120,18 +121,19 @@ export class SocialController {
 
   @RequirePermissions('crm.create')
   @Post('instagram/select')
-  async selectInstagramAccount(@Body() body: SelectInstagramAccountDto) {
+  async selectInstagramAccount(@Body() body: SelectInstagramAccountDto, @CurrentUser() authenticatedUser?: any) {
     return this.socialService.saveInstagramAccount(
       parseInt(body.branchId, 10),
       body.accountId,
       body.username,
       body.token,
+      authenticatedUser,
     );
   }
 
   @RequirePermissions('crm.delete')
   @Delete('instagram/disconnect')
-  async disconnectInstagram(@Query('branchId') branchId: string) {
-    return this.socialService.disconnectInstagram(parseInt(branchId, 10));
+  async disconnectInstagram(@Query('branchId') branchId: string, @CurrentUser() authenticatedUser?: any) {
+    return this.socialService.disconnectInstagram(parseInt(branchId, 10), authenticatedUser);
   }
 }
