@@ -8,7 +8,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { RequirePermissions, CurrentUser } from '../../../common/decorators';
-import { validateTenantAccess } from '../../../common/utils/tenant.util';
+import { assertOwnStore } from '../../../common/utils/tenant.util';
 import { PosOrdersService } from './pos-orders.service';
 import {
   CreatePosOrderDto,
@@ -30,7 +30,7 @@ export class PosOrdersController {
     @Query('business_day_id') business_day_id?: string,
     @Query('terminal_session_id') terminal_session_id?: string,
   ) {
-    validateTenantAccess(user, Number(store_id));
+    assertOwnStore(user, Number(store_id));
     console.log(`[GET] POS Orders — Store: ${store_id}`);
     return this.service.getOrders(
       Number(store_id),
@@ -47,7 +47,7 @@ export class PosOrdersController {
     @Query('store_id') store_id: string,
     @Query('business_day_id') business_day_id?: string,
   ) {
-    validateTenantAccess(user, Number(store_id));
+    assertOwnStore(user, Number(store_id));
     console.log(`[GET] Sales Summary — Store: ${store_id}`);
     return this.service.getSalesSummary(
       Number(store_id),
@@ -64,7 +64,7 @@ export class PosOrdersController {
   ) {
     console.log(`[GET] Order #${id}`);
     const order = await this.service.getOrder(Number(id));
-    if (order) validateTenantAccess(user, order.store_id);
+    if (order) assertOwnStore(user, order.store_id);
     return order;
   }
 
@@ -75,7 +75,7 @@ export class PosOrdersController {
     @CurrentUser() user: any,
     @Body() body: CreatePosOrderDto
   ) {
-    validateTenantAccess(user, body.store_id);
+    assertOwnStore(user, body.store_id);
     console.log(
       `[POST] New POS Order — Store: ${body.store_id} | Items: ${body.items?.length}`,
     );
@@ -92,7 +92,7 @@ export class PosOrdersController {
   ) {
     console.log(`[VOID] Order #${id} — Reason: ${body.void_reason}`);
     const order = await this.service.getOrder(Number(id));
-    if (order) validateTenantAccess(user, order.store_id);
+    if (order) assertOwnStore(user, order.store_id);
     return this.service.voidOrder(Number(id), body);
   }
 
@@ -106,7 +106,7 @@ export class PosOrdersController {
   ) {
     console.log(`[SETTLE] Order #${id} — Method: ${body.payment_method}`);
     const order = await this.service.getOrder(Number(id));
-    if (order) validateTenantAccess(user, order.store_id);
+    if (order) assertOwnStore(user, order.store_id);
     return this.service.settleOrder(Number(id), body);
   }
 
@@ -125,11 +125,17 @@ export class PosOrdersController {
     @Body() body: { status: string },
   ) {
     const order = await this.service.getOrder(Number(id));
-    if (order) validateTenantAccess(user, order.store_id);
+    if (order) assertOwnStore(user, order.store_id);
     return this.service.updateDeliveryStatus(Number(id), body.status, user);
   }
 
   // POST /pos-orders/sync-offline — Sync locally stored Dexie KOTs
+  // Task #2R-G1a: previously validated only body.orders[0].store_id, so a
+  // batch mixing a legitimate own-store order with a different store's order
+  // anywhere after index 0 would sync in full. Every order is now checked
+  // against the caller's active_store_id in this loop -- which runs entirely
+  // before the service is ever called -- so a mixed-store batch is rejected
+  // outright with zero orders processed, not partially synced.
   @RequirePermissions('pos.orders.create')
   @Post('sync-offline')
   syncOffline(
@@ -139,10 +145,10 @@ export class PosOrdersController {
     console.log(
       `[SYNC-OFFLINE] Received ${body.orders?.length} offline orders`,
     );
-    // Offline orders payload needs validation per order
-    if (body.orders && body.orders.length > 0) {
-      validateTenantAccess(user, body.orders[0].store_id);
+    const orders = body.orders || [];
+    for (const order of orders) {
+      assertOwnStore(user, order.store_id);
     }
-    return this.service.syncOfflineOrders(body.orders || []);
+    return this.service.syncOfflineOrders(orders);
   }
 }

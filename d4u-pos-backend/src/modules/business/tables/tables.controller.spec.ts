@@ -46,31 +46,40 @@ describe('TablesController', () => {
     });
   });
 
-  describe('existing behavior is unchanged by the decorator migration', () => {
-    it('list() validates tenant access and delegates to service.listTables with the same store_id', () => {
+  // Task #2R-G1a: migrated off validateTenantAccess (a no-op for real
+  // sessions, per #2R-G1-D) onto assertOwnStore -- strict active_store_id
+  // equality, never the legacy user.store_id/user.role fields.
+  describe('active-store authorization (Task #2R-G1a)', () => {
+    it('list() allows the caller\'s own active_store_id and delegates to service.listTables', () => {
       const user = { sub: 42, active_store_id: 67 };
       controller.list(user, '67');
       expect(service.listTables).toHaveBeenCalledWith(67);
     });
 
-    it('list() still rejects a caller whose store does not match the requested store_id', () => {
-      const user = { role: 'Cashier', store_id: 1 };
+    it('list() rejects a caller whose active_store_id does not match the requested store_id', () => {
+      const user = { sub: 1, active_store_id: 1 };
       expect(() => controller.list(user, '99')).toThrow(ForbiddenException);
       expect(service.listTables).not.toHaveBeenCalled();
     });
 
-    it('release() validates tenant access and delegates to service.releaseTable with the same store_id/table id', () => {
+    it('release() allows the caller\'s own active_store_id and delegates to service.releaseTable with the same store_id/table id', () => {
       const user = { sub: 42, active_store_id: 67 };
       controller.release(user, '5', { store_id: 67 } as any);
       expect(service.releaseTable).toHaveBeenCalledWith(67, 5);
     });
 
-    it('release() still rejects a caller whose store does not match the body store_id', () => {
-      const user = { role: 'Manager', store_id: 1 };
+    it('release() rejects a caller whose active_store_id does not match the body store_id', () => {
+      const user = { sub: 1, active_store_id: 1 };
       expect(() => controller.release(user, '5', { store_id: 99 } as any)).toThrow(
         ForbiddenException,
       );
       expect(service.releaseTable).not.toHaveBeenCalled();
+    });
+
+    it('legacy user.store_id/user.role fields are never consulted -- a mismatched active_store_id still rejects even when store_id/role would have allowed it under the old helper', () => {
+      const user = { role: 'Super Admin', store_id: 99, active_store_id: 1 };
+      expect(() => controller.list(user, '99')).toThrow(ForbiddenException);
+      expect(service.listTables).not.toHaveBeenCalled();
     });
   });
 });
