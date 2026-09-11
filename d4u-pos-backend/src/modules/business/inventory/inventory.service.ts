@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import * as xlsx from 'xlsx';
 import * as path from 'path';
@@ -15,7 +15,30 @@ export class InventoryService {
 
   // 1. Event Sourcing Sync (Offline-First support)
   // Receives an array of operations (+/-) from the Local POS when internet restores
+  // Task #2R-G1b1: store_id was previously accepted but never used to scope
+  // any transaction's inventory_id -- every entry was trusted and mutated
+  // regardless of which store it actually belonged to. Every transaction's
+  // item is now loaded and checked against store_id in a single batched
+  // query BEFORE the mutating $transaction below even starts, so a batch
+  // containing any foreign-store item is rejected in full, with zero writes.
   async syncOfflineTransactions(store_id: number, transactions: any[]) {
+    const inventoryIds = transactions.map((t) => t.inventory_id);
+    if (inventoryIds.length > 0) {
+      const items = await this.prisma.inventoryItem.findMany({
+        where: { id: { in: inventoryIds } },
+        select: { id: true, store_id: true },
+      });
+      const itemsById = new Map(items.map((i) => [i.id, i]));
+      for (const inventoryId of inventoryIds) {
+        const item = itemsById.get(inventoryId);
+        if (!item || item.store_id !== store_id) {
+          throw new ForbiddenException(
+            `Inventory item #${inventoryId} does not belong to store #${store_id}.`,
+          );
+        }
+      }
+    }
+
     // We use a transaction to guarantee data integrity across all synced items
     return this.prisma.$transaction(async (tx) => {
       let totalSynced = 0;
@@ -161,6 +184,12 @@ export class InventoryService {
     });
   }
 
+  // Task #2R-G1b1: store_id was previously accepted but never used to scope
+  // the inventory_id lookup at all -- a caller could record a purchase
+  // against any store's item regardless of the declared store_id. The
+  // ownership check below is added without touching the (still unresolved,
+  // see the controller's STOP comment) question of which store_id values a
+  // given caller may legitimately declare in the first place.
   async recordPurchase(
     store_id: number,
     inventory_id: number,
@@ -172,6 +201,11 @@ export class InventoryService {
         where: { id: inventory_id },
       });
       if (!item) throw new Error('Inventory item not found');
+      if (item.store_id !== store_id) {
+        throw new ForbiddenException(
+          `Inventory item #${inventory_id} does not belong to store #${store_id}.`,
+        );
+      }
 
       // Current stock value
       const currentQuantity = item.quantity > 0 ? item.quantity : 0;
