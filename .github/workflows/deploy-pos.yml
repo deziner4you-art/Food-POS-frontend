@@ -80,6 +80,19 @@ jobs:
             cd /www/wwwroot/d4u-pos-backend
             npm ci
             npx prisma generate
+
+            echo "Deploying database migrations..."
+            if ! npx prisma migrate deploy; then
+              echo "Migration deployment failed! Stopping deployment."
+              echo "Fetching PM2 error logs for diagnostics:"
+              pm2 logs d4u-pos-backend --err --lines 50 --nostream || true
+              pm2 logs d4u-pos-backend --out --lines 50 --nostream || true
+              
+              echo "CRITICAL: Database migration failed. The database may be partially migrated."
+              echo "Deployment is frozen for investigation. Artifact rollback aborted."
+              exit 1
+            fi
+
             pm2 reload d4u-pos-backend || pm2 start dist/src/main.js --name d4u-pos-backend
             
             # Health check loop
@@ -90,16 +103,13 @@ jobs:
             
             if [ "$STATUS" != "OPERATIONAL" ]; then
               echo "Health check failed! Status: $STATUS"
-              echo "Initiating automatic application rollback..."
-              # Rollback backend artifacts from backup, excluding persistent data again to be safe
-              if [ -d "/www/wwwroot/.d4u-pos-backend_backup" ]; then
-                rsync -av --exclude='.env' --exclude='uploads' /www/wwwroot/.d4u-pos-backend_backup/ /www/wwwroot/d4u-pos-backend/
-                cd /www/wwwroot/d4u-pos-backend
-                npm ci
-                npx prisma generate
-                pm2 reload d4u-pos-backend
-                echo "Rollback complete. Deployment failed."
-              fi
+              echo "Fetching PM2 error logs for diagnostics:"
+              pm2 logs d4u-pos-backend --err --lines 50 --nostream || true
+              pm2 logs d4u-pos-backend --out --lines 50 --nostream || true
+              
+              echo "CRITICAL: Database migration succeeded, but application health failed."
+              echo "Artifact rollback aborted to preserve schema/code generation baseline for investigation."
+              echo "Deployment failed."
               exit 1
             fi
             echo "Health check passed!"
