@@ -38,9 +38,9 @@ jobs:
       - name: Ensure Target Directories Exist & Backup
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_SSH_HOST }}
-          username: ${{ secrets.VPS_SSH_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
           script: |
             mkdir -p /www/wwwroot/d4u-pos-backend/
             mkdir -p /www/wwwroot/d4u-pos-client/
@@ -53,9 +53,9 @@ jobs:
       - name: Deploy Backend Artifacts via SSH
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.VPS_SSH_HOST }}
-          username: ${{ secrets.VPS_SSH_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
           source: "d4u-pos-backend/dist/,d4u-pos-backend/prisma/,d4u-pos-backend/package.json,d4u-pos-backend/package-lock.json"
           target: "/www/wwwroot/"
           strip_components: 0
@@ -63,9 +63,9 @@ jobs:
       - name: Deploy Frontend Artifacts via SSH
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.VPS_SSH_HOST }}
-          username: ${{ secrets.VPS_SSH_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
           source: "d4u-pos-client/dist/*"
           target: "/www/wwwroot/d4u-pos-client/"
           strip_components: 2
@@ -73,9 +73,9 @@ jobs:
       - name: Restart Backend & Health Check
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_SSH_HOST }}
-          username: ${{ secrets.VPS_SSH_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
           script: |
             cd /www/wwwroot/d4u-pos-backend
             npm ci
