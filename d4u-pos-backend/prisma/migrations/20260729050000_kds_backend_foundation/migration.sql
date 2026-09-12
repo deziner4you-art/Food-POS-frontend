@@ -1,5 +1,53 @@
 -- KDS Backend Foundation — additive only, no existing table/column altered destructively.
 
+-- CreateTable
+CREATE TABLE "BusinessDay" (
+    "id" SERIAL NOT NULL,
+    "store_id" INTEGER NOT NULL,
+    "started_by" INTEGER NOT NULL,
+    "closed_by" INTEGER,
+    "dayStart" TIMESTAMP(3) NOT NULL,
+    "dayClose" TIMESTAMP(3),
+    "openingFloat" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "closingCash" DOUBLE PRECISION,
+    "totalSales" DOUBLE PRECISION,
+    "totalOrders" INTEGER,
+    "status" TEXT NOT NULL DEFAULT 'OPEN',
+    "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "BusinessDay_pkey" PRIMARY KEY ("id")
+);
+
+-- AddForeignKey
+ALTER TABLE "BusinessDay" ADD CONSTRAINT "BusinessDay_store_id_fkey" FOREIGN KEY ("store_id") REFERENCES "Store"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "BusinessDay" ADD CONSTRAINT "BusinessDay_started_by_fkey" FOREIGN KEY ("started_by") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "BusinessDay" ADD CONSTRAINT "BusinessDay_closed_by_fkey" FOREIGN KEY ("closed_by") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- CreateTable
+CREATE TABLE "KOT" (
+    "id" SERIAL NOT NULL,
+    "store_id" INTEGER NOT NULL,
+    "order_id" INTEGER NOT NULL,
+    "business_day_id" INTEGER,
+    "items" JSONB NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'NEW',
+    "printCount" INTEGER NOT NULL DEFAULT 0,
+    "acceptedAt" TIMESTAMP(3),
+    "readyAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "KOT_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "KOT_order_id_key" ON "KOT"("order_id");
+
+-- AddForeignKey
+ALTER TABLE "KOT" ADD CONSTRAINT "KOT_store_id_fkey" FOREIGN KEY ("store_id") REFERENCES "Store"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "KOT" ADD CONSTRAINT "KOT_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "KOT" ADD CONSTRAINT "KOT_business_day_id_fkey" FOREIGN KEY ("business_day_id") REFERENCES "BusinessDay"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
 -- AlterTable Product (additive optional FK, legacy kitchen_station string untouched)
 ALTER TABLE "Product" ADD COLUMN "kitchen_station_id" INTEGER;
 

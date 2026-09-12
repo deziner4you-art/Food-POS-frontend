@@ -32,13 +32,25 @@ CREATE INDEX "CampaignVersion_campaign_id_idx" ON "CampaignVersion"("campaign_id
 
 ALTER TABLE "CampaignVersion" ADD CONSTRAINT "CampaignVersion_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "MarketingCampaign"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AlterTable CampaignAuditLog (enterprise audit fields)
-ALTER TABLE "CampaignAuditLog"
-  ADD COLUMN "store_id" INTEGER,
-  ADD COLUMN "ip_address" TEXT,
-  ADD COLUMN "device" TEXT,
-  ADD COLUMN "previous_value" TEXT,
-  ADD COLUMN "new_value" TEXT;
+-- CreateTable
+CREATE TABLE "CampaignAuditLog" (
+    "id" SERIAL NOT NULL,
+    "campaign_id" INTEGER NOT NULL,
+    "user_id" INTEGER,
+    "action" TEXT NOT NULL,
+    "changes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "store_id" INTEGER,
+    "ip_address" TEXT,
+    "device" TEXT,
+    "previous_value" TEXT,
+    "new_value" TEXT,
+
+    CONSTRAINT "CampaignAuditLog_pkey" PRIMARY KEY ("id")
+);
+
+-- AddForeignKey
+ALTER TABLE "CampaignAuditLog" ADD CONSTRAINT "CampaignAuditLog_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "MarketingCampaign"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AlterTable Order (promotion-decision audit trail)
 ALTER TABLE "Order"

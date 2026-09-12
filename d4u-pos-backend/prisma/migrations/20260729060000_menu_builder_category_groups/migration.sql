@@ -4,6 +4,38 @@
 -- script (run once, outside this file) assigns every existing Category to a
 -- per-Menu "Default Group", after which a second migration sets it NOT NULL.
 
+-- CreateTable
+CREATE TABLE "Menu" (
+    "id" SERIAL NOT NULL,
+    "brand_id" INTEGER NOT NULL DEFAULT 1,
+    "name" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Menu_pkey" PRIMARY KEY ("id")
+);
+
+-- AddForeignKey
+ALTER TABLE "Menu" ADD CONSTRAINT "Menu_brand_id_fkey" FOREIGN KEY ("brand_id") REFERENCES "Brand"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- CreateTable
+CREATE TABLE "_MenuStores" (
+    "A" INTEGER NOT NULL,
+    "B" INTEGER NOT NULL
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "_MenuStores_AB_unique" ON "_MenuStores"("A", "B");
+CREATE INDEX "_MenuStores_B_index" ON "_MenuStores"("B");
+
+-- AddForeignKey
+ALTER TABLE "_MenuStores" ADD CONSTRAINT "_MenuStores_A_fkey" FOREIGN KEY ("A") REFERENCES "Menu"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "_MenuStores" ADD CONSTRAINT "_MenuStores_B_fkey" FOREIGN KEY ("B") REFERENCES "Store"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AlterTable Category
+ALTER TABLE "Category" ADD COLUMN "menu_id" INTEGER;
+ALTER TABLE "Category" ADD CONSTRAINT "Category_menu_id_fkey" FOREIGN KEY ("menu_id") REFERENCES "Menu"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
 -- CreateTable CategoryGroup
 CREATE TABLE "CategoryGroup" (
     "id" SERIAL NOT NULL,

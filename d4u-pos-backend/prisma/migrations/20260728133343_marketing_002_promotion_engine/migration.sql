@@ -38,5 +38,3 @@ ALTER TABLE "Order"
 -- AddForeignKey
 ALTER TABLE "Order" ADD CONSTRAINT "Order_promotion_id_fkey" FOREIGN KEY ("promotion_id") REFERENCES "MarketingCampaign"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AlterTable PackageModule (SaaS feature-flag payload)
-ALTER TABLE "PackageModule" ADD COLUMN "config" JSONB;
