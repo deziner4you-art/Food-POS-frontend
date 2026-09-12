@@ -9,7 +9,7 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.enableCors({ origin: '*' });
+  app.enableCors({ origin: ['https://pos.deziner4you.com', 'http://localhost:5173'] });
 
   app.useGlobalPipes(
     new ValidationPipe({

@@ -1,0 +1,105 @@
+name: Deploy POS & Backend
+
+on:
+  push:
+    branches:
+      - final-project-after-ahmed-suggestion-security-checks-and-improvements
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Backend
+        working-directory: ./d4u-pos-backend
+        run: |
+          npm ci
+          npx prisma generate
+          npm run test
+          npm run build
+
+      - name: Build POS Client
+        working-directory: ./d4u-pos-client
+        run: |
+          npm ci
+          npm run build
+
+      - name: Ensure Target Directories Exist & Backup
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_SSH_HOST }}
+          username: ${{ secrets.VPS_SSH_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            mkdir -p /www/wwwroot/d4u-pos-backend/
+            mkdir -p /www/wwwroot/d4u-pos-client/
+            
+            # Backup the current application state for rollback, ignoring persistent data
+            if [ -d "/www/wwwroot/d4u-pos-backend" ]; then
+              rsync -av --exclude='node_modules' --exclude='uploads' --exclude='.env' /www/wwwroot/d4u-pos-backend/ /www/wwwroot/.d4u-pos-backend_backup/
+            fi
+
+      - name: Deploy Backend Artifacts via SSH
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_SSH_HOST }}
+          username: ${{ secrets.VPS_SSH_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "d4u-pos-backend/dist/,d4u-pos-backend/prisma/,d4u-pos-backend/package.json,d4u-pos-backend/package-lock.json"
+          target: "/www/wwwroot/"
+          strip_components: 0
+
+      - name: Deploy Frontend Artifacts via SSH
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_SSH_HOST }}
+          username: ${{ secrets.VPS_SSH_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "d4u-pos-client/dist/*"
+          target: "/www/wwwroot/d4u-pos-client/"
+          strip_components: 2
+
+      - name: Restart Backend & Health Check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_SSH_HOST }}
+          username: ${{ secrets.VPS_SSH_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /www/wwwroot/d4u-pos-backend
+            npm ci
+            npx prisma generate
+            pm2 reload d4u-pos-backend || pm2 start dist/src/main.js --name d4u-pos-backend
+            
+            # Health check loop
+            echo "Waiting for backend to boot..."
+            sleep 10
+            HEALTH_JSON=$(curl -sf http://127.0.0.1:3001/system/health || echo '{"status":"FAILED"}')
+            STATUS=$(echo $HEALTH_JSON | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+            
+            if [ "$STATUS" != "OPERATIONAL" ]; then
+              echo "Health check failed! Status: $STATUS"
+              echo "Initiating automatic application rollback..."
+              # Rollback backend artifacts from backup, excluding persistent data again to be safe
+              if [ -d "/www/wwwroot/.d4u-pos-backend_backup" ]; then
+                rsync -av --exclude='.env' --exclude='uploads' /www/wwwroot/.d4u-pos-backend_backup/ /www/wwwroot/d4u-pos-backend/
+                cd /www/wwwroot/d4u-pos-backend
+                npm ci
+                npx prisma generate
+                pm2 reload d4u-pos-backend
+                echo "Rollback complete. Deployment failed."
+              fi
+              exit 1
+            fi
+            echo "Health check passed!"
