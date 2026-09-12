@@ -47,6 +47,13 @@ export class AppController {
     };
   }
 
+  // ─── PUBLIC: Minimal deployment health check ───────────────────────────────
+  @Public()
+  @Get('system/ping')
+  getSystemPing() {
+    return { status: 'OPERATIONAL' };
+  }
+
   // ─── PROTECTED: Full diagnostics (Super Admin only) ─────────────────────────
   @Get('system/health')
   async getSystemHealth(@Req() req: any) {

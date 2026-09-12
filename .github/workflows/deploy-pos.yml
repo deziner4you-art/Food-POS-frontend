@@ -98,7 +98,7 @@ jobs:
             # Health check loop
             echo "Waiting for backend to boot..."
             sleep 10
-            HEALTH_JSON=$(curl -sf http://127.0.0.1:3001/system/health || echo '{"status":"FAILED"}')
+            HEALTH_JSON=$(curl -sf http://127.0.0.1:3001/system/ping || echo '{"status":"FAILED"}')
             STATUS=$(echo $HEALTH_JSON | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
             
             if [ "$STATUS" != "OPERATIONAL" ]; then
