@@ -132,7 +132,7 @@ export class CmsController {
   @Public()
   @Get('settings')
   getSettings(@Query('store_id') storeId?: string) {
-    const id = storeId ? parseInt(storeId, 10) : 1;
+    const id = (storeId && storeId !== 'undefined') ? parseInt(storeId, 10) : 1;
     return this.cmsService.getSettings(id);
   }
 
