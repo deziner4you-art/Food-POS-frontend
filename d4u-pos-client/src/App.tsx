@@ -5764,6 +5764,10 @@ export default function App() {
 
   const activeUser = loggedInUser || (import.meta.env.DEV ? { id: 1, name: 'Bypass Access', store_id: 1, role: 'Admin' } : null);
 
+  if (!activeUser) {
+    return <LoginScreen onLogin={(user) => { setLoggedInUser(user); setForceShowLogin(false); }} />;
+  }
+
   // TV Board is passive signage — it has no cash drawer and doesn't belong
   // to any cashier's shift, so it must not sit behind Day Start/Cash In.
   // Bypasses the same role-blind gate below that Chef already bypasses for
