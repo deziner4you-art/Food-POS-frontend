@@ -31,7 +31,7 @@ export class PosOrdersController {
     @Query('terminal_session_id') terminal_session_id?: string,
   ) {
     assertOwnStore(user, Number(store_id));
-    console.log(`[GET] POS Orders — Store: ${store_id}`);
+    console.log(`[GET] POS Orders ΓÇö Store: ${store_id}`);
     return this.service.getOrders(
       Number(store_id),
       business_day_id ? Number(business_day_id) : undefined,
@@ -48,7 +48,7 @@ export class PosOrdersController {
     @Query('business_day_id') business_day_id?: string,
   ) {
     assertOwnStore(user, Number(store_id));
-    console.log(`[GET] Sales Summary — Store: ${store_id}`);
+    console.log(`[GET] Sales Summary ΓÇö Store: ${store_id}`);
     return this.service.getSalesSummary(
       Number(store_id),
       business_day_id ? Number(business_day_id) : undefined,
@@ -68,7 +68,7 @@ export class PosOrdersController {
     return order;
   }
 
-  // POST /pos-orders — نیا آرڈر
+  // POST /pos-orders ΓÇö ┘å█î╪º ╪ó╪▒┌ê╪▒
   @RequirePermissions('pos.orders.create')
   @Post()
   createOrder(
@@ -77,12 +77,12 @@ export class PosOrdersController {
   ) {
     assertOwnStore(user, body.store_id);
     console.log(
-      `[POST] New POS Order — Store: ${body.store_id} | Items: ${body.items?.length}`,
+      `[POST] New POS Order ΓÇö Store: ${body.store_id} | Items: ${body.items?.length}`,
     );
     return this.service.createOrder(body);
   }
 
-  // PATCH /pos-orders/:id/void — آرڈر کینسل (مینیجر PIN درکار)
+  // PATCH /pos-orders/:id/void ΓÇö ╪ó╪▒┌ê╪▒ ┌⌐█î┘å╪│┘ä (┘à█î┘å█î╪¼╪▒ PIN ╪»╪▒┌⌐╪º╪▒)
   @RequirePermissions('pos.orders.update')
   @Patch(':id/void')
   async voidOrder(
@@ -90,13 +90,13 @@ export class PosOrdersController {
     @Param('id') id: string, 
     @Body() body: VoidPosOrderDto
   ) {
-    console.log(`[VOID] Order #${id} — Reason: ${body.void_reason}`);
+    console.log(`[VOID] Order #${id} ΓÇö Reason: ${body.void_reason}`);
     const order = await this.service.getOrder(Number(id));
     if (order) assertOwnStore(user, order.store_id);
     return this.service.voidOrder(Number(id), body);
   }
 
-  // PATCH /pos-orders/:id/settle — پیمنٹ وصول
+  // PATCH /pos-orders/:id/settle ΓÇö ┘╛█î┘à┘å┘╣ ┘ê╪╡┘ê┘ä
   @RequirePermissions('pos.orders.update')
   @Patch(':id/settle')
   async settleOrder(
@@ -104,15 +104,15 @@ export class PosOrdersController {
     @Param('id') id: string, 
     @Body() body: SettlePosOrderDto
   ) {
-    console.log(`[SETTLE] Order #${id} — Method: ${body.payment_method}`);
+    console.log(`[SETTLE] Order #${id} ΓÇö Method: ${body.payment_method}`);
     const order = await this.service.getOrder(Number(id));
     if (order) assertOwnStore(user, order.store_id);
     return this.service.settleOrder(Number(id), body);
   }
 
-  // PATCH /pos-orders/:id/status — delivery lifecycle progression for
+  // PATCH /pos-orders/:id/status ΓÇö delivery lifecycle progression for
   // POS-native delivery orders (Rider Arrived / Print Bill / Dispatch /
-  // Settle Cash) — see PosOrdersService.updateDeliveryStatus.
+  // Settle Cash) ΓÇö see PosOrdersService.updateDeliveryStatus.
   // Task #2Q-B2: delivery.dispatch.update_status added as an additional
   // accepted permission (OR semantics), the POS-native sibling of the same
   // rider-side fix on online-orders.controller.ts's PATCH /:id -- see that
@@ -129,159 +129,7 @@ export class PosOrdersController {
     return this.service.updateDeliveryStatus(Number(id), body.status, user);
   }
 
-  // POST /pos-orders/sync-offline — Sync locally stored Dexie KOTs
-  // Task #2R-G1a: previously validated only body.orders[0].store_id, so a
-  // batch mixing a legitimate own-store order with a different store's order
-  // anywhere after index 0 would sync in full. Every order is now checked
-  // against the caller's active_store_id in this loop -- which runs entirely
-  // before the service is ever called -- so a mixed-store batch is rejected
-  // outright with zero orders processed, not partially synced.
-  @RequirePermissions('pos.orders.create')
-  @Post('sync-offline')
-  syncOffline(
-    @CurrentUser() user: any,
-    @Body() body: SyncOfflineOrdersDto
-  ) {
-    console.log(
-      `[SYNC-OFFLINE] Received ${body.orders?.length} offline orders`,
-    );
-    const orders = body.orders || [];
-    const validOrders = [];
-    for (const order of orders) {
-      try {
-        assertOwnStore(user, order.store_id);
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Body,
-  Param,
-  Query,
-} from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
-import { assertOwnStore } from '../../../common/utils/tenant.util';
-import { PosOrdersService } from './pos-orders.service';
-import {
-  CreatePosOrderDto,
-  VoidPosOrderDto,
-  SettlePosOrderDto,
-  SyncOfflineOrdersDto,
-} from './dto';
-
-@Controller('pos-orders')
-export class PosOrdersController {
-  constructor(private readonly service: PosOrdersService) {}
-
-  // GET /pos-orders?store_id=1&business_day_id=2
-  @RequirePermissions('pos.orders.read')
-  @Get()
-  getOrders(
-    @CurrentUser() user: any,
-    @Query('store_id') store_id: string,
-    @Query('business_day_id') business_day_id?: string,
-    @Query('terminal_session_id') terminal_session_id?: string,
-  ) {
-    assertOwnStore(user, Number(store_id));
-    console.log(`[GET] POS Orders — Store: ${store_id}`);
-    return this.service.getOrders(
-      Number(store_id),
-      business_day_id ? Number(business_day_id) : undefined,
-      terminal_session_id ? Number(terminal_session_id) : undefined,
-    );
-  }
-
-  // GET /pos-orders/summary?store_id=1
-  @RequirePermissions('pos.orders.read')
-  @Get('summary')
-  getSummary(
-    @CurrentUser() user: any,
-    @Query('store_id') store_id: string,
-    @Query('business_day_id') business_day_id?: string,
-  ) {
-    assertOwnStore(user, Number(store_id));
-    console.log(`[GET] Sales Summary — Store: ${store_id}`);
-    return this.service.getSalesSummary(
-      Number(store_id),
-      business_day_id ? Number(business_day_id) : undefined,
-    );
-  }
-
-  // GET /pos-orders/:id
-  @RequirePermissions('pos.orders.read')
-  @Get(':id')
-  async getOrder(
-    @CurrentUser() user: any,
-    @Param('id') id: string
-  ) {
-    console.log(`[GET] Order #${id}`);
-    const order = await this.service.getOrder(Number(id));
-    if (order) assertOwnStore(user, order.store_id);
-    return order;
-  }
-
-  // POST /pos-orders — نیا آرڈر
-  @RequirePermissions('pos.orders.create')
-  @Post()
-  createOrder(
-    @CurrentUser() user: any,
-    @Body() body: CreatePosOrderDto
-  ) {
-    assertOwnStore(user, body.store_id);
-    console.log(
-      `[POST] New POS Order — Store: ${body.store_id} | Items: ${body.items?.length}`,
-    );
-    return this.service.createOrder(body);
-  }
-
-  // PATCH /pos-orders/:id/void — آرڈر کینسل (مینیجر PIN درکار)
-  @RequirePermissions('pos.orders.update')
-  @Patch(':id/void')
-  async voidOrder(
-    @CurrentUser() user: any,
-    @Param('id') id: string, 
-    @Body() body: VoidPosOrderDto
-  ) {
-    console.log(`[VOID] Order #${id} — Reason: ${body.void_reason}`);
-    const order = await this.service.getOrder(Number(id));
-    if (order) assertOwnStore(user, order.store_id);
-    return this.service.voidOrder(Number(id), body);
-  }
-
-  // PATCH /pos-orders/:id/settle — پیمنٹ وصول
-  @RequirePermissions('pos.orders.update')
-  @Patch(':id/settle')
-  async settleOrder(
-    @CurrentUser() user: any,
-    @Param('id') id: string, 
-    @Body() body: SettlePosOrderDto
-  ) {
-    console.log(`[SETTLE] Order #${id} — Method: ${body.payment_method}`);
-    const order = await this.service.getOrder(Number(id));
-    if (order) assertOwnStore(user, order.store_id);
-    return this.service.settleOrder(Number(id), body);
-  }
-
-  // PATCH /pos-orders/:id/status — delivery lifecycle progression for
-  // POS-native delivery orders (Rider Arrived / Print Bill / Dispatch /
-  // Settle Cash) — see PosOrdersService.updateDeliveryStatus.
-  // Task #2Q-B2: delivery.dispatch.update_status added as an additional
-  // accepted permission (OR semantics), the POS-native sibling of the same
-  // rider-side fix on online-orders.controller.ts's PATCH /:id -- see that
-  // file's comment for the full rationale.
-  @RequirePermissions('pos.orders.update', 'delivery.dispatch.update_status')
-  @Patch(':id/status')
-  async updateDeliveryStatus(
-    @CurrentUser() user: any,
-    @Param('id') id: string,
-    @Body() body: { status: string },
-  ) {
-    const order = await this.service.getOrder(Number(id));
-    if (order) assertOwnStore(user, order.store_id);
-    return this.service.updateDeliveryStatus(Number(id), body.status, user);
-  }
-
-  // POST /pos-orders/sync-offline — Sync locally stored Dexie KOTs
+  // POST /pos-orders/sync-offline ΓÇö Sync locally stored Dexie KOTs
   // Task #2R-G1a: previously validated only body.orders[0].store_id, so a
   // batch mixing a legitimate own-store order with a different store's order
   // anywhere after index 0 would sync in full. Every order is now checked
