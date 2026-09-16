@@ -146,17 +146,10 @@ export class PosOrdersController {
       `[SYNC-OFFLINE] Received ${body.orders?.length} offline orders`,
     );
     const orders = body.orders || [];
-    const validOrders = [];
     for (const order of orders) {
-      try {
-        assertOwnStore(user, order.store_id);
-        validOrders.push(order);
-      } catch (e) {
-        console.warn(`[SYNC-OFFLINE] Skipping order ${order.orderId || 'unknown'}: ${e.message}`);
-      }
+      assertOwnStore(user, order.store_id);
     }
     
-    // Process only valid orders so a poison pill doesn't break the whole batch
-    return this.service.syncOfflineOrders(validOrders);
+    return this.service.syncOfflineOrders(orders);
   }
 }
