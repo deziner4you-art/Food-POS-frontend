@@ -1,0 +1,89 @@
+name: Deploy Rider App Safely
+
+on:
+  push:
+    tags:
+      - 'deploy-d4u-rider-*'
+
+env:
+  APP_NAME: d4u-rider
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        working-directory: ./${{ env.APP_NAME }}
+        run: npm ci
+
+      - name: Build Application
+        working-directory: ./${{ env.APP_NAME }}
+        run: npm run build
+
+      - name: Prepare Temporary Release Directory
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
+          script: |
+            set -euo pipefail
+            APP_NAME="${{ env.APP_NAME }}"
+            WEB_ROOT="/www/wwwroot"
+            NEW_DIR="${WEB_ROOT}/${APP_NAME}_new"
+            
+            echo "Cleaning up any previous temporary release directory at $NEW_DIR..."
+            rm -rf "$NEW_DIR"
+            mkdir -p "$NEW_DIR"
+
+      - name: Upload to Temporary Release Directory via SSH
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
+          source: "${{ env.APP_NAME }}/dist/*"
+          target: "/www/wwwroot/${{ env.APP_NAME }}_new"
+          strip_components: 2
+
+      - name: Verify Upload and Swap Directories
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
+          script: |
+            set -euo pipefail
+            APP_NAME="${{ env.APP_NAME }}"
+            WEB_ROOT="/www/wwwroot"
+            TARGET_DIR="$WEB_ROOT/$APP_NAME"
+            NEW_DIR="${TARGET_DIR}_new"
+            BACKUP_DIR="${TARGET_DIR}_backup_$(date +%s)"
+            
+            echo "Verifying uploaded files in $NEW_DIR..."
+            if [ ! -f "$NEW_DIR/index.html" ]; then
+              echo "Error: index.html not found in the new build upload. Deployment aborted."
+              rm -rf "$NEW_DIR"
+              exit 1
+            fi
+            
+            echo "Verification passed. Proceeding to swap directories..."
+            
+            # If the live directory already exists, back it up
+            if [ -d "$TARGET_DIR" ]; then
+              mv "$TARGET_DIR" "$BACKUP_DIR"
+            fi
+            
+            # Move the verified new build into the live path
+            mv "$NEW_DIR" "$TARGET_DIR"
+            
+            echo "Deployment successful."
