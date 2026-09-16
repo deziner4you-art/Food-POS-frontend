@@ -1452,7 +1452,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           body: JSON.stringify({
             store_id: currentUser.store_id,
             created_by: currentUser?.id || 1,
-            customer_id: resolvedCustomerId,
+            customer_id: resolvedCustomerId || undefined,
             order_source: 'Delivery',
             delivery_address: customerAddress,
             notes: orderNotes,
@@ -5048,7 +5048,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   const payload = {
                     store_id: currentUser?.store_id,
                     created_by: currentUser?.id || 1,
-                    customer_id: customerId,
+                    customer_id: customerId || undefined,
                     discount: totalDiscountAmount,
                     payment_method: paymentMethod.toUpperCase(),
                     order_source: orderType,
