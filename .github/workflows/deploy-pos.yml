@@ -78,7 +78,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY_POS }}
           script: |
             cd /www/wwwroot/d4u-pos-backend
-            npm ci
+            npm ci --include=dev
             npx prisma generate
 
             echo "Deploying database migrations..."
@@ -94,7 +94,7 @@ jobs:
             fi
 
             echo "Seeding RBAC permissions..."
-            npx ts-node prisma/seed-rbac.ts
+            npx --yes ts-node prisma/seed-rbac.ts
 
             pm2 reload d4u-pos-backend || pm2 start dist/src/main.js --name d4u-pos-backend
             
