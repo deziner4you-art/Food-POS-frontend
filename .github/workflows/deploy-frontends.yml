@@ -1,0 +1,76 @@
+name: Deploy Frontends Safely
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'App to deploy (Admin, Rider, Website)'
+        required: true
+        type: choice
+        options:
+          - d4u-admin
+          - d4u-rider
+          - d4u-website
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        working-directory: ./${{ github.event.inputs.app }}
+        run: npm ci
+
+      - name: Build Application
+        working-directory: ./${{ github.event.inputs.app }}
+        run: npm run build
+
+      - name: Upload to Temporary Release Directory via SSH
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
+          source: "${{ github.event.inputs.app }}/dist/*"
+          target: "/www/wwwroot/${{ github.event.inputs.app }}_new"
+          strip_components: 2
+
+      - name: Verify Upload and Swap Directories
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
+          script: |
+            APP_NAME="${{ github.event.inputs.app }}"
+            WEB_ROOT="/www/wwwroot"
+            TARGET_DIR="$WEB_ROOT/$APP_NAME"
+            NEW_DIR="${TARGET_DIR}_new"
+            BACKUP_DIR="${TARGET_DIR}_backup_$(date +%s)"
+            
+            echo "Verifying uploaded files in $NEW_DIR..."
+            if [ ! -f "$NEW_DIR/index.html" ]; then
+              echo "Error: index.html not found in the new build upload. Deployment aborted."
+              rm -rf "$NEW_DIR"
+              exit 1
+            fi
+            
+            echo "Verification passed. Proceeding to swap directories..."
+            
+            # If the live directory already exists, back it up
+            if [ -d "$TARGET_DIR" ]; then
+              mv "$TARGET_DIR" "$BACKUP_DIR"
+            fi
+            
+            # Move the verified new build into the live path
+            mv "$NEW_DIR" "$TARGET_DIR"
+            
+            echo "Deployment successful."
