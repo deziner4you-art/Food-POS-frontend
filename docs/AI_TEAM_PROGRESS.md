@@ -62,3 +62,4 @@ No drift, no regressions. `npx tsc --noEmit` exit 0. **No backend changes made t
 | 5 | Antigravity | CMS Modules UI Modernization | Completed | d4u-admin/src/pages/CmsManager.tsx, MarketingHub.tsx, MenuManager.tsx | None | None | Sprint 6 QA |
 | 6A/6B | Antigravity | QA and Production Readiness Fixes | Completed | d4u-website/src/*, d4u-website/package.json | None | None | Proceed to Waiter Terminal |
 | Phase 2 | Antigravity | Replace Website CMS with Stitch Website CMS | Complete | d4u-admin/src/pages/CmsManager.tsx, MarketingHub.tsx, MenuManager.tsx, docs/API_CONTRACT.md | None | None | Proceed to Sprint 29 (Waiter Terminal) |
+| Deploy | Antigravity | Added RBAC seed step to backend deployment | Completed | .github/workflows/deploy-pos.yml | None | None | None |

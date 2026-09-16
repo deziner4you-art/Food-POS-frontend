@@ -93,6 +93,9 @@ jobs:
               exit 1
             fi
 
+            echo "Seeding RBAC permissions..."
+            npx ts-node prisma/seed-rbac.ts
+
             pm2 reload d4u-pos-backend || pm2 start dist/src/main.js --name d4u-pos-backend
             
             # Health check loop
