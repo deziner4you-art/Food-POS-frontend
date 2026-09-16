@@ -703,6 +703,61 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           }
         }
 
+        const posDeliveriesRes = await apiFetch(`/pos-orders?store_id=${storeId}`, { auth: true });
+        if (posDeliveriesRes.ok) {
+          const posOrders: any[] = await posDeliveriesRes.json();
+          const activePos = posOrders.filter(o => o.order_source === 'Delivery' && o.status !== 'SETTLED' && o.status !== 'CANCELLED' && o.status !== 'VOIDED');
+          
+          if (activePos.length > 0) {
+            const hydratedPos = activePos.map(order => {
+              const amount = parseFloat(order.total_amount) || 0;
+              let parsedItems: any[] = [];
+              if (order.items && Array.isArray(order.items)) {
+                parsedItems = order.items.map((i: any) => ({
+                  id: Date.now() + Math.random(),
+                  name: i.product?.name || 'Unknown',
+                  price: i.price,
+                  qty: i.quantity,
+                  img: '',
+                  desc: 'Delivery Item'
+                }));
+              }
+              
+              let newStatus = order.status;
+              if (newStatus === 'NEW') newStatus = 'PENDING_CHEF';
+              
+              let riderLabel = 'Waiting for Rider';
+              if (newStatus === 'PENDING_CHEF') riderLabel = 'Pending Chef Acceptance';
+              if (newStatus === 'PREPARING') riderLabel = 'Chef Preparing';
+              if (order.rider?.name) riderLabel = `Rider: ${order.rider.name}`;
+
+              return {
+                id: order.id,
+                bridgeOrderId: order.id,
+                customer: order.customer?.name || 'Guest',
+                address: order.delivery_address || 'No Address Provided',
+                customerAddress: order.delivery_address || 'No Address Provided',
+                status: newStatus,
+                rider: riderLabel,
+                cod: amount,
+                totalAmount: amount,
+                riderDistance: 'N/A',
+                lat: '50%',
+                lng: '50%',
+                isPos: true,
+                items: parsedItems,
+              };
+            });
+            
+            setActiveDeliveries(prev => {
+              const existingIds = new Set(prev.map(d => d.bridgeOrderId));
+              const toAdd = hydratedPos.filter(d => !existingIds.has(d.bridgeOrderId));
+              return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+            });
+          }
+        }
+
+
         const riderRes = await apiFetch(`/rider-orders?store_id=${storeId}`, { auth: true });
         if (riderRes.ok) {
           const riderOrders: any[] = await riderRes.json();
@@ -1488,6 +1543,24 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             printCount: posSettings.kotPrintQty,
           });
         }
+        
+        setActiveDeliveries(prev => {
+          if (prev.find(d => d.bridgeOrderId === data?.id)) return prev;
+          return [...prev, {
+            id: data?.id,
+            bridgeOrderId: data?.id,
+            customer: customerName || 'Guest',
+            address: customerAddress || 'No Address Provided',
+            status: 'PENDING_CHEF',
+            rider: 'Pending Chef Acceptance',
+            cod: grandTotal,
+            totalAmount: grandTotal,
+            riderDistance: 'N/A',
+            isPos: true,
+            items: cart.map((i: any) => ({ ...i }))
+          }];
+        });
+
         setCart([]);
         setOrderNotes('');
         setToast({ message: `Delivery Order #${data?.id} sent to Kitchen!`, type: 'success' });

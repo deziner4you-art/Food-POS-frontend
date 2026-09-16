@@ -124,7 +124,7 @@ export class KotsService {
     // for safety: if this POS Order is the linked twin of an OnlineOrder
     // (posOrderId would point back to it via the unique reverse relation),
     // skip the POS broadcast entirely — block 2 owns that identity.
-    if (status === 'READY' && kot.order?.order_source?.toUpperCase() === 'DELIVERY') {
+    if ((status === 'PREPARING' || status === 'READY') && kot.order?.order_source?.toUpperCase() === 'DELIVERY') {
       // Confirm this is NOT a Website-linked POS Order before broadcasting
       const linkedOnlineCheck = await this.prisma.onlineOrder.findUnique({
         where: { posOrderId: kot.order_id },
