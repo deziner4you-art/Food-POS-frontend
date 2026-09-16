@@ -1,5 +1,5 @@
 import { Controller, Post, Get, Body, Param, Query, Delete } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequirePermissions, Public } from '../../../common/decorators';
 import { AppGateway } from '../../../app.gateway';
 import { TerminalService } from './terminal.service';
 import { TerminalLoginDto, GenerateTerminalDto, ResumeSessionDto, HeartbeatDto } from './dto';
@@ -11,39 +11,39 @@ export class TerminalController {
     private readonly gateway: AppGateway,
   ) {}
 
-  @RequirePermissions('system.create')
+  @Public()
   @Post('login')
   async login(@Body() body: TerminalLoginDto) {
     return this.service.loginByPin(body.pin, body.device_id, body.device_name);
   }
 
-  @RequirePermissions('system.create')
+  @RequirePermissions('pos.orders.create')
   @Post('resume')
   async resume(@Body() body: ResumeSessionDto) {
     return this.service.resumeSession(body.session_id, body.device_id);
   }
 
-  @RequirePermissions('system.create')
+  @RequirePermissions('pos.orders.create')
   @Post('heartbeat')
   async heartbeat(@Body() body: HeartbeatDto) {
     await this.service.touchActivity(body.session_id);
     return { success: true };
   }
 
-  @RequirePermissions('system.create')
+  @RequirePermissions('pos.orders.create')
   @Post('generate')
   async generatePin(@Body() body: GenerateTerminalDto) {
     return this.service.generatePin(body.store_id, body.waiter_name);
   }
 
   // GET /terminal/sessions?store_id=1 — Connected Waiters list for the cashier's Terminal tab
-  @RequirePermissions('system.view')
+  @RequirePermissions('pos.orders.read')
   @Get('sessions')
   async listSessions(@Query('store_id') store_id: string) {
     return this.service.listSessions(Number(store_id));
   }
 
-  @RequirePermissions('system.delete')
+  @RequirePermissions('pos.orders.update')
   @Post('sessions/:id/disconnect')
   async disconnect(@Param('id') id: string) {
     const result = await this.service.disconnect(Number(id));
@@ -51,7 +51,7 @@ export class TerminalController {
     return result;
   }
 
-  @RequirePermissions('system.delete')
+  @RequirePermissions('pos.orders.update')
   @Post('sessions/disconnect-all')
   async disconnectAll(@Query('store_id') store_id: string) {
     const result = await this.service.disconnectAll(Number(store_id));
@@ -59,13 +59,13 @@ export class TerminalController {
     return result;
   }
 
-  @RequirePermissions('system.create')
+  @RequirePermissions('pos.orders.create')
   @Post('sessions/:id/reconnect')
   async reconnect(@Param('id') id: string) {
     return this.service.reconnect(Number(id));
   }
 
-  @RequirePermissions('system.create')
+  @RequirePermissions('pos.orders.create')
   @Post('sessions/:id/logout')
   async logout(@Param('id') id: string) {
     const result = await this.service.logout(Number(id));
@@ -74,7 +74,7 @@ export class TerminalController {
   }
 
   // Legacy endpoint, kept for backward compatibility.
-  @RequirePermissions('system.delete')
+  @RequirePermissions('pos.orders.update')
   @Delete(':pin')
   async killSession(@Param('pin') pin: string) {
     const result = await this.service.disconnectByPin(pin);
