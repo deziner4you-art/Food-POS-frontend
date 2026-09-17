@@ -34,8 +34,13 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
   // Live status push — ported from legacy/MobileMode.tsx, which already had
   // this working ahead of the old desktop implementation.
   useEffect(() => {
-    if (orderUpdate && result && (orderUpdate.id === result.id || orderUpdate.id == result.id)) {
-      setResult((prev: any) => ({ ...prev, status: orderUpdate.status, ...orderUpdate }));
+    if (orderUpdate) {
+      setResult((prev: any) => {
+        if (prev && (orderUpdate.id === prev.id || orderUpdate.id == prev.id)) {
+          return { ...prev, status: orderUpdate.status, ...orderUpdate };
+        }
+        return prev;
+      });
     }
   }, [orderUpdate]);
 

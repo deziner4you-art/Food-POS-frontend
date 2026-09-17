@@ -617,6 +617,25 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         setSyncStatus('error');
         const message = e instanceof ApiRequestError ? e.message : String(e);
         console.error(`[Offline Sync] Sync failed (attempt ${consecutiveFailures}):`, message);
+
+        if (e instanceof ApiRequestError && e.status >= 400 && e.status < 500) {
+          if (e.status === 429) {
+            console.warn('[Offline Sync] Rate limited (429). Retaining payload and backing off.');
+            // Allow it to fall through to scheduleNext() and retry.
+          } else {
+            console.warn(`[Offline Sync] KOTs require manual attention due to permanent client error (${e.status}).`);
+            const idsToFail = unsyncedReal.map(o => o.id!);
+            // Set synced to a string 'FAILED' to safely prevent matching 'false' (boolean or string) in Dexie query,
+            // effectively pausing automatic sync for these records without deleting them.
+            await db.kots.where('id').anyOf(idsToFail).modify({ synced: 'FAILED' as any, sync_error: message });
+            setPendingSyncCount(0);
+            consecutiveFailures = 0;
+            setSyncStatus('idle');
+            
+            // Wait for toast to be available/ready if needed, or simply fire it
+            setToast({ message: `Offline sync failed (HTTP ${e.status}). Unpaid offline orders retained locally but require attention.`, type: 'error' });
+          }
+        }
       }
       scheduleNext();
     };
