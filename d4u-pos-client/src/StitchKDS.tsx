@@ -213,9 +213,18 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          await db.kots.clear();
+          // To prevent Dexie auto-increment ID collisions with offline KOTs, we
+          // store the backend KOT ID in a separate field (`backendKotId`) and let
+          // Dexie maintain its own `++id` for all records. We look up existing
+          // records to preserve their Dexie IDs across syncs.
+          const allLocalKots = await db.kots.toArray();
+          const localSyncedKots = allLocalKots.filter(k => k.synced === true);
+          const localMap = new Map(localSyncedKots.map(k => [k.backendKotId, k.id]));
+          const incomingBackendIds = new Set(data.map(k => k.id));
+
           const mapped = data.map(k => ({
-            id: k.id,
+            id: localMap.get(k.id), // Preserve existing Dexie ID if it exists, else let Dexie generate a new one
+            backendKotId: k.id, // The stable backend identity
             orderId: k.order_id,
             // Order.orderType doesn't exist -- the real field is
             // order_source ("WALKIN"/"ONLINE"/"Delivery"/"Take Away"/etc).
@@ -245,9 +254,36 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
             startTime: k.start_time ? new Date(k.start_time).toISOString() : '',
             totalAmount: k.order?.total_amount || 0,
             paymentMethod: k.order?.payment_method || 'CASH',
-            printCount: 0
+            printCount: 0,
+            // Backend-synced KOTs are always definitively committed to the
+            // server, so synced=true is always the correct state for this
+            // path. This distinguishes them from genuinely offline (POS
+            // cashier-created, synced=false) records and prevents the
+            // offline-safe selective-delete below from ever touching those.
+            synced: true,
           }));
-          await db.kots.bulkAdd(mapped);
+
+          // Idempotent upsert strategy — replaces the previous clear()+bulkAdd() which
+          // destroyed Dexie ++id auto-increments on every socket event and caused the
+          // same backend KOT to appear as a brand-new pending order after every sync.
+          //
+          // Safety invariant: offline KOTs (synced===false) are NEVER touched here.
+          // We only delete local records that were previously synced (synced === true)
+          // but are no longer present in the incoming backend dataset (e.g. cancelled,
+          // aged out of the 5-min READY window).
+          const idsToDelete = localSyncedKots
+            .filter(k => !incomingBackendIds.has(k.backendKotId))
+            .map(k => k.id)
+            .filter((id): id is number => typeof id === 'number');
+
+          if (idsToDelete.length > 0) {
+            await db.kots.bulkDelete(idsToDelete);
+          }
+          
+          // bulkPut performs an upsert (INSERT OR REPLACE) by primary key (Dexie `id`).
+          // For existing backend KOTs, we preserved their `id` in the map, so they update.
+          // For new backend KOTs, `id` is undefined, so Dexie safely auto-increments a new one.
+          await db.kots.bulkPut(mapped);
         }
       }
       
@@ -371,7 +407,10 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     }
 
     return {
-      id: kot.id ? kot.id.toString() : kot.orderId.toString(),
+      // Use the stable backend KOT ID (backendKotId) if it exists, otherwise
+      // fallback to the Dexie ID for offline KOTs. This ensures UI identity
+      // is stable and unique per KOT, and never collides across sync cycles.
+      id: kot.backendKotId ? kot.backendKotId.toString() : (kot.id ? kot.id.toString() : kot.orderId.toString()),
       displayId: kot.orderId.toString(),
       tableName: kot.type || 'Table',
       items: parsedItems.map((i: any) => ({ name: i.name || i.productName, quantity: i.qty || i.quantity })),
@@ -389,11 +428,14 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
   useEffect(() => {
     const newPendingOrders = mappedOrders.filter(o => o.status === 'pending');
     for (const order of newPendingOrders) {
-      // Find the corresponding db id to track
-      const dbKot = kots.find(k => k.orderId.toString() === order.id);
-      if (dbKot && dbKot.id && !seenNewOrders.current.has(dbKot.id)) {
-        seenNewOrders.current.add(dbKot.id);
-        
+      // Track by stable backend orderId (order.id === kot.orderId.toString() after
+      // the mapping fix above). Previously tracked by Dexie auto-increment dbKot.id
+      // which rotated on every sync cycle, allowing the same backend KOT to fire
+      // the new-order popup repeatedly.
+      const orderIdKey = order.id;
+      if (!seenNewOrders.current.has(orderIdKey as any)) {
+        seenNewOrders.current.add(orderIdKey as any);
+
         // Setup popup if no popup currently showing
         if (!incomingOverlayOrder && !isEmergencyStop) {
           setIncomingOverlayOrder(order);
@@ -462,19 +504,26 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
   const handleAcceptOrder = async (orderId: string, prepMinutes: number) => {
     if (!incomingOverlayOrder) return;
     
-    const kotToUpdate = (kots || []).find(k => (k.id && k.id.toString() === orderId) || k.orderId.toString() === orderId);
+    // Find the correct KOT: match by backendKotId or Dexie id
+    const kotToUpdate = (kots || []).find(k => 
+      (k.backendKotId && k.backendKotId.toString() === orderId) || 
+      (k.id && k.id.toString() === orderId)
+    );
+
     if (kotToUpdate && kotToUpdate.id) {
       try {
-        // Task #2P-H: migrated off the shared, undifferentiated /status
-        // route onto /accept (kitchen.tickets.accept) -- see kots.controller.ts.
-        // The route itself now determines PREPARING; no body is read by the
-        // backend for this endpoint.
-        const res = await apiFetch(`/kots/${kotToUpdate.id}/accept`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          auth: true
-        });
-        if (!res.ok) throw new Error('Backend update failed');
+        // If it's a backend KOT, make the API call. For offline KOTs, this falls through
+        // to the offline local-only update logic below.
+        if (kotToUpdate.backendKotId) {
+          const res = await apiFetch(`/kots/${kotToUpdate.backendKotId}/accept`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            auth: true
+          });
+          if (!res.ok) throw new Error('Backend update failed');
+        } else {
+          throw new Error('Offline KOT');
+        }
       } catch (e) {
         // Fallback for offline mode or local-only KOTs
         await db.kots.update(kotToUpdate.id, {
@@ -509,19 +558,26 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
        addLog('order_completed', `Order #${orderId} completed and marked ready.`);
     }
 
-    const kotToUpdate = (kots || []).find(k => (k.id && k.id.toString() === orderId) || k.orderId.toString() === orderId);
+    // Find the correct KOT: match by backendKotId or Dexie id
+    const kotToUpdate = (kots || []).find(k => 
+      (k.backendKotId && k.backendKotId.toString() === orderId) || 
+      (k.id && k.id.toString() === orderId)
+    );
+
     if (kotToUpdate && kotToUpdate.id) {
       try {
-        // Task #2P-H: migrated off the shared, undifferentiated /status
-        // route onto /bump (kitchen.tickets.bump) -- see kots.controller.ts.
-        // The route itself now determines READY; no body is read by the
-        // backend for this endpoint.
-        const res = await apiFetch(`/kots/${kotToUpdate.id}/bump`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          auth: true
-        });
-        if (!res.ok) throw new Error('Backend update failed');
+        // If it's a backend KOT, make the API call. For offline KOTs, this falls through
+        // to the offline local-only update logic below.
+        if (kotToUpdate.backendKotId) {
+          const res = await apiFetch(`/kots/${kotToUpdate.backendKotId}/bump`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            auth: true
+          });
+          if (!res.ok) throw new Error('Backend update failed');
+        } else {
+          throw new Error('Offline KOT');
+        }
       } catch (e) {
         await db.kots.update(kotToUpdate.id, { status: 'READY' });
       }

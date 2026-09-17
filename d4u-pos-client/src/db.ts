@@ -69,6 +69,7 @@ export interface OfflineKOT {
   readyAt?: number;
   store_id?: number;
   created_by?: number;
+  backendKotId?: number;
 }
 
 export interface OfflineIngredient {
