@@ -77,6 +77,15 @@ export class MarketingService {
    */
   private async assertCampaignTypeAllowed(campaign_type: string, target_store_ids: number[], meta: AuditMeta = {}) {
     if (meta.role === 'Super Admin') return;
+
+    if (meta.userId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: meta.userId },
+        include: { role: true },
+      });
+      if (user?.role?.name === 'Super Admin') return;
+    }
+
     if (!target_store_ids || target_store_ids.length === 0) return;
     for (const store_id of target_store_ids) {
       const caps = await this.subscriptions.getMarketingCapabilities(store_id);
