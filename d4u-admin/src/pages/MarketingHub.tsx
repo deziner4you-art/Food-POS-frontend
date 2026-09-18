@@ -129,13 +129,24 @@ export default function MarketingHub() {
 
  // MARKETING-002: SaaS gating — which campaign types this branch's package allows.
  const [capabilities, setCapabilities] = useState<{ enabled: boolean; allowedCampaignTypes: string[] } | null>(null);
+ const storedUser = localStorage.getItem('d4u_admin_user');
+ const userRole = storedUser ? JSON.parse(storedUser).role : null;
+ const isSuperAdmin = userRole === 'Super Admin';
+
  useEffect(() => {
  if (!selectedBranchId) return;
+ if (isSuperAdmin) {
+ setCapabilities({
+ enabled: true,
+ allowedCampaignTypes: ['PERCENTAGE', 'FLAT', 'BOGO', 'BUY_X_GET_Y', 'BUNDLE', 'COMBO', 'FREE_GIFT']
+ });
+ return;
+ }
  apiFetch(`/marketing/capabilities?store_id=${selectedBranchId}`)
  .then(res => res.ok ? res.json() : null)
  .then(setCapabilities)
  .catch(() => setCapabilities(null));
- }, [selectedBranchId]);
+ }, [selectedBranchId, isSuperAdmin]);
 
  useEffect(() => {
  fetchCampaigns();

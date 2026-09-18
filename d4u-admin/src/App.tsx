@@ -41,14 +41,18 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
 
   // MARKETING-002: SaaS module gating — Marketing Hub disappears entirely
   // (not just disabled) when the branch's package doesn't include it.
-  const [marketingEnabled, setMarketingEnabled] = useState(true);
+  const [marketingEnabled, setMarketingEnabled] = useState(user?.role === 'Super Admin');
   useEffect(() => {
     if (!selectedBranchId) return;
+    if (user?.role === 'Super Admin') {
+      setMarketingEnabled(true);
+      return;
+    }
     apiFetch(`/marketing/capabilities?store_id=${selectedBranchId}`)
       .then(res => res.ok ? res.json() : { enabled: true })
       .then(data => setMarketingEnabled(data.enabled !== false))
       .catch(() => setMarketingEnabled(true));
-  }, [selectedBranchId]);
+  }, [selectedBranchId, user?.role]);
 
   let navItems = forceBootstrap ? [] : [
     { path: '/', label: 'Live Analytics', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' }
@@ -62,7 +66,7 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
       { path: '/inventory', label: 'Inventory', icon: PackageOpen, color: 'text-[#8b5cf6]', bg: 'bg-[#8b5cf6]/20' },
       { path: '/recipes', label: 'Recipe Costing', icon: ChefHat, color: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]/20' },
       { path: '/purchase', label: 'Purchase & Receiving', icon: ShoppingCart, color: 'text-orange-400', bg: 'bg-orange-500/20' },
-      ...(marketingEnabled ? [{ path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' }] : []),
+      ...(marketingEnabled || user?.role === 'Super Admin' ? [{ path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' }] : []),
       { path: '/customers', label: 'CRM & Loyalty', icon: Users, color: 'text-amber-400', bg: 'bg-amber-500/20' },
       { path: '/cms', label: 'Website CMS', icon: Globe, color: 'text-[#ec4899]', bg: 'bg-[#ec4899]/20' }
     ];
