@@ -213,30 +213,44 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          // To prevent Dexie auto-increment ID collisions with offline KOTs, we
-          // store the backend KOT ID in a separate field (`backendKotId`) and let
-          // Dexie maintain its own `++id` for all records. We look up existing
-          // records to preserve their Dexie IDs across syncs.
+          // === DEDUPLICATION STRATEGY ===
+          // Pull all local KOTs; separate offline (synced=false) from
+          // previously-synced (synced=true). Offline KOTs are NEVER touched.
+          // For synced KOTs, we replace them cleanly every sync cycle.
           const allLocalKots = await db.kots.toArray();
+          const offlineKots = allLocalKots.filter(k => k.synced !== true);
           const localSyncedKots = allLocalKots.filter(k => k.synced === true);
-          const localMap = new Map(localSyncedKots.map(k => [k.backendKotId, k.id]));
-          const incomingBackendIds = new Set(data.map(k => k.id));
 
-          const mapped = data.map(k => ({
-            id: localMap.get(k.id), // Preserve existing Dexie ID if it exists, else let Dexie generate a new one
-            backendKotId: k.id, // The stable backend identity
+          // Build a map: backendKotId → existing Dexie ++id
+          // This lets us preserve the Dexie row identity across syncs so that
+          // no existing record is ever re-inserted as a new row.
+          const localMap = new Map(
+            localSyncedKots
+              .filter(k => k.backendKotId != null)
+              .map(k => [k.backendKotId, k.id])
+          );
+
+          // Incoming backend IDs for this sync cycle
+          const incomingBackendIds = new Set(data.map((k: any) => k.id));
+
+          // Determine synced KOTs that are no longer in the backend response
+          // (cancelled, bumped, aged out of the 5-min READY window, etc.)
+          const idsToDelete = localSyncedKots
+            .filter(k => k.backendKotId != null && !incomingBackendIds.has(k.backendKotId))
+            .map(k => k.id)
+            .filter((id): id is number => typeof id === 'number');
+
+          if (idsToDelete.length > 0) {
+            await db.kots.bulkDelete(idsToDelete);
+          }
+
+          // Build the mapped records. For each backend KOT:
+          //   - If we have an existing Dexie row for it → set id so bulkPut UPDATES it
+          //   - If it's new → leave id=undefined so Dexie auto-increments a fresh row
+          const mappedRaw = data.map((k: any) => ({
+            id: localMap.get(k.id),
+            backendKotId: k.id,
             orderId: k.order_id,
-            // Order.orderType doesn't exist -- the real field is
-            // order_source ("WALKIN"/"ONLINE"/"Delivery"/"Take Away"/etc).
-            // Reading the wrong field meant this was always undefined, so
-            // the `|| 'Walk-in'` fallback fired for every KOT regardless of
-            // true source. This still collapsed genuine POS-native Delivery
-            // and Take Away orders into 'Walk-in' since only 'ONLINE' was
-            // ever distinguished — the App.tsx local-KOT watcher checks
-            // `kot.type === 'Delivery'` to know whether to feed the Active
-            // Deliveries panel, so a mis-tagged 'Walk-in' order silently
-            // skipped that entirely once this sync overwrote the correct
-            // locally-set type.
             type: k.order?.order_source === 'ONLINE'
               ? (k.order?.onlineOrder?.type === 'PICKUP' ? 'Pickup' : 'Online')
               : k.order?.order_source?.toUpperCase() === 'DELIVERY'
@@ -255,35 +269,17 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
             totalAmount: k.order?.total_amount || 0,
             paymentMethod: k.order?.payment_method || 'CASH',
             printCount: 0,
-            // Backend-synced KOTs are always definitively committed to the
-            // server, so synced=true is always the correct state for this
-            // path. This distinguishes them from genuinely offline (POS
-            // cashier-created, synced=false) records and prevents the
-            // offline-safe selective-delete below from ever touching those.
             synced: true,
           }));
 
-          // Idempotent upsert strategy — replaces the previous clear()+bulkAdd() which
-          // destroyed Dexie ++id auto-increments on every socket event and caused the
-          // same backend KOT to appear as a brand-new pending order after every sync.
-          //
-          // Safety invariant: offline KOTs (synced===false) are NEVER touched here.
-          // We only delete local records that were previously synced (synced === true)
-          // but are no longer present in the incoming backend dataset (e.g. cancelled,
-          // aged out of the 5-min READY window).
-          const idsToDelete = localSyncedKots
-            .filter(k => !incomingBackendIds.has(k.backendKotId))
-            .map(k => k.id)
-            .filter((id): id is number => typeof id === 'number');
+          // Final dedup guard: if for any reason two backend records map to the
+          // same backendKotId, keep only the last one (should never happen but
+          // prevents bulkPut from throwing a constraint error).
+          const deduped = Array.from(
+            new Map(mappedRaw.map((r: any) => [r.backendKotId, r])).values()
+          );
 
-          if (idsToDelete.length > 0) {
-            await db.kots.bulkDelete(idsToDelete);
-          }
-          
-          // bulkPut performs an upsert (INSERT OR REPLACE) by primary key (Dexie `id`).
-          // For existing backend KOTs, we preserved their `id` in the map, so they update.
-          // For new backend KOTs, `id` is undefined, so Dexie safely auto-increments a new one.
-          await db.kots.bulkPut(mapped);
+          await db.kots.bulkPut(deduped);
         }
       }
       

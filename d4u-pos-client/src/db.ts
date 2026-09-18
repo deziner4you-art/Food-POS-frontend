@@ -175,6 +175,22 @@ export class D4UDatabase extends Dexie {
       crmCustomers: 'id, phone',
       heldOrders: 'id'
     });
+    // v12: Index backendKotId so bulkPut can upsert by Dexie ++id without
+    // creating duplicates. Without this index, every syncKOTs() call could
+    // not efficiently look up existing records by backendKotId, causing
+    // phantom duplicate tickets to accumulate in the KDS on each refresh.
+    this.version(12).stores({
+      users: 'id, phone',
+      category_groups: 'id, sort_order',
+      categories: 'id, store_id, category_group_id',
+      products: 'id, category_id, name',
+      transactions: '++id, synced',
+      kots: '++id, status, synced, bridgeOrderId, backendKotId',
+      inventory: 'id, category',
+      staffLogs: '++id, name, clockIn',
+      crmCustomers: 'id, phone',
+      heldOrders: 'id'
+    });
   }
 }
 
