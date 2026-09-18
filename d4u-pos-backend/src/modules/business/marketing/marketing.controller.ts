@@ -31,6 +31,7 @@ function buildMeta(user: any, req: any): AuditMeta {
     userId: user?.sub,
     ip: req?.ip,
     device: req?.headers?.['user-agent'],
+    role: user?.role,
   };
 }
 

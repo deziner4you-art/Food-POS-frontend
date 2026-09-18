@@ -12,6 +12,7 @@ export interface AuditMeta {
   userId?: number;
   ip?: string;
   device?: string;
+  role?: string;
 }
 
 @Injectable()
@@ -74,7 +75,8 @@ export class MarketingService {
    * airtight enforcement always happens at consumption time in
    * CampaignResolverService.getCoreActiveCampaigns, regardless.
    */
-  private async assertCampaignTypeAllowed(campaign_type: string, target_store_ids: number[]) {
+  private async assertCampaignTypeAllowed(campaign_type: string, target_store_ids: number[], meta: AuditMeta = {}) {
+    if (meta.role === 'Super Admin') return;
     if (!target_store_ids || target_store_ids.length === 0) return;
     for (const store_id of target_store_ids) {
       const caps = await this.subscriptions.getMarketingCapabilities(store_id);
@@ -330,7 +332,7 @@ export class MarketingService {
     const normalizedStoreIds = (
       Array.isArray(body.target_store_ids) ? body.target_store_ids : body.target_store_ids ? [body.target_store_ids] : []
     ).map(Number);
-    await this.assertCampaignTypeAllowed(campaignType, normalizedStoreIds);
+    await this.assertCampaignTypeAllowed(campaignType, normalizedStoreIds, meta);
 
     // brand_id has a schema default of 1 that every caller of this method
     // used to silently inherit -- every campaign in the system ended up
@@ -538,7 +540,7 @@ export class MarketingService {
       target_store_ids !== undefined
         ? (Array.isArray(target_store_ids) ? target_store_ids : [target_store_ids]).map(Number)
         : (existingCampaign.target_stores || []).map((s) => s.id);
-    await this.assertCampaignTypeAllowed(effectiveType, effectiveStoreIds);
+    await this.assertCampaignTypeAllowed(effectiveType, effectiveStoreIds, meta);
 
     const warnings = await this.checkConflicts(
       { ...existingCampaign, ...updateData, campaign_type: effectiveType, target_store_ids: effectiveStoreIds },
@@ -736,7 +738,7 @@ export class MarketingService {
       storeIds = targetStoreIds;
     }
 
-    await this.assertCampaignTypeAllowed(source.campaign_type, storeIds);
+    await this.assertCampaignTypeAllowed(source.campaign_type, storeIds, meta);
 
     const clone = await this.prisma.marketingCampaign.create({
       data: {
