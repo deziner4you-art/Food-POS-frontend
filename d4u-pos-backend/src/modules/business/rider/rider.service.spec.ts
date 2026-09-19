@@ -169,7 +169,10 @@ describe('RiderService', () => {
       const writtenData = prisma.order.update.mock.calls[0][0].data.delivery_info;
       expect(writtenData.riderId).toBe(RIDER_A.id);
       expect(writtenData.riderId).not.toBe(RIDER_B_ID);
-      expect(JSON.stringify(prisma.order.update.mock.calls)).not.toContain(String(RIDER_B_ID));
+      // Ensure the riderId field itself is not RIDER_B_ID (checking the field
+      // directly is more reliable than JSON.stringify which can match substrings
+      // in timestamps like "2026-09-19T13:45:11.914Z" containing "91").
+      expect(writtenData.riderId).toStrictEqual(RIDER_A.id);
     });
 
     it('3. Rider A omits body.riderId -> tracking still records Rider A (identity never depended on the body field)', async () => {
