@@ -511,21 +511,40 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     );
 
     if (kotToUpdate && kotToUpdate.id) {
-      try {
-        // If it's a backend KOT, make the API call. For offline KOTs, this falls through
-        // to the offline local-only update logic below.
-        if (kotToUpdate.backendKotId) {
+      if (kotToUpdate.backendKotId) {
+        // Backend KOT: server is source of truth.
+        // Only update local Dexie AFTER the backend confirms success.
+        // On any failure, keep the KOT in its current NEW state and
+        // show a clear user-facing error — do not falsely advance local state.
+        try {
           const res = await apiFetch(`/kots/${kotToUpdate.backendKotId}/accept`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             auth: true
           });
-          if (!res.ok) throw new Error('Backend update failed');
-        } else {
-          throw new Error('Offline KOT');
+          if (res.ok) {
+            // Server confirmed PREPARING — now safe to update local state
+            await db.kots.update(kotToUpdate.id, {
+              status: 'PREPARING',
+              prepTimeMinutes: prepMinutes,
+              startTime: new Date().toISOString()
+            });
+          } else {
+            // HTTP error (403, 500, etc.) — keep KOT as NEW, show error
+            const body = await res.json().catch(() => ({}));
+            setToast({ id: Math.random().toString(), title: 'Accept Failed', subtitle: body?.message || `Server error (${res.status}). Please try again.` });
+            setTimeout(() => setToast(null), 5000);
+            return; // abort — do not close overlay or show success toast below
+          }
+        } catch (e) {
+          // Network / timeout failure — keep KOT as NEW, show error
+          setToast({ id: Math.random().toString(), title: 'Accept Failed', subtitle: 'Network error. Check connection and try again.' });
+          setTimeout(() => setToast(null), 5000);
+          return; // abort
         }
-      } catch (e) {
-        // Fallback for offline mode or local-only KOTs
+      } else {
+        // Offline / local-only KOT (no backendKotId):
+        // No server call — update local Dexie directly as before.
         await db.kots.update(kotToUpdate.id, {
           status: 'PREPARING',
           prepTimeMinutes: prepMinutes,
@@ -565,11 +584,11 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     );
 
     if (kotToUpdate && kotToUpdate.id) {
-      // Always update local Dexie immediately so UI reflects READY right away
-      await db.kots.update(kotToUpdate.id, { status: 'READY' });
-
-      // If it has a backendKotId, also tell the server
       if (kotToUpdate.backendKotId) {
+        // Backend KOT: server is source of truth.
+        // Only update local Dexie AFTER the backend confirms success.
+        // On any failure, leave the KOT in its current PREPARING state and
+        // show a clear user-facing error — do not write a false READY locally.
         try {
           const res = await apiFetch(`/kots/${kotToUpdate.backendKotId}/bump`, {
             method: 'PATCH',
@@ -577,13 +596,26 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
             auth: true
           });
           if (res.ok) {
-            // Re-sync after successful bump so the ticket disappears
-            // (backend will not return READY KOTs after the 5-min window)
+            // Server confirmed READY — now safe to update local state
+            await db.kots.update(kotToUpdate.id, { status: 'READY' });
+            // Re-sync so the ticket ages out of the active view correctly
+            // (backend excludes READY KOTs after the 5-min window)
             setTimeout(() => syncKOTs(), 500);
+          } else {
+            // HTTP error (403, 500, etc.) — keep KOT as PREPARING, show error
+            const body = await res.json().catch(() => ({}));
+            setToast({ id: Math.random().toString(), title: 'Mark Ready Failed', subtitle: body?.message || `Server error (${res.status}). Please try again.` });
+            setTimeout(() => setToast(null), 5000);
           }
         } catch (e) {
-          console.warn('[KDS] Backend bump failed, KOT marked ready locally only', e);
+          // Network / timeout failure — keep KOT as PREPARING, show error
+          setToast({ id: Math.random().toString(), title: 'Mark Ready Failed', subtitle: 'Network error. Check connection and try again.' });
+          setTimeout(() => setToast(null), 5000);
         }
+      } else {
+        // Offline / local-only KOT (no backendKotId):
+        // No server call — update local Dexie directly as before.
+        await db.kots.update(kotToUpdate.id, { status: 'READY' });
       }
     }
 
