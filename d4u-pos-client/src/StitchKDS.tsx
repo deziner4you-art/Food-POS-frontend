@@ -233,10 +233,14 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
           // Incoming backend IDs for this sync cycle
           const incomingBackendIds = new Set(data.map((k: any) => k.id));
 
-          // Determine synced KOTs that are no longer in the backend response
-          // (cancelled, bumped, aged out of the 5-min READY window, etc.)
+          // Determine synced KOTs to delete:
+          //  1. Records with a known backendKotId that is no longer in the backend response
+          //     (cancelled, bumped out, aged out of the READY window, etc.)
+          //  2. Legacy orphan records that have NO backendKotId at all — these are
+          //     pre-fix records that can never be matched to any backend KOT and will
+          //     loop as "stuck PREPARING" forever if not cleaned up here.
           const idsToDelete = localSyncedKots
-            .filter(k => k.backendKotId != null && !incomingBackendIds.has(k.backendKotId))
+            .filter(k => k.backendKotId == null || !incomingBackendIds.has(k.backendKotId))
             .map(k => k.id)
             .filter((id): id is number => typeof id === 'number');
 
@@ -561,21 +565,25 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     );
 
     if (kotToUpdate && kotToUpdate.id) {
-      try {
-        // If it's a backend KOT, make the API call. For offline KOTs, this falls through
-        // to the offline local-only update logic below.
-        if (kotToUpdate.backendKotId) {
+      // Always update local Dexie immediately so UI reflects READY right away
+      await db.kots.update(kotToUpdate.id, { status: 'READY' });
+
+      // If it has a backendKotId, also tell the server
+      if (kotToUpdate.backendKotId) {
+        try {
           const res = await apiFetch(`/kots/${kotToUpdate.backendKotId}/bump`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             auth: true
           });
-          if (!res.ok) throw new Error('Backend update failed');
-        } else {
-          throw new Error('Offline KOT');
+          if (res.ok) {
+            // Re-sync after successful bump so the ticket disappears
+            // (backend will not return READY KOTs after the 5-min window)
+            setTimeout(() => syncKOTs(), 500);
+          }
+        } catch (e) {
+          console.warn('[KDS] Backend bump failed, KOT marked ready locally only', e);
         }
-      } catch (e) {
-        await db.kots.update(kotToUpdate.id, { status: 'READY' });
       }
     }
 
