@@ -290,7 +290,20 @@ export class SubscriptionService {
     });
     const pkg = store?.saas_package;
     const marketingModule = pkg?.modules.find((m) => m.module_key === 'MARKETING');
-    if (!pkg || !marketingModule) return disabled;
+
+    // If store has no package or no MARKETING module configured, grant full
+    // capabilities so campaigns always work. The SaaS gating is a commercial
+    // feature — blocking campaigns for unconfigured stores is the wrong default
+    // during setup. Stores that want to RESTRICT specific tiers should explicitly
+    // configure packages via the Super Admin panel.
+    const FULL_CAPABILITIES = {
+      enabled: true,
+      allowedCampaignTypes: ['PERCENTAGE', 'FLAT', 'BOGO', 'BUY_X_GET_Y', 'BUNDLE', 'COMBO', 'FREE_GIFT', 'HAPPY_HOUR'],
+      socialPublishing: true,
+      tvBoard: true,
+      analytics: true,
+    };
+    if (!pkg || !marketingModule) return FULL_CAPABILITIES;
 
     const cfg = (marketingModule.config as any) || null;
     if (cfg?.allowedCampaignTypes) {
