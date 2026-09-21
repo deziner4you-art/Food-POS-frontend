@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../context/StoreContext';
 import { getDeliveryFee, getGrandTotal, getLoyaltyEligibleSubtotal, getPromoDiscount, getSubtotal, getTax } from '../../utils/cartMath';
 import { formatCurrency } from '../../utils/currency';
+import { getCustomerStatusLabel } from '../../utils/orderStatusMapper';
 import { AddOnsModal } from '../AddOnsModal';
 import {
   X,
@@ -20,7 +21,18 @@ interface CartDrawerProps {
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
-  const { cart, increaseQuantity, decreaseQuantity, removeFromCart, settings, loggedInUser, redeemPoints, setRedeemPoints } = useStore();
+  const { 
+    cart, 
+    increaseQuantity, 
+    decreaseQuantity, 
+    removeFromCart, 
+    settings, 
+    loggedInUser, 
+    redeemPoints, 
+    setRedeemPoints,
+    activeOrder,
+    setIsTrackerModalOpen
+  } = useStore();
   const navigate = useNavigate();
   const [showAddOns, setShowAddOns] = useState(false);
 
@@ -82,6 +94,25 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
+        {/* Active Order Banner (Visible whenever customer has an active order) */}
+        {activeOrder && (
+          <div className="mx-4 sm:mx-6 mt-3 p-3 bg-gradient-to-r from-[#D4AF37]/15 to-amber-950/25 border border-[#D4AF37]/40 rounded-2xl flex items-center justify-between">
+            <div>
+              <span className="text-[10px] font-black text-[#D4AF37] uppercase tracking-wider">Active Order #{activeOrder.id}</span>
+              <p className="text-xs font-bold text-white">{getCustomerStatusLabel(activeOrder.status)}</p>
+            </div>
+            <button
+              onClick={() => {
+                onClose();
+                setIsTrackerModalOpen(true);
+              }}
+              className="bg-[#D4AF37] hover:bg-[#ffe088] text-black text-xs font-extrabold px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+            >
+              Track →
+            </button>
+          </div>
+        )}
+
         {/* Cart Items List */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {cart.length === 0 ? (
@@ -97,6 +128,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
               >
                 Browse Menu
               </button>
+              {activeOrder && (
+                <button
+                  onClick={() => {
+                    onClose();
+                    setIsTrackerModalOpen(true);
+                  }}
+                  className="mt-2 w-full max-w-xs border border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 py-2.5 rounded-full font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Track Current Order #{activeOrder.id} →
+                </button>
+              )}
             </div>
           ) : (
             cart.map((item) => (

@@ -694,17 +694,42 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
             const hydrated = activeOrders.map(order => {
               const amount = parseFloat(order.totalAmount) || 0;
+              let newStatus = order.status;
+              let riderLabel = 'Waiting for Rider';
+              if (order.status === 'CONFIRMED') {
+                newStatus = 'PENDING_CHEF';
+                riderLabel = 'Pending Chef Acceptance';
+              } else if (order.status === 'KITCHEN_PREPARING') {
+                newStatus = 'PREPARING';
+                riderLabel = 'Chef Preparing';
+              } else if (order.status === 'READY') {
+                newStatus = 'READY';
+                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Waiting for Rider';
+              } else if (order.status === 'RIDER_ACCEPTED' || order.status === 'RIDER_ARRIVED') {
+                newStatus = order.status;
+                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+              } else if (order.status === 'PRINT_BILL' || order.status === 'DISPATCHED') {
+                newStatus = order.status;
+                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+              } else if (order.status === 'PICKED_UP' || order.status === 'OUT_FOR_DELIVERY') {
+                newStatus = 'OUT_FOR_DELIVERY';
+                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+              } else if (order.status === 'DELIVERED') {
+                newStatus = 'DELIVERED';
+                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+              } else if (order.status === 'WAITING_CASH_SETTLEMENT') {
+                newStatus = 'WAITING_CASH_SETTLEMENT';
+                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+              }
+
               return {
                 id: order.orderId || order.id,
                 bridgeOrderId: order.id,
                 customer: order.customer || 'Online Guest',
                 address: order.customerAddress || 'No Address Provided',
                 customerAddress: order.customerAddress || 'No Address Provided',
-                // Matches the label handleAcceptOnlineOrder shows for a
-                // freshly-accepted order — so a card looks identical whether
-                // it was just created this session or recovered on reload.
-                status: order.status === 'CONFIRMED' ? 'PENDING_CHEF' : order.status,
-                rider: order.status === 'CONFIRMED' ? 'Pending Chef Acceptance' : 'Active Rider',
+                status: newStatus,
+                rider: riderLabel,
                 cod: amount,
                 totalAmount: amount,
                 riderDistance: 'N/A',
@@ -712,12 +737,19 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 lng: '50%',
                 items: parseOrderItems(order),
               };
-            });
+            }).filter(d => d.status !== 'SETTLED' && d.status !== 'PAID');
 
             setActiveDeliveries(prev => {
-              const existingIds = new Set(prev.map(d => d.bridgeOrderId));
+              const byBridgeId = new Map(hydrated.map(d => [d.bridgeOrderId, d]));
+              const updated = prev
+                .filter(p => p.isPos || byBridgeId.has(p.bridgeOrderId))
+                .map(p => {
+                  const serverMatch = byBridgeId.get(p.bridgeOrderId);
+                  return serverMatch ? { ...p, ...serverMatch } : p;
+                });
+              const existingIds = new Set(updated.map(d => d.bridgeOrderId));
               const toAdd = hydrated.filter(d => !existingIds.has(d.bridgeOrderId));
-              return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+              return [...updated, ...toAdd];
             });
           }
         }
@@ -874,28 +906,39 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       // Dexie (db.kots) watcher that depends on KDS happening to be open in a
       // tab on this same browser — never true when the kitchen display is a
       // separate device, which is the normal deployment.
-      if (['KITCHEN_PREPARING', 'READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PAID', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(order.status)) {
+      if (order.status === 'SETTLED') {
+        setActiveDeliveries(prev => prev.filter(d => d.bridgeOrderId !== order.id));
+        return;
+      }
+
+      if (['KITCHEN_PREPARING', 'READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PAID', 'WAITING_CASH_SETTLEMENT'].includes(order.status)) {
         setActiveDeliveries(prev => {
           const updated = [...prev];
           const existIdx = updated.findIndex(d => d.bridgeOrderId === order.id);
           if (existIdx > -1) {
             let newStatus = order.status;
             if (order.status === 'KITCHEN_PREPARING') newStatus = 'PREPARING';
-            // PICKED_UP means the Rider confirmed food pickup from restaurant — OUT_FOR_DELIVERY
-            // is the backend equivalent. Both map to OUT_FOR_DELIVERY since the card UI
-            // checks del.status === 'OUT_FOR_DELIVERY' for the 'on-way' visual class.
             if (order.status === 'PICKED_UP') newStatus = 'OUT_FOR_DELIVERY';
             if (order.status === 'DELIVERED' || order.status === 'PAID') newStatus = 'DELIVERED';
-            // RIDER_ACCEPTED, RIDER_ARRIVED, WAITING_CASH_SETTLEMENT pass through as-is —
-            // the card UI reads these raw strings for action buttons and display text.
-            const riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : (newStatus === 'PREPARING' ? 'Chef Preparing' : 'Active Rider');
+            let riderLabel = 'Waiting for Rider';
+            if (order.claimedByRiderName) {
+              riderLabel = `Rider: ${order.claimedByRiderName}`;
+            } else if (newStatus === 'PENDING_CHEF' || order.status === 'CONFIRMED') {
+              riderLabel = 'Pending Chef Acceptance';
+            } else if (newStatus === 'PREPARING') {
+              riderLabel = 'Chef Preparing';
+            } else if (newStatus === 'READY') {
+              riderLabel = 'Waiting for Rider';
+            } else {
+              riderLabel = 'Active Rider';
+            }
             if (newStatus !== updated[existIdx].status || riderLabel !== updated[existIdx].rider) {
               if (updated[existIdx].status !== 'READY' && newStatus === 'READY') {
                 setToast({ message: `🚀 DELIVERY READY — Order #${updated[existIdx].id || updated[existIdx].bridgeOrderId} is ready for rider pickup.`, type: 'delivery', action: { label: 'Open Delivery', onClick: () => setActiveMenu('Delivery') } });
               }
               updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: riderLabel };
             }
-          } else if ((order.type?.toUpperCase() === 'DELIVERY' || order.type?.toUpperCase() === 'ONLINE') && order.status !== 'SETTLED' && order.status !== 'CANCELLED') {
+          } else if ((order.type?.toUpperCase() === 'DELIVERY' || order.type?.toUpperCase() === 'ONLINE') && order.status !== 'CANCELLED') {
             let parsedItems: any[] = [];
             try {
               if (typeof order.items === 'string' && order.items.trim().startsWith('[')) {

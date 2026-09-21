@@ -102,11 +102,11 @@ export default function Header({
           </span>
         </div>
 
-        {/* Reset button */}
+        {/* Refresh button */}
         <button
           onClick={onRefresh}
           className="w-10 h-10 rounded-xl bg-[#2e3545] border border-[#4f4633]/30 flex items-center justify-center hover:bg-[#323949] transition-all cursor-pointer transform hover:rotate-45"
-          title="Reset sample orders and simulation data"
+          title="Refresh kitchen orders and inventory"
         >
           <RefreshCw className="w-4 h-4 text-[#dce2f7]" />
         </button>

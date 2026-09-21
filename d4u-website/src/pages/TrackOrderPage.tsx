@@ -4,35 +4,27 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 import { BACKEND_URL } from '../hooks/useStoreData';
 import { formatCurrency } from '../utils/currency';
+import { TRACKING_STEPS, mapBackendStatusToStep, getCustomerStatusLabel, getCustomerStatusDescription, isOrderTerminal } from '../utils/orderStatusMapper';
 
-const STATUS_INDEX: Record<string, number> = {
-  ONLINE_ORDER_RECEIVED: 0,
-  CONFIRMED: 1,
-  KITCHEN_PREPARING: 2,
-  READY: 3,
-  RIDER_ACCEPTED: 3,
-  RIDER_ARRIVED: 3,
-  PRINT_BILL: 3,
-  DISPATCHED: 3,
-  PICKED_UP: 4,
-  OUT_FOR_DELIVERY: 4,
-  DELIVERED: 5,
-  WAITING_CASH_SETTLEMENT: 5,
-  SETTLED: 6,
-};
-
-export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
-  const { orderUpdate, riderPosition } = useStore();
+export default function TrackOrderPage({ activeOrder: propActiveOrder }: { activeOrder: any }) {
+  const { orderUpdate, riderPosition, activeOrder: contextActiveOrder } = useStore();
+  const effectiveActiveOrder = propActiveOrder || contextActiveOrder;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryOrder = searchParams.get('order') || '';
-  const [trackInput, setTrackInput] = useState(queryOrder || (activeOrder?.id ? String(activeOrder.id) : ''));
-  const [result, setResult] = useState<any>(activeOrder || null);
+  const [trackInput, setTrackInput] = useState(queryOrder || (effectiveActiveOrder?.id ? String(effectiveActiveOrder.id) : ''));
+  const [result, setResult] = useState<any>(effectiveActiveOrder || null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Live status push — ported from legacy/MobileMode.tsx, which already had
-  // this working ahead of the old desktop implementation.
+  // Sync with context activeOrder if tracking active order
+  useEffect(() => {
+    if (effectiveActiveOrder && (!result || result.id === effectiveActiveOrder.id)) {
+      setResult(effectiveActiveOrder);
+    }
+  }, [effectiveActiveOrder]);
+
+  // Live status push
   useEffect(() => {
     if (orderUpdate) {
       setResult((prev: any) => {
@@ -52,7 +44,7 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
       const res = await fetch(`${BACKEND_URL}/online-orders/track/${encodeURIComponent(input)}`);
       if (!res.ok) { setError('Order not found.'); setLoading(false); return; }
       const data = await res.json();
-      const found = Array.isArray(data) ? data.sort((a, b) => b.id - a.id)[0] : data;
+      const found = Array.isArray(data) ? data.sort((a: any, b: any) => b.id - a.id)[0] : data;
       if (!found) { setError('No orders found.'); setLoading(false); return; }
       setResult(found);
     } catch {
@@ -73,16 +65,8 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
     await loadOrder(trackInput.trim());
   };
 
-  const currentStep = result ? (STATUS_INDEX[result.status] ?? 0) : 0;
-  const steps = [
-    { label: 'Order Placed', sub: 'Received' },
-    { label: 'Confirmed by Restaurant', sub: currentStep >= 1 ? 'Accepted' : 'Waiting for cashier...' },
-    { label: 'In Kitchen', sub: currentStep >= 2 ? 'Working on it' : 'Waiting...' },
-    { label: 'Ready', sub: currentStep >= 3 ? 'Food is packed!' : 'Pending...' },
-    { label: 'Out For Delivery', sub: currentStep >= 4 ? 'Rider on the way' : 'Waiting for rider...' },
-    { label: 'Delivered', sub: currentStep >= 5 ? 'Arrived' : 'Pending...' },
-    { label: 'Completed', sub: currentStep >= 6 ? 'Settled' : 'Pending...' },
-  ];
+  const currentStep = result ? mapBackendStatusToStep(result.status) : 0;
+
 
   return (
     <div className="max-w-lg mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -136,11 +120,11 @@ export default function TrackOrderPage({ activeOrder }: { activeOrder: any }) {
             )}
 
             <div className="space-y-3">
-              {steps.map((step, i) => {
+              {TRACKING_STEPS.map((step, i) => {
                 const done = currentStep >= i;
                 return (
-                  <div key={i} className="flex items-start gap-3 relative">
-                    {i < steps.length - 1 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${done ? 'bg-stitch-success' : 'bg-stitch-border'}`}></div>}
+                  <div key={step.key} className="flex items-start gap-3 relative">
+                    {i < TRACKING_STEPS.length - 1 && <div className={`absolute left-2.5 top-5 w-[2px] h-6 ${done ? 'bg-stitch-success' : 'bg-stitch-border'}`}></div>}
                     <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all relative z-10 bg-stitch-panel ${done ? 'border-stitch-success text-stitch-success' : 'border-stitch-border text-transparent'}`}>
                       {done && <CheckCircle2 className="w-3 h-3 fill-stitch-success text-stitch-panel" />}
                     </div>

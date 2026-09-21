@@ -4,8 +4,7 @@ import type { Order, StationSettings } from '../types';
 
 interface KitchenViewProps {
   orders: Order[];
-  onMarkReady: (orderId: string) => void;
-  onSimulateOrder: () => void;
+  onMarkReady: (order: Order) => void;
   onAcceptOrderClick?: (order: Order) => void;
   isEmergencyStop: boolean;
   readOnly?: boolean;
@@ -15,7 +14,6 @@ interface KitchenViewProps {
 export default function KitchenView({
   orders,
   onMarkReady,
-  onSimulateOrder,
   onAcceptOrderClick,
   isEmergencyStop,
   readOnly = false,
@@ -58,16 +56,6 @@ export default function KitchenView({
           <p className="text-[#d3c5ac] max-w-sm mb-6 text-sm">
             All customer orders have been successfully prepared. Enjoy the temporary quiet before the rush!
           </p>
-          {!readOnly && (
-            <button 
-              onClick={onSimulateOrder}
-              disabled={isEmergencyStop}
-              className="flex items-center gap-2 px-6 py-3 bg-[#ffe1a7] text-[#402d00] hover:bg-brand-yellow font-display font-medium rounded-xl transition-all shadow-lg shadow-brand-yellow/10 cursor-pointer"
-            >
-              <Sparkles className="w-5 h-5 text-[#402d00]" />
-              <span>Simulate Customer Order</span>
-            </button>
-          )}
         </div>
       ) : (
         <div className={`grid ${readOnly ? 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3' : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6'}`}>
@@ -141,33 +129,18 @@ export default function KitchenView({
                       </span>
                     </div>
 
-                    {/* Modification Warning Code box */}
-                    {order.instructions ? (
-                      <div className={`border-l-4 px-3.5 py-2.5 rounded-r ${
-                        isPendingApproval 
-                          ? 'bg-[#fbbf24]/10 border-[#fbbf24]' 
-                          : 'bg-[#410006]/40 border-[#ff3333]'
-                      }`}>
-                        <p className={`font-display font-bold leading-snug uppercase tracking-wide text-sm ${
-                          isPendingApproval
-                            ? 'text-[#ffe8b3]'
-                            : isRedAlert 
-                              ? 'text-[#ffb4ab] animate-urgent-blink font-black' 
-                              : 'text-[#ffb4ab]'
-                        }`}>
-                          {order.instructions}
-                        </p>
+                    {order.instructions && (
+                      <div className="bg-[#0c1322] border border-[#4f4633]/40 rounded-lg p-3 text-xs font-mono text-brand-yellow">
+                        <span className="font-bold text-[#d3c5ac] block text-xxs mb-0.5 uppercase tracking-wider">Instructions</span>
+                        {order.instructions}
                       </div>
-                    ) : (
-                      <p className="text-[#d3c5ac]/50 text-xs italic">Standard preparation recipe</p>
                     )}
                   </div>
 
-                  {/* Spacer / Divider */}
+                  {/* Time Tracking Section */}
                   <div className="space-y-2">
                     <div className="h-[1px] bg-[#4f4633]/20" />
-                    
-                    {/* Time Tracking Section */}
+
                     {isPendingApproval ? (
                       <div className="flex justify-between items-center select-none py-1">
                         <div className="flex flex-col">
@@ -233,7 +206,7 @@ export default function KitchenView({
                 {!readOnly && (
                   isPendingApproval ? (
                     <button
-                      id={`accept-btn-${order.id}`}
+                      id={`accept-btn-${order.displayId || order.id}`}
                       onClick={() => onAcceptOrderClick && onAcceptOrderClick(order)}
                       disabled={isEmergencyStop}
                       className="py-4 bg-[#fbbf24] hover:bg-[#f59e0b] active:scale-[0.99] text-[#261a00] font-display font-black text-lg tracking-widest uppercase cursor-pointer text-center transition-all disabled:opacity-40"
@@ -242,8 +215,8 @@ export default function KitchenView({
                     </button>
                   ) : (
                     <button
-                      id={`ready-btn-${order.id}`}
-                      onClick={() => onMarkReady(order.id)}
+                      id={`ready-btn-${order.displayId || order.id}`}
+                      onClick={() => onMarkReady(order)}
                       disabled={isEmergencyStop}
                       className="py-4 bg-brand-green text-[#003824] font-display font-black text-lg tracking-widest uppercase cursor-pointer text-center transition-all hover:bg-[#6ffbbe] active:bg-[#00a572] disabled:opacity-40 disabled:cursor-not-allowed"
                     >

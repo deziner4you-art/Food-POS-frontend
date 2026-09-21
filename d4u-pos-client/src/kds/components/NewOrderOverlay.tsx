@@ -6,7 +6,7 @@ interface NewOrderOverlayProps {
   order: Order | null;
   settings: StationSettings;
   updateSettings: (s: Partial<StationSettings>) => void;
-  onAccept: (orderId: string, prepMinutes: number) => void;
+  onAccept: (order: Order, prepMinutes: number) => void;
 }
 
 export default function NewOrderOverlay({
@@ -135,7 +135,7 @@ export default function NewOrderOverlay({
         <div className="px-6 py-5 bg-[#111622] border-t border-[#202737] flex justify-center">
           <button
             type="button"
-            onClick={() => onAccept(order.id, selectedMinutes)}
+            onClick={() => onAccept(order, selectedMinutes)}
             className="w-full flex items-center justify-center gap-2 bg-[#4edea3] hover:bg-[#3bc68a] text-[#002113] py-4 rounded-xl font-display font-black text-xl tracking-wider uppercase active:scale-[0.99] transition-all shadow-md hover:shadow-[#4edea3]/20 cursor-pointer"
           >
             <CheckCircle2 className="w-5.5 h-5.5 text-[#002113]" fill="currentColor" />

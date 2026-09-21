@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useMemo, useEffect, type ReactNode
 import type { Category, CategoryGroup, CartItem, CustomerProfile, HeroSlide, Product, Promotion, ProductVariant } from '../types';
 import { BACKEND_URL, useStoreData, useStores } from '../hooks/useStoreData';
 import { getProductDiscount } from '../utils/campaignDiscount';
+import { isOrderTerminal } from '../utils/orderStatusMapper';
 
 // Maps D4U's real catalog/banner/campaign shapes onto Stitch's UI-facing
 // Product/Category/HeroSlide/Promotion types. This is a display-shape
@@ -136,10 +137,13 @@ interface StoreContextValue {
   updateAddress: (id: number, patch: { label?: string; address?: string; is_default?: boolean }) => Promise<{ success: boolean; message?: string }>;
   deleteAddress: (id: number) => Promise<{ success: boolean; message?: string }>;
 
-  // Wishlist -- synced to the backend for a logged-in customer, kept in
-  // localStorage only for a guest (merged into the backend list on login).
   favoriteProductIds: string[];
   toggleFavorite: (productId: string) => void;
+
+  activeOrder: any;
+  setActiveOrder: (order: any) => void;
+  isTrackerModalOpen: boolean;
+  setIsTrackerModalOpen: (open: boolean) => void;
 
   kioskMode: boolean;
 }
@@ -162,6 +166,78 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
     const saved = localStorage.getItem('d4u_web_user');
     return saved ? JSON.parse(saved) : null;
   });
+
+  const [activeOrder, setActiveOrderState] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('d4u_active_online_order');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [isTrackerModalOpen, setIsTrackerModalOpen] = useState(false);
+
+  const setActiveOrder = (order: any) => {
+    setActiveOrderState(order);
+    if (order) {
+      localStorage.setItem('d4u_active_online_order', JSON.stringify(order));
+    } else {
+      localStorage.removeItem('d4u_active_online_order');
+    }
+  };
+
+  // Rehydrate activeOrder from backend on mount and poll while active
+  useEffect(() => {
+    if (!activeOrder?.id) return;
+    let isCancelled = false;
+
+    const fetchLatest = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/online-orders/track/${activeOrder.id}`);
+        if (res.ok) {
+          const fresh = await res.json();
+          if (!isCancelled && fresh && fresh.id) {
+            setActiveOrderState((prev: any) => {
+              const merged = { ...prev, ...fresh };
+              localStorage.setItem('d4u_active_online_order', JSON.stringify(merged));
+              return merged;
+            });
+          }
+        }
+      } catch {
+        // network error / offline fallback
+      }
+    };
+
+    fetchLatest();
+
+    if (!isOrderTerminal(activeOrder.status)) {
+      const timer = setInterval(fetchLatest, 8000);
+      return () => {
+        isCancelled = true;
+        clearInterval(timer);
+      };
+    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeOrder?.id, activeOrder?.status]);
+
+  // Real-time socket sync when orderUpdate arrives
+  useEffect(() => {
+    if (orderUpdate && activeOrder) {
+      const updateId = orderUpdate.id || orderUpdate.orderId || orderUpdate.order_id;
+      const currentId = activeOrder.id || activeOrder.orderId || activeOrder.order_id;
+      if (updateId && currentId && String(updateId) === String(currentId)) {
+        setActiveOrderState((prev: any) => {
+          const merged = { ...prev, ...orderUpdate, status: orderUpdate.status || prev?.status };
+          localStorage.setItem('d4u_active_online_order', JSON.stringify(merged));
+          return merged;
+        });
+      }
+    }
+  }, [orderUpdate]);
 
   // Wishlist. Guests get a local-only list so the heart icon still works
   // before logging in; logging in fetches (and one-time merges any local
@@ -511,10 +587,14 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       deleteAddress,
       favoriteProductIds,
       toggleFavorite,
+      activeOrder,
+      setActiveOrder,
+      isTrackerModalOpen,
+      setIsTrackerModalOpen,
       kioskMode,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, riderPosition, discountedProducts, categories, categoryGroups, heroSlides, promotions, cart, redeemPoints, loggedInUser, favoriteProductIds, kioskMode],
+    [stores, storeId, storeName, foodItems, banners, campaigns, settings, orderUpdate, riderPosition, discountedProducts, categories, categoryGroups, heroSlides, promotions, cart, redeemPoints, loggedInUser, favoriteProductIds, activeOrder, isTrackerModalOpen, kioskMode],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

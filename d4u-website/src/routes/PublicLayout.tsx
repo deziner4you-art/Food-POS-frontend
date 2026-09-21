@@ -4,7 +4,10 @@ import Header from '../components/shared/Header';
 import Footer from '../components/shared/Footer';
 import { CartDrawer } from '../components/shared/CartDrawer';
 import { ProductQuickViewModal } from '../components/ProductQuickViewModal';
+import { OrderTrackerModal } from '../components/OrderTrackerModal';
 import { useStore } from '../context/StoreContext';
+import { getCustomerStatusLabel, isOrderTerminal } from '../utils/orderStatusMapper';
+import { ArrowRight } from 'lucide-react';
 import type { Product } from '../types';
 
 export interface PublicOutletContext {
@@ -15,9 +18,16 @@ export interface PublicOutletContext {
 
 export default function PublicLayout() {
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [activeOrder, setActiveOrder] = useState<any>(null);
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
-  const { settings, kioskMode, addToCart } = useStore();
+  const { 
+    settings, 
+    kioskMode, 
+    addToCart, 
+    activeOrder, 
+    setActiveOrder, 
+    isTrackerModalOpen, 
+    setIsTrackerModalOpen 
+  } = useStore();
 
   const ctx: PublicOutletContext = { activeOrder, setActiveOrder, setQuickViewProduct };
 
@@ -43,6 +53,40 @@ export default function PublicLayout() {
           onAddToCart={addToCart}
           isFavorite={false}
           onToggleFavorite={() => {}}
+        />
+      )}
+
+      {/* Persistent Left Floating Order Tracker Badge */}
+      {!kioskMode && activeOrder && (
+        <div className="fixed bottom-6 left-6 z-40 animate-fade-in">
+          <button
+            onClick={() => setIsTrackerModalOpen(true)}
+            className="group flex items-center gap-3 bg-[#16130B]/95 hover:bg-[#1f1a10] border border-[#D4AF37]/50 hover:border-[#D4AF37] text-white px-4 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md transition-all duration-300 hover:scale-105 cursor-pointer"
+          >
+            <div className="relative flex items-center justify-center">
+              <span className={`w-3 h-3 rounded-full ${isOrderTerminal(activeOrder.status) ? 'bg-emerald-400' : 'bg-amber-400 animate-ping'}`} />
+              <span className={`absolute w-2.5 h-2.5 rounded-full ${isOrderTerminal(activeOrder.status) ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+            </div>
+            <div className="text-left">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-black text-[#D4AF37] uppercase tracking-wider">Order #{activeOrder.id}</span>
+                <span className="text-[10px] text-gray-400">·</span>
+                <span className="text-xs font-bold text-white font-display">{getCustomerStatusLabel(activeOrder.status)}</span>
+              </div>
+              <p className="text-[10px] text-gray-400 group-hover:text-gray-300 transition-colors hidden sm:block">Click to track live order</p>
+            </div>
+            <div className="w-7 h-7 rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37] group-hover:bg-[#D4AF37] group-hover:text-black transition-colors ml-1">
+              <ArrowRight className="w-3.5 h-3.5" />
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* Global Order Tracker Modal */}
+      {isTrackerModalOpen && activeOrder && (
+        <OrderTrackerModal
+          order={activeOrder}
+          onClose={() => setIsTrackerModalOpen(false)}
         />
       )}
 

@@ -9,8 +9,11 @@ export interface OrderItem {
 }
 
 export interface Order {
-  id: string; // e.g., "2415" or Primary Key
-  displayId?: string; // Visible ID e.g. "2484"
+  id: string; // Action/lookup ID
+  backendKotId?: number; // Authoritative backend KOT ID for /accept and /bump actions
+  backendOrderId?: number | string; // Customer/POS order ID
+  displayId: string; // Visible customer-facing order ID e.g. "16"
+  dexieId?: number; // Local Dexie primary key
   tableName: string; // e.g., "Table 12", "Takeaway", "UberEats"
   items: OrderItem[];
   instructions: string; // e.g., "EXTRA CHEESE, EXTRA MAYONNAISE"
@@ -48,8 +51,6 @@ export interface StationSettings {
   specialtyName: string;
   chefAvatar: string;
   silentAlert: boolean;
-  autoSimulate: boolean;
-  simulateIntervalSeconds: number;
   alarmSoundEnabled: boolean;
   volume: number;
   standardBurgerPrepSeconds: number;

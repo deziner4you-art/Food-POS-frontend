@@ -27,8 +27,6 @@ const DEFAULT_SETTINGS: StationSettings = {
   specialtyName: 'Main Kitchen',
   chefAvatar: '',
   silentAlert: false,
-  autoSimulate: false,
-  simulateIntervalSeconds: 45,
   alarmSoundEnabled: true,
   volume: 35,
   standardBurgerPrepSeconds: 600,
@@ -326,7 +324,6 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
   
   // Real-time ticking state
   const [nowTick, setNowTick] = useState<number>(Date.now());
-  const simulateTickRef = useRef<number>(0);
   
   // Track previously seen NEW orders to avoid duplicate alarms
   const seenNewOrders = useRef<Set<number>>(new Set());
@@ -410,11 +407,11 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     }
 
     return {
-      // Use the stable backend KOT ID (backendKotId) if it exists, otherwise
-      // fallback to the Dexie ID for offline KOTs. This ensures UI identity
-      // is stable and unique per KOT, and never collides across sync cycles.
       id: kot.backendKotId ? kot.backendKotId.toString() : (kot.id ? kot.id.toString() : kot.orderId.toString()),
+      backendKotId: kot.backendKotId,
+      backendOrderId: kot.orderId,
       displayId: kot.orderId.toString(),
+      dexieId: kot.id,
       tableName: kot.type || 'Table',
       items: parsedItems.map((i: any) => ({ name: i.name || i.productName, quantity: i.qty || i.quantity })),
       instructions: kot.notes || '',
@@ -457,68 +454,27 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     const clockInterval = setInterval(() => {
       if (isEmergencyStop) return;
       setNowTick(Date.now());
-      
-      if (settings.autoSimulate) {
-        simulateTickRef.current += 1;
-        if (simulateTickRef.current >= settings.simulateIntervalSeconds) {
-          simulateTickRef.current = 0;
-          triggerSimulatedNewOrder();
-        }
-      }
     }, 1000);
     return () => clearInterval(clockInterval);
-  }, [isEmergencyStop, settings]);
+  }, [isEmergencyStop]);
 
-  const triggerSimulatedNewOrder = () => {
-    if (isEmergencyStop || incomingOverlayOrder !== null) return;
-    const randomId = Math.floor(2400 + Math.random() * 99).toString();
-    
-    // Add to Dexie!
-    db.kots.add({
-      orderId: randomId,
-      type: 'Table 12',
-      items: JSON.stringify([{ name: 'Zinger Deluxe Burger', qty: 1 }]),
-      notes: 'EXTRA CHEESE',
-      timePlaced: new Date().toISOString(),
-      prepTimeMinutes: 10,
-      status: 'NEW',
-      startTime: '',
-      printCount: 0
-    });
-  };
-
-  const handleCreateManualOrder = (items: OrderItem[], instructions: string, tableName: string) => {
-    if (isEmergencyStop) return;
-    const randomId = Math.floor(2500 + Math.random() * 99).toString();
-    
-    db.kots.add({
-      orderId: randomId,
-      type: tableName,
-      items: JSON.stringify(items.map(i => ({ name: i.name, qty: i.quantity }))),
-      notes: instructions,
-      timePlaced: new Date().toISOString(),
-      prepTimeMinutes: 10,
-      status: 'NEW',
-      startTime: '',
-      printCount: 0
-    });
-  };
-
-  const handleAcceptOrder = async (orderId: string, prepMinutes: number) => {
+  const handleAcceptOrder = async (order: Order, prepMinutes: number) => {
     if (!incomingOverlayOrder) return;
     
-    // Find the correct KOT: match by backendKotId or Dexie id
-    const kotToUpdate = (kots || []).find(k => 
-      (k.backendKotId && k.backendKotId.toString() === orderId) || 
-      (k.id && k.id.toString() === orderId)
-    );
+    // Find the correct KOT in Dexie strictly by backendKotId or dexieId (never mix them)
+    let kotToUpdate: any = null;
+    if (order.backendKotId != null) {
+      kotToUpdate = (kots || []).find(k => k.backendKotId === order.backendKotId);
+    } else if (order.dexieId != null) {
+      kotToUpdate = (kots || []).find(k => k.id === order.dexieId);
+    } else {
+      kotToUpdate = (kots || []).find(k => String(k.orderId) === String(order.backendOrderId));
+    }
 
     if (kotToUpdate && kotToUpdate.id) {
       if (kotToUpdate.backendKotId) {
         // Backend KOT: server is source of truth.
         // Only update local Dexie AFTER the backend confirms success.
-        // On any failure, keep the KOT in its current NEW state and
-        // show a clear user-facing error — do not falsely advance local state.
         try {
           const res = await apiFetch(`/kots/${kotToUpdate.backendKotId}/accept`, {
             method: 'PATCH',
@@ -532,22 +488,21 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
               prepTimeMinutes: prepMinutes,
               startTime: new Date().toISOString()
             });
+            // Authoritative server re-sync
+            void syncKOTs();
           } else {
-            // HTTP error (403, 500, etc.) — keep KOT as NEW, show error
             const body = await res.json().catch(() => ({}));
             setToast({ id: Math.random().toString(), title: 'Accept Failed', subtitle: body?.message || `Server error (${res.status}). Please try again.` });
             setTimeout(() => setToast(null), 5000);
-            return; // abort — do not close overlay or show success toast below
+            return;
           }
         } catch (e) {
-          // Network / timeout failure — keep KOT as NEW, show error
           setToast({ id: Math.random().toString(), title: 'Accept Failed', subtitle: 'Network error. Check connection and try again.' });
           setTimeout(() => setToast(null), 5000);
-          return; // abort
+          return;
         }
       } else {
-        // Offline / local-only KOT (no backendKotId):
-        // No server call — update local Dexie directly as before.
+        // Offline / local-only KOT
         await db.kots.update(kotToUpdate.id, {
           status: 'PREPARING',
           prepTimeMinutes: prepMinutes,
@@ -562,36 +517,36 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
       playReadyAlert(settings.volume);
     }
 
-    addLog('order_preparing', `Order #${orderId} accepted by chef. Prep time targeted at ${prepMinutes}m.`);
+    const displayNum = order.displayId || order.backendOrderId || order.id;
+    addLog('order_preparing', `Order #${displayNum} accepted by chef. Prep time targeted at ${prepMinutes}m.`);
 
     setToast({
       id: Math.random().toString(),
-      title: `Order #${orderId} Accepted`,
+      title: `Order #${displayNum} Accepted`,
       subtitle: `Target completion countdown set for ${prepMinutes} minutes.`
     });
 
     setTimeout(() => setToast(null), 4000);
   };
 
-  const handleMarkReady = async (orderId: string) => {
-    const order = mappedOrders.find(o => o.id === orderId);
-    if (order) {
-       decrementInventoryIngredients(order);
-       addLog('order_completed', `Order #${orderId} completed and marked ready.`);
-    }
+  const handleMarkReady = async (order: Order) => {
+    decrementInventoryIngredients(order);
+    const displayNum = order.displayId || order.backendOrderId || order.id;
+    addLog('order_completed', `Order #${displayNum} completed and marked ready.`);
 
-    // Find the correct KOT: match by backendKotId or Dexie id
-    const kotToUpdate = (kots || []).find(k => 
-      (k.backendKotId && k.backendKotId.toString() === orderId) || 
-      (k.id && k.id.toString() === orderId)
-    );
+    // Find the correct KOT in Dexie strictly by backendKotId or dexieId
+    let kotToUpdate: any = null;
+    if (order.backendKotId != null) {
+      kotToUpdate = (kots || []).find(k => k.backendKotId === order.backendKotId);
+    } else if (order.dexieId != null) {
+      kotToUpdate = (kots || []).find(k => k.id === order.dexieId);
+    } else {
+      kotToUpdate = (kots || []).find(k => String(k.orderId) === String(order.backendOrderId));
+    }
 
     if (kotToUpdate && kotToUpdate.id) {
       if (kotToUpdate.backendKotId) {
         // Backend KOT: server is source of truth.
-        // Only update local Dexie AFTER the backend confirms success.
-        // On any failure, leave the KOT in its current PREPARING state and
-        // show a clear user-facing error — do not write a false READY locally.
         try {
           const res = await apiFetch(`/kots/${kotToUpdate.backendKotId}/bump`, {
             method: 'PATCH',
@@ -601,23 +556,21 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
           if (res.ok) {
             // Server confirmed READY — now safe to update local state
             await db.kots.update(kotToUpdate.id, { status: 'READY' });
-            // Re-sync so the ticket ages out of the active view correctly
-            // (backend excludes READY KOTs after the 5-min window)
-            setTimeout(() => syncKOTs(), 500);
+            // Immediate authoritative server re-sync
+            void syncKOTs();
           } else {
-            // HTTP error (403, 500, etc.) — keep KOT as PREPARING, show error
             const body = await res.json().catch(() => ({}));
             setToast({ id: Math.random().toString(), title: 'Mark Ready Failed', subtitle: body?.message || `Server error (${res.status}). Please try again.` });
             setTimeout(() => setToast(null), 5000);
+            return;
           }
         } catch (e) {
-          // Network / timeout failure — keep KOT as PREPARING, show error
           setToast({ id: Math.random().toString(), title: 'Mark Ready Failed', subtitle: 'Network error. Check connection and try again.' });
           setTimeout(() => setToast(null), 5000);
+          return;
         }
       } else {
-        // Offline / local-only KOT (no backendKotId):
-        // No server call — update local Dexie directly as before.
+        // Offline / local-only KOT
         await db.kots.update(kotToUpdate.id, { status: 'READY' });
       }
     }
@@ -625,6 +578,13 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     if (settings.alarmSoundEnabled) {
       playReadyAlert(settings.volume);
     }
+
+    setToast({
+      id: Math.random().toString(),
+      title: `Order #${displayNum} Ready`,
+      subtitle: `Order marked ready for pickup.`
+    });
+    setTimeout(() => setToast(null), 4000);
   };
 
   const decrementInventoryIngredients = async (order: Order) => {
@@ -747,15 +707,25 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     }
   };
 
-  const handleResetData = async () => {
-    const confirmation = await customConfirm("Reset KDS to factory defaults? This clears history logs and all orders in Database.");
-    if (confirmation) {
-      await db.kots.clear();
-      setLogs([]);
-      setSettings(DEFAULT_SETTINGS);
-      localStorage.clear();
-      seenNewOrders.current.clear();
-      addLog('inventory_restock', 'Kitchen terminal diagnostics cleared and reset to factory defaults.');
+  const handleRefreshData = async () => {
+    setIsLoading(true);
+    try {
+      await Promise.all([syncKOTs(), syncInventory()]);
+      setToast({
+        id: Math.random().toString(),
+        title: 'KDS Refreshed',
+        subtitle: 'Fetched latest kitchen orders and inventory.'
+      });
+      setTimeout(() => setToast(null), 3000);
+    } catch (e) {
+      setToast({
+        id: Math.random().toString(),
+        title: 'Refresh Failed',
+        subtitle: 'Could not refresh from server.'
+      });
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -797,7 +767,7 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
         <Header 
           pendingCount={pendingOrdersCount}
           readyCount={readyOrdersCount}
-          onRefresh={handleResetData}
+          onRefresh={handleRefreshData}
           onLogout={onLogout}
           branchName={branchName}
           isEmergencyStop={isEmergencyStop}
@@ -819,7 +789,6 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
               <KitchenView 
                 orders={mappedOrders} 
                 onMarkReady={handleMarkReady}
-                onSimulateOrder={triggerSimulatedNewOrder}
                 onAcceptOrderClick={setIncomingOverlayOrder}
                 isEmergencyStop={isEmergencyStop}
                 settings={settings}
@@ -838,7 +807,6 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
             {activeTab === 'orders' && (
               <OrdersView 
                 orders={mappedOrders}
-                onCreateManualOrder={handleCreateManualOrder}
                 isEmergencyStop={isEmergencyStop}
               />
             )}

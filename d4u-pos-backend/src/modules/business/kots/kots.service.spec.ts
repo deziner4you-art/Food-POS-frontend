@@ -231,11 +231,54 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
   // dependency) -- authorization was, and remains, purely RBAC-based via
   // the controller's @RequirePermissions decorator. The route split does
   // not add or remove any tenant check, preserving this exactly.
-  describe('no tenant/store validation was added by the route split', () => {
-    it('acceptKOT/bumpKOT/cancelKOT take only a numeric id -- no user/store parameter exists to validate', () => {
-      expect(service.acceptKOT.length).toBe(1);
-      expect(service.bumpKOT.length).toBe(1);
-      expect(service.cancelKOT.length).toBe(1);
+  describe('Phase 16 — KOT Isolation & Online Order Status Chain Regressions', () => {
+    it('accepting a KOT targets only the specified KOT id without affecting other KOTs', async () => {
+      prisma.kOT.update.mockResolvedValue({
+        ...baseKot,
+        id: 42,
+        status: 'PREPARING',
+        order: { order_source: 'WALKIN' },
+      });
+
+      await service.acceptKOT(42);
+
+      expect(prisma.kOT.update).toHaveBeenCalledTimes(1);
+      expect(prisma.kOT.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 42 },
+          data: expect.objectContaining({ status: 'PREPARING' }),
+        }),
+      );
+    });
+
+    it('broadcasting order_updated to store room when online order status changes to KITCHEN_PREPARING', async () => {
+      prisma.kOT.update.mockResolvedValue({
+        ...baseKot,
+        status: 'PREPARING',
+        order: { order_source: 'ONLINE' },
+      });
+      const onlineOrder = { id: 501, status: 'KITCHEN_PREPARING', store_id: 67 };
+      prisma.onlineOrder.findUnique.mockResolvedValue({ id: 501 });
+      prisma.onlineOrder.update.mockResolvedValue(onlineOrder);
+
+      await service.acceptKOT(42);
+
+      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', onlineOrder, 'store_67');
+    });
+
+    it('broadcasting order_updated to store room when online order status changes to READY', async () => {
+      prisma.kOT.update.mockResolvedValue({
+        ...baseKot,
+        status: 'READY',
+        order: { order_source: 'ONLINE' },
+      });
+      const onlineOrder = { id: 501, status: 'READY', store_id: 67 };
+      prisma.onlineOrder.findUnique.mockResolvedValue({ id: 501 });
+      prisma.onlineOrder.update.mockResolvedValue(onlineOrder);
+
+      await service.bumpKOT(42);
+
+      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', onlineOrder, 'store_67');
     });
   });
 });

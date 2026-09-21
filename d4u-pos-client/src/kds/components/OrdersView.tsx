@@ -13,28 +13,18 @@ import { customAlert } from '../../utils/alerts';
 
 interface OrdersViewProps {
   orders: Order[];
-  onCreateManualOrder: (items: OrderItem[], instructions: string, tableName: string) => void;
   isEmergencyStop: boolean;
 }
 
 export default function OrdersView({
   orders,
-  onCreateManualOrder,
   isEmergencyStop
 }: OrdersViewProps) {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(orders[0] || null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
-  
-  // Manual POS Order form state
-  const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
-  const [posTableName, setPosTableName] = useState<string>('Table 03');
-  const [posInstructions, setPosInstructions] = useState<string>('EXTRA CHEESE, NO ONIONS');
-  const [burgerQty, setBurgerQty] = useState<number>(1);
-  const [friesQty, setFriesQty] = useState<number>(0);
-  const [salmonQty, setSalmonQty] = useState<number>(0);
 
-  // 1. Filtering logic
+  // Filtering logic
   const filteredOrders = orders.filter((order) => {
     const matchesSearch = 
       order.id.includes(searchQuery) ||
@@ -54,29 +44,6 @@ export default function OrdersView({
       case 'ready': return 'text-brand-green bg-brand-green/10 border-brand-green/30';
       case 'completed': return 'text-[#d3c5ac] bg-[#2e3545]/40 border-[#4f4633]/30';
     }
-  };
-
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (burgerQty === 0 && friesQty === 0 && salmonQty === 0) {
-      customAlert("Please specify at least 1 item quantity!");
-      return;
-    }
-
-    const items: OrderItem[] = [];
-    if (burgerQty > 0) items.push({ name: 'Zinger Deluxe Burger', quantity: burgerQty });
-    if (friesQty > 0) items.push({ name: 'Truffle Fries', quantity: friesQty });
-    if (salmonQty > 0) items.push({ name: 'Grilled Salmon', quantity: salmonQty });
-
-    onCreateManualOrder(items, posInstructions, posTableName);
-    
-    // Reset Form
-    setBurgerQty(1);
-    setFriesQty(0);
-    setSalmonQty(0);
-    setPosTableName('Table 03');
-    setPosInstructions('EXTRA CHEESE, NO ONIONS');
-    setIsFormOpen(false);
   };
 
   return (
@@ -256,122 +223,6 @@ export default function OrdersView({
         )}
       </div>
 
-      {/* MODAL WINDOW DIALOG FOR MANUAL POS ORDERING */}
-      {isFormOpen && (
-        <div className="fixed inset-0 bg-[#0c1322]/85 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in select-none">
-          <div className="bg-[#191f2f] border-2 border-brand-yellow rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl animate-scale-up">
-            <div className="bg-[#2e3545] p-5 flex justify-between items-center border-b border-[#4f4633]/30">
-              <h3 className="font-display font-bold text-xl text-[#dce2f7] flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-brand-yellow" />
-                <span>Simulate POS Client Ticket</span>
-              </h3>
-              <button 
-                onClick={() => setIsFormOpen(false)}
-                className="w-8 h-8 rounded-full hover:bg-white/5 flex items-center justify-center text-[#d3c5ac] cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleManualSubmit} className="p-6 space-y-5">
-              <div>
-                <label className="block text-xs font-mono font-bold text-[#d3c5ac] uppercase tracking-wider mb-1.5">
-                  Guest Location Badge
-                </label>
-                <select
-                  value={posTableName}
-                  onChange={(e) => setPosTableName(e.target.value)}
-                  className="w-full bg-[#0c1322] border border-[#4f4633]/40 rounded-xl px-4 py-2.5 text-[#dce2f7] outline-none text-sm"
-                >
-                  <option value="Table 12">Table 12 (Main Dining Room)</option>
-                  <option value="Table 05">Table 05 (Window View)</option>
-                  <option value="Table 03">Table 03 (Patio Lounge)</option>
-                  <option value="Takeaway">Takeaway #PKG</option>
-                  <option value="UberEats Delivery">UberEats #DELV</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-[#d3c5ac] uppercase tracking-wider mb-2">
-                  Select Burgers & Mains Items Quantities
-                </label>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center bg-[#0c1322] px-4 py-2.5 rounded-xl border border-[#4f4633]/20">
-                    <span className="text-sm">Zinger Deluxe Burger</span>
-                    <div className="flex items-center gap-3">
-                      <button 
-                        type="button" 
-                        onClick={() => setBurgerQty(Math.max(0, burgerQty - 1))}
-                        className="w-8 h-8 rounded-lg bg-[#2e3545] flex items-center justify-center font-bold hover:bg-[#3d3722] cursor-pointer"
-                      >-</button>
-                      <span className="font-mono text-sm w-4 text-center">{burgerQty}</span>
-                      <button 
-                        type="button" 
-                        onClick={() => setBurgerQty(burgerQty + 1)}
-                        className="w-8 h-8 rounded-lg bg-[#2e3545] flex items-center justify-center font-bold hover:bg-[#3d3722] cursor-pointer"
-                      >+</button>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-[#0c1322] px-4 py-2.5 rounded-xl border border-[#4f4633]/20">
-                    <span className="text-sm">Truffle Fries</span>
-                    <div className="flex items-center gap-3">
-                      <button 
-                        type="button" 
-                        onClick={() => setFriesQty(Math.max(0, friesQty - 1))}
-                        className="w-8 h-8 rounded-lg bg-[#2e3545] flex items-center justify-center font-bold hover:bg-[#3d3722] cursor-pointer"
-                      >-</button>
-                      <span className="font-mono text-sm w-4 text-center">{friesQty}</span>
-                      <button 
-                        type="button" 
-                        onClick={() => setFriesQty(friesQty + 1)}
-                        className="w-8 h-8 rounded-lg bg-[#2e3545] flex items-center justify-center font-bold hover:bg-[#3d3722] cursor-pointer"
-                      >+</button>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-[#0c1322] px-4 py-2.5 rounded-xl border border-[#4f4633]/20">
-                    <span className="text-sm">Grilled Salmon Portion</span>
-                    <div className="flex items-center gap-3">
-                      <button 
-                        type="button" 
-                        onClick={() => setSalmonQty(Math.max(0, salmonQty - 1))}
-                        className="w-8 h-8 rounded-lg bg-[#2e3545] flex items-center justify-center font-bold hover:bg-[#3d3722] cursor-pointer"
-                      >-</button>
-                      <span className="font-mono text-sm w-4 text-center">{salmonQty}</span>
-                      <button 
-                        type="button" 
-                        onClick={() => setSalmonQty(salmonQty + 1)}
-                        className="w-8 h-8 rounded-lg bg-[#2e3545] flex items-center justify-center font-bold hover:bg-[#3d3722] cursor-pointer"
-                      >+</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-bold text-[#d3c5ac] uppercase tracking-wider mb-1.5">
-                  Chef Recipe Custom Modifications
-                </label>
-                <input 
-                  type="text" 
-                  value={posInstructions}
-                  onChange={(e) => setPosInstructions(e.target.value)}
-                  placeholder="e.g., EXTRA CHEESE, NO ONIONS, GLUTEN FREE SIDES ONLY"
-                  className="w-full bg-[#0c1322] border border-[#4f4633]/40 rounded-xl px-4 py-2.5 text-[#dce2f7] outline-none text-sm placeholder-[#d3c5ac]/40"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-4.5 bg-brand-green text-[#002113] font-display font-bold text-base rounded-xl uppercase tracking-widest hover:brightness-110 active:scale-98 transition-all shadow-lg shadow-brand-green/10 cursor-pointer"
-              >
-                PUSH NEW ORDER TO WORKSTAND
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
     </div>
   );

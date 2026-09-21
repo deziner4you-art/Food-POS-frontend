@@ -52,7 +52,7 @@ export default function SettingsView({
           )}
         </h2>
         <p className="text-[#d3c5ac] text-xs font-mono mt-1">
-          Adjust cooking durations, simulation triggers, acoustic frequencies and chef profile states.
+          Adjust cooking durations, acoustic frequencies and chef profile states.
         </p>
       </div>
 
@@ -194,51 +194,6 @@ export default function SettingsView({
           </div>
         </div>
 
-        {/* Simulator Settings Section */}
-        <div className="bg-[#191f2f] border border-[#4f4633]/20 p-5 rounded-xl space-y-4 shadow-lg">
-          <h3 className="text-sm font-mono font-bold text-[#d3c5ac] uppercase tracking-wider flex items-center gap-2 border-b border-[#4f4633]/20 pb-2.5">
-            <Cpu className="w-4 h-4 text-brand-yellow" />
-            <span>Simulation Engine</span>
-          </h3>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm font-display font-semibold font-bold">Auto-Simulate Orders</span>
-                <p className="text-[10px] text-[#d3c5ac]/70">Pushes randomized client tickets onto the board automatically</p>
-              </div>
-              <input 
-                type="checkbox"
-                checked={settings.autoSimulate}
-                onChange={(e) => updateSettings({ autoSimulate: e.target.checked })}
-                className="w-5 h-5 rounded hover:bg-[#2d3545] text-brand-yellow focus:ring-0 cursor-pointer"
-              />
-            </div>
-
-            {settings.autoSimulate && (
-              <div className="space-y-1 animate-scale-up">
-                <div className="flex justify-between text-xs font-mono text-[#d3c5ac]">
-                  <span>Simulator Frequency Rate</span>
-                  <span className="text-brand-yellow font-bold">{settings.simulateIntervalSeconds} seconds</span>
-                </div>
-                <input 
-                  type="range"
-                  min="15"
-                  max="120"
-                  step="5"
-                  value={settings.simulateIntervalSeconds}
-                  onChange={(e) => updateSettings({ simulateIntervalSeconds: Number(e.target.value) })}
-                  className="w-full h-1.5 bg-[#0c1322] rounded-lg appearance-none cursor-pointer accent-brand-yellow"
-                />
-                <div className="flex justify-between text-[10px] text-[#d3c5ac]/40 font-mono">
-                  <span>Fast Demo (15s)</span>
-                  <span>Cook Pacing (120s)</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Cook Time Limits Section */}
         <div className="bg-[#191f2f] border border-[#4f4633]/20 p-5 rounded-xl space-y-4 shadow-lg">
           <h3 className="text-sm font-mono font-bold text-[#d3c5ac] uppercase tracking-wider flex items-center gap-2 border-b border-[#4f4633]/20 pb-2.5">
@@ -325,7 +280,7 @@ export default function SettingsView({
             Emergency Stopper Protocol Instructions
           </h4>
           <p className="text-xs text-[#ffdad6] mt-1 leading-relaxed">
-            Activating the **Emergency Stop** switch in the sidebar immediately triggers an audit shutdown signal. During shutdown, all running active cooking countdown clocks are securely frozen, automatic client simulation timers are suspended, and manual entries are locked. Simply click **RESUME ALL** on the side tab to safely resume operations.
+            Activating the **Emergency Stop** switch in the sidebar immediately triggers an audit shutdown signal. During shutdown, all running active cooking countdown clocks are securely frozen and manual entries are locked. Simply click **RESUME ALL** on the side tab to safely resume operations.
           </p>
         </div>
       </div>
