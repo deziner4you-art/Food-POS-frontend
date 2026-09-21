@@ -45,7 +45,20 @@ export class KotsService {
   //      KOT that was created without a business_day_id (e.g. online orders that
   //      arrived outside a POS business day) so they still appear during today's
   //      service without requiring a schema migration.
+  // Maximum age of a NEW/PREPARING KOT that will still appear on the KDS.
+  // An OPEN BusinessDay may span multiple calendar days if the operator forgets
+  // to close it — a kitchen ticket that is 19 hours old is genuinely stuck, not
+  // an active preparation job.  18 hours matches a typical double-shift service
+  // window and is well above any realistic maximum cook time.
+  // READY tickets are NOT subject to this cap — their own 5-minute display
+  // window (READY_TICKET_WINDOW_MS) already constrains them tightly.
+  private static readonly KOT_ACTIVE_WINDOW_MS = 18 * 60 * 60 * 1000; // 18 h
+
   async getActiveKots(store_id: number, includeReady: boolean = false) {
+    // Rolling 18-hour staleness boundary shared by both code paths below.
+    // Computed once so the timestamp is identical for every clause in the query.
+    const stalenessBoundary = new Date(Date.now() - KotsService.KOT_ACTIVE_WINDOW_MS);
+
     const statusFilter: any = includeReady
       ? {
           OR: [
@@ -61,9 +74,6 @@ export class KotsService {
       where.store_id = store_id;
 
       // RC1: Scope to the current OPEN business day only.
-      // If no open day exists for this store, fall back to today-midnight so
-      // the KDS never shows KOTs from a previous calendar day, regardless of
-      // whether the business day was explicitly started.
       const openDay = await this.prisma.businessDay.findFirst({
         where: { store_id, status: 'OPEN' },
         orderBy: { id: 'desc' },
@@ -71,37 +81,50 @@ export class KotsService {
       });
 
       if (openDay) {
-        // An open business day exists: include KOTs that either belong to it
-        // directly (business_day_id match) or were created after it opened
-        // but lack a business_day_id link (e.g. some online-order paths).
-        where.OR = [
-          ...(statusFilter.OR ?? []),
-          // Merge day boundary as an AND constraint instead of OR:
-          // We use a wrapper to AND the existing status filter with the day filter.
-        ];
-        // Reset to a clean AND structure so day + status both apply.
-        delete where.OR;
-        // Rebuild as: status_filter AND (business_day_id = X OR createdAt >= dayStart)
+        // An open business day exists.
+        //
+        // RC1 FIX (original): filter by business_day_id = openDay.id so KOTs
+        // from *closed* business days never appear on the active KDS.
+        //
+        // FIX 1 SUPPLEMENT: also require createdAt >= now - 18h so a KOT that
+        // is genuinely stuck/abandoned (e.g. from a BD that has been OPEN for
+        // multiple days because the operator forgot to close it) cannot block
+        // the kitchen view.  This is an AND condition on top of the BD filter:
+        // a KOT must be *both* in the correct BD *and* recent.
+        //
+        // READY KOTs: the existing 5-minute readyAt window is tighter than 18h,
+        // so the staleness boundary is only meaningful for NEW/PREPARING here.
         const dayBoundaryFilter = {
-          OR: [
-            { business_day_id: openDay.id },
-            { business_day_id: null, createdAt: { gte: openDay.dayStart } },
+          AND: [
+            {
+              // BD membership: belongs directly to the open BD, or belongs to
+              // no BD but was created after the BD opened (some online paths).
+              OR: [
+                { business_day_id: openDay.id },
+                { business_day_id: null, createdAt: { gte: openDay.dayStart } },
+              ],
+            },
+            // Staleness guard: KOT must be less than 18 hours old.
+            // Applied to all tickets including READY (though READY has its own
+            // tighter window via statusFilter above, the extra AND is harmless).
+            { createdAt: { gte: stalenessBoundary } },
           ],
         };
-        // Merge status filter with day boundary using AND
+
+        // Merge status filter with day+staleness boundary using AND
+        delete where.OR; // avoid accidental merge
         if (statusFilter.OR) {
-          // includeReady path: wrap into AND
+          // includeReady path: wrap status alternatives inside AND
           where.AND = [{ OR: statusFilter.OR }, dayBoundaryFilter];
         } else {
           // Simple status filter: merge directly
           Object.assign(where, dayBoundaryFilter);
         }
       } else {
-        // No open business day: fall back to today-midnight boundary to prevent
-        // stale KOTs from the previous day leaking into the current KDS view.
-        const todayMidnight = new Date();
-        todayMidnight.setHours(0, 0, 0, 0);
-        const dayBoundaryFilter = { createdAt: { gte: todayMidnight } };
+        // No open business day: fall back to an 18-hour rolling window.
+        // Using 18h instead of calendar midnight so a restaurant open past
+        // midnight never loses KOTs created before midnight when the date rolls.
+        const dayBoundaryFilter = { createdAt: { gte: stalenessBoundary } };
         if (statusFilter.OR) {
           where.AND = [{ OR: statusFilter.OR }, dayBoundaryFilter];
         } else {

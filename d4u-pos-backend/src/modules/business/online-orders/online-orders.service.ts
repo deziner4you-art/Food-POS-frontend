@@ -407,6 +407,21 @@ export class OnlineOrdersService {
             throw new Error(`Invalid state transition from ${existingOrder.status} to ${incomingStatus}. States must be sequential.`);
           }
         }
+
+        // Fix 5 — DISPATCHED pre-condition: a rider MUST have claimed the
+        // order before it can be dispatched.  The POS UI already guards this
+        // client-side (Fix 4 in App.tsx), but backend enforcement is mandatory
+        // because any API caller can bypass the UI.  Without this guard, a
+        // cashier (or any authenticated caller) can set status=DISPATCHED on
+        // an order with claimedByRiderId=null, permanently orphaning it in an
+        // unresolvable intermediate state with no rider to complete the delivery.
+        if (incomingStatus === 'DISPATCHED' && !existingOrder.claimedByRiderId) {
+          throw new Error(
+            'Cannot dispatch order: no rider has accepted this delivery yet. ' +
+            'The rider must first claim the order before it can be dispatched.',
+          );
+        }
+
         updateData.status = incomingStatus;
       }
       // ---------------------------------

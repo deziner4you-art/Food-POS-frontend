@@ -569,6 +569,20 @@ export class PosOrdersService {
       }
     }
 
+    // Fix 6 — DISPATCHED pre-condition for POS-native delivery orders:
+    // Mirrors the equivalent guard in OnlineOrdersService.updateOrderStatus
+    // (Fix 5).  A POS-native delivery order uses Order.rider_id as its rider
+    // identity (set by RiderService.claimOrder).  Dispatching before a rider
+    // is assigned leaves the order in an orphaned DISPATCHED state with no
+    // rider to progress it to OUT_FOR_DELIVERY or DELIVERED — identical to
+    // the website-order problem that produced OnlineOrder #1152.
+    if (status === 'DISPATCHED' && !existing.rider_id) {
+      throw new BadRequestException(
+        'Cannot dispatch order: no rider has accepted this delivery yet. ' +
+        'The rider must first claim the order before it can be dispatched.',
+      );
+    }
+
     const updated = await this.prisma.order.update({
       where: { id },
       data: { status },

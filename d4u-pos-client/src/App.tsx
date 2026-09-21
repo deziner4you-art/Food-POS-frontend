@@ -3158,7 +3158,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                               <Printer size={18} /> Print Bill
                             </button>
                           )}
-                          {del.status === 'PRINT_BILL' && (
+                          {del.status === 'PRINT_BILL' && del.claimedByRiderId && (
                             <button className="btn-action bg-[#fbbf24] text-slate-900 font-bold px-4 py-2" style={{ width: '100%', borderRadius: '4px' }}
                               onClick={async (e) => {
                                 e.stopPropagation();

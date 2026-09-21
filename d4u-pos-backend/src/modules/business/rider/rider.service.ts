@@ -16,11 +16,40 @@ export class RiderService {
     if (!storeId) {
       throw new BadRequestException('store_id is required.');
     }
-    const validStatuses = ['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'WAITING_CASH_SETTLEMENT', 'PAID', 'SETTLED'];
+
+    // Fix 2: PAID and SETTLED are terminal delivery statuses — the order is
+    // fully complete and cash has been reconciled.  Including them caused
+    // every past delivery to accumulate in the rider queue forever, blocking
+    // the "Finish Current Delivery First" guard for every new available order.
+    // Rider history (if needed) should use a dedicated history endpoint, not
+    // the active-delivery queue.
+    const validStatuses = [
+      'READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED',
+      'RIDER_ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY',
+      'DELIVERED', 'WAITING_CASH_SETTLEMENT',
+    ];
 
     const onlineWhere: any = {
       status: { in: validStatuses },
       store_id: Number(storeId),
+      // Fix 3: A DISPATCHED order with no rider claim is permanently orphaned —
+      // the cashier pressed "Dispatch Order" on the POS before any rider
+      // accepted the delivery.  These orders must not appear in the rider queue
+      // because:
+      //   1. They look like "Available Orders" (claimedByRiderId is null) so
+      //      the Accept button is shown, but the delivery was already marked
+      //      DISPATCHED and cannot be properly re-started from that state.
+      //   2. A rider who claims such an order will find it stuck at an
+      //      intermediate status with no clear path to settlement.
+      // Guard: exclude DISPATCHED rows where claimedByRiderId is still null.
+      // Legitimately claimed DISPATCHED orders (rider accepted, cashier
+      // dispatched after the fact) continue to appear normally.
+      NOT: {
+        AND: [
+          { status: 'DISPATCHED' },
+          { claimedByRiderId: null },
+        ],
+      },
     };
     const posWhere: any = {
       status: { in: validStatuses },
