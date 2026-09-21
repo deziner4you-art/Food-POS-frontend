@@ -105,16 +105,45 @@ export class PermissionsGuard implements CanActivate {
       'Business Admin',
       'Business Owner',
       'Branch Owner',
+      'Dispatcher',
+      'Assistant Manager',
+      'Staff',
     ];
-    const hasPosModule = modulePermissions && modulePermissions.pos === true;
+    const normalizedRole = roleName ? roleName.trim().toLowerCase() : '';
+    const isPosRole = posRoles.some((r) => r.toLowerCase() === normalizedRole);
+    const hasPosModule =
+      modulePermissions &&
+      (modulePermissions.pos === true || modulePermissions.admin === true);
 
-    if (posRoles.includes(roleName) || hasPosModule) {
+    if (isPosRole || hasPosModule) {
       const posPermissions = [
         'sales.create',
         'sales.view',
         'sales.update',
         'sales.delete',
         'catalog.view',
+        'pos.orders.read',
+        'pos.orders.create',
+        'pos.orders.update',
+        'pos.orders.discount',
+        'pos.orders.void',
+        'pos.orders.refund',
+        'pos.tables.manage',
+        'pos.business_day.read',
+        'pos.business_day.start',
+        'pos.business_day.close',
+        'pos.cash_drawer.record',
+        'pos.cash_drawer.reconcile',
+        'pos.cash_drawer.open',
+        'delivery.dispatch.update_status',
+        'delivery.tracking.read',
+        'delivery.dispatch.assign',
+        'kitchen.tickets.read',
+        'kitchen.tickets.accept',
+        'kitchen.tickets.bump',
+        'kitchen.tickets.cancel',
+        'crm.customers.read',
+        'crm.customers.create',
       ];
       if (requiredPermissions.some((p) => posPermissions.includes(p))) {
         return true;
@@ -131,14 +160,22 @@ export class PermissionsGuard implements CanActivate {
       // 'group.resource.action' key are set to true for anything the role
       // was granted. Array form is supported too in case a caller ever
       // populates it that way.
-      if (Array.isArray(permissions)) {
+      let parsedPerms = permissions;
+      if (typeof permissions === 'string') {
+        try {
+          parsedPerms = JSON.parse(permissions);
+        } catch {
+          parsedPerms = {};
+        }
+      }
+      if (Array.isArray(parsedPerms)) {
         return requiredPermissions.some((permission) =>
-          permissions.includes(permission),
+          parsedPerms.includes(permission),
         );
       }
-      if (typeof permissions === 'object') {
+      if (parsedPerms && typeof parsedPerms === 'object') {
         return requiredPermissions.some(
-          (permission) => permissions[permission] === true,
+          (permission) => parsedPerms[permission] === true,
         );
       }
       return false;

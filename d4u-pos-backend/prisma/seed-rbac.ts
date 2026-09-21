@@ -414,7 +414,8 @@ export async function seedRbac(prisma: PrismaClient) {
       'crm.customers.read', 'crm.customers.create', 'pos.tables.manage',
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
-      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel'
+      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
+      'delivery.dispatch.update_status', 'delivery.tracking.read', 'delivery.dispatch.assign'
     ],
     // Task #2G: 'Manager' (role id 2) is a distinct, real, currently-active
     // role -- 3 real users in the live database, none of them provisioned
@@ -438,7 +439,8 @@ export async function seedRbac(prisma: PrismaClient) {
       'crm.customers.read', 'crm.customers.create', 'pos.tables.manage',
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
-      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel'
+      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
+      'delivery.dispatch.update_status', 'delivery.tracking.read', 'delivery.dispatch.assign'
     ],
     // Task #2I: Waiter is a synthetic terminal-session role (TerminalService,
     // no backing User row) whose entire write/read surface, per the actual

@@ -3138,7 +3138,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                     body: JSON.stringify({ status: 'RIDER_ARRIVED' }),
                                     auth: true,
                                   });
-                                  if (!res.ok) {
+                                  if (res.ok) {
+                                    setActiveDeliveries(prev => prev.map(d => d.bridgeOrderId === del.bridgeOrderId ? { ...d, status: 'RIDER_ARRIVED', rider: d.rider && d.rider !== 'Waiting for Rider' ? d.rider : 'Active Rider' } : d));
+                                    setToast({ message: `Order #${del.bridgeOrderId} marked: Rider Arrived.`, type: 'success' });
+                                  } else {
                                     const data = await res.json().catch(() => ({}));
                                     setToast({ message: data.message || `Failed to mark Order #${del.bridgeOrderId} as Rider Arrived.`, type: 'error' });
                                   }
@@ -3189,7 +3192,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                     body: JSON.stringify({ status: 'PRINT_BILL' }),
                                     auth: true,
                                   });
-                                  if (!res.ok) {
+                                  if (res.ok) {
+                                    setActiveDeliveries(prev => prev.map(d => d.bridgeOrderId === del.bridgeOrderId ? { ...d, status: 'PRINT_BILL' } : d));
+                                  } else {
                                     const data = await res.json().catch(() => ({}));
                                     setToast({ message: data.message || `Bill printed, but Order #${del.bridgeOrderId} status was NOT updated on the server.`, type: 'error' });
                                   }
@@ -3213,6 +3218,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                     auth: true,
                                   });
                                   if (res.ok) {
+                                    setActiveDeliveries(prev => prev.map(d => d.bridgeOrderId === del.bridgeOrderId ? { ...d, status: 'DISPATCHED' } : d));
                                     setToast({ message: 'Order Dispatched to Delivery App!', type: 'success' });
                                   } else {
                                     const data = await res.json().catch(() => ({}));

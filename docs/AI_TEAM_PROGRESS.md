@@ -2,6 +2,7 @@
 
 | Sprint | Agent | Task | Status | Files | Pending | Known Issues | Next Step |
 |---|---|---|---|---|---|---|---|
+| 29.2 | Antigravity | Fix Cashier Delivery Permissions ("Rider Arrived" flow) | Complete | `d4u-pos-backend/src/common/guards/permissions.guard.ts`, `d4u-pos-backend/prisma/seed-rbac.ts`, `d4u-pos-client/src/App.tsx` | None | None | Push to git per user instruction |
 | 28.6 | Antigravity | Add Inventory Auto-Deduct by Unit | Complete | `d4u-pos-backend/prisma/schema.prisma`, `d4u-pos-backend/src/orders/orders.service.ts` | None | None | Proceed to 28.7 |
 | 29.1 | Antigravity | Critical Local-First Fix (KDS Simulation Purge, Server Truth, KOT Isolation, POS Rehydration, Website Tracker) | Complete | `d4u-pos-client/src/StitchKDS.tsx`, `types.ts`, `kds/components/*`, `App.tsx`, `d4u-website/src/*`, `kots.service.spec.ts` | None | None | STOP per Phase 17 rules |
 | 28.7 | Antigravity | Menu Builder Category Groups UI | Complete | `d4u-pos-client/src/db.ts`, `d4u-admin/src/pages/MenuManager.tsx`, `d4u-pos-client/src/App.tsx` | None | None | Wait for backend sync API updates to test |
