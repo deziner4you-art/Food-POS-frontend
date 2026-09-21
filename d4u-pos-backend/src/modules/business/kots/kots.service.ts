@@ -35,8 +35,18 @@ export class KotsService {
   // instead, matching the identical 5-minute window both frontends already
   // apply client-side, keeps the response itself bounded rather than growing
   // unboundedly while relying on the UI to hide the excess.
+  //
+  // RC1 FIX: Only KOTs from the current OPEN business day are returned.
+  // Stale NEW/PREPARING KOTs from previous (closed) business days were leaking
+  // through because there was no day boundary in the query. We now:
+  //   1. Look up the currently OPEN BusinessDay for this store.
+  //   2. Filter by business_day_id = that day's id.
+  //   3. Fall back to a calendar-day createdAt boundary (today midnight) for any
+  //      KOT that was created without a business_day_id (e.g. online orders that
+  //      arrived outside a POS business day) so they still appear during today's
+  //      service without requiring a schema migration.
   async getActiveKots(store_id: number, includeReady: boolean = false) {
-    const where: any = includeReady
+    const statusFilter: any = includeReady
       ? {
           OR: [
             { status: { in: ['NEW', 'PREPARING'] } },
@@ -44,9 +54,62 @@ export class KotsService {
           ],
         }
       : { status: { in: ['NEW', 'PREPARING'] } };
+
+    const where: any = { ...statusFilter };
+
     if (store_id && !isNaN(store_id)) {
       where.store_id = store_id;
+
+      // RC1: Scope to the current OPEN business day only.
+      // If no open day exists for this store, fall back to today-midnight so
+      // the KDS never shows KOTs from a previous calendar day, regardless of
+      // whether the business day was explicitly started.
+      const openDay = await this.prisma.businessDay.findFirst({
+        where: { store_id, status: 'OPEN' },
+        orderBy: { id: 'desc' },
+        select: { id: true, dayStart: true },
+      });
+
+      if (openDay) {
+        // An open business day exists: include KOTs that either belong to it
+        // directly (business_day_id match) or were created after it opened
+        // but lack a business_day_id link (e.g. some online-order paths).
+        where.OR = [
+          ...(statusFilter.OR ?? []),
+          // Merge day boundary as an AND constraint instead of OR:
+          // We use a wrapper to AND the existing status filter with the day filter.
+        ];
+        // Reset to a clean AND structure so day + status both apply.
+        delete where.OR;
+        // Rebuild as: status_filter AND (business_day_id = X OR createdAt >= dayStart)
+        const dayBoundaryFilter = {
+          OR: [
+            { business_day_id: openDay.id },
+            { business_day_id: null, createdAt: { gte: openDay.dayStart } },
+          ],
+        };
+        // Merge status filter with day boundary using AND
+        if (statusFilter.OR) {
+          // includeReady path: wrap into AND
+          where.AND = [{ OR: statusFilter.OR }, dayBoundaryFilter];
+        } else {
+          // Simple status filter: merge directly
+          Object.assign(where, dayBoundaryFilter);
+        }
+      } else {
+        // No open business day: fall back to today-midnight boundary to prevent
+        // stale KOTs from the previous day leaking into the current KDS view.
+        const todayMidnight = new Date();
+        todayMidnight.setHours(0, 0, 0, 0);
+        const dayBoundaryFilter = { createdAt: { gte: todayMidnight } };
+        if (statusFilter.OR) {
+          where.AND = [{ OR: statusFilter.OR }, dayBoundaryFilter];
+        } else {
+          Object.assign(where, dayBoundaryFilter);
+        }
+      }
     }
+
     return this.prisma.kOT.findMany({
       where,
       // onlineOrder: the linked OnlineOrder row (if this KOT's Order came

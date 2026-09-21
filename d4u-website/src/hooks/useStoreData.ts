@@ -141,9 +141,16 @@ export function useStoreData(storeId: number | null) {
     const socket = io(BACKEND_URL);
     socketRef.current = socket;
 
-    socket.on('connect', () => {
-      socket.emit('join_store', { store_id: storeId });
-    });
+    // RC3 FIX: Emit join_store immediately if the socket is already connected
+    // at the time this effect runs (e.g. fast reconnect or React StrictMode
+    // double-mount). Previously, join_store was only emitted inside the
+    // 'connect' callback, so a socket that connected *before* the listener was
+    // attached would never join the store room and would miss all room-scoped
+    // 'order_updated' events. This mirrors the identical guard already in
+    // StitchKDS.tsx (lines 312-314).
+    const joinStore = () => socket.emit('join_store', { store_id: storeId });
+    if (socket.connected) joinStore();
+    socket.on('connect', joinStore);
 
     socket.on('marketing_update', () => {
       fetch(`${BACKEND_URL}/marketing/campaign/visible?store_id=${storeId}&channel=web`)

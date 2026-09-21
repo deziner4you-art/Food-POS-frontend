@@ -269,7 +269,10 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
             timePlaced: new Date(k.createdAt).toLocaleTimeString(),
             prepTimeMinutes: k.prep_time_minutes || 10,
             status: k.status,
-            startTime: k.start_time ? new Date(k.start_time).toISOString() : '',
+            // RC2 FIX: k.start_time does not exist on the Prisma KOT model.
+            // The authoritative preparation-start timestamp is acceptedAt,
+            // set by kots.service.ts updateKotStatus() when status = PREPARING.
+            startTime: k.acceptedAt ? new Date(k.acceptedAt).toISOString() : '',
             totalAmount: k.order?.total_amount || 0,
             paymentMethod: k.order?.payment_method || 'CASH',
             printCount: 0,
