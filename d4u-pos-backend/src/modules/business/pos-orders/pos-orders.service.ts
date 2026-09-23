@@ -42,7 +42,7 @@ export class PosOrdersService {
 
     return this.prisma.order.findMany({
       where,
-      include: { items: { include: { product: true } }, customer: true, kot: true },
+      include: { items: { include: { product: true } }, customer: true, kot: true, rider: true },
       orderBy: { id: 'desc' },
     });
   }
@@ -80,6 +80,7 @@ export class PosOrdersService {
     }[];
     discount?: number;
     payment_method?: string;
+    payment_status?: string;
     order_source?: string;
     table_no?: string;
     terminal_session_id?: number;
@@ -113,6 +114,9 @@ export class PosOrdersService {
     const loyalty_discount = pricingResult.loyaltyDiscount;
     const points_redeemed = pricingResult.pointsRedeemed;
 
+    const isDelivery = typeof body.order_source === 'string' && body.order_source.toUpperCase() === 'DELIVERY';
+    const isWaiter = typeof body.order_source === 'string' && body.order_source.toUpperCase() === 'WAITER';
+
     // Order + Items + KOT ایک ہی transaction میں
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
@@ -129,9 +133,9 @@ export class PosOrdersService {
           loyalty_discount,
           points_redeemed,
           status: 'PENDING',
-          order_source: body.order_source ?? 'WALKIN',
-          payment_method: body.payment_method ?? 'CASH',
-          payment_status: 'PAID',
+          order_source: isDelivery ? 'Delivery' : (body.order_source ?? 'WALKIN'),
+          payment_method: isDelivery ? 'COD' : (body.payment_method ?? 'CASH'),
+          payment_status: (isDelivery || isWaiter) ? 'UNPAID' : (body.payment_status ?? 'PAID'),
           table_no: body.table_no ?? null,
           terminal_session_id: body.terminal_session_id ?? null,
           is_offline: body.is_offline ?? false,
@@ -241,7 +245,14 @@ export class PosOrdersService {
       order_id: result.id,
       store_id: body.store_id,
       items: result.items,
-    });
+    }, `store_${body.store_id}`);
+
+    this.gateway.broadcast('kds_update', {
+      order_id: result.id,
+      store_id: body.store_id,
+      status: 'NEW',
+      items: result.items,
+    }, `store_${body.store_id}`);
 
     // Auto-deduct inventory
     this.inventoryService
@@ -333,17 +344,43 @@ export class PosOrdersService {
   async settleOrder(
     id: number,
     body: { payment_method: string; amount_received?: number },
+    user?: any,
   ) {
+    const existing = await this.prisma.order.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException(`Order #${id} not found`);
+
+    const isDelivery = typeof existing.order_source === 'string' && existing.order_source.toUpperCase() === 'DELIVERY';
+    if (isDelivery && !['WAITING_CASH_SETTLEMENT', 'DELIVERED'].includes(existing.status)) {
+      throw new BadRequestException(
+        `Delivery Order #${id} cannot be settled while in state '${existing.status}'. ` +
+        `It must complete the delivery lifecycle (DELIVERED / WAITING_CASH_SETTLEMENT) before cash settlement.`
+      );
+    }
+
+    const now = new Date();
+    const existingDeliveryInfo = (existing.delivery_info as any) || {};
+    const delivery_info = {
+      ...existingDeliveryInfo,
+      settled_at: now.toISOString(),
+      settled_by: user?.sub ? Number(user.sub) : existing.created_by,
+      settlement_amount: body.amount_received ?? existing.total_amount,
+      settlement_method: body.payment_method,
+    };
+
     const { count } = await this.prisma.order.updateMany({
       where: { id, status: { not: 'SETTLED' } },
       data: {
         status: 'SETTLED',
         payment_method: body.payment_method,
         payment_status: 'PAID',
+        delivery_info,
       },
     });
 
-    const order = await this.prisma.order.findUnique({ where: { id } });
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: { customer: true, items: { include: { product: true } }, rider: true },
+    });
     
     if (count === 0) {
       return { success: true, order };
@@ -352,8 +389,40 @@ export class PosOrdersService {
     // Free the dine-in table (if any) this order was holding.
     await this.tablesService.releaseTableByOrderId(id);
 
+    // If cash payment and active business day exists, record CashFlow
+    if (body.payment_method === 'CASH' && existing.business_day_id) {
+      try {
+        await this.prisma.cashFlow.create({
+          data: {
+            store_id: existing.store_id,
+            business_day_id: existing.business_day_id,
+            user_id: user?.sub ? Number(user.sub) : existing.created_by,
+            type: 'CASH_IN',
+            amount: body.amount_received ?? existing.total_amount,
+            comment: `Order #${id} Cash Settlement (${existing.order_source || 'Dine In'})`,
+          },
+        });
+      } catch (err) {
+        console.error(`[CashFlow] Failed to record cash flow for settled Order #${id}:`, err);
+      }
+    }
+
     console.log(`[SETTLED] POS Order #${id} | Method: ${body.payment_method}`);
-    this.gateway.broadcast('order_settled', { order_id: id });
+    this.gateway.broadcast('order_settled', {
+      order_id: id,
+      store_id: order?.store_id ?? existing.store_id,
+      terminal_session_id: order?.terminal_session_id ?? existing.terminal_session_id,
+      table_no: order?.table_no ?? existing.table_no,
+      status: 'SETTLED',
+      payment_status: 'PAID',
+      payment_method: body.payment_method,
+      settled_at: now.toISOString(),
+      total_amount: order?.total_amount ?? existing.total_amount,
+    }, `store_${existing.store_id}`);
+
+    if (order) {
+      this.gateway.broadcast('order_updated', formatPosOrderForRider(order), `store_${order.store_id}`);
+    }
 
     return { success: true, order };
   }
@@ -458,8 +527,8 @@ export class PosOrdersService {
             order_source: isDelivery ? 'Delivery' : 'OFFLINE_SYNC',
             status: orderStatus,
             total_amount: order.totalAmount || 0,
-            payment_status: 'PAID',
-            payment_method: order.paymentMethod || 'CASH',
+            payment_status: isDelivery ? 'UNPAID' : 'PAID',
+            payment_method: isDelivery ? 'COD' : (order.paymentMethod || 'CASH'),
             is_offline: true,
             // created_by is a required (non-nullable) relation to User --
             // neither local-fallback KOT object anywhere in the POS ever

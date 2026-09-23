@@ -207,6 +207,34 @@ export class RiderService {
       throw new BadRequestException('Rider store mismatch.');
     }
 
+    // Backend Claim Protection (Fix 5 & 6):
+    // A rider with an active unfinished delivery cannot claim another order.
+    const terminalStatuses = ['SETTLED', 'CANCELLED'];
+    const activeOnlineDelivery = await this.prisma.onlineOrder.findFirst({
+      where: {
+        claimedByRiderId: riderId,
+        status: { notIn: terminalStatuses },
+      },
+    });
+    if (activeOnlineDelivery && activeOnlineDelivery.id !== id) {
+      throw new ConflictException(
+        `Finish current delivery first: Order #${activeOnlineDelivery.id} is still in progress (${activeOnlineDelivery.status}).`,
+      );
+    }
+
+    const activePosDelivery = await this.prisma.order.findFirst({
+      where: {
+        rider_id: riderId,
+        status: { notIn: terminalStatuses },
+        order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+      },
+    });
+    if (activePosDelivery && activePosDelivery.id !== id) {
+      throw new ConflictException(
+        `Finish current delivery first: POS Order #${activePosDelivery.id} is still in progress.`,
+      );
+    }
+
     const onlineClaim = await this.prisma.onlineOrder.updateMany({
       where: { id, claimedByRiderId: null },
       data: { claimedByRiderId: riderId, claimedByRiderName: riderUser.name || null },
@@ -264,6 +292,66 @@ export class RiderService {
     }
 
     throw new NotFoundException('Order not found.');
+  }
+
+  async getRiderAvailability(storeIdStr: string) {
+    const storeId = Number(storeIdStr);
+    if (!storeId) throw new BadRequestException('store_id is required.');
+
+    const onlineRiders = this.gateway.getActiveRidersList(storeId);
+    const terminalStatuses = ['SETTLED', 'CANCELLED'];
+
+    const results = await Promise.all(
+      onlineRiders.map(async (r) => {
+        const activeOnline = await this.prisma.onlineOrder.findFirst({
+          where: {
+            claimedByRiderId: r.riderId,
+            status: { notIn: terminalStatuses },
+          },
+          select: { id: true, status: true },
+        });
+        const activePos = await this.prisma.order.findFirst({
+          where: {
+            rider_id: r.riderId,
+            status: { notIn: terminalStatuses },
+            order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+          },
+          select: { id: true, status: true },
+        });
+        const user = await this.prisma.user.findUnique({
+          where: { id: r.riderId },
+          select: { id: true, name: true, phone: true },
+        });
+
+        const activeOrder = activeOnline || activePos;
+        const isBusy = !!activeOrder;
+        const loc = typeof this.gateway.getRiderLocation === 'function' ? this.gateway.getRiderLocation(r.riderId) : null;
+        return {
+          riderId: r.riderId,
+          name: user?.name || `Rider #${r.riderId}`,
+          phone: user?.phone || '',
+          isOnline: r.isOnline,
+          isBusy,
+          activeOrderId: activeOrder?.id || null,
+          activeOrderStatus: activeOrder?.status || null,
+          lat: loc?.lat ?? null,
+          lng: loc?.lng ?? null,
+          accuracy: loc?.accuracy ?? null,
+          lastSeen: loc?.timestamp ?? r.lastSeen,
+        };
+      }),
+    );
+
+    const availableCount = results.filter((r) => r.isOnline && !r.isBusy).length;
+    const busyCount = results.filter((r) => r.isOnline && r.isBusy).length;
+
+    return {
+      storeId,
+      totalOnline: results.length,
+      availableCount,
+      busyCount,
+      riders: results,
+    };
   }
 
   async getRiderGps(orderId: string) {

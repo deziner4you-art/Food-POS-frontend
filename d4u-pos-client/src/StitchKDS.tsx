@@ -312,13 +312,18 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     const storeId = currentUser?.store_id || 1;
     const joinRoom = () => socket.emit('join_store', { store_id: storeId });
     if (socket.connected) joinRoom();
-    socket.on('connect', joinRoom);
-    socket.on('kds_update', () => {
+    const onKdsChange = () => {
       syncKOTs();
-    });
+    };
+    socket.on('connect', joinRoom);
+    socket.on('kds_update', onKdsChange);
+    socket.on('new_kot', onKdsChange);
+    socket.on('new_order', onKdsChange);
     return () => {
       socket.off('connect', joinRoom);
-      socket.off('kds_update');
+      socket.off('kds_update', onKdsChange);
+      socket.off('new_kot', onKdsChange);
+      socket.off('new_order', onKdsChange);
     };
   }, [currentUser?.store_id]);
   

@@ -34,6 +34,12 @@ export class RiderOrdersController {
   constructor(private readonly service: RiderService) {}
 
   @RequirePermissions('delivery.tracking.read')
+  @Get('availability')
+  getRiderAvailability(@Query('store_id') storeId: string) {
+    return this.service.getRiderAvailability(storeId);
+  }
+
+  @RequirePermissions('delivery.tracking.read')
   @Get()
   getRiderOrders(@Query('store_id') storeId: string) {
     return this.service.getRiderOrders(storeId);

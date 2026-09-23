@@ -24,6 +24,7 @@ import { PrintBill, PrintKOT, PrintShiftCloseReceipt } from './PrintTemplates'
 import KitchenView from './kds/components/KitchenView'
 import type { Order, OrderStatus } from './kds/types'
 import { AlertCircle } from 'lucide-react'
+import { DeliveryGoogleMap } from './pos/DeliveryGoogleMap'
 
 const KOTTimer = ({ kot }: { kot: any }) => {
   const [timeLeft, setTimeLeft] = useState<string>('');
@@ -521,15 +522,31 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     if (!currentUser?.store_id) return;
     apiFetch(`/pos-orders?store_id=${currentUser.store_id}`, { auth: true })
       .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
-      .then((orders: any[]) => setTerminalPanelOrders((orders || []).filter(o => o.order_source === 'WAITER' && o.status !== 'SETTLED' && o.status !== 'VOIDED')))
+      .then((orders: any[]) => setTerminalPanelOrders((orders || []).filter(o => o.order_source === 'WAITER' && o.status !== 'VOIDED')))
       .catch(err => console.error('Failed to fetch waiter terminal orders', err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.store_id]);
+
+  // Rider availability tracking (Fix 1, 4, 8)
+  const [onlineRidersCount, setOnlineRidersCount] = useState<number | null>(null);
+  const fetchRiderAvailability = useCallback(() => {
+    if (!currentUser?.store_id) return;
+    apiFetch(`/rider-orders/availability?store_id=${currentUser.store_id}`, { auth: true })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && typeof data.totalOnline === 'number') {
+          setOnlineRidersCount(data.totalOnline);
+        }
+      })
+      .catch(() => {});
   }, [currentUser?.store_id]);
 
   // Fetch once a store is known (keeps the sidebar badge count right even
   // before the cashier opens the tab) and again whenever they switch to it.
   useEffect(() => { fetchTerminalPanelOrders(); }, [fetchTerminalPanelOrders]);
   useEffect(() => { if (activeMenu === 'Terminal') fetchTerminalPanelOrders(); }, [activeMenu, fetchTerminalPanelOrders]);
+  useEffect(() => { fetchRiderAvailability(); }, [fetchRiderAvailability]);
+  useEffect(() => { if (activeMenu === 'Delivery') fetchRiderAvailability(); }, [activeMenu, fetchRiderAvailability]);
 
   // Settles a READY waiter order directly via the real settle endpoint --
   // NOT by reloading it into the cart and running it through the normal Pay
@@ -650,6 +667,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     const fetchInitialData = async () => {
       try {
         const storeId = currentUser?.store_id;
+        if (!storeId) {
+          console.warn('[POS] Missing store_id on current user session');
+          setToast({ message: 'Store context missing: Current user session has no assigned store.', type: 'error' });
+          return;
+        }
         // currentUser never carries a `.token` field — the real access token
         // lives in localStorage (set at login, see LoginScreen/session.ts).
         // Using currentUser?.token here always sent "Bearer undefined",
@@ -657,7 +679,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         // order was only ever visible via the live socket event, never
         // reloaded from the backend afterwards.
         const res = await apiFetch(`/online-orders?store_id=${storeId}`, { auth: true });
-        if (res.ok) setBackendOnlineOrders(await res.json());
+        if (res.ok) {
+          setBackendOnlineOrders(await res.json());
+        } else if (res.status === 403) {
+          setToast({
+            message: 'Insufficient POS permissions: Current account is not authorized to access store online orders.',
+            type: 'error',
+          });
+        }
 
         // Recover Active Deliveries after a browser refresh. activeDeliveries
         // is plain React state — it starts empty on every mount and, before
@@ -695,31 +724,35 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             const hydrated = activeOrders.map(order => {
               const amount = parseFloat(order.totalAmount) || 0;
               let newStatus = order.status;
-              let riderLabel = 'Waiting for Rider';
+              const claimedRiderId = order.claimedByRiderId || null;
+              const claimedRiderName = order.claimedByRiderName || null;
+              const riderDisplayName = claimedRiderName ? `Rider: ${claimedRiderName}` : (claimedRiderId ? `Rider #${claimedRiderId}` : null);
+              let riderLabel = riderDisplayName || 'Waiting for Rider';
+
               if (order.status === 'CONFIRMED') {
                 newStatus = 'PENDING_CHEF';
-                riderLabel = 'Pending Chef Acceptance';
+                riderLabel = riderDisplayName || 'Pending Chef Acceptance';
               } else if (order.status === 'KITCHEN_PREPARING') {
                 newStatus = 'PREPARING';
-                riderLabel = 'Chef Preparing';
+                riderLabel = riderDisplayName || 'Chef Preparing';
               } else if (order.status === 'READY') {
                 newStatus = 'READY';
-                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Waiting for Rider';
+                riderLabel = riderDisplayName || 'Waiting for Rider';
               } else if (order.status === 'RIDER_ACCEPTED' || order.status === 'RIDER_ARRIVED') {
                 newStatus = order.status;
-                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+                riderLabel = riderDisplayName || 'Waiting for Rider';
               } else if (order.status === 'PRINT_BILL' || order.status === 'DISPATCHED') {
                 newStatus = order.status;
-                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+                riderLabel = riderDisplayName || 'Waiting for Rider';
               } else if (order.status === 'PICKED_UP' || order.status === 'OUT_FOR_DELIVERY') {
                 newStatus = 'OUT_FOR_DELIVERY';
-                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+                riderLabel = riderDisplayName ? `${claimedRiderName || 'Rider'} — On Delivery` : 'Out for Delivery';
               } else if (order.status === 'DELIVERED') {
                 newStatus = 'DELIVERED';
-                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+                riderLabel = riderDisplayName || 'Delivered';
               } else if (order.status === 'WAITING_CASH_SETTLEMENT') {
                 newStatus = 'WAITING_CASH_SETTLEMENT';
-                riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : 'Active Rider';
+                riderLabel = riderDisplayName || 'Waiting Settle';
               }
 
               return {
@@ -730,6 +763,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 customerAddress: order.customerAddress || 'No Address Provided',
                 status: newStatus,
                 rider: riderLabel,
+                claimedByRiderId: claimedRiderId,
+                claimedByRiderName: claimedRiderName,
                 cod: amount,
                 totalAmount: amount,
                 riderDistance: 'N/A',
@@ -757,7 +792,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         const posDeliveriesRes = await apiFetch(`/pos-orders?store_id=${storeId}`, { auth: true });
         if (posDeliveriesRes.ok) {
           const posOrders: any[] = await posDeliveriesRes.json();
-          const activePos = posOrders.filter(o => o.order_source === 'Delivery' && o.status !== 'SETTLED' && o.status !== 'CANCELLED' && o.status !== 'VOIDED');
+          const activePos = (posOrders || []).filter(o => o.order_source?.toUpperCase() === 'DELIVERY' && o.status !== 'SETTLED' && o.status !== 'CANCELLED' && o.status !== 'VOIDED');
           
           if (activePos.length > 0) {
             const hydratedPos = activePos.map(order => {
@@ -785,11 +820,13 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               return {
                 id: order.id,
                 bridgeOrderId: order.id,
-                customer: order.customer?.name || 'Guest',
+                customer: order.customer?.name || order.customer_name || 'Guest',
                 address: order.delivery_address || 'No Address Provided',
                 customerAddress: order.delivery_address || 'No Address Provided',
                 status: newStatus,
                 rider: riderLabel,
+                claimedByRiderId: order.rider_id || null,
+                claimedByRiderName: order.rider?.name || null,
                 cod: amount,
                 totalAmount: amount,
                 riderDistance: 'N/A',
@@ -801,9 +838,16 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             });
             
             setActiveDeliveries(prev => {
-              const existingIds = new Set(prev.map(d => d.bridgeOrderId));
-              const toAdd = hydratedPos.filter(d => !existingIds.has(d.bridgeOrderId));
-              return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+              const byBridgeId = new Map(hydratedPos.map(d => [d.bridgeOrderId, d]));
+              const updatedPrev = prev.map(p => {
+                const fresh = byBridgeId.get(p.bridgeOrderId);
+                if (fresh) {
+                  byBridgeId.delete(p.bridgeOrderId);
+                  return { ...p, ...fresh };
+                }
+                return p;
+              });
+              return [...updatedPrev, ...Array.from(byBridgeId.values())];
             });
           }
         }
@@ -824,7 +868,21 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 if (ro.status === 'RIDER_ACCEPTED' && d.status !== 'ON_WAY') newStatus = 'ON_WAY';
                 if (ro.status === 'PICKED_UP' && d.status !== 'ON_WAY') newStatus = 'ON_WAY';
                 if (ro.status === 'DELIVERED' && d.status !== 'DELIVERED') newStatus = 'DELIVERED';
-                if (newStatus !== d.status) { changed = true; return { ...d, status: newStatus, rider: 'Active Rider' }; }
+
+                const cId = ro.claimedByRiderId || d.claimedByRiderId || null;
+                const cName = ro.claimedByRiderName || d.claimedByRiderName || null;
+                const riderDisplayName = cName ? `Rider: ${cName}` : (cId ? `Rider #${cId}` : (d.rider && d.rider !== 'Active Rider' ? d.rider : 'Waiting for Rider'));
+
+                if (newStatus !== d.status || cId !== d.claimedByRiderId || cName !== d.claimedByRiderName) {
+                  changed = true;
+                  return {
+                    ...d,
+                    status: newStatus,
+                    claimedByRiderId: cId,
+                    claimedByRiderName: cName,
+                    rider: riderDisplayName,
+                  };
+                }
               }
               return d;
             });
@@ -851,19 +909,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   address: ro.customerAddress || 'No Address Provided',
                   customerAddress: ro.customerAddress || 'No Address Provided',
                   status: newStatus,
-                  rider: ro.claimedByRiderName ? `Rider: ${ro.claimedByRiderName}` : 'Waiting for Rider',
+                  rider: ro.claimedByRiderName ? `Rider: ${ro.claimedByRiderName}` : (ro.claimedByRiderId ? `Rider #${ro.claimedByRiderId}` : 'Waiting for Rider'),
+                  claimedByRiderId: ro.claimedByRiderId || null,
+                  claimedByRiderName: ro.claimedByRiderName || null,
                   cod: parseFloat(ro.totalAmount) || 0,
                   totalAmount: parseFloat(ro.totalAmount) || 0,
                   riderDistance: 'N/A',
                   lat: ro.delivery?.lat ? ro.delivery.lat + '%' : '50%',
                   lng: ro.delivery?.lng ? ro.delivery.lng + '%' : '50%',
                   items: parsedItems,
-                  // POS-native delivery order (created directly at the POS, not
-                  // via the website) — its bridgeOrderId is a real pos-orders
-                  // Order id, not an OnlineOrder id, so status-progression
-                  // actions below must PATCH /pos-orders/:id/status instead of
-                  // /online-orders/:id. formatPosOrderForRider (backend) sets
-                  // isPos: true precisely so this can be told apart here.
                   isPos: !!ro.isPos,
                 });
               }
@@ -871,8 +925,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
             return changed ? [...updated, ...newCards] : prev;
           });
+        } else if (activeRes.status === 403) {
+          setToast({
+            message: 'Insufficient POS permissions: Current account is not authorized to access active deliveries.',
+            type: 'error',
+          });
         }
-      } catch { /* backend offline */ }
+      } catch (err: any) {
+        const errorMsg = err?.message || 'Failed to connect to backend server';
+        console.error('[POS] Initial data fetch failed:', errorMsg);
+        setToast({
+          message: `Backend connection error: ${errorMsg}`,
+          type: 'error',
+        });
+      }
     };
     fetchInitialData();
 
@@ -920,23 +986,35 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             if (order.status === 'KITCHEN_PREPARING') newStatus = 'PREPARING';
             if (order.status === 'PICKED_UP') newStatus = 'OUT_FOR_DELIVERY';
             if (order.status === 'DELIVERED' || order.status === 'PAID') newStatus = 'DELIVERED';
+
+            const claimedRiderId = order.claimedByRiderId !== undefined ? order.claimedByRiderId : updated[existIdx].claimedByRiderId;
+            const claimedRiderName = order.claimedByRiderName !== undefined ? order.claimedByRiderName : updated[existIdx].claimedByRiderName;
+            const riderDisplayName = claimedRiderName ? `Rider: ${claimedRiderName}` : (claimedRiderId ? `Rider #${claimedRiderId}` : null);
+
             let riderLabel = 'Waiting for Rider';
-            if (order.claimedByRiderName) {
-              riderLabel = `Rider: ${order.claimedByRiderName}`;
+            if (riderDisplayName) {
+              riderLabel = newStatus === 'OUT_FOR_DELIVERY' ? `${claimedRiderName || 'Rider'} — On Delivery` : riderDisplayName;
             } else if (newStatus === 'PENDING_CHEF' || order.status === 'CONFIRMED') {
               riderLabel = 'Pending Chef Acceptance';
             } else if (newStatus === 'PREPARING') {
               riderLabel = 'Chef Preparing';
-            } else if (newStatus === 'READY') {
+            } else if (newStatus === 'READY' || newStatus === 'PRINT_BILL') {
               riderLabel = 'Waiting for Rider';
             } else {
-              riderLabel = 'Active Rider';
+              riderLabel = 'Rider Not Assigned';
             }
-            if (newStatus !== updated[existIdx].status || riderLabel !== updated[existIdx].rider) {
+
+            if (newStatus !== updated[existIdx].status || riderLabel !== updated[existIdx].rider || claimedRiderId !== updated[existIdx].claimedByRiderId) {
               if (updated[existIdx].status !== 'READY' && newStatus === 'READY') {
                 setToast({ message: `🚀 DELIVERY READY — Order #${updated[existIdx].id || updated[existIdx].bridgeOrderId} is ready for rider pickup.`, type: 'delivery', action: { label: 'Open Delivery', onClick: () => setActiveMenu('Delivery') } });
               }
-              updated[existIdx] = { ...updated[existIdx], status: newStatus, rider: riderLabel };
+              updated[existIdx] = {
+                ...updated[existIdx],
+                status: newStatus,
+                rider: riderLabel,
+                claimedByRiderId: claimedRiderId || null,
+                claimedByRiderName: claimedRiderName || null,
+              };
             }
           } else if ((order.type?.toUpperCase() === 'DELIVERY' || order.type?.toUpperCase() === 'ONLINE') && order.status !== 'CANCELLED') {
             let parsedItems: any[] = [];
@@ -959,7 +1037,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             if (order.status === 'KITCHEN_PREPARING') newStatus = 'PREPARING';
             if (order.status === 'PICKED_UP') newStatus = 'OUT_FOR_DELIVERY';
             if (order.status === 'DELIVERED' || order.status === 'PAID') newStatus = 'DELIVERED';
-            const riderLabel = order.claimedByRiderName ? `Rider: ${order.claimedByRiderName}` : (newStatus === 'PREPARING' ? 'Chef Preparing' : 'Waiting for Rider');
+
+            const claimedRiderId = order.claimedByRiderId || null;
+            const claimedRiderName = order.claimedByRiderName || null;
+            const riderDisplayName = claimedRiderName ? `Rider: ${claimedRiderName}` : (claimedRiderId ? `Rider #${claimedRiderId}` : null);
+            const riderLabel = riderDisplayName || (newStatus === 'PREPARING' ? 'Chef Preparing' : 'Waiting for Rider');
             const amount = parseFloat(order.totalAmount) || 0;
             
             const newCard = {
@@ -970,6 +1052,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               customerAddress: order.customerAddress || 'No Address Provided',
               status: newStatus,
               rider: riderLabel,
+              claimedByRiderId: claimedRiderId,
+              claimedByRiderName: claimedRiderName,
               cod: amount,
               totalAmount: amount,
               riderDistance: 'N/A',
@@ -1042,6 +1126,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       socket.on('update_active_waiters', (waiters: any[]) => {
         setActiveWaiters(waiters);
       });
+      socket.on('rider_presence_updated', (data: any) => {
+        if (data && (!data.storeId || data.storeId === currentUser?.store_id)) {
+          setOnlineRidersCount(typeof data.count === 'number' ? data.count : (data.riders?.length ?? 0));
+        }
+      });
       socket.on('marketing_update', () => {
         if (currentUser?.store_id) {
           // MARKETING-003 §1/§2: routed through the shared CampaignResolverService (channel=pos).
@@ -1070,6 +1159,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         socket.off('order_voided', handleTerminalPanelRefresh);
         socket.off('waiter_connected');
         socket.off('waiter_disconnected');
+        socket.off('rider_presence_updated');
         socket.off('marketing_update');
       };
     }, [currentUser]);
@@ -1135,18 +1225,49 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   }, [isWaiterMode, currentUser?.sessionId]);
 
   useEffect(() => {
-    if (!isWaiterMode) return;
     const handleKdsUpdate = (data: { kot_id: number; order_id: number; status: string; store_id: number }) => {
       if (data.store_id !== currentUser?.store_id) return;
-      const mine = waiterOrders.find(o => o.id === data.order_id);
-      if (!mine) return;
-      if (data.status === 'PREPARING') setToast({ message: `Table ${mine.table_no || ''}: Kitchen started preparing your order.`, type: 'success' });
-      if (data.status === 'READY') setToast({ message: `Table ${mine.table_no || ''}: Order is ready!`, type: 'success' });
-      fetchWaiterOrders();
+      if (isWaiterMode) {
+        const mine = waiterOrders.find(o => o.id === data.order_id);
+        if (mine) {
+          if (data.status === 'PREPARING') setToast({ message: `Table ${mine.table_no || ''}: Kitchen started preparing your order.`, type: 'success' });
+          if (data.status === 'READY') setToast({ message: `Table ${mine.table_no || ''}: Order is ready!`, type: 'success' });
+          fetchWaiterOrders();
+        }
+      } else {
+        fetchTerminalPanelOrders();
+        if (data.status === 'READY' || data.status === 'PREPARING') {
+          setActiveDeliveries(prev => prev.map(d => {
+            if (d.bridgeOrderId === data.order_id || d.id === data.order_id) {
+              const updatedStatus = data.status;
+              const riderLabel = updatedStatus === 'READY' ? (d.claimedByRiderName ? `Rider: ${d.claimedByRiderName}` : 'Waiting for Rider') : 'Chef Preparing';
+              if (d.status !== 'READY' && updatedStatus === 'READY') {
+                setToast({ message: `🚀 DELIVERY READY — Order #${d.id || d.bridgeOrderId} is ready for rider pickup.`, type: 'delivery', action: { label: 'Open Delivery', onClick: () => setActiveMenu('Delivery') } });
+              }
+              return { ...d, status: updatedStatus, rider: riderLabel };
+            }
+            return d;
+          }));
+        }
+      }
     };
+
+    const handleOrderSettledInWaiter = (data: any) => {
+      if (isWaiterMode) {
+        fetchWaiterOrders();
+        if (data?.table_no) {
+          setToast({ message: `Table ${data.table_no}: Order #${data.order_id} settled by Cashier (${data.settlement_method || 'CASH'}).`, type: 'success' });
+        }
+      }
+    };
+
     socket.on('kds_update', handleKdsUpdate);
-    return () => { socket.off('kds_update', handleKdsUpdate); };
-  }, [isWaiterMode, waiterOrders, currentUser?.store_id]);
+    socket.on('order_settled', handleOrderSettledInWaiter);
+    return () => {
+      socket.off('kds_update', handleKdsUpdate);
+      socket.off('order_settled', handleOrderSettledInWaiter);
+    };
+  }, [isWaiterMode, waiterOrders, currentUser?.store_id, fetchTerminalPanelOrders]);
 
   // ---------------------------------------------------------------
   // CASHIER: persistent "Connected Waiters" list (backed by TerminalSession,
@@ -1585,11 +1706,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.message || `Order failed (HTTP ${res.status})`);
 
+        const createdOrder = data?.order ?? data;
+        const realOrderId = createdOrder?.id;
+
         if (posSettings.kotMode === 'PRINT' && posSettings.kotPrintQty > 0) {
           setPrintData({
             type: 'KOT',
             data: {
-              orderId: data?.id,
+              orderId: realOrderId,
               type: 'Delivery',
               customer: customerName,
               customerPhone,
@@ -1607,10 +1731,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         }
         
         setActiveDeliveries(prev => {
-          if (prev.find(d => d.bridgeOrderId === data?.id)) return prev;
+          if (prev.find(d => d.bridgeOrderId === realOrderId)) return prev;
           return [...prev, {
-            id: data?.id,
-            bridgeOrderId: data?.id,
+            id: realOrderId,
+            bridgeOrderId: realOrderId,
             customer: customerName || 'Guest',
             address: customerAddress || 'No Address Provided',
             status: 'PENDING_CHEF',
@@ -1625,7 +1749,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
         setCart([]);
         setOrderNotes('');
-        setToast({ message: `Delivery Order #${data?.id} sent to Kitchen!`, type: 'success' });
+        setToast({ message: `Delivery Order #${realOrderId} sent to Kitchen!`, type: 'success' });
         return;
       } catch (e) {
         console.error('Delivery KOT backend create failed, falling back to local:', e);
@@ -2373,25 +2497,55 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {waiterOrders.map((order: any) => {
-                const kotStatus = order.kot?.status || order.status || 'PENDING';
-                const statusColor = kotStatus === 'READY' ? 'var(--accent-green)' : kotStatus === 'PREPARING' ? 'var(--accent-yellow)' : kotStatus === 'CANCELLED' ? '#ef4444' : 'var(--text-muted)';
+                const isSettled = order.status === 'SETTLED' || order.payment_status === 'PAID';
+                const kotStatus = isSettled ? 'PAID / SETTLED' : (order.kot?.status || order.status || 'PENDING');
+                const statusColor = isSettled
+                  ? 'var(--accent-green)'
+                  : kotStatus === 'READY'
+                  ? 'var(--accent-green)'
+                  : kotStatus === 'PREPARING'
+                  ? 'var(--accent-yellow)'
+                  : kotStatus === 'CANCELLED'
+                  ? '#ef4444'
+                  : 'var(--text-muted)';
                 let etaMinutes: number | null = null;
-                if (kotStatus === 'PREPARING' && order.kot?.acceptedAt) {
+                if (!isSettled && kotStatus === 'PREPARING' && order.kot?.acceptedAt) {
                   const elapsedMin = (Date.now() - new Date(order.kot.acceptedAt).getTime()) / 60000;
                   etaMinutes = Math.max(0, Math.round(15 - elapsedMin)); // best-effort default prep window
                 }
+
+                let delInfo: any = {};
+                try {
+                  delInfo = typeof order.delivery_info === 'string' ? JSON.parse(order.delivery_info) : (order.delivery_info || {});
+                } catch (e) {}
+                const settledAt = delInfo?.settled_at || (isSettled ? order.updatedAt : null);
+
                 return (
-                  <div key={order.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 18px' }}>
+                  <div key={order.id} style={{ background: 'var(--bg-panel)', border: `1px solid ${isSettled ? 'rgba(34, 197, 94, 0.4)' : 'var(--border-color)'}`, borderRadius: '10px', padding: '14px 18px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                       <span style={{ color: 'white', fontWeight: 'bold' }}>Order #{order.id} — Table {order.table_no || 'N/A'}</span>
-                      <span style={{ color: statusColor, fontWeight: 'bold', fontSize: '0.85rem' }}>{kotStatus}</span>
+                      <span style={{ color: statusColor, fontWeight: 'bold', fontSize: '0.85rem', background: isSettled ? 'rgba(34, 197, 94, 0.15)' : 'transparent', padding: isSettled ? '3px 8px' : '0', borderRadius: '4px' }}>
+                        {kotStatus}
+                      </span>
                     </div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '6px' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '8px' }}>
                       {order.items?.map((i: any) => `${i.quantity}x ${i.product?.name || 'Item'}`).join(', ')}
                     </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Total Amount:</span>
+                      <span style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1rem' }}>
+                        Rs. {Number(order.total_amount || 0).toFixed(2)}
+                      </span>
+                    </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                      <span>{new Date(order.createdAt).toLocaleTimeString()}</span>
-                      {etaMinutes !== null && <span>~{etaMinutes} min remaining</span>}
+                      <span>Placed: {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      {isSettled && settledAt ? (
+                        <span style={{ color: 'var(--accent-green)', fontWeight: '500' }}>
+                          Settled at: {new Date(settledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ) : etaMinutes !== null ? (
+                        <span>~{etaMinutes} min remaining</span>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -2995,104 +3149,187 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             {(() => {
               const pendingWaiterOrders = terminalPanelOrders.filter(o => o.status === 'PENDING');
               const activeWaiterOrders = terminalPanelOrders.filter(o => o.status === 'PREPARING' || o.status === 'READY');
-              const waiterNameFor = (order: any) => terminalSessions.find((s: any) => s.id === order.terminal_session_id)?.waiter_name || 'Waiter';
+              const settledWaiterOrders = terminalPanelOrders
+                .filter(o => o.status === 'SETTLED' || o.payment_status === 'PAID')
+                .sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+              const waiterNameFor = (order: any) => terminalSessions.find((s: any) => s.id === order.terminal_session_id)?.waiter_name || order.waiter?.name || 'Waiter';
               const orderItemsList = (order: any) => (order.items || []).map((i: any) => ({
                 name: i.product?.name || `Item #${i.product_id}`,
                 qty: i.quantity,
                 price: i.price,
               }));
+              const parseDelInfo = (order: any) => {
+                try {
+                  return typeof order.delivery_info === 'string' ? JSON.parse(order.delivery_info) : (order.delivery_info || {});
+                } catch (e) {
+                  return {};
+                }
+              };
+
               return (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start', marginTop: '20px' }}>
-            <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 10px 0' }}>
-              <h3 style={{ margin: 0, color: 'white' }}>Pending Orders</h3>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px', paddingRight: '10px' }}>
-              {pendingWaiterOrders.length === 0 && (
-                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem' }}>
-                  No pending terminal orders
-                </div>
-              )}
-              {pendingWaiterOrders.map(order => (
-                <div key={order.id} style={{ display: 'flex', flexDirection: 'column', gap: '15px', background: 'var(--bg-base)', padding: '20px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid var(--accent-yellow)` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: 'white' }}>Table {order.table_no}</h3>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Waiter: {waiterNameFor(order)}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {(order.total_amount || 0).toFixed(2)}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{order.business_date ? new Date(order.business_date).toLocaleTimeString() : ''}</div>
-                    </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 10px 0' }}>
+                    <h3 style={{ margin: 0, color: 'white' }}>Pending Orders</h3>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pendingWaiterOrders.length} pending</span>
                   </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px', paddingRight: '10px' }}>
+                    {pendingWaiterOrders.length === 0 && (
+                      <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem' }}>
+                        No pending terminal orders
+                      </div>
+                    )}
+                    {pendingWaiterOrders.map(order => (
+                      <div key={order.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-base)', padding: '18px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid var(--accent-yellow)` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', color: 'white' }}>Table {order.table_no}</h3>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Order #{order.id} · Waiter: {waiterNameFor(order)}</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {(Number(order.total_amount) || 0).toFixed(2)}</div>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+                          </div>
+                        </div>
 
-                  <div style={{ background: '#0f172a', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.9rem', color: '#cbd5e1' }}>
-                    {orderItemsList(order).map((i: any, idx: number) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span>{i.qty}x {i.name}</span>
-                        <span style={{ color: 'var(--text-muted)' }}>Rs. {i.price * i.qty}</span>
+                        <div style={{ display: 'inline-block', alignSelf: 'flex-start', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '4px' }}>
+                          Settlement: UNPAID / PENDING CASH SETTLEMENT
+                        </div>
+
+                        <div style={{ background: '#0f172a', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                          {orderItemsList(order).map((i: any, idx: number) => (
+                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span>{i.qty}x {i.name}</span>
+                              <span style={{ color: 'var(--text-muted)' }}>Rs. {i.price * i.qty}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div style={{ padding: '10px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: 'rgba(251, 191, 36, 0.1)', color: 'var(--accent-yellow)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-yellow)', fontSize: '0.85rem' }}>
+                          <Clock size={16} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
+                          Already sent to Kitchen — awaiting chef
+                        </div>
                       </div>
                     ))}
                   </div>
-
-                  <div style={{ padding: '12px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: 'rgba(251, 191, 36, 0.1)', color: 'var(--accent-yellow)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-yellow)' }}>
-                    <Clock size={18} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
-                    Already sent to Kitchen — awaiting chef
-                  </div>
                 </div>
-              ))}
-            </div>
-            </div>
 
-            <div>
-            <h3 style={{ margin: '0 0 10px 0', color: 'white' }}>Active Terminal Orders (In Kitchen)</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px', paddingRight: '10px' }}>
-              {activeWaiterOrders.length === 0 && (
-                <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem' }}>
-                  No active terminal orders
-                </div>
-              )}
-              {activeWaiterOrders.map(order => (
-                <div key={order.id} style={{ display: 'flex', flexDirection: 'column', gap: '15px', background: 'var(--bg-base)', padding: '20px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid ${order.status === 'READY' ? 'var(--accent-green)' : 'var(--accent-yellow)'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: 'white' }}>Table {order.table_no}</h3>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Order #{order.id} · Waiter: {waiterNameFor(order)}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {(order.total_amount || 0).toFixed(2)}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{order.business_date ? new Date(order.business_date).toLocaleTimeString() : ''}</div>
-                    </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 10px 0' }}>
+                    <h3 style={{ margin: 0, color: 'white' }}>Active Terminal Orders (In Kitchen)</h3>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{activeWaiterOrders.length} in kitchen</span>
                   </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px', paddingRight: '10px' }}>
+                    {activeWaiterOrders.length === 0 && (
+                      <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0', fontSize: '0.95rem' }}>
+                        No active terminal orders
+                      </div>
+                    )}
+                    {activeWaiterOrders.map(order => (
+                      <div key={order.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-base)', padding: '18px', borderRadius: 'var(--radius-md)', borderLeft: `5px solid ${order.status === 'READY' ? 'var(--accent-green)' : 'var(--accent-yellow)'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', color: 'white' }}>Table {order.table_no}</h3>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Order #{order.id} · Waiter: {waiterNameFor(order)}</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1.1rem' }}>Rs. {(Number(order.total_amount) || 0).toFixed(2)}</div>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+                          </div>
+                        </div>
 
-                  <div style={{ background: '#0f172a', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.9rem', color: '#cbd5e1' }}>
-                    {orderItemsList(order).map((i: any, idx: number) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span>{i.qty}x {i.name}</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '4px' }}>
+                            Settlement: UNPAID / PENDING CASH SETTLEMENT
+                          </span>
+                          <span style={{ color: order.status === 'READY' ? 'var(--accent-green)' : 'var(--accent-yellow)', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                            KDS: {order.status}
+                          </span>
+                        </div>
+
+                        <div style={{ background: '#0f172a', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                          {orderItemsList(order).map((i: any, idx: number) => (
+                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span>{i.qty}x {i.name}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {order.status === 'READY' ? (
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button className="btn-action" style={{ flex: 1, background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', border: 'none', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={() => handleSettleWaiterOrder(order, 'CASH')}>
+                              <Printer size={16} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
+                              Settle (Cash)
+                            </button>
+                            <button className="btn-action" style={{ flex: 1, background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontWeight: 'bold', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={() => handleSettleWaiterOrder(order, 'CARD')}>
+                              Settle (Card)
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ padding: '10px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', borderRadius: 'var(--radius-sm)', border: '1px solid #3b82f6', fontSize: '0.85rem' }}>
+                            <Clock size={16} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
+                            Preparing in Kitchen
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
-
-                  {order.status === 'READY' ? (
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button className="btn-action" style={{ flex: 1, background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', border: 'none', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={() => handleSettleWaiterOrder(order, 'CASH')}>
-                        <Printer size={16} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
-                        Settle (Cash)
-                      </button>
-                      <button className="btn-action" style={{ flex: 1, background: 'var(--bg-panel)', color: 'white', border: '1px solid var(--border-color)', fontWeight: 'bold', padding: '12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }} onClick={() => handleSettleWaiterOrder(order, 'CARD')}>
-                        Settle (Card)
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ padding: '12px', width: '100%', fontWeight: 'bold', textAlign: 'center', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', borderRadius: 'var(--radius-sm)', border: '1px solid #3b82f6' }}>
-                      <Clock size={18} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '5px' }} />
-                      Preparing in Kitchen
-                    </div>
-                  )}
                 </div>
-              ))}
-            </div>
-            </div>
+              </div>
+
+              {/* RECENTLY SETTLED WAITER ORDERS SECTION */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 12px 0' }}>
+                  <h3 style={{ margin: 0, color: 'white' }}>Recently Settled Orders</h3>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{settledWaiterOrders.length} settled</span>
+                </div>
+                {settledWaiterOrders.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '24px 0', fontSize: '0.9rem', background: 'var(--bg-base)', borderRadius: 'var(--radius-md)' }}>
+                    No settled waiter orders yet
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '15px' }}>
+                    {settledWaiterOrders.slice(0, 12).map(order => {
+                      const delInfo = parseDelInfo(order);
+                      const settledAt = delInfo.settled_at || order.updatedAt;
+                      const paymentMethod = delInfo.settlement_method || 'CASH';
+                      return (
+                        <div key={order.id} style={{ background: 'var(--bg-base)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: 'var(--radius-md)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div>
+                              <h4 style={{ margin: '0 0 3px 0', fontSize: '1.05rem', color: 'white' }}>Order #{order.id} — Table {order.table_no}</h4>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Waiter: {waiterNameFor(order)}</div>
+                            </div>
+                            <span style={{ background: 'rgba(34, 197, 94, 0.15)', color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '0.75rem', padding: '3px 8px', borderRadius: '4px' }}>
+                              PAID / SETTLED
+                            </span>
+                          </div>
+
+                          <div style={{ background: '#0f172a', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', color: '#cbd5e1' }}>
+                            {orderItemsList(order).map((i: any, idx: number) => (
+                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                                <span>{i.qty}x {i.name}</span>
+                                <span style={{ color: 'var(--text-muted)' }}>Rs. {i.price * i.qty}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Amount ({paymentMethod}):</span>
+                            <span style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '1rem' }}>Rs. {(Number(order.total_amount) || 0).toFixed(2)}</span>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            <span>Settled by: {delInfo.settled_by || 'Cashier'}</span>
+                            <span>{settledAt ? new Date(settledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
               );
             })()}
@@ -3115,7 +3352,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     <div className="delivery-card-header">
                       <div>
                         <div className="delivery-card-title">Order #{del.id}</div>
-                        <div className="delivery-card-subtitle">{del.rider}</div>
+                        <div className="delivery-card-subtitle">
+                          {!del.claimedByRiderId && onlineRidersCount === 0 && !['SETTLED', 'DELIVERED'].includes(del.status)
+                            ? 'Rider Not Available'
+                            : (del.claimedByRiderName ? `Rider: ${del.claimedByRiderName}` : (del.claimedByRiderId ? `Rider #${del.claimedByRiderId}` : (del.rider || 'Waiting for Rider')))}
+                        </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                         <span className={`delivery-status ${del.status === 'OUT_FOR_DELIVERY' ? 'on-way status-pulse' : del.status === 'KITCHEN_PREPARING' ? 'preparing' : del.status === 'DISPATCHED' ? 'dispatched' : del.status === 'ONLINE_ORDER_RECEIVED' ? 'bg-slate-700 text-slate-300' : 'delivered'}`}>
@@ -3139,7 +3380,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                     auth: true,
                                   });
                                   if (res.ok) {
-                                    setActiveDeliveries(prev => prev.map(d => d.bridgeOrderId === del.bridgeOrderId ? { ...d, status: 'RIDER_ARRIVED', rider: d.rider && d.rider !== 'Waiting for Rider' ? d.rider : 'Active Rider' } : d));
+                                    setActiveDeliveries(prev => prev.map(d => d.bridgeOrderId === del.bridgeOrderId ? {
+                                      ...d,
+                                      status: 'RIDER_ARRIVED',
+                                      rider: d.claimedByRiderName ? `Rider: ${d.claimedByRiderName}` : (d.claimedByRiderId ? `Rider #${d.claimedByRiderId}` : (d.rider && d.rider !== 'Active Rider' ? d.rider : 'Waiting for Rider')),
+                                    } : d));
                                     setToast({ message: `Order #${del.bridgeOrderId} marked: Rider Arrived.`, type: 'success' });
                                   } else {
                                     const data = await res.json().catch(() => ({}));
@@ -3231,6 +3476,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                             >
                               Dispatch Order
                             </button>
+                          )}
+                          {del.status === 'PRINT_BILL' && !del.claimedByRiderId && (
+                            <div style={{ padding: '8px 12px', width: '100%', fontSize: '0.8rem', fontWeight: 'bold', textAlign: 'center', background: onlineRidersCount === 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)', color: onlineRidersCount === 0 ? '#ef4444' : '#eab308', borderRadius: '4px', border: `1px solid ${onlineRidersCount === 0 ? '#ef4444' : '#eab308'}` }}>
+                              {onlineRidersCount === 0 ? '⚠️ Rider Not Available' : '⏳ Waiting for Rider to Accept'}
+                            </div>
                           )}
                           {del.status === 'WAITING_CASH_SETTLEMENT' && (
                             <>
@@ -3342,36 +3592,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 )}
               </div>
             </div>
-            {(() => {
-              const selectedDel = activeDeliveries.find(d => d.id === selectedDeliveryId) || activeDeliveries[0];
-              return (
-                <div className="delivery-map-section">
-                  <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4ORcXKAWIWgtj2E1hpwpSHvRx0gNJmzNZugakh7LO1tlgyH3m25la9DOeiyE7MtUD0szG9kalFoXFQuscFjOn-KmDLqHMp7YNTorGhn7g03yIU1y1Aw1zXX4lirRTHFvvqRqd5VnD5_3EdxD_BzR1W9nTzMMYOwWCJEwCmgIY0IFgFMFIcf0JeRdjQxM4cLrrededV0Ln-YZhPu1VDjCY-HOLarr09Wt4fUqR5WQJpO_KZr7j-9lDlKpIfRH_lnf2t3OMJhfotwQ" alt="Map Tracking" className="delivery-map-bg" />
-                  <div className="delivery-map-overlay"></div>
-                  <div className="map-marker" style={{ top: '35%', left: '65%' }}>
-                    <div className="map-marker-dot store" title="Restaurant Store Location"><Store size={16} /></div>
-                  </div>
-                  {selectedDel && selectedDel.status !== 'PREPARING' && (
-                    <div className="map-marker" style={{ top: selectedDel.lat || '42%', left: selectedDel.lng || '73%' }}>
-                      <div className="flex flex-col items-center">
-                        <div className="map-marker-label">
-                          <span className="map-marker-title">Tracking {selectedDel.rider.split(' ')[0]}</span>
-                          <span className="map-marker-subtitle">{selectedDel.rider.includes('(') ? selectedDel.rider.match(/\(([^)]+)\)/)?.[1] : selectedDel.rider} • {selectedDel.riderDistance}</span>
-                        </div>
-                        <div className="map-marker-dot">
-                          <div className="pulse-animation"></div>
-                          <Navigation size={18} style={{ transform: 'rotate(135deg)', position: 'relative', zIndex: 5 }} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  <div className="map-controls">
-                    <button className="map-control-btn"><Plus size={18} /></button>
-                    <button className="map-control-btn"><Minus size={18} /></button>
-                  </div>
-                </div>
-              );
-            })()}
+            <DeliveryGoogleMap
+              activeDeliveries={activeDeliveries}
+              selectedDeliveryId={selectedDeliveryId}
+              onSelectDelivery={(id) => setSelectedDeliveryId(id)}
+              storeId={currentUser?.store_id || 1}
+              storeName={currentUser?.store_name}
+              socket={socket}
+            />
           </div>
         )}
 
@@ -4105,6 +4333,13 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 if (!validateDeliveryCustomerInfo(orderType, customerName, customerAddress, customerPhone).valid) {
                   setPendingDeliveryAction('PAY');
                   return setModalType('DELIVERY_DETAILS');
+                }
+                if (orderType === 'Delivery') {
+                  // For POS Delivery orders, payment is COD and collected on delivery.
+                  // An accidental click on Pay safely routes the order to the Kitchen / Delivery workflow
+                  // without printing a customer bill or prematurely settling payment.
+                  handleCreateKOT();
+                  return;
                 }
                 setModalType('PAYMENT');
               }}>Pay</button>
@@ -4850,8 +5085,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 if (useManualDeliveryAddress) await persistNewDeliveryAddress();
                 setModalType('NONE');
                 setShowCustomerDropdown(false);
-                if (pendingDeliveryAction === 'KOT') handleCreateKOT();
-                else if (pendingDeliveryAction === 'PAY') setModalType('PAYMENT');
+                if (pendingDeliveryAction === 'KOT' || (pendingDeliveryAction === 'PAY' && orderType === 'Delivery')) {
+                  handleCreateKOT();
+                } else if (pendingDeliveryAction === 'PAY') {
+                  setModalType('PAYMENT');
+                }
                 setPendingDeliveryAction(null);
               }} style={{ width: '100%', padding: '15px', fontSize: '1.1rem' }}>Confirm & Continue</button>
             </div>
@@ -5185,13 +5423,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   } catch (e) { console.log('Error saving customer', e); }
                 }
 
+                const isDeliveryOrder = orderType === 'Delivery';
+
                 if (cart.length > 0) {
                   const payload = {
                     store_id: currentUser?.store_id,
                     created_by: currentUser?.id || 1,
                     customer_id: customerId || undefined,
                     discount: totalDiscountAmount,
-                    payment_method: paymentMethod.toUpperCase(),
+                    payment_method: isDeliveryOrder ? 'COD' : paymentMethod.toUpperCase(),
                     order_source: orderType,
                     // Was previously sent unconditionally regardless of
                     // order type -- tableNumber defaults to 'T1', so a
@@ -5204,7 +5444,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     // which does send this) landed in the backend with no
                     // address whatsoever, regardless of what the cashier
                     // entered in the Delivery Details modal.
-                    delivery_address: orderType === 'Delivery' ? customerAddress : undefined,
+                    delivery_address: isDeliveryOrder ? customerAddress : undefined,
                     notes: orderNotes,
                     // How many points the cashier chose to redeem -- the backend still
                     // re-caps this itself (customer's real balance x eligible/non-discounted
@@ -5249,6 +5489,33 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                     }
                     if (!res.ok) throw new Error(data.message || 'Order failed');
 
+                    const realOrderId = data?.order?.id ?? data?.id;
+                    if (isDeliveryOrder && realOrderId) {
+                      setActiveDeliveries(prev => {
+                        if (prev.find(d => d.bridgeOrderId === realOrderId)) return prev;
+                        return [...prev, {
+                          id: realOrderId,
+                          bridgeOrderId: realOrderId,
+                          customer: customerName || 'Guest',
+                          address: customerAddress || 'No Address Provided',
+                          status: 'PENDING_CHEF',
+                          rider: 'Pending Chef Acceptance',
+                          cod: grandTotal,
+                          riderDistance: 'N/A',
+                          lat: '50%',
+                          lng: '50%',
+                          items: cart.map(item => ({
+                            id: item.id || Date.now() + Math.random(),
+                            name: item.name,
+                            price: item.price,
+                            qty: item.qty,
+                            img: item.img || '',
+                            desc: item.desc || ''
+                          }))
+                        }];
+                      });
+                    }
+
                     if (pointsToRedeem > 0) setPointsToRedeem(0);
                   } catch (e) {
                     console.error('API Error:', e);
@@ -5260,24 +5527,35 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       type: orderType === 'Dine In' ? `Dine In (${tableNumber})` : orderType,
                       customer: customerName,
                       customerPhone: customerPhone,
-                      // Neither was ever set here -- a Delivery order that
-                      // fell back to this path (network blip on the direct
-                      // call above) lost its address and its resolved
-                      // customer link the instant it hit the offline queue.
-                      customerAddress: orderType === 'Delivery' ? customerAddress : undefined,
+                      customerAddress: isDeliveryOrder ? customerAddress : undefined,
                       customer_id: customerId,
                       items: cart.map(item => `${item.qty}x ${item.name}`).join(', '),
                       notes: orderNotes,
                       timePlaced: new Date().toLocaleTimeString(),
                       status: 'NEW' as const,
                       totalAmount: grandTotal,
-                      paymentMethod: paymentMethod,
+                      paymentMethod: isDeliveryOrder ? 'COD' : paymentMethod,
                       itemsData: JSON.stringify(cart),
                       synced: false,
                       store_id: currentUser.store_id,
                       created_by: currentUser?.id || 1,
                     };
                     await db.kots.add(newKot);
+                    if (isDeliveryOrder) {
+                      setActiveDeliveries(prev => [...prev, {
+                        id: nextOrderId,
+                        bridgeOrderId: nextOrderId,
+                        customer: customerName || 'Guest',
+                        address: customerAddress || 'No Address Provided',
+                        status: 'PENDING_CHEF',
+                        rider: 'Pending Chef Acceptance',
+                        cod: grandTotal,
+                        riderDistance: 'N/A',
+                        lat: '50%',
+                        lng: '50%',
+                        items: cart
+                      }]);
+                    }
                   }
                 }
                 const cartWithPromo = cart.map(item => ({
@@ -5306,15 +5584,21 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   time: new Date().toLocaleString()
                 };
 
-                if (posSettings.billPrintQty > 0) setPrintData({ type: 'BILL', data: currentOrder, printCount: posSettings.billPrintQty });
-                if (activeShift === 'Shift 1') setShift1Sales(prev => prev + grandTotal);
-                else setShift2Sales(prev => prev + grandTotal);
+                // Delivery orders must NEVER print a customer bill at order creation/payment interaction!
+                // The customer bill prints ONLY at explicit Delivery section Print Bill when rider arrives.
+                if (!isDeliveryOrder && posSettings.billPrintQty > 0) {
+                  setPrintData({ type: 'BILL', data: currentOrder, printCount: posSettings.billPrintQty });
+                }
+                if (!isDeliveryOrder) {
+                  if (activeShift === 'Shift 1') setShift1Sales(prev => prev + grandTotal);
+                  else setShift2Sales(prev => prev + grandTotal);
+                }
 
                 setOrderNotes('');
                 setCart([]); setCashGiven(''); setModalType('NONE');
                 setPromotionOverrideActive(false); // one-transaction-only manual override
-                setToast({ message: 'Transaction Complete!', type: 'success' });
-                if (posSettings.tillLockEnabled) setIsTillLocked(false);
+                setToast({ message: isDeliveryOrder ? 'Delivery Order Sent to Kitchen (COD)!' : 'Transaction Complete!', type: 'success' });
+                if (!isDeliveryOrder && posSettings.tillLockEnabled) setIsTillLocked(false);
               }} style={{ width: '100%', padding: '15px', fontSize: '1.1rem', background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                 <Check size={20} /> PROCESS & FINISH SALE
               </button>
@@ -5758,6 +6042,21 @@ function CashInPage({ currentUser, onCashIn, onLogout }: { currentUser: any; onC
 import WaiterMode from './WaiterMode'
 import WaiterTerminalLogin from './WaiterTerminalLogin'
 
+const POS_AUTHORIZED_ROLES = [
+  'Cashier',
+  'Manager',
+  'Branch Manager',
+  'BranchManager',
+  'Business Admin',
+  'Business Owner',
+  'Branch Owner',
+  'Dispatcher',
+  'Assistant Manager',
+  'Staff',
+  'Super Admin',
+  'Admin',
+];
+
 export default function App() {
   const isWaiterModeURL = window.location.pathname.endsWith('/waiter') || window.location.search.includes('mode=waiter');
   // KDS ("/kitchen") gets its own storage key so a POS session and a KDS
@@ -5769,7 +6068,24 @@ export default function App() {
 
   const [settings, setSettings] = useState<any>(null);
   const [loggedInUser, setLoggedInUser] = useState<typeof USERS[0] | null>(() => {
-    try { return JSON.parse(localStorage.getItem(userStorageKey) || 'null'); } catch { return null; }
+    try {
+      const u = localStorage.getItem(userStorageKey);
+      if (u) return JSON.parse(u);
+      // Seamless migration if Chef logged in from /pos:
+      if (isKdsModeURL) {
+        const main = localStorage.getItem('d4u_main_user');
+        if (main) {
+          const parsed = JSON.parse(main);
+          if (parsed?.role === 'Chef') {
+            localStorage.setItem('d4u_kds_user', main);
+            return parsed;
+          }
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
   });
   const [dayStartTime, setDayStartTime] = useState<Date | null>(() => {
     try { const d = localStorage.getItem('d4u_day_start'); return d ? new Date(d) : null; } catch { return null; }
@@ -5844,8 +6160,14 @@ export default function App() {
   }, [loggedInUser?.store_id]);
 
   useEffect(() => {
-    if (loggedInUser) localStorage.setItem(userStorageKey, JSON.stringify(loggedInUser));
-    else localStorage.removeItem(userStorageKey);
+    if (loggedInUser) {
+      localStorage.setItem(userStorageKey, JSON.stringify(loggedInUser));
+      if (loggedInUser.role === 'Chef') {
+        localStorage.setItem('d4u_kds_user', JSON.stringify(loggedInUser));
+      }
+    } else {
+      localStorage.removeItem(userStorageKey);
+    }
   }, [loggedInUser, userStorageKey]);
 
   useEffect(() => {
@@ -5898,15 +6220,23 @@ export default function App() {
     return null;
   }
 
+  const handleUserLogin = (user: any) => {
+    setLoggedInUser(user);
+    setForceShowLogin(false);
+    if (user?.role === 'Chef') {
+      localStorage.setItem('d4u_kds_user', JSON.stringify(user));
+    }
+  };
+
   // Show login if auth is enabled OR user manually logged out
   if (forceShowLogin || (settings.module_auth_enabled && !loggedInUser)) {
-    return <LoginScreen onLogin={(user) => { setLoggedInUser(user); setForceShowLogin(false); }} />;
+    return <LoginScreen onLogin={handleUserLogin} />;
   }
 
   const activeUser = loggedInUser || (import.meta.env.DEV ? { id: 1, name: 'Bypass Access', store_id: 1, role: 'Admin' } : null);
 
   if (!activeUser) {
-    return <LoginScreen onLogin={(user) => { setLoggedInUser(user); setForceShowLogin(false); }} />;
+    return <LoginScreen onLogin={handleUserLogin} />;
   }
 
   // TV Board is passive signage — it has no cash drawer and doesn't belong
@@ -5952,23 +6282,68 @@ export default function App() {
     );
   }
 
-  // POS is canonically served at "/pos" -- mirrors "/kitchen" for Chef and
-  // "/tv-board" for TV above, so the address bar always matches what's on
-  // screen and POS's session (userStorageKey, 'd4u_main_user') never gets
-  // computed against the "/kitchen" URL by mistake.
+  // Waiter Role Guard — redirect to /waiter if at any other path
+  if (activeUser.role === 'Waiter') {
+    if (!isWaiterModeURL) {
+      window.location.replace('/waiter');
+      return null;
+    }
+    return <POSApp currentUser={activeUser} dayStartTime={null} onLogout={handleLogout} onCashOut={handleLogout} />;
+  }
+
+  // Rider Role Guard — Rider cannot access POS register
+  if (activeUser.role === 'Rider') {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: 'white', fontFamily: "'Outfit', sans-serif", padding: '24px', textAlign: 'center' }}>
+        <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.15)', border: '2px solid rgba(239, 68, 68, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
+          <Truck size={40} color="#f87171" />
+        </div>
+        <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: '0 0 10px 0', color: '#f8fafc' }}>Rider Access Notice</h1>
+        <p style={{ color: '#94a3b8', maxWidth: '420px', lineHeight: '1.6', margin: '0 0 24px 0', fontSize: '0.95rem' }}>
+          Rider accounts cannot access the POS register. Deliveries are dispatched and tracked using the dedicated D4U Rider Application.
+        </p>
+        <button
+          onClick={handleLogout}
+          style={{ background: '#f59e0b', color: '#0f172a', border: 'none', padding: '12px 28px', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 14px rgba(245, 158, 11, 0.3)' }}
+        >
+          <LogOut size={18} />
+          Switch Account / Logout
+        </button>
+      </div>
+    );
+  }
+
+  // Other Non-POS Roles Guard — show explicit access screen
+  const isPosAuthorized = POS_AUTHORIZED_ROLES.some(r => r.toLowerCase() === (activeUser.role || '').trim().toLowerCase());
+  if (!isPosAuthorized) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: 'white', fontFamily: "'Outfit', sans-serif", padding: '24px', textAlign: 'center' }}>
+        <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(245, 158, 11, 0.15)', border: '2px solid rgba(245, 158, 11, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
+          <AlertTriangle size={40} color="#fbbf24" />
+        </div>
+        <h1 style={{ fontSize: '1.8rem', fontWeight: '800', margin: '0 0 10px 0', color: '#f8fafc' }}>POS Access Restricted</h1>
+        <p style={{ color: '#94a3b8', maxWidth: '440px', lineHeight: '1.6', margin: '0 0 24px 0', fontSize: '0.95rem' }}>
+          The logged-in role (<strong style={{ color: '#f59e0b' }}>{activeUser.role || 'Unknown'}</strong>) is not authorized to access the POS register. Please sign in with a Cashier or Manager account.
+        </p>
+        <button
+          onClick={handleLogout}
+          style={{ background: '#3b82f6', color: 'white', border: 'none', padding: '12px 28px', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 14px rgba(59, 130, 246, 0.3)' }}
+        >
+          <LogOut size={18} />
+          Sign In with Another Account
+        </button>
+      </div>
+    );
+  }
+
+  // POS register is canonically served at "/pos"
   if (!isWaiterModeURL && window.location.pathname !== '/pos') {
     window.location.replace('/pos');
     return null;
   }
 
-  // We will remove WaiterMode and just use POSApp with isWaiterMode=true
-  if (activeUser.role === 'Waiter') {
-    return <POSApp currentUser={activeUser} dayStartTime={null} onLogout={handleLogout} onCashOut={handleLogout} />;
-  }
+  if (!dayStartTime) return <DayStartPage currentUser={activeUser} onDayStart={setDayStartTime} onLogout={handleLogout} />;
+  if (!isCashedIn) return <CashInPage currentUser={activeUser} onCashIn={(amount) => { setCashInAmount(amount); setIsCashedIn(true); }} onLogout={handleLogout} />;
 
-  if (activeUser.role !== 'Waiter') {
-    if (!dayStartTime) return <DayStartPage currentUser={activeUser} onDayStart={setDayStartTime} onLogout={handleLogout} />;
-    if (!isCashedIn) return <CashInPage currentUser={activeUser} onCashIn={(amount) => { setCashInAmount(amount); setIsCashedIn(true); }} onLogout={handleLogout} />;
-  }
   return <POSApp currentUser={activeUser} dayStartTime={dayStartTime} onLogout={handleLogout} onCashOut={handleLogout} />;
 }

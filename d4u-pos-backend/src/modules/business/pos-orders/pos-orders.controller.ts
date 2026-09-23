@@ -104,7 +104,7 @@ export class PosOrdersController {
     @Param('id') id: string, 
     @Body() body: SettlePosOrderDto
   ) {
-    console.log(`[SETTLE] Order #${id} ΓÇö Method: ${body.payment_method}`);
+    console.log(`[SETTLE] Order #${id} — Method: ${body.payment_method}`);
     const order = await this.service.getOrder(Number(id));
     if (order) assertOwnStore(user, order.store_id);
     return this.service.settleOrder(Number(id), body);

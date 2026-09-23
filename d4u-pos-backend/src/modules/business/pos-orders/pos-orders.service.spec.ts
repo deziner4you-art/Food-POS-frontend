@@ -133,3 +133,73 @@ describe('PosOrdersService.updateDeliveryStatus — Rider ownership (Task #2Q-B3
     expect(prisma.order.findUnique).not.toHaveBeenCalled();
   });
 });
+
+describe('PosOrdersService.settleOrder — Delivery lifecycle protection', () => {
+  let service: PosOrdersService;
+  let prisma: any;
+
+  beforeEach(async () => {
+    prisma = {
+      order: {
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      cashFlow: { create: jest.fn() },
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PosOrdersService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AppGateway, useValue: { broadcast: jest.fn() } },
+        { provide: InventoryService, useValue: {} },
+        { provide: CustomersService, useValue: {} },
+        { provide: PricingService, useValue: {} },
+        { provide: TablesService, useValue: { releaseTableByOrderId: jest.fn() } },
+      ],
+    }).compile();
+
+    service = module.get<PosOrdersService>(PosOrdersService);
+  });
+
+  it('rejects premature settlement of Delivery order in PENDING, PREPARING, or READY state', async () => {
+    prisma.order.findUnique.mockResolvedValue({
+      id: 888,
+      order_source: 'Delivery',
+      status: 'PREPARING',
+      total_amount: 1200,
+    });
+
+    await expect(
+      service.settleOrder(888, { payment_method: 'CASH' }),
+    ).rejects.toThrow(/cannot be settled while in state 'PREPARING'/);
+    expect(prisma.order.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('allows settlement of Delivery order when in WAITING_CASH_SETTLEMENT state', async () => {
+    const deliveryOrder = {
+      id: 888,
+      order_source: 'Delivery',
+      status: 'WAITING_CASH_SETTLEMENT',
+      total_amount: 1200,
+      delivery_info: {},
+      created_by: 1,
+      createdAt: new Date(),
+      items: [],
+      customer: null,
+      rider: null,
+    };
+    prisma.order.findUnique.mockResolvedValue(deliveryOrder);
+
+    const result = await service.settleOrder(888, { payment_method: 'CASH', amount_received: 1200 });
+    expect(result.success).toBe(true);
+    expect(prisma.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 888, status: { not: 'SETTLED' } },
+      data: expect.objectContaining({
+        status: 'SETTLED',
+        payment_status: 'PAID',
+      }),
+    }));
+  });
+});
+

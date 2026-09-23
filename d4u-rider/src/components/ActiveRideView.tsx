@@ -2,6 +2,7 @@ import React from 'react';
 import { Menu, Bell, MapPin, Navigation, X } from 'lucide-react';
 import { DeliveryOrder, DeliveryStatus } from '../types';
 import { formatCurrency } from '../utils';
+import RiderGoogleMap from './RiderGoogleMap';
 
 interface ActiveRideViewProps {
   status: DeliveryStatus;
@@ -15,6 +16,10 @@ interface ActiveRideViewProps {
   driverCoords: { x: number; y: number } | null;
   activePath: { x: number; y: number }[];
   storeName: string;
+  realGps?: { lat: number; lng: number; accuracy?: number | null; timestamp?: number } | null;
+  gpsStatus?: 'idle' | 'acquiring' | 'active' | 'denied' | 'unavailable' | 'timeout' | 'unsupported';
+  gpsError?: string | null;
+  onRetryGps?: () => void;
 }
 
 export default function ActiveRideView({
@@ -28,7 +33,11 @@ export default function ActiveRideView({
   onSettle,
   driverCoords,
   activePath,
-  storeName
+  storeName,
+  realGps,
+  gpsStatus,
+  gpsError,
+  onRetryGps
 }: ActiveRideViewProps) {
 
   const [prepTimeLeft, setPrepTimeLeft] = React.useState<string>('');
@@ -110,7 +119,15 @@ export default function ActiveRideView({
 
       {/* Map Area */}
       <div className="flex-1 relative z-0">
-        <MapBackground />
+        <RiderGoogleMap
+          realGps={realGps ?? null}
+          gpsStatus={gpsStatus ?? 'idle'}
+          gpsError={gpsError}
+          onRetryGps={onRetryGps}
+          storeName={storeName}
+          activeOrder={activeOrder}
+          status={status}
+        />
 
         {/* Floating Top Nav Direction Box (Only when driving) */}
         {(status === 'ACCEPTED' || status === 'PICKED_UP') && (
@@ -214,12 +231,31 @@ export default function ActiveRideView({
             </div>
 
             {status === 'ARRIVED_REST' && (
-              <button 
-                onClick={onPickedUp}
-                className="w-full bg-primary text-slate-900 font-bold py-4 rounded-xl shadow-lg active:scale-[0.98] transition-all"
-              >
-                Confirm Picked Up
-              </button>
+              activeOrder?.bridgeStatus === 'DISPATCHED' ? (
+                <button 
+                  onClick={onPickedUp}
+                  className="w-full bg-primary text-slate-900 font-bold py-4 rounded-xl shadow-lg active:scale-[0.98] transition-all"
+                >
+                  Confirm Picked Up
+                </button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <div className="w-full bg-amber-500/10 border border-amber-500/30 text-amber-400 p-3.5 rounded-xl text-center">
+                    <p className="font-bold text-sm">Waiting for Restaurant to Dispatch</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {activeOrder?.bridgeStatus === 'PRINT_BILL'
+                        ? 'Cashier is printing bill & packaging food...'
+                        : 'Order is being prepared in the kitchen...'}
+                    </p>
+                  </div>
+                  <button 
+                    disabled
+                    className="w-full bg-slate-800 text-slate-500 font-bold py-4 rounded-xl cursor-not-allowed border border-slate-700"
+                  >
+                    Confirm Picked Up (Waiting for Dispatch)
+                  </button>
+                </div>
+              )
             )}
 
             {status === 'DELIVERED' && (

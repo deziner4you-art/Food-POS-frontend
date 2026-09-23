@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DeliveryStatus, DeliveryOrder, SavedCompletedMission, RiderStats } from './types';
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 import { generateGridPath } from './utils';
@@ -16,7 +16,18 @@ import { Clock, Navigation, CheckSquare, LogOut, List } from 'lucide-react';
 type ViewMode = 'login' | 'map' | 'history' | 'settle' | 'orders';
 
 export default function App() {
+  const socketRef = useRef<any>(null);
+
   const logout = () => {
+    stopGpsWatch();
+    setRealGps(null);
+    if (socketRef.current && riderId && riderStoreId) {
+      socketRef.current.emit('rider_presence', {
+        riderId: Number(riderId),
+        storeId: Number(riderStoreId),
+        isOnline: false,
+      });
+    }
     localStorage.removeItem('d4u_rider_token');
     localStorage.removeItem('d4u_rider_store');
     localStorage.removeItem('d4u_rider_name');
@@ -58,6 +69,112 @@ export default function App() {
   const [activeOrder, setActiveOrder] = useState<DeliveryOrder | null>(null);
   // Keep ref in sync so socket handler sees latest value without re-subscribing
   useEffect(() => { activeOrderRef.current = activeOrder; }, [activeOrder]);
+
+  // Real Device GPS Tracking (Geolocation API)
+  const [realGps, setRealGps] = useState<{
+    lat: number;
+    lng: number;
+    accuracy: number | null;
+    timestamp: number;
+  } | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<
+    'idle' | 'acquiring' | 'active' | 'denied' | 'unavailable' | 'timeout' | 'unsupported'
+  >('idle');
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const lastEmitTimeRef = useRef<number>(0);
+
+  const startGpsWatch = useCallback(() => {
+    if (!('geolocation' in navigator)) {
+      setGpsStatus('unsupported');
+      setGpsError('Geolocation is not supported by this browser/device.');
+      return;
+    }
+
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+
+    setGpsStatus('acquiring');
+    setGpsError(null);
+
+    const successHandler = (position: GeolocationPosition) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const accuracy = position.coords.accuracy ?? null;
+      const timestamp = position.timestamp || Date.now();
+
+      if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
+        setRealGps({ lat, lng, accuracy, timestamp });
+        setGpsStatus('active');
+        setGpsError(null);
+
+        // Throttle socket emissions (at most once every 1000ms unless moving significantly)
+        const now = Date.now();
+        if (now - lastEmitTimeRef.current >= 1000) {
+          lastEmitTimeRef.current = now;
+          if (socketRef.current && riderId && riderStoreId && isOnlineRef.current) {
+            socketRef.current.emit('rider_location', {
+              lat,
+              lng,
+              accuracy,
+              timestamp,
+            });
+          }
+        }
+      }
+    };
+
+    const errorHandler = (err: GeolocationPositionError) => {
+      console.warn('[RIDER GPS] Geolocation error:', err.code, err.message);
+      if (err.code === 1) { // PERMISSION_DENIED
+        setGpsStatus('denied');
+        setGpsError('Location permission denied. Please allow location access in your browser or device settings.');
+      } else if (err.code === 2) { // POSITION_UNAVAILABLE
+        setGpsStatus('unavailable');
+        setGpsError('GPS signal unavailable. Please ensure location services are enabled on your device.');
+      } else if (err.code === 3) { // TIMEOUT
+        setGpsStatus('timeout');
+        setGpsError('GPS acquisition timed out. Searching for GPS signal...');
+      } else {
+        setGpsStatus('unavailable');
+        setGpsError(err.message || 'GPS location error.');
+      }
+    };
+
+    try {
+      const id = navigator.geolocation.watchPosition(successHandler, errorHandler, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 3000,
+      });
+      watchIdRef.current = id;
+    } catch (e: any) {
+      setGpsStatus('unavailable');
+      setGpsError(e?.message || 'Failed to start GPS tracking.');
+    }
+  }, [riderId, riderStoreId]);
+
+  const stopGpsWatch = useCallback(() => {
+    if (watchIdRef.current !== null && 'geolocation' in navigator) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setGpsStatus('idle');
+  }, []);
+
+  // Continuous watcher active whenever rider is logged in & isOnline is true
+  useEffect(() => {
+    if (riderId && riderStoreId && isOnline) {
+      startGpsWatch();
+    } else {
+      stopGpsWatch();
+    }
+    return () => {
+      stopGpsWatch();
+    };
+  }, [riderId, riderStoreId, isOnline, startGpsWatch, stopGpsWatch]);
   
   // Simulated Rider position
   const [driverCoords, setDriverCoords] = useState<{ x: number; y: number } | null>({ x: 30, y: 65 });
@@ -212,6 +329,9 @@ export default function App() {
           if (status === 'ACCEPTED') {
             setStatus('ARRIVED_REST');
             setDriverCoords({ x: activeOrder!.restaurantX, y: activeOrder!.restaurantY });
+            if (activeOrder?.bridgeStatus === 'READY') {
+              updateBridgeStatus('RIDER_ARRIVED');
+            }
           } else if (status === 'PICKED_UP') {
             setDriverCoords({ x: activeOrder!.customerX, y: activeOrder!.customerY });
           }
@@ -458,7 +578,24 @@ export default function App() {
     if (!riderStoreId) return;
     
     const socket = io(BACKEND_URL);
+    socketRef.current = socket;
     socket.emit('join_store', `store_${riderStoreId}`);
+
+    const emitPresence = (online: boolean) => {
+      if (riderId && riderStoreId) {
+        socket.emit('rider_presence', {
+          riderId: Number(riderId),
+          storeId: Number(riderStoreId),
+          isOnline: online,
+        });
+      }
+    };
+
+    socket.on('connect', () => {
+      emitPresence(isOnlineRef.current);
+    });
+
+    emitPresence(isOnlineRef.current);
 
     socket.on('order_updated', (order: any) => {
       setLastOrderUpdate(Date.now());
@@ -537,6 +674,7 @@ export default function App() {
     });
 
     return () => {
+      emitPresence(false);
       socket.disconnect();
     };
   // Task 7B: socket only re-subscribes when the store changes (login/logout).
@@ -545,6 +683,17 @@ export default function App() {
   // READY broadcasts that arrived during the reconnect window.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [riderStoreId]);
+
+  // Sync rider online presence toggle via socket
+  useEffect(() => {
+    if (socketRef.current && riderId && riderStoreId) {
+      socketRef.current.emit('rider_presence', {
+        riderId: Number(riderId),
+        storeId: Number(riderStoreId),
+        isOnline: isOnline,
+      });
+    }
+  }, [isOnline, riderId, riderStoreId]);
 
   // --- USER TRIGGERS & SIMULATOR HANDLERS ---
   const handleDispatchOrder = (order: DeliveryOrder) => {
@@ -668,8 +817,10 @@ export default function App() {
   };
 
   const handleArriveAtRestaurant = async () => {
-    const success = await updateBridgeStatus('RIDER_ARRIVED');
-    if (!success) return;
+    if (activeOrder?.bridgeStatus === 'READY') {
+      const success = await updateBridgeStatus('RIDER_ARRIVED');
+      if (!success) return;
+    }
     setStatus('ARRIVED_REST');
     setDriverCoords({ x: activeOrder!.restaurantX, y: activeOrder!.restaurantY });
     setActivePath([]);
@@ -792,6 +943,10 @@ export default function App() {
                 driverCoords={driverCoords}
                 activePath={activePath}
                 storeName={riderStoreName}
+                realGps={realGps}
+                gpsStatus={gpsStatus}
+                gpsError={gpsError}
+                onRetryGps={startGpsWatch}
               />
             </>
           )}

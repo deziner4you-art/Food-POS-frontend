@@ -165,9 +165,9 @@ export const Hero3DCanvas: React.FC = () => {
   }, []);
 
   return (
-    <div className="w-full h-full relative flex items-center justify-center">
-      <canvas ref={canvasRef} className="w-full h-full max-w-lg max-h-[450px] object-contain" />
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-[#1A1A1D]/90 border border-[#D4AF37]/30 backdrop-blur-md px-4 py-1.5 rounded-full text-[11px] font-semibold text-[#D4AF37] shadow-xl flex items-center gap-2">
+    <div className="w-full h-full relative flex items-center justify-center pointer-events-none">
+      <canvas ref={canvasRef} className="w-full h-full max-w-lg max-h-[450px] object-contain pointer-events-none" />
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-[#1A1A1D]/90 border border-[#D4AF37]/30 backdrop-blur-md px-4 py-1.5 rounded-full text-[11px] font-semibold text-[#D4AF37] shadow-xl flex items-center gap-2 pointer-events-none">
         <span className="w-2 h-2 rounded-full bg-[#D4AF37] animate-ping" />
         Interactive Live Culinary Presentation
       </div>

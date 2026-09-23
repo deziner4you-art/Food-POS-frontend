@@ -15,10 +15,10 @@ describe('RiderService', () => {
   beforeEach(async () => {
     prisma = {
       user: { findUnique: jest.fn() },
-      onlineOrder: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
-      order: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), updateMany: jest.fn(), update: jest.fn() },
+      onlineOrder: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), updateMany: jest.fn(), update: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+      order: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), updateMany: jest.fn(), update: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
     };
-    gateway = { broadcast: jest.fn() };
+    gateway = { broadcast: jest.fn(), broadcastRiderPresence: jest.fn(), getActiveRidersList: jest.fn().mockReturnValue([]) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -227,6 +227,14 @@ describe('RiderService', () => {
       });
       expect(gateway.broadcast).toHaveBeenCalledWith('gps_update', { orderId: 904, lat: 5, lng: 6 }, 'store_67');
       expect(result).toEqual({ success: true });
+    });
+    it('7. a rider with an active unfinished delivery cannot claim another order (Fix 6)', async () => {
+      prisma.user.findUnique.mockResolvedValue(RIDER_A);
+      prisma.onlineOrder.findUnique.mockResolvedValueOnce({ store_id: 67 });
+      prisma.onlineOrder.findFirst.mockResolvedValueOnce({ id: 800, status: 'OUT_FOR_DELIVERY' });
+
+      await expect(service.claimOrder(801, { sub: RIDER_A.id })).rejects.toThrow(ConflictException);
+      expect(prisma.onlineOrder.updateMany).not.toHaveBeenCalled();
     });
   });
 });

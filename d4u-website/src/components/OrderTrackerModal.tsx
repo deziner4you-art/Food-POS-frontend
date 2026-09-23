@@ -28,6 +28,14 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ order, onC
   const amount = Number(order.totalAmount || order.total_amount) || 0;
   const createdAtFormatted = order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (order.timePlaced || 'Just now');
 
+  React.useEffect(() => {
+    const original = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = original || '';
+    };
+  }, []);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in" onClick={onClose}>
       <div 

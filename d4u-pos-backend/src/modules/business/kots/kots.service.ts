@@ -220,7 +220,7 @@ export class KotsService {
         // Genuine POS-native delivery — use POS Order identity
         const fullOrder = await this.prisma.order.findUnique({
           where: { id: kot.order_id },
-          include: { customer: true, items: { include: { product: true } } },
+          include: { customer: true, items: { include: { product: true } }, rider: true },
         });
         if (fullOrder) {
           this.gateway.broadcast('order_updated', formatPosOrderForRider(fullOrder), `store_${kot.store_id}`);

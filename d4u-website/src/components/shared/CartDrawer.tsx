@@ -36,6 +36,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
   const [showAddOns, setShowAddOns] = useState(false);
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = original || '';
+    };
+  }, [isOpen]);
+
   const handleBrowseMenu = () => {
     onClose();
     if (window.location.pathname === '/menu') {

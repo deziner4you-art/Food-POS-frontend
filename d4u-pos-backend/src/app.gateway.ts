@@ -29,6 +29,19 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Live socket lookup for waiter terminal sessions (persistent source of truth is TerminalSession in the DB).
   private sessionSocketMap = new Map<number, string>();
 
+  // Rider presence tracking (Fix 4 & 5): in-memory rider state per store
+  private activeRiders = new Map<number, { socketId: string; storeId: number; isOnline: boolean; lastSeen: number }>();
+  private riderSocketMap = new Map<string, number>();
+  // Latest rider locations: riderId -> { riderId, storeId, lat, lng, accuracy, timestamp }
+  private riderLocations = new Map<number, {
+    riderId: number;
+    storeId: number;
+    lat: number;
+    lng: number;
+    accuracy: number | null;
+    timestamp: number;
+  }>();
+
   handleConnection(client: Socket) {
     console.log(`[SOCKET] Client connected: ${client.id}`);
   }
@@ -53,6 +66,142 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
         break;
       }
     }
+
+    // Clean up rider presence and location on disconnect
+    const riderId = this.riderSocketMap.get(client.id);
+    if (riderId) {
+      const riderInfo = this.activeRiders.get(riderId);
+      this.riderSocketMap.delete(client.id);
+      this.activeRiders.delete(riderId);
+      this.riderLocations.delete(riderId);
+      if (riderInfo) {
+        this.broadcastRiderPresence(riderInfo.storeId);
+        this.broadcast('rider_location_removed', { riderId, storeId: riderInfo.storeId }, `store_${riderInfo.storeId}`);
+      }
+    }
+  }
+
+  @SubscribeMessage('rider_presence')
+  handleRiderPresence(
+    @MessageBody() data: { riderId: number; storeId: number; isOnline: boolean },
+    @ConnectedSocket() client: Socket,
+  ) {
+    if (!data || !data.riderId || !data.storeId) return { success: false };
+    const riderId = Number(data.riderId);
+    const storeId = Number(data.storeId);
+    const isOnline = !!data.isOnline;
+
+    this.activeRiders.set(riderId, {
+      socketId: client.id,
+      storeId,
+      isOnline,
+      lastSeen: Date.now(),
+    });
+    this.riderSocketMap.set(client.id, riderId);
+
+    if (!isOnline) {
+      this.riderLocations.delete(riderId);
+      this.broadcast('rider_location_removed', { riderId, storeId }, `store_${storeId}`);
+    }
+
+    client.join(`store_${storeId}`);
+    this.broadcastRiderPresence(storeId);
+    console.log(`[SOCKET] Rider #${riderId} presence updated (store: ${storeId}, online: ${isOnline})`);
+    return { success: true };
+  }
+
+  @SubscribeMessage('rider_location')
+  handleRiderLocation(
+    @MessageBody() data: { lat: number; lng: number; accuracy?: number; timestamp?: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const riderId = this.riderSocketMap.get(client.id);
+    if (!riderId) {
+      console.warn(`[SOCKET] rider_location rejected: unauthenticated/unregistered rider socket ${client.id}`);
+      return { success: false, error: 'Unregistered rider socket' };
+    }
+    const riderInfo = this.activeRiders.get(riderId);
+    if (!riderInfo || !riderInfo.isOnline) {
+      return { success: false, error: 'Rider is not online' };
+    }
+
+    const lat = Number(data?.lat);
+    const lng = Number(data?.lng);
+    if (isNaN(lat) || isNaN(lng) || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return { success: false, error: 'Invalid coordinates' };
+    }
+
+    const storeId = riderInfo.storeId;
+    const locationUpdate = {
+      riderId,
+      storeId,
+      lat,
+      lng,
+      accuracy: typeof data.accuracy === 'number' && Number.isFinite(data.accuracy) ? data.accuracy : null,
+      timestamp: data.timestamp && Number.isFinite(data.timestamp) ? data.timestamp : Date.now(),
+    };
+
+    this.riderLocations.set(riderId, locationUpdate);
+
+    // Broadcast only to the rider's authorized store room
+    this.broadcast('rider_location', locationUpdate, `store_${storeId}`);
+    return { success: true, location: locationUpdate };
+  }
+
+  @SubscribeMessage('get_store_rider_locations')
+  handleGetStoreRiderLocations(@MessageBody() data: { storeId: number }) {
+    if (!data || !data.storeId) return [];
+    return this.getStoreRiderLocations(Number(data.storeId));
+  }
+
+  getStoreRiderLocations(storeId: number) {
+    const list = [];
+    for (const loc of this.riderLocations.values()) {
+      if (loc.storeId === storeId) {
+        const info = this.activeRiders.get(loc.riderId);
+        if (info && info.isOnline) {
+          list.push(loc);
+        }
+      }
+    }
+    return list;
+  }
+
+  getRiderLocation(riderId: number) {
+    return this.riderLocations.get(riderId) || null;
+  }
+
+  @SubscribeMessage('get_active_riders')
+  handleGetActiveRiders(@MessageBody() data: { storeId: number }) {
+    if (!data || !data.storeId) return [];
+    return this.getActiveRidersList(Number(data.storeId));
+  }
+
+  getActiveRidersList(storeId: number) {
+    const list: { riderId: number; isOnline: boolean; lastSeen: number }[] = [];
+    for (const [riderId, info] of this.activeRiders.entries()) {
+      if (info.storeId === storeId && info.isOnline) {
+        list.push({ riderId, isOnline: info.isOnline, lastSeen: info.lastSeen });
+      }
+    }
+    return list;
+  }
+
+  isRiderOnline(riderId: number): boolean {
+    const rider = this.activeRiders.get(riderId);
+    return !!rider && rider.isOnline;
+  }
+
+  hasOnlineRiders(storeId: number): boolean {
+    for (const info of this.activeRiders.values()) {
+      if (info.storeId === storeId && info.isOnline) return true;
+    }
+    return false;
+  }
+
+  broadcastRiderPresence(storeId: number) {
+    const activeList = this.getActiveRidersList(storeId);
+    this.broadcast('rider_presence_updated', { storeId, riders: activeList, count: activeList.length }, `store_${storeId}`);
   }
 
   private broadcastActiveWaiters(store_id: number) {
