@@ -792,7 +792,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         const posDeliveriesRes = await apiFetch(`/pos-orders?store_id=${storeId}`, { auth: true });
         if (posDeliveriesRes.ok) {
           const posOrders: any[] = await posDeliveriesRes.json();
-          const activePos = (posOrders || []).filter(o => o.order_source?.toUpperCase() === 'DELIVERY' && o.status !== 'SETTLED' && o.status !== 'CANCELLED' && o.status !== 'VOIDED');
+          const activePos = (posOrders || []).filter(o => o.order_source?.toUpperCase() === 'DELIVERY' && o.status !== 'SETTLED' && o.status !== 'CANCELLED' && o.status !== 'VOIDED' && o.status !== 'DELIVERED');
           
           if (activePos.length > 0) {
             const hydratedPos = activePos.map(order => {

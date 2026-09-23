@@ -411,8 +411,19 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
       }
     }
 
+    // Stable, namespace-prefixed identity key:
+    //   - Backend-synced KOTs: "kot-{backendKotId}"  — never changes across syncs
+    //   - Offline-only KOTs:   "lok-{dexieId}"       — unique within local Dexie table
+    // This prevents React from re-using a DOM node across two completely different
+    // KOTs when a local dexieId numerically matches a backendKotId, and prevents
+    // the seenNewOrders Set from firing a duplicate popup when the Dexie
+    // auto-increment id rotates during a re-sync.
+    const stableId = kot.backendKotId
+      ? `kot-${kot.backendKotId}`
+      : `lok-${kot.id ?? kot.orderId}`;
+
     return {
-      id: kot.backendKotId ? kot.backendKotId.toString() : (kot.id ? kot.id.toString() : kot.orderId.toString()),
+      id: stableId,
       backendKotId: kot.backendKotId,
       backendOrderId: kot.orderId,
       displayId: kot.orderId.toString(),

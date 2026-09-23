@@ -3,7 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../context/StoreContext';
 import { getDeliveryFee, getGrandTotal, getLoyaltyEligibleSubtotal, getPromoDiscount, getSubtotal, getTax } from '../../utils/cartMath';
 import { formatCurrency } from '../../utils/currency';
-import { getCustomerStatusLabel } from '../../utils/orderStatusMapper';
+import {
+  TRACKING_STEPS,
+  mapBackendStatusToStep,
+  getCustomerStatusLabel,
+  getCustomerStatusDescription,
+  isOrderTerminal,
+} from '../../utils/orderStatusMapper';
 import { AddOnsModal } from '../AddOnsModal';
 import {
   X,
@@ -12,7 +18,11 @@ import {
   Minus,
   Trash2,
   ArrowRight,
-  Gift
+  Gift,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  Sparkles,
 } from 'lucide-react';
 
 interface CartDrawerProps {
@@ -31,10 +41,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
     redeemPoints, 
     setRedeemPoints,
     activeOrder,
-    setIsTrackerModalOpen
   } = useStore();
   const navigate = useNavigate();
   const [showAddOns, setShowAddOns] = useState(false);
+  // Inline tracking panel — expanded by default so the customer immediately
+  // sees their order progress when they open the cart while an order is active.
+  const [showTracker, setShowTracker] = useState(true);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -103,24 +115,111 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Active Order Banner (Visible whenever customer has an active order) */}
-        {activeOrder && (
-          <div className="mx-4 sm:mx-6 mt-3 p-3 bg-gradient-to-r from-[#D4AF37]/15 to-amber-950/25 border border-[#D4AF37]/40 rounded-2xl flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-black text-[#D4AF37] uppercase tracking-wider">Active Order #{activeOrder.id}</span>
-              <p className="text-xs font-bold text-white">{getCustomerStatusLabel(activeOrder.status)}</p>
+        {/* ── Inline Order Tracker ─────────────────────────────────────── */}
+        {/* Replaces the old "Track →" banner: the tracking timeline now lives   */}
+        {/* directly inside the cart drawer so customers never need a popup.     */}
+        {activeOrder && (() => {
+          const currentStepIndex = mapBackendStatusToStep(activeOrder.status);
+          const isTerminal = isOrderTerminal(activeOrder.status);
+          const statusLabel = getCustomerStatusLabel(activeOrder.status);
+          const statusDesc = getCustomerStatusDescription(activeOrder.status);
+          const amount = Number(activeOrder.totalAmount || activeOrder.total_amount) || 0;
+
+          return (
+            <div className="mx-4 sm:mx-6 mt-3 border border-[#D4AF37]/30 rounded-2xl overflow-hidden">
+              {/* Collapsible header */}
+              <button
+                onClick={() => setShowTracker(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-[#D4AF37]/15 to-amber-950/25 hover:from-[#D4AF37]/20 transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${isTerminal ? 'bg-emerald-500/20' : 'bg-[#D4AF37]/20'}`}>
+                    <Sparkles className={`w-3.5 h-3.5 ${isTerminal ? 'text-emerald-400' : 'text-[#D4AF37]'}`} />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-[10px] font-black text-[#D4AF37] uppercase tracking-wider">Order #{activeOrder.id}</div>
+                    <div className="text-xs font-bold text-white leading-none mt-0.5">{statusLabel}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#D4AF37]">{formatCurrency(amount)}</span>
+                  {showTracker
+                    ? <ChevronUp className="w-4 h-4 text-[#D4AF37]" />
+                    : <ChevronDown className="w-4 h-4 text-[#D4AF37]" />}
+                </div>
+              </button>
+
+              {/* Expandable timeline body */}
+              {showTracker && (
+                <div className="bg-[#0C0C0E]/80 px-4 py-3 space-y-3">
+                  {/* Status description */}
+                  <p className="text-[11px] text-gray-400 leading-tight">{statusDesc}</p>
+
+                  {/* Step-by-step timeline */}
+                  <div className="space-y-2.5">
+                    {TRACKING_STEPS.map((step, idx) => {
+                      const Icon = step.icon;
+                      const isDone = idx <= currentStepIndex;
+                      const isCurrent = idx === currentStepIndex;
+                      return (
+                        <div key={step.key} className="flex items-start gap-3 relative">
+                          {idx < TRACKING_STEPS.length - 1 && (
+                            <div
+                              className={`absolute left-3.5 top-7 w-0.5 h-5 -z-10 transition-colors ${
+                                idx < currentStepIndex ? 'bg-[#D4AF37]/60' : 'bg-white/8'
+                              }`}
+                            />
+                          )}
+                          <div
+                            className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+                              isCurrent
+                                ? 'bg-[#D4AF37] text-black shadow-md shadow-[#D4AF37]/30 ring-1 ring-[#D4AF37]'
+                                : isDone
+                                  ? 'bg-[#D4AF37]/75 text-black'
+                                  : 'bg-[#1A1A1D] border border-white/10 text-gray-600'
+                            }`}
+                          >
+                            {isDone && !isCurrent ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-black" />
+                            ) : (
+                              <Icon className="w-3.5 h-3.5" />
+                            )}
+                          </div>
+                          <div className="flex-1 pt-0.5">
+                            <div className="flex items-center justify-between">
+                              <span
+                                className={`text-xs font-bold font-display ${
+                                  isCurrent ? 'text-[#D4AF37]' : isDone ? 'text-white' : 'text-gray-600'
+                                }`}
+                              >
+                                {step.label}
+                              </span>
+                              {isCurrent && !isTerminal && (
+                                <span className="text-[9px] text-[#D4AF37] bg-[#D4AF37]/10 px-1.5 py-0.5 rounded-full border border-[#D4AF37]/20 font-semibold animate-pulse">
+                                  Now
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-gray-500 leading-tight">{step.sub}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Completed call-to-action */}
+                  {isTerminal && (
+                    <div className="pt-1 border-t border-white/8">
+                      <p className="text-[10px] text-emerald-400 font-semibold text-center">
+                        ✓ Order completed — thanks for ordering!
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <button
-              onClick={() => {
-                onClose();
-                setIsTrackerModalOpen(true);
-              }}
-              className="bg-[#D4AF37] hover:bg-[#ffe088] text-black text-xs font-extrabold px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
-            >
-              Track →
-            </button>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Cart Items List */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
@@ -137,17 +236,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
               >
                 Browse Menu
               </button>
-              {activeOrder && (
-                <button
-                  onClick={() => {
-                    onClose();
-                    setIsTrackerModalOpen(true);
-                  }}
-                  className="mt-2 w-full max-w-xs border border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 py-2.5 rounded-full font-bold text-xs transition-colors cursor-pointer"
-                >
-                  Track Current Order #{activeOrder.id} →
-                </button>
-              )}
             </div>
           ) : (
             cart.map((item) => (
