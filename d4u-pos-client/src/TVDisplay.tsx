@@ -1,15 +1,78 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from './db';
+import { db, isValidPosIntegerId } from './db';
 import { CheckCircle2, Clock } from 'lucide-react';
+import { isKotEligible } from './utils/kotEligibility';
+import { apiFetch } from './pos/api';
 
+/**
+ * TVDisplay — legacy /tv route renderer.
+ *
+ * Task #3A: applies the SAME identity gate as StitchKDS and TvBoard.
+ * A KOT is NEVER rendered unless:
+ *   - currentStoreId is known (loaded from localStorage session)
+ *   - activeBusinessDayId is known (fetched from backend or cached per-store)
+ *   - k.store_id === currentStoreId
+ *   - k.businessDayId === activeBusinessDayId
+ *
+ * NO hardcoded || 1 fallbacks. If either identity is absent, zero KOTs render.
+ */
 export default function TVDisplay() {
-  const activeKots = useLiveQuery(
+  // Read the user session from localStorage — the same source TvBoard uses.
+  let user: any = null;
+  try {
+    user = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
+  } catch (e) {
+    console.error('[TVDisplay] Corrupt d4u_main_user in localStorage, ignoring:', e);
+  }
+
+  // RULE 1: No || 1 fallback. undefined means "no session" and zero KOTs render.
+  const currentStoreId: number | undefined = user?.store_id || undefined;
+
+  // Remediation Batch 3 (Finding 4): TVDisplay MUST fail closed.
+  // Never initialize from stale cached business day or retain cached ID on network failure.
+  const [activeBusinessDayId, setActiveBusinessDayId] = useState<number | null>(null);
+
+  // Fetch and verify the authoritative current business day for this store on mount.
+  // If backend indicates no active business day or network request fails, activeBusinessDayId is null.
+  useEffect(() => {
+    if (!currentStoreId) return;
+    apiFetch(`/business-day/current?store_id=${currentStoreId}`, { auth: true })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && isValidPosIntegerId(data.id)) {
+          setActiveBusinessDayId(data.id);
+          localStorage.setItem(`d4u_active_business_day_${currentStoreId}`, String(data.id));
+        } else {
+          setActiveBusinessDayId(null);
+          localStorage.removeItem(`d4u_active_business_day_${currentStoreId}`);
+        }
+      })
+      .catch(() => {
+        // Network failure / offline: fail closed. Stale cached business day must NOT render.
+        setActiveBusinessDayId(null);
+        localStorage.removeItem(`d4u_active_business_day_${currentStoreId}`);
+      });
+  }, [currentStoreId]);
+
+  // Clock tick for header time display
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const allKots = useLiveQuery(
     () => db.kots.where('status').anyOf(['PREPARING', 'READY']).toArray()
   ) || [];
 
-  const preparing = activeKots.filter(k => k.status === 'PREPARING');
-  const ready = activeKots.filter(k => k.status === 'READY');
+  // Task #3A identity gate — applied uniformly to EVERY KOT before it can render.
+  const eligibleKots = allKots.filter(k =>
+    isKotEligible(k, currentStoreId, activeBusinessDayId)
+  );
+
+  const preparing = eligibleKots.filter(k => k.status === 'PREPARING');
+  const ready = eligibleKots.filter(k => k.status === 'READY');
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-white flex flex-col font-sans overflow-hidden">
@@ -26,7 +89,7 @@ export default function TVDisplay() {
         </div>
         <div className="text-right">
           <p className="text-5xl font-black tabular-nums tracking-tight">
-            {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+            {new Date(now).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
           </p>
         </div>
       </div>

@@ -7,10 +7,10 @@ import { formatCurrency } from '../utils/currency';
 import { TRACKING_STEPS, mapBackendStatusToStep, getCustomerStatusLabel, getCustomerStatusDescription, isOrderTerminal } from '../utils/orderStatusMapper';
 
 export default function TrackOrderPage({ activeOrder: propActiveOrder }: { activeOrder: any }) {
-  const { orderUpdate, riderPosition, activeOrder: contextActiveOrder } = useStore();
+  const { orderUpdate, riderPosition, activeOrder: contextActiveOrder, setActiveOrder } = useStore();
   const effectiveActiveOrder = propActiveOrder || contextActiveOrder;
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryOrder = searchParams.get('order') || '';
   const [trackInput, setTrackInput] = useState(queryOrder || (effectiveActiveOrder?.id ? String(effectiveActiveOrder.id) : ''));
   const [result, setResult] = useState<any>(effectiveActiveOrder || null);
@@ -24,16 +24,17 @@ export default function TrackOrderPage({ activeOrder: propActiveOrder }: { activ
     }
   }, [effectiveActiveOrder]);
 
-  // Live status push
+  // Live status push: merges incoming socket update into local tracking view
   useEffect(() => {
-    if (orderUpdate) {
-      setResult((prev: any) => {
-        if (prev && (orderUpdate.id === prev.id || orderUpdate.id == prev.id)) {
-          return { ...prev, status: orderUpdate.status, ...orderUpdate };
-        }
-        return prev;
-      });
-    }
+    if (!orderUpdate) return;
+    const updateId = orderUpdate.id || orderUpdate.orderId || orderUpdate.order_id;
+    setResult((prev: any) => {
+      const prevId = prev?.id || prev?.orderId || prev?.order_id;
+      if (prev && updateId && String(updateId) === String(prevId)) {
+        return { ...prev, ...orderUpdate, status: orderUpdate.status || prev.status };
+      }
+      return prev;
+    });
   }, [orderUpdate]);
 
   const loadOrder = async (input: string) => {
@@ -47,6 +48,9 @@ export default function TrackOrderPage({ activeOrder: propActiveOrder }: { activ
       const found = Array.isArray(data) ? data.sort((a: any, b: any) => b.id - a.id)[0] : data;
       if (!found) { setError('No orders found.'); setLoading(false); return; }
       setResult(found);
+      // Finding #6: Persist manually tracked order into StoreContext / localStorage and canonicalize URL
+      setActiveOrder(found);
+      setSearchParams({ order: String(found.id) }, { replace: true });
     } catch {
       setError('Failed to connect to server.');
     }
@@ -55,10 +59,15 @@ export default function TrackOrderPage({ activeOrder: propActiveOrder }: { activ
 
   useEffect(() => {
     const input = queryOrder.trim();
-    if (!input) return;
-    if (result && String(result.id) === input) return;
-    void loadOrder(input);
-  }, [queryOrder]);
+    if (input) {
+      if (!result || String(result.id) !== input) {
+        void loadOrder(input);
+      }
+    } else if (effectiveActiveOrder && !result) {
+      setResult(effectiveActiveOrder);
+      setSearchParams({ order: String(effectiveActiveOrder.id) }, { replace: true });
+    }
+  }, [queryOrder, effectiveActiveOrder]);
 
   const handleTrack = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +117,7 @@ export default function TrackOrderPage({ activeOrder: propActiveOrder }: { activ
               </div>
             </div>
 
-            {currentStep === 4 && riderPosition && String(riderPosition.orderId) === String(result.id) && (
+            {(currentStep === 4 || currentStep === 5) && riderPosition && String(riderPosition.orderId) === String(result.id) && (
               <div className="relative w-full h-28 rounded-2xl overflow-hidden border border-stitch-border bg-stitch-surface">
                 <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle, var(--stitch-border, #888) 1px, transparent 1px)', backgroundSize: '14px 14px' }} />
                 <div

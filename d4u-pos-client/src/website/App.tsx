@@ -5,8 +5,66 @@ import KioskMode from './components/KioskMode';
 import MobileMode from './components/MobileMode';
 import LandingMode from './components/LandingMode';
 import './index.css';
-import { db } from '../db';
+import { createOfflineKot } from '../db';
 import { customAlert, customSuccess } from '../utils/alerts';
+
+/**
+ * Task #3C-2: Resolves active store and active business day for embedded website orders
+ * from the client session/localStorage context without fabricating any fallback values.
+ */
+export function resolveWebsiteStoreAndBusinessDay(): {
+  activeStoreId?: number;
+  activeBusinessDayId?: number;
+} {
+  let user: any = null;
+  try {
+    user = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
+  } catch (e) {
+    user = null;
+  }
+  const activeStoreId = user?.store_id != null ? Number(user.store_id) : undefined;
+  const rawBd = activeStoreId
+    ? localStorage.getItem(`d4u_active_business_day_${activeStoreId}`)
+    : null;
+  const activeBusinessDayId = rawBd ? Number(rawBd) : undefined;
+
+  return { activeStoreId, activeBusinessDayId };
+}
+
+/**
+ * Task #3C-2: Submits an embedded website order as a new offline KOT.
+ * createOfflineKot() serves as the single centralized identity validation boundary.
+ */
+export async function submitWebsiteOrder(
+  cart: CartItem[],
+  table?: { add: (data: any) => Promise<any> }
+): Promise<any> {
+  if (cart.length === 0) {
+    throw new Error('Your cart is empty!');
+  }
+
+  const itemsString = cart.map(i => `${i.quantity}x ${i.foodItem.name}`).join(', ');
+  const totalAmount = cart.reduce((sum, item) => sum + (item.foodItem.priceRs * item.quantity), 0);
+
+  const newKot = {
+    orderId: Math.floor(1000 + Math.random() * 9000),
+    type: 'Online',
+    status: 'PENDING' as const,
+    items: itemsString,
+    notes: 'Online Order via Website',
+    timePlaced: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    prepTimeMinutes: 0,
+    startTime: '',
+    printCount: 0,
+    totalAmount,
+    customer: 'Web Customer',
+    source: 'Website'
+  };
+
+  const { activeStoreId, activeBusinessDayId } = resolveWebsiteStoreAndBusinessDay();
+
+  return await createOfflineKot(newKot, activeStoreId, activeBusinessDayId, table);
+}
 
 export default function App() {
   const [currentMode, setCurrentMode] = useState<ViewMode>('kiosk');
@@ -114,39 +172,13 @@ export default function App() {
       return;
     }
 
-    const kotCart = cart.map(item => ({
-      id: parseInt(item.foodItem.id),
-      name: item.foodItem.name,
-      price: item.foodItem.price,
-      qty: item.quantity,
-      img: item.foodItem.image
-    }));
-
-    const itemsString = cart.map(i => `${i.quantity}x ${i.foodItem.name}`).join(', ');
-    const totalAmount = cart.reduce((sum, item) => sum + (item.foodItem.priceRs * item.quantity), 0);
-
-    const newKot = {
-      orderId: Math.floor(1000 + Math.random() * 9000),
-      type: 'Online',
-      status: 'PENDING',
-      items: itemsString,
-      notes: 'Online Order via Website',
-      timePlaced: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      prepTimeMinutes: 0,
-      startTime: '',
-      printCount: 0,
-      totalAmount,
-      customer: 'Web Customer',
-      source: 'Website'
-    };
-
     try {
-      await db.kots.add(newKot);
+      await submitWebsiteOrder(cart);
       customSuccess('Order placed successfully! Pending restaurant approval.');
       setCart([]);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Checkout failed', e);
-      customAlert('Error placing order.');
+      customAlert(e?.message || 'Error placing order.');
     }
   };
 

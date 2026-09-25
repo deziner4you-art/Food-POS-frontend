@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from './db';
+import { db, isValidPosIntegerId } from './db';
+import { isKotEligible } from './utils/kotEligibility';
 
-export default function KitchenDisplay() {
+export default function KitchenDisplay({ currentUser }: { currentUser?: any } = {}) {
   const [timeStr, setTimeStr] = useState('');
   const [selectedPrepTime, setSelectedPrepTime] = useState(15);
   
@@ -12,8 +13,18 @@ export default function KitchenDisplay() {
   });
   const [chefLoginName, setChefLoginName] = useState('');
   
-  // Fetch KOTs from Dexie Database
-  const kots = useLiveQuery(() => db.kots.toArray()) || [];
+  // Identity gate (Task #3A): strictly scope by active store and active business day
+  let user = currentUser;
+  if (!user) {
+    try { user = JSON.parse(localStorage.getItem('d4u_kds_user') || localStorage.getItem('d4u_main_user') || 'null'); } catch { user = null; }
+  }
+  const activeStoreId: number | null = isValidPosIntegerId(user?.store_id) ? user.store_id : null;
+  const rawBd = activeStoreId ? localStorage.getItem(`d4u_active_business_day_${activeStoreId}`) : null;
+  const activeBusinessDayId: number | null = rawBd && isValidPosIntegerId(Number(rawBd)) ? Number(rawBd) : null;
+
+  // Fetch KOTs from Dexie Database and enforce identity eligibility
+  const rawKots = useLiveQuery(() => db.kots.toArray()) || [];
+  const kots = rawKots.filter(k => isKotEligible(k, activeStoreId, activeBusinessDayId));
   
   // Split kots by status
   const activeKots = kots.filter(k => k.status === 'PREPARING' || k.status === 'READY');

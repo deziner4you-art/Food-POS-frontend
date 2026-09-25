@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Megaphone, CheckCircle2 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, syncAndReconcileBackendKots, acquireSyncSequence, isValidPosIntegerId } from '../db';
 import { io } from 'socket.io-client';
 import { BACKEND_URL } from '../config/backend';
 import { apiFetch } from '../pos/api';
+import { isKotEligible } from '../utils/kotEligibility';
 
 export default function TvBoard() {
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -27,9 +28,26 @@ export default function TvBoard() {
   // so those tiers are a documented gap rather than built here.
   const slides = [...campaigns, ...upcoming];
 
-  const activeKots = useLiveQuery(
+  // RULE 1: No hardcoded || 1 fallback. If storeId is absent, the session has no store context
+  // and no KOT may render. The const is typed as number | undefined to make this explicit.
+  const activeStoreId: number | undefined = storeId;
+  // Remediation Batch 4: Must initialize activeBusinessDayId as null for rendering.
+  // Cached business-day ID may NOT authorize rendering before successful authoritative backend verification.
+  const [activeBusinessDayId, setActiveBusinessDayId] = useState<number | null>(null);
+
+  const activeKots = (useLiveQuery(
     () => db.kots.where('status').anyOf(['PREPARING', 'READY']).toArray()
-  ) || [];
+  ) || []).filter(k => {
+    // Task #3A identity gate: isKotEligible enforces all four rules with no fallbacks.
+    if (!isKotEligible(k, activeStoreId, activeBusinessDayId)) return false;
+
+    // Expiration strategy for offline unsynced tickets: tickets older than 24h are excluded
+    if (k.synced === false && k.startTime) {
+      const ageHours = (Date.now() - new Date(k.startTime).getTime()) / (1000 * 60 * 60);
+      if (ageHours > 24) return false;
+    }
+    return true;
+  });
 
   const preparingOrders = activeKots
     .filter(k => k.status === 'PREPARING')
@@ -80,48 +98,68 @@ export default function TvBoard() {
       .catch(console.error);
   };
 
+  // Concurrency lock for TV Board sync (Finding #4)
+  const isSyncingTvBoardRef = React.useRef(false);
+
   // Fetches the current PREPARING/READY KOTs from the real backend and
   // mirrors StitchKDS.tsx's syncKOTs() so TV Board is a real data source in
   // its own right rather than a passive reader of whatever the Kitchen
   // Display screen happened to already sync into the shared Dexie table.
   const syncKots = async () => {
+    if (isSyncingTvBoardRef.current) return;
+    if (!isValidPosIntegerId(storeId)) {
+      console.warn('[TvBoard] Refusing sync: storeId is missing or invalid');
+      return;
+    }
+    const sid = storeId;
+    isSyncingTvBoardRef.current = true;
     try {
-      const sid = storeId || 1;
+      // Finding #3 (Remediation Batch 2): Authoritatively verify current business day for sync.
+      // NEVER fall back to cached activeBusinessDayId for destructive reconciliation!
+      let authoritativeBdId: number | null = null;
+      try {
+        const bdRes = await apiFetch(`/business-day/current?store_id=${sid}`, { auth: true });
+        if (bdRes.ok) {
+          const bdData = await bdRes.json();
+          if (bdData && isValidPosIntegerId(bdData.id)) {
+            authoritativeBdId = bdData.id;
+            setActiveBusinessDayId(bdData.id);
+            localStorage.setItem(`d4u_active_business_day_${sid}`, String(bdData.id));
+          } else {
+            setActiveBusinessDayId(null);
+            localStorage.removeItem(`d4u_active_business_day_${sid}`);
+          }
+        } else {
+          setActiveBusinessDayId(null);
+          localStorage.removeItem(`d4u_active_business_day_${sid}`);
+        }
+      } catch (e) {
+        console.warn('[TvBoard] Network error verifying active business day:', e);
+        setActiveBusinessDayId(null);
+        localStorage.removeItem(`d4u_active_business_day_${sid}`);
+      }
+
+      // If authoritative active business day could not be verified from backend, refuse sync safely.
+      if (!isValidPosIntegerId(authoritativeBdId)) {
+        console.warn('[TvBoard] Refusing sync: authoritative active business day could not be verified from backend');
+        return;
+      }
+
+      // Task D & Task 2: Monotonic sync sequence acquired before async network fetch
+      const syncSeq = await acquireSyncSequence(sid, authoritativeBdId);
+
       const res = await apiFetch(`/kots?store_id=${sid}&includeReady=true`, { auth: true });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          await db.kots.clear();
-          const mapped = data.map((k: any) => ({
-            id: k.id,
-            // Prefer customer-facing OnlineOrder.id for online orders so the TV Board
-            // displays the same order number (#1119) as the Website Tracker and POS cards,
-            // while falling back to k.order_id for POS-native orders (#719).
-            orderId: k.order?.onlineOrder?.id || k.order?.onlineOrder?.orderId || k.order_id,
-            // Order.orderType doesn't exist -- the real field is
-            // order_source ("WALKIN"/"ONLINE"/etc). Reading the wrong field
-            // meant this was always undefined, so the `|| 'Walk-in'`
-            // fallback fired for every KOT regardless of true source.
-            type: k.order?.order_source === 'ONLINE'
-              ? (k.order?.onlineOrder?.type === 'PICKUP' ? 'Pickup' : 'Online')
-              : 'Walk-in',
-            customer: k.order?.customer?.name || '',
-            customerPhone: k.order?.customer?.phone || '',
-            items: k.items ? JSON.stringify(k.items) : '[]',
-            notes: k.notes,
-            timePlaced: new Date(k.createdAt).toLocaleTimeString(),
-            prepTimeMinutes: k.prep_time_minutes || 10,
-            status: k.status,
-            startTime: k.start_time ? new Date(k.start_time).toISOString() : '',
-            totalAmount: k.order?.total_amount || 0,
-            paymentMethod: k.order?.payment_method || 'CASH',
-            printCount: 0,
-          }));
-          await db.kots.bulkAdd(mapped);
+          // Cross-tab safe transactional reconciliation and upsert with sequence check
+          await syncAndReconcileBackendKots(data, sid, authoritativeBdId, syncSeq);
         }
       }
     } catch (e) {
       console.error('[TvBoard] Failed to sync KOTs from backend:', e);
+    } finally {
+      isSyncingTvBoardRef.current = false;
     }
   };
 

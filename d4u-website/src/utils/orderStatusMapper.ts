@@ -35,6 +35,7 @@ export function mapBackendStatusToStep(status?: string): number {
 
     case 'KITCHEN_PREPARING':
     case 'PREPARING':
+    case 'ACCEPTED':
       return 2;
 
     case 'READY':

@@ -31,6 +31,7 @@ export class RiderService {
 
     const onlineWhere: any = {
       status: { in: validStatuses },
+      type: { equals: 'DELIVERY', mode: 'insensitive' },
       store_id: Number(storeId),
       // Fix 3: A DISPATCHED order with no rider claim is permanently orphaned —
       // the cashier pressed "Dispatch Order" on the POS before any rider
@@ -191,10 +192,33 @@ export class RiderService {
     let orderStoreId: number | undefined;
     const existingOnlineForVal = await this.prisma.onlineOrder.findUnique({ where: { id } });
     if (existingOnlineForVal) {
+      // Authoritative Delivery Gate: Only orders in READY state can be claimed
+      // by a rider. Pre-kitchen states (PENDING, CONFIRMED, KITCHEN_PREPARING)
+      // and terminal states cannot be claimed.
+      if (existingOnlineForVal.status !== 'READY') {
+        throw new BadRequestException(
+          `Cannot claim Order #${id}: only READY orders can be claimed by a rider (current status: ${existingOnlineForVal.status}).`,
+        );
+      }
+      if (existingOnlineForVal.type?.toUpperCase() !== 'DELIVERY') {
+        throw new BadRequestException(
+          `Cannot claim Order #${id}: only DELIVERY orders can be claimed by a rider (current type: ${existingOnlineForVal.type}).`,
+        );
+      }
       orderStoreId = existingOnlineForVal.store_id;
     } else {
       const existingPosForVal = await this.prisma.order.findUnique({ where: { id } });
       if (existingPosForVal) {
+        if (existingPosForVal.status !== 'READY') {
+          throw new BadRequestException(
+            `Cannot claim POS Order #${id}: only READY orders can be claimed by a rider (current status: ${existingPosForVal.status}).`,
+          );
+        }
+        if (existingPosForVal.order_source?.toUpperCase() !== 'DELIVERY') {
+          throw new BadRequestException(
+            `Cannot claim POS Order #${id}: only DELIVERY orders can be claimed by a rider (current order_source: ${existingPosForVal.order_source}).`,
+          );
+        }
         orderStoreId = existingPosForVal.store_id;
       }
     }
@@ -207,91 +231,128 @@ export class RiderService {
       throw new BadRequestException('Rider store mismatch.');
     }
 
-    // Backend Claim Protection (Fix 5 & 6):
-    // A rider with an active unfinished delivery cannot claim another order.
-    const terminalStatuses = ['SETTLED', 'CANCELLED'];
-    const activeOnlineDelivery = await this.prisma.onlineOrder.findFirst({
-      where: {
-        claimedByRiderId: riderId,
-        status: { notIn: terminalStatuses },
-      },
-    });
-    if (activeOnlineDelivery && activeOnlineDelivery.id !== id) {
-      throw new ConflictException(
-        `Finish current delivery first: Order #${activeOnlineDelivery.id} is still in progress (${activeOnlineDelivery.status}).`,
-      );
-    }
+    // Backend Claim Protection (Findings #5, #6, & #7):
+    // A rider cannot claim two active delivery orders concurrently.
+    // Wrap active delivery check + claim in an atomic transaction.
+    const txRunner = typeof this.prisma.$transaction === 'function'
+      ? (cb: (tx: any) => Promise<any>) => this.prisma.$transaction(cb)
+      : (cb: (tx: any) => Promise<any>) => cb(this.prisma);
 
-    const activePosDelivery = await this.prisma.order.findFirst({
-      where: {
-        rider_id: riderId,
-        status: { notIn: terminalStatuses },
-        order_source: { equals: 'DELIVERY', mode: 'insensitive' },
-      },
-    });
-    if (activePosDelivery && activePosDelivery.id !== id) {
-      throw new ConflictException(
-        `Finish current delivery first: POS Order #${activePosDelivery.id} is still in progress.`,
-      );
-    }
-
-    const onlineClaim = await this.prisma.onlineOrder.updateMany({
-      where: { id, claimedByRiderId: null },
-      data: { claimedByRiderId: riderId, claimedByRiderName: riderUser.name || null },
-    });
-    if (onlineClaim.count > 0) {
-      const updated = await this.prisma.onlineOrder.findUniqueOrThrow({ where: { id } });
-      this.gateway.broadcast('order_updated', updated, `store_${updated.store_id}`);
-      return { success: true, order: updated };
-    }
-
-    const existingOnline = await this.prisma.onlineOrder.findUnique({ where: { id } });
-    if (existingOnline) {
-      throw new ConflictException('Already claimed by another rider.');
-    }
-
-    const posClaim = await this.prisma.order.updateMany({
-      where: { id, rider_id: null },
-      data: { rider_id: riderId },
-    });
-    if (posClaim.count > 0) {
-      const updated = await this.prisma.order.findUniqueOrThrow({
-        where: { id },
-        include: { customer: true, items: { include: { product: true } }, rider: true },
-      });
-      // Task 6A: if this POS Order is the internal twin of a Website OnlineOrder,
-      // reverse the claim (rollback rider_id) and reject — the Rider must use the
-      // OnlineOrder id so that Website tracking, TV Board, and Rider history all
-      // remain under the same customer-facing identity. A successful claim here
-      // would create a second accepted delivery record under the wrong id.
-      if (updated.order_source === 'ONLINE') {
-        const linkedOnline = await this.prisma.onlineOrder.findUnique({
-          where: { posOrderId: id },
-          select: { id: true },
-        });
-        if (linkedOnline) {
-          // Roll back the rider_id we just wrote — the claim must not stand
-          await this.prisma.order.update({
-            where: { id },
-            data: { rider_id: null },
-          });
-          throw new BadRequestException(
-            `This is an internal kitchen order linked to Website Order #${linkedOnline.id}. ` +
-            `Please accept order #${linkedOnline.id} instead.`,
-          );
-        }
+    const { updatedOrder, isPosOrder } = await txRunner(async (tx: any) => {
+      // Database-level concurrency lock (Approach B):
+      // Acquire an exclusive row lock on the rider's User record.
+      // Under PostgreSQL, SELECT ... FOR UPDATE serializes concurrent claim transactions
+      // for the SAME rider at the database level, preventing race conditions where two
+      // concurrent transactions both observe zero active deliveries before claiming.
+      // Different riders lock different User rows, allowing simultaneous claims without contention.
+      if (typeof tx.$queryRaw === 'function') {
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${riderId} FOR UPDATE`;
+      } else if (typeof tx.$executeRaw === 'function') {
+        await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${riderId} FOR UPDATE`;
       }
-      const formatted = formatPosOrderForRider(updated);
-      this.gateway.broadcast('order_updated', formatted, `store_${updated.store_id}`);
+
+      const terminalStatuses = ['SETTLED', 'CANCELLED'];
+      const activeOnlineDelivery = await tx.onlineOrder.findFirst({
+        where: {
+          claimedByRiderId: riderId,
+          status: { notIn: terminalStatuses },
+        },
+      });
+      if (activeOnlineDelivery && activeOnlineDelivery.id !== id) {
+        throw new ConflictException(
+          `Finish current delivery first: Order #${activeOnlineDelivery.id} is still in progress (${activeOnlineDelivery.status}).`,
+        );
+      }
+
+      const activePosDelivery = await tx.order.findFirst({
+        where: {
+          rider_id: riderId,
+          status: { notIn: terminalStatuses },
+          order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+        },
+      });
+      if (activePosDelivery && activePosDelivery.id !== id) {
+        throw new ConflictException(
+          `Finish current delivery first: POS Order #${activePosDelivery.id} is still in progress.`,
+        );
+      }
+
+      const onlineClaim = await tx.onlineOrder.updateMany({
+        where: {
+          id,
+          claimedByRiderId: null,
+          status: 'READY',
+          type: { equals: 'DELIVERY', mode: 'insensitive' },
+          store_id: riderUser.store_id,
+        },
+        data: { claimedByRiderId: riderId, claimedByRiderName: riderUser.name || null },
+      });
+      if (onlineClaim.count > 0) {
+        const updated = await tx.onlineOrder.findUniqueOrThrow({ where: { id } });
+        return { updatedOrder: updated, isPosOrder: false };
+      }
+
+      const existingOnline = await tx.onlineOrder.findUnique({ where: { id } });
+      if (existingOnline) {
+        throw new ConflictException('Already claimed by another rider.');
+      }
+
+      const posClaim = await tx.order.updateMany({
+        where: {
+          id,
+          rider_id: null,
+          status: 'READY',
+          order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+          store_id: riderUser.store_id,
+        },
+        data: { rider_id: riderId },
+      });
+      if (posClaim.count > 0) {
+        const updated = await tx.order.findUniqueOrThrow({
+          where: { id },
+          include: { customer: true, items: { include: { product: true } }, rider: true },
+        });
+        // Task 6A: if this POS Order is the internal twin of a Website OnlineOrder,
+        // reverse the claim (rollback rider_id) and reject — the Rider must use the
+        // OnlineOrder id so that Website tracking, TV Board, and Rider history all
+        // remain under the same customer-facing identity. A successful claim here
+        // would create a second accepted delivery record under the wrong id.
+        if (updated.order_source === 'ONLINE') {
+          const linkedOnline = await tx.onlineOrder.findUnique({
+            where: { posOrderId: id },
+            select: { id: true },
+          });
+          if (linkedOnline) {
+            // Roll back the rider_id we just wrote — the claim must not stand
+            await tx.order.update({
+              where: { id },
+              data: { rider_id: null },
+            });
+            throw new BadRequestException(
+              `This is an internal kitchen order linked to Website Order #${linkedOnline.id}. ` +
+              `Please accept order #${linkedOnline.id} instead.`,
+            );
+          }
+        }
+        return { updatedOrder: updated, isPosOrder: true };
+      }
+
+      const existingPos = await tx.order.findUnique({ where: { id } });
+      if (existingPos) {
+        throw new ConflictException('Already claimed by another rider.');
+      }
+
+      throw new NotFoundException('Order not found.');
+    });
+
+    if (isPosOrder) {
+      const formatted = formatPosOrderForRider(updatedOrder);
+      this.gateway.broadcast('order_updated', formatted, `store_${updatedOrder.store_id}`);
       return { success: true, order: formatted };
+    } else {
+      this.gateway.broadcast('order_updated', updatedOrder, `store_${updatedOrder.store_id}`);
+      return { success: true, order: updatedOrder };
     }
-
-    const existingPos = await this.prisma.order.findUnique({ where: { id } });
-    if (existingPos) {
-      throw new ConflictException('Already claimed by another rider.');
-    }
-
-    throw new NotFoundException('Order not found.');
   }
 
   async getRiderAvailability(storeIdStr: string) {

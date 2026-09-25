@@ -186,17 +186,49 @@ export class OnlineOrdersService {
   // activeOnly is additive and opt-in, defaulting to false so every existing
   // caller (the Incoming Online Orders panel) gets the exact same PENDING-only
   // response as before. It exists to let the POS client rehydrate its
-  // Active Deliveries list on page load — those orders have already moved
-  // past PENDING (the cashier accepted them), so the default query can't see
-  // them. SETTLED is excluded too since that's the one terminal status this
-  // flow reaches (see docs/issues/backward-status-transitions.md — there is
-  // no CANCELLED equivalent for OnlineOrder).
-  async getAllOnlineOrders(store_id?: number, activeOnly: boolean = false) {
+  // Active Deliveries list on page load after a browser refresh.
+  //
+  // DELIVERY GATE RULE (enforced here at the data layer):
+  // "READY is the gate for Delivery." Only orders that have passed the KDS
+  // READY transition are eligible for the POS Delivery queue. Pre-kitchen
+  // states (CONFIRMED, KITCHEN_PREPARING) and terminal states (DELIVERED,
+  // SETTLED, WAITING_CASH_SETTLEMENT→already settled) must never appear as
+  // Active Deliveries. We use an explicit allowlist rather than a denylist
+  // so that any future status added to the state machine is excluded by
+  // default until deliberately added here.
+  //
+  // Eligible delivery statuses (allowlist):
+  //   READY                  — KDS marked ready; waiting for rider
+  //   RIDER_ARRIVED          — Rider at restaurant to collect
+  //   PRINT_BILL             — Bill printed; about to dispatch
+  //   DISPATCHED             — Dispatched to rider
+  //   OUT_FOR_DELIVERY       — Rider en route to customer
+  //   DELIVERED              — Delivered to customer; awaiting cash settlement
+  //   WAITING_CASH_SETTLEMENT — Explicit settlement pending state
+  async getAllOnlineOrders(store_id?: number, activeOnly: boolean = false, business_day_id?: number) {
     const whereClause: any = activeOnly
-      ? { status: { notIn: ['PENDING', 'SETTLED'] } }
+      ? {
+          type: { equals: 'DELIVERY', mode: 'insensitive' },
+          status: {
+            in: [
+              'READY',
+              'RIDER_ARRIVED',
+              'PRINT_BILL',
+              'DISPATCHED',
+              'OUT_FOR_DELIVERY',
+              'DELIVERED',
+              'WAITING_CASH_SETTLEMENT',
+            ],
+          },
+        }
       : { status: 'PENDING' };
     if (store_id) {
       whereClause.store_id = store_id;
+    }
+    if (business_day_id && activeOnly) {
+      whereClause.posOrder = {
+        business_day_id: business_day_id,
+      };
     }
     return this.prisma.onlineOrder.findMany({
       where: whereClause,
@@ -318,7 +350,6 @@ export class OnlineOrdersService {
       'orderId',
       'status',
       'kdsStatus',
-      'type',
       'source',
       'customer',
       'customerPhone',
@@ -346,6 +377,18 @@ export class OnlineOrdersService {
         where: { id },
       });
       if (!existingOrder) throw new NotFoundException('Order not found');
+
+      // --- ORDER TYPE IMMUTABILITY (Task #1) ---
+      // Once an OnlineOrder is created (DELIVERY, PICKUP, DINE_IN), its type is strictly immutable.
+      if (data.type !== undefined) {
+        const incomingType = String(data.type).toUpperCase().trim();
+        const existingType = (existingOrder.type || '').toUpperCase().trim();
+        if (incomingType !== existingType) {
+          throw new BadRequestException(
+            `Order type is immutable and cannot be changed after creation. Existing type: '${existingOrder.type}', attempted type: '${data.type}'.`,
+          );
+        }
+      }
 
       // --- SECURITY ENFORCEMENT ---
       if (userStoreId && existingOrder.store_id !== userStoreId) {
@@ -375,9 +418,11 @@ export class OnlineOrdersService {
         }
       }
 
-      // --- STATE MACHINE ENFORCEMENT ---
-      const STATE_SEQUENCE = [
-        'ONLINE_ORDER_RECEIVED',
+      // --- AUTHORITATIVE STATE MACHINE ENFORCEMENT ---
+      // Canonical order lifecycle sequence:
+      // PENDING -> CONFIRMED -> KITCHEN_PREPARING -> READY -> RIDER_ARRIVED -> PRINT_BILL -> DISPATCHED -> OUT_FOR_DELIVERY -> DELIVERED -> WAITING_CASH_SETTLEMENT -> SETTLED
+      const CANONICAL_STATES = [
+        'PENDING',
         'CONFIRMED',
         'KITCHEN_PREPARING',
         'READY',
@@ -387,42 +432,125 @@ export class OnlineOrdersService {
         'OUT_FOR_DELIVERY',
         'DELIVERED',
         'WAITING_CASH_SETTLEMENT',
-        'SETTLED'
+        'SETTLED',
       ];
 
-      // Automatically map incoming legacy statuses to the new sequence
-      let incomingStatus = updateData.status || updateData.kdsStatus;
-      if (incomingStatus) {
-        if (incomingStatus === 'ACCEPTED' && existingOrder.status !== 'CONFIRMED') incomingStatus = 'CONFIRMED';
-        if (incomingStatus === 'NEW_KOT') incomingStatus = 'CONFIRMED';
-        if (incomingStatus === 'PREPARING') incomingStatus = 'KITCHEN_PREPARING';
-        if (incomingStatus === 'PENDING') incomingStatus = 'ONLINE_ORDER_RECEIVED';
+      const TERMINAL_STATES = ['SETTLED', 'CANCELLED', 'VOIDED'];
 
-        const currentIndex = STATE_SEQUENCE.indexOf(existingOrder.status);
-        const targetIndex = STATE_SEQUENCE.indexOf(incomingStatus);
+      const normalizeStatus = (status: string | undefined, currentStatus: string): string | undefined => {
+        if (!status) return undefined;
+        const s = status.toUpperCase().trim();
+        if (s === 'ONLINE_ORDER_RECEIVED' || s === 'NEW') return 'PENDING';
+        if (s === 'NEW_KOT' || s === 'PENDING_CHEF') return 'CONFIRMED';
+        if (s === 'PREPARING') return 'KITCHEN_PREPARING';
+        if (s === 'ACCEPTED') {
+          // Cashier acceptance of incoming PENDING order -> moves to CONFIRMED
+          // KDS Chef acceptance of CONFIRMED or later order -> moves to KITCHEN_PREPARING
+          return currentStatus === 'PENDING' ? 'CONFIRMED' : 'KITCHEN_PREPARING';
+        }
+        if (s === 'RIDER_ACCEPTED') return 'RIDER_ARRIVED';
+        if (s === 'PICKED_UP' || s === 'ON_WAY' || s === 'ON_THE_WAY') return 'OUT_FOR_DELIVERY';
+        if (s === 'PAID' || s === 'COMPLETED') return 'SETTLED';
+        return s;
+      };
 
-        // Strict enforcement: Do not allow skipping states (except falling back or if status not in sequence)
-        if (currentIndex !== -1 && targetIndex !== -1) {
-          if (targetIndex > currentIndex + 1) {
-            throw new Error(`Invalid state transition from ${existingOrder.status} to ${incomingStatus}. States must be sequential.`);
-          }
+      const DELIVERY_LIFECYCLE_STATES = [
+        'RIDER_ARRIVED',
+        'PRINT_BILL',
+        'DISPATCHED',
+        'OUT_FOR_DELIVERY',
+        'DELIVERED',
+        'WAITING_CASH_SETTLEMENT',
+      ];
+
+      const rawIncoming = updateData.status || updateData.kdsStatus;
+      if (rawIncoming) {
+        const currentCanonical = normalizeStatus(existingOrder.status, 'PENDING') || existingOrder.status;
+        const targetCanonical = normalizeStatus(rawIncoming, currentCanonical);
+
+        // --- FINDING #6: Current state validation before cancellation or transitions ---
+        const currentIndex = CANONICAL_STATES.indexOf(currentCanonical);
+        const isCurrentTerminal = TERMINAL_STATES.includes(currentCanonical);
+
+        if (currentIndex === -1 && !isCurrentTerminal) {
+          throw new BadRequestException(`Invalid or unsupported current order state: '${existingOrder.status}'.`);
         }
 
-        // Fix 5 — DISPATCHED pre-condition: a rider MUST have claimed the
-        // order before it can be dispatched.  The POS UI already guards this
-        // client-side (Fix 4 in App.tsx), but backend enforcement is mandatory
-        // because any API caller can bypass the UI.  Without this guard, a
-        // cashier (or any authenticated caller) can set status=DISPATCHED on
-        // an order with claimedByRiderId=null, permanently orphaning it in an
-        // unresolvable intermediate state with no rider to complete the delivery.
-        if (incomingStatus === 'DISPATCHED' && !existingOrder.claimedByRiderId) {
-          throw new Error(
-            'Cannot dispatch order: no rider has accepted this delivery yet. ' +
-            'The rider must first claim the order before it can be dispatched.',
+        // Validate target state exists in canonical or terminal states
+        const isTargetTerminal = TERMINAL_STATES.includes(targetCanonical || '');
+        const targetIndex = targetCanonical ? CANONICAL_STATES.indexOf(targetCanonical) : -1;
+
+        if (targetIndex === -1 && !isTargetTerminal) {
+          throw new BadRequestException(`Invalid or unsupported target order state: '${rawIncoming}'.`);
+        }
+
+        // 1. Terminal states cannot be moved backwards or transitioned
+        if (isCurrentTerminal) {
+          throw new BadRequestException(
+            `Order #${id} is in terminal state '${currentCanonical}' and cannot be transitioned to '${targetCanonical}'.`,
           );
         }
 
-        updateData.status = incomingStatus;
+        // 2. Cancellation handling
+        if (targetCanonical === 'CANCELLED' || targetCanonical === 'VOIDED') {
+          if (['DELIVERED', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(currentCanonical)) {
+            throw new BadRequestException(`Cannot cancel order #${id} after it has reached ${currentCanonical}.`);
+          }
+          updateData.status = targetCanonical;
+          if (updateData.kdsStatus) {
+            updateData.kdsStatus = targetCanonical;
+          }
+        } else {
+          // --- FINDING #1: Delivery Type Isolation ---
+          // Non-delivery OnlineOrders (PICKUP, DINE_IN, etc.) must NEVER enter the delivery lifecycle
+          if (targetCanonical && DELIVERY_LIFECYCLE_STATES.includes(targetCanonical) && existingOrder.type?.toUpperCase() !== 'DELIVERY') {
+            throw new BadRequestException(
+              `Order #${id} of type '${existingOrder.type || 'NON_DELIVERY'}' cannot enter delivery lifecycle state '${targetCanonical}'. Only DELIVERY orders may enter the delivery lifecycle.`,
+            );
+          }
+
+          // 3. Backwards transitions strictly rejected
+          if (targetIndex < currentIndex) {
+            throw new BadRequestException(
+              `Cannot move order #${id} backwards from '${currentCanonical}' to '${targetCanonical}'.`,
+            );
+          }
+
+          // 4. Sequential validation (no skipping states)
+          if (targetIndex > currentIndex + 1) {
+            // Allow direct settlement from DELIVERED -> SETTLED if WAITING_CASH_SETTLEMENT is omitted
+            if (currentCanonical === 'DELIVERED' && targetCanonical === 'SETTLED') {
+              // Permitted direct settlement shortcut
+            } else if (currentCanonical === 'READY' && targetCanonical === 'SETTLED' && existingOrder.type?.toUpperCase() !== 'DELIVERY') {
+              // Permitted counter pickup/dine-in settlement shortcut for non-delivery orders
+            } else {
+              throw new BadRequestException(
+                `Invalid state transition from ${currentCanonical} to ${targetCanonical}. States must be sequential.`,
+              );
+            }
+          }
+
+          // 5. Pre-READY orders cannot enter Delivery states (RIDER_ARRIVED and beyond)
+          const readyIndex = CANONICAL_STATES.indexOf('READY');
+          if (currentIndex < readyIndex && targetIndex > readyIndex) {
+            throw new BadRequestException(
+              `Order #${id} cannot enter delivery state '${targetCanonical}' before reaching READY.`,
+            );
+          }
+
+          // 6. DISPATCHED pre-condition: a rider MUST have claimed the order
+          if (targetCanonical === 'DISPATCHED' && !existingOrder.claimedByRiderId) {
+            throw new BadRequestException(
+              'Cannot dispatch order: no rider has accepted this delivery yet. ' +
+              'The rider must first claim the order before it can be dispatched.',
+            );
+          }
+
+          updateData.status = targetCanonical;
+          if (updateData.kdsStatus) {
+            updateData.kdsStatus = targetCanonical;
+          }
+        }
       }
       // ---------------------------------
 
@@ -672,6 +800,9 @@ export class OnlineOrdersService {
       );
       return { success: true, order: updated };
     } catch (error) {
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
       throw new NotFoundException('Order not found or update failed');
     }
   }

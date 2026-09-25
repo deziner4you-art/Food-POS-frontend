@@ -600,6 +600,17 @@ export class PosOrdersService {
   // the same formatPosOrderForRider shape the READY broadcast in
   // KotsService.updateKotStatus already uses, so the frontend's existing
   // order_updated handler needs no extra branching to pick it up.
+  private static readonly DELIVERY_SEQUENCE = [
+    'READY',
+    'RIDER_ARRIVED',
+    'PRINT_BILL',
+    'DISPATCHED',
+    'OUT_FOR_DELIVERY',
+    'DELIVERED',
+    'WAITING_CASH_SETTLEMENT',
+    'SETTLED',
+  ];
+
   private static readonly DELIVERY_STATUSES = [
     'RIDER_ARRIVED',
     'PRINT_BILL',
@@ -617,6 +628,47 @@ export class PosOrdersService {
 
     const existing = await this.prisma.order.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Order #${id} not found`);
+
+    // --- FINDING #2: POS DELIVERY SOURCE ISOLATION ---
+    // Reject non-delivery sources (WALK_IN, PICKUP, ONLINE, etc.) from the POS delivery endpoint
+    const normalizedSource = (existing.order_source || '').toUpperCase().trim();
+    if (normalizedSource !== 'DELIVERY') {
+      throw new BadRequestException(
+        `Cannot update delivery status for Order #${id}: order_source is "${existing.order_source || 'UNKNOWN'}". Only DELIVERY orders can enter the delivery lifecycle.`,
+      );
+    }
+
+    // --- STATE MACHINE ENFORCEMENT ---
+    const currentIndex = PosOrdersService.DELIVERY_SEQUENCE.indexOf(existing.status);
+    const targetIndex = PosOrdersService.DELIVERY_SEQUENCE.indexOf(status);
+
+    if (currentIndex === -1) {
+      throw new BadRequestException(
+        `Cannot update delivery status for Order #${id} with status "${existing.status}". ` +
+        `Order must reach READY before entering the delivery lifecycle.`,
+      );
+    }
+
+    if (targetIndex === currentIndex) {
+      return { success: true, order: existing };
+    }
+
+    if (targetIndex < currentIndex) {
+      throw new BadRequestException(
+        `Cannot transition Order #${id} delivery status backwards from "${existing.status}" to "${status}".`,
+      );
+    }
+
+    if (targetIndex > currentIndex + 1) {
+      // Allow direct settlement from DELIVERED -> SETTLED if WAITING_CASH_SETTLEMENT was omitted
+      if (existing.status === 'DELIVERED' && status === 'SETTLED') {
+        // Permitted direct settlement
+      } else {
+        throw new BadRequestException(
+          `Invalid delivery status transition from "${existing.status}" to "${status}". Transitions must follow the delivery sequence.`,
+        );
+      }
+    }
 
     // --- RIDER OWNERSHIP ENFORCEMENT (Task #2Q-B3) ---
     // Staff (Cashier/Manager/etc.) may still update any order, exactly as

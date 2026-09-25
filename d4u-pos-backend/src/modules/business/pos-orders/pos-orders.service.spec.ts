@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PosOrdersService } from './pos-orders.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
@@ -96,7 +96,7 @@ describe('PosOrdersService.updateDeliveryStatus — Rider ownership (Task #2Q-B3
   });
 
   it('7. Staff (non-Rider role) is completely unaffected -- can update any order regardless of rider_id', async () => {
-    prisma.order.findUnique.mockResolvedValue(orderAssignedToRiderA); // assigned to a rider, not this manager
+    prisma.order.findUnique.mockResolvedValue({ ...orderAssignedToRiderA, status: 'RIDER_ARRIVED' }); // assigned to a rider, not this manager
     prisma.user.findUnique.mockResolvedValue({ role: { name: 'Manager' } });
     prisma.order.update.mockResolvedValue({ ...fullUpdatedOrder, status: 'PRINT_BILL' });
 
@@ -132,6 +132,41 @@ describe('PosOrdersService.updateDeliveryStatus — Rider ownership (Task #2Q-B3
     ).rejects.toThrow('Invalid delivery status: NOT_A_REAL_STATUS');
     expect(prisma.order.findUnique).not.toHaveBeenCalled();
   });
+
+  it('STATE GUARD: PENDING order cannot enter delivery lifecycle directly', async () => {
+    prisma.order.findUnique.mockResolvedValue({ ...orderAssignedToRiderA, status: 'PENDING' });
+    await expect(
+      service.updateDeliveryStatus(800, 'RIDER_ARRIVED', { sub: 1 }),
+    ).rejects.toThrow('Order must reach READY before entering the delivery lifecycle');
+  });
+
+  it('STATE GUARD: PREPARING order cannot skip directly to PRINT_BILL', async () => {
+    prisma.order.findUnique.mockResolvedValue({ ...orderAssignedToRiderA, status: 'PREPARING' });
+    await expect(
+      service.updateDeliveryStatus(800, 'PRINT_BILL', { sub: 1 }),
+    ).rejects.toThrow('Order must reach READY before entering the delivery lifecycle');
+  });
+
+  it('STATE GUARD: READY order cannot skip directly to OUT_FOR_DELIVERY', async () => {
+    prisma.order.findUnique.mockResolvedValue({ ...orderAssignedToRiderA, status: 'READY' });
+    await expect(
+      service.updateDeliveryStatus(800, 'OUT_FOR_DELIVERY', { sub: 1 }),
+    ).rejects.toThrow('Transitions must follow the delivery sequence');
+  });
+
+  it('STATE GUARD: READY order cannot skip directly to DELIVERED', async () => {
+    prisma.order.findUnique.mockResolvedValue({ ...orderAssignedToRiderA, status: 'READY' });
+    await expect(
+      service.updateDeliveryStatus(800, 'DELIVERED', { sub: 1 }),
+    ).rejects.toThrow('Transitions must follow the delivery sequence');
+  });
+
+  it('STATE GUARD: DELIVERED order can transition directly to SETTLED for immediate cash settlement', async () => {
+    prisma.order.findUnique.mockResolvedValue({ ...orderAssignedToRiderA, status: 'DELIVERED' });
+    prisma.order.update.mockResolvedValue({ ...fullUpdatedOrder, status: 'SETTLED' });
+    const result = await service.updateDeliveryStatus(800, 'SETTLED', { sub: 1 });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('PosOrdersService.settleOrder — Delivery lifecycle protection', () => {
@@ -143,6 +178,7 @@ describe('PosOrdersService.settleOrder — Delivery lifecycle protection', () =>
       order: {
         findUnique: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn(),
       },
       cashFlow: { create: jest.fn() },
     };
@@ -201,5 +237,98 @@ describe('PosOrdersService.settleOrder — Delivery lifecycle protection', () =>
       }),
     }));
   });
+
+  describe('Finding #2 — POS Delivery Source Isolation', () => {
+    it('DELIVERY READY -> RIDER_ARRIVED succeeds when valid', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 701,
+        order_source: 'DELIVERY',
+        status: 'READY',
+        store_id: 1,
+      });
+      prisma.order.update.mockResolvedValue({
+        id: 701,
+        order_source: 'DELIVERY',
+        status: 'RIDER_ARRIVED',
+        store_id: 1,
+        items: [],
+        createdAt: new Date(),
+        total_amount: 100,
+      });
+
+      const res = await service.updateDeliveryStatus(701, 'RIDER_ARRIVED');
+      expect(res.success).toBe(true);
+      expect(prisma.order.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 701 },
+        data: { status: 'RIDER_ARRIVED' },
+      }));
+    });
+
+    it('PICKUP READY -> RIDER_ARRIVED rejected', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 702,
+        order_source: 'PICKUP',
+        status: 'READY',
+        store_id: 1,
+      });
+
+      await expect(
+        service.updateDeliveryStatus(702, 'RIDER_ARRIVED'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('WALK_IN READY -> RIDER_ARRIVED rejected', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 703,
+        order_source: 'WALK_IN',
+        status: 'READY',
+        store_id: 1,
+      });
+
+      await expect(
+        service.updateDeliveryStatus(703, 'RIDER_ARRIVED'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('ONLINE READY -> RIDER_ARRIVED rejected', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 704,
+        order_source: 'ONLINE',
+        status: 'READY',
+        store_id: 1,
+      });
+
+      await expect(
+        service.updateDeliveryStatus(704, 'RIDER_ARRIVED'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('non-delivery order cannot reach DISPATCHED', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 705,
+        order_source: 'PICKUP',
+        status: 'PRINT_BILL',
+        store_id: 1,
+      });
+
+      await expect(
+        service.updateDeliveryStatus(705, 'DISPATCHED'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('non-delivery order cannot reach OUT_FOR_DELIVERY', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 706,
+        order_source: 'DINE_IN',
+        status: 'DISPATCHED',
+        store_id: 1,
+      });
+
+      await expect(
+        service.updateDeliveryStatus(706, 'OUT_FOR_DELIVERY'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
 });
+
 

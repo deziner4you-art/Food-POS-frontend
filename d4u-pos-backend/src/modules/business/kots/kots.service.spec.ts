@@ -20,14 +20,21 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
     id: 42,
     order_id: 900,
     store_id: 67,
+    business_day_id: 88,
     printCount: 0,
   };
 
   beforeEach(async () => {
     prisma = {
-      kOT: { update: jest.fn() },
+      kOT: {
+        update: jest.fn(),
+        findUnique: jest.fn().mockImplementation(({ where }: { where: { id: number } }) => {
+          return Promise.resolve({ ...baseKot, id: where.id, status: 'NEW' });
+        }),
+      },
       order: { update: jest.fn() },
       onlineOrder: { findUnique: jest.fn(), update: jest.fn() },
+      $transaction: jest.fn((cb) => cb(prisma)),
     };
     gateway = { broadcast: jest.fn() };
 
@@ -43,6 +50,15 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
   });
 
   describe('acceptKOT — identical to updateKotStatus(id, "PREPARING")', () => {
+    beforeEach(() => {
+      prisma.kOT.findUnique.mockResolvedValue({ ...baseKot, status: 'NEW' });
+    });
+
+    it('rejects acceptKOT if ticket is not NEW (e.g. already READY or PREPARING)', async () => {
+      prisma.kOT.findUnique.mockResolvedValue({ ...baseKot, status: 'READY' });
+      await expect(service.acceptKOT(42)).rejects.toThrow('Invalid KOT status transition');
+    });
+
     it('updates KOT.status=PREPARING with acceptedAt stamped, and mirrors Order.status=PREPARING', async () => {
       prisma.kOT.update.mockResolvedValue({
         ...baseKot,
@@ -77,6 +93,7 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
         order_id: 900,
         status: 'PREPARING',
         store_id: 67,
+        business_day_id: 88,
       });
     });
 
@@ -107,6 +124,15 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
   });
 
   describe('bumpKOT — identical to updateKotStatus(id, "READY")', () => {
+    beforeEach(() => {
+      prisma.kOT.findUnique.mockResolvedValue({ ...baseKot, status: 'PREPARING' });
+    });
+
+    it('rejects direct bumpKOT when ticket is NEW (Codex Finding #1 direct bypass guard)', async () => {
+      prisma.kOT.findUnique.mockResolvedValue({ ...baseKot, status: 'NEW' });
+      await expect(service.bumpKOT(42)).rejects.toThrow('Invalid KOT status transition');
+    });
+
     it('updates KOT.status=READY with readyAt stamped, and mirrors Order.status=READY', async () => {
       prisma.kOT.update.mockResolvedValue({
         ...baseKot,
@@ -212,6 +238,7 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
         order_id: 900,
         status: 'CANCELLED',
         store_id: 67,
+        business_day_id: 88,
       });
       expect(gateway.broadcast).not.toHaveBeenCalledWith('order_updated', expect.anything(), expect.anything());
     });
@@ -267,6 +294,7 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
     });
 
     it('broadcasting order_updated to store room when online order status changes to READY', async () => {
+      prisma.kOT.findUnique.mockResolvedValue({ ...baseKot, status: 'PREPARING' });
       prisma.kOT.update.mockResolvedValue({
         ...baseKot,
         status: 'READY',
@@ -280,5 +308,405 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
 
       expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', onlineOrder, 'store_67');
     });
+  });
+
+  describe('updateKotStatus — Transaction Atomicity & Post-Commit Emission (Finding #7)', () => {
+    it('executes database updates within a Prisma transaction', async () => {
+      prisma.kOT.findUnique.mockResolvedValue({ ...baseKot, status: 'PREPARING' });
+      prisma.kOT.update.mockResolvedValue({
+        ...baseKot,
+        status: 'READY',
+        order: { order_source: 'ONLINE' },
+      });
+      prisma.onlineOrder.findUnique.mockResolvedValue({ id: 502 });
+      prisma.onlineOrder.update.mockResolvedValue({ id: 502, status: 'READY', store_id: 67 });
+
+      await service.bumpKOT(42);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.kOT.update).toHaveBeenCalled();
+      expect(prisma.order.update).toHaveBeenCalled();
+      expect(prisma.onlineOrder.update).toHaveBeenCalled();
+      expect(gateway.broadcast).toHaveBeenCalledWith('kds_update', expect.any(Object));
+    });
+
+    it('if transaction fails / throws, no socket events are broadcast and error propagates', async () => {
+      prisma.kOT.findUnique.mockResolvedValue({ ...baseKot, status: 'PREPARING' });
+      prisma.$transaction.mockRejectedValue(new Error('DB Deadlock / Disk Failure'));
+
+      await expect(service.bumpKOT(42)).rejects.toThrow('DB Deadlock / Disk Failure');
+      // Critical check: no socket emissions if transaction failed
+      expect(gateway.broadcast).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task #3B / #3B-1 — Backend Active KOT Identity & Store Isolation Gate
+//
+// These tests verify the WHERE clause that getActiveKots() constructs by
+// intercepting prisma.kOT.findMany and inspecting its `where` argument.
+// They are BEHAVIORAL: they confirm store isolation and business-day gating.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('KotsService.getActiveKots — Task #3B Identity Gate', () => {
+  let service: KotsService;
+  let prisma: any;
+  let gateway: { broadcast: jest.Mock };
+
+  beforeEach(async () => {
+    prisma = {
+      kOT: { findMany: jest.fn().mockResolvedValue([]) },
+      businessDay: { findFirst: jest.fn() },
+      $transaction: jest.fn((cb: any) => cb(prisma)),
+    };
+    gateway = { broadcast: jest.fn() };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        KotsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AppGateway, useValue: gateway },
+      ],
+    }).compile();
+
+    service = module.get<KotsService>(KotsService);
+  });
+
+  it('open BD exists → query scoped to business_day_id = openDay.id (NOT null)', async () => {
+    prisma.businessDay.findFirst.mockResolvedValue({ id: 5, dayStart: new Date() });
+
+    await service.getActiveKots(2);
+
+    const whereArg = prisma.kOT.findMany.mock.calls[0][0].where;
+    const json = JSON.stringify(whereArg);
+    expect(json).toContain('"business_day_id":5');
+    expect(json).not.toMatch(/"business_day_id":null/);
+  });
+
+  it('open BD exists → null business_day_id branch is NOT in the WHERE clause', async () => {
+    prisma.businessDay.findFirst.mockResolvedValue({ id: 5, dayStart: new Date() });
+
+    await service.getActiveKots(2);
+
+    const whereArg = prisma.kOT.findMany.mock.calls[0][0].where;
+    const json = JSON.stringify(whereArg);
+    expect(json).not.toMatch(/"business_day_id":null/);
+  });
+
+  it('query uses only the open BD id (openDay.id=8), not a different value', async () => {
+    prisma.businessDay.findFirst.mockResolvedValue({ id: 8, dayStart: new Date() });
+
+    await service.getActiveKots(3);
+
+    const whereArg = prisma.kOT.findMany.mock.calls[0][0].where;
+    const json = JSON.stringify(whereArg);
+    expect(json).toContain('"business_day_id":8');
+    expect(json).not.toContain('"business_day_id":5');
+    expect(json).not.toContain('"business_day_id":99');
+  });
+});
+
+describe('KotsService.getActiveKots — Task #3B-1 GAP 1: Store Isolation (1–4, A–E)', () => {
+  let service: KotsService;
+  let prisma: any;
+  let gateway: { broadcast: jest.Mock };
+
+  beforeEach(async () => {
+    prisma = {
+      kOT: { findMany: jest.fn().mockResolvedValue([]) },
+      businessDay: { findFirst: jest.fn() },
+      $transaction: jest.fn((cb: any) => cb(prisma)),
+    };
+    gateway = { broadcast: jest.fn() };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        KotsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AppGateway, useValue: gateway },
+      ],
+    }).compile();
+
+    service = module.get<KotsService>(KotsService);
+  });
+
+  it('1 / A: valid store_id → store filter present in WHERE clause and queries only that store', async () => {
+    prisma.businessDay.findFirst.mockResolvedValue({ id: 5, dayStart: new Date() });
+
+    await service.getActiveKots(2);
+
+    expect(prisma.kOT.findMany).toHaveBeenCalledTimes(1);
+    const whereArg = prisma.kOT.findMany.mock.calls[0][0].where;
+    expect(whereArg.store_id).toBe(2);
+  });
+
+  it('2 / B: missing store_id (undefined / null) → rejected safely with BadRequestException', async () => {
+    await expect(service.getActiveKots(undefined as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    await expect(service.getActiveKots(null as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  it('3 / C: store_id = 0 → rejected safely with BadRequestException', async () => {
+    await expect(service.getActiveKots(0)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  it('4 / D: invalid/NaN store_id → rejected safely with BadRequestException', async () => {
+    await expect(service.getActiveKots(NaN)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    await expect(service.getActiveKots('invalid' as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    await expect(service.getActiveKots(-5)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  it('E: another store (e.g. store_id = 3) → queries store 3, never includes store 2', async () => {
+    prisma.businessDay.findFirst.mockResolvedValue({ id: 5, dayStart: new Date() });
+
+    await service.getActiveKots(3);
+
+    const whereArg = prisma.kOT.findMany.mock.calls[0][0].where;
+    expect(whereArg.store_id).toBe(3);
+    expect(whereArg.store_id).not.toBe(2);
+    expect(JSON.stringify(whereArg)).not.toContain('"store_id":2');
+  });
+});
+
+describe('KotsService.getActiveKots — Task #3B-1 GAP 3: Safe No-Open-Day Handling (5–6)', () => {
+  let service: KotsService;
+  let prisma: any;
+  let gateway: { broadcast: jest.Mock };
+
+  beforeEach(async () => {
+    prisma = {
+      kOT: { findMany: jest.fn().mockResolvedValue([]) },
+      businessDay: { findFirst: jest.fn() },
+      $transaction: jest.fn((cb: any) => cb(prisma)),
+    };
+    gateway = { broadcast: jest.fn() };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        KotsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AppGateway, useValue: gateway },
+      ],
+    }).compile();
+
+    service = module.get<KotsService>(KotsService);
+  });
+
+  it('5: no open BusinessDay → returns zero active KOTs ([])', async () => {
+    prisma.businessDay.findFirst.mockResolvedValue(null);
+
+    const result = await service.getActiveKots(2);
+
+    expect(result).toEqual([]);
+  });
+
+  it('6: no open BusinessDay → prisma.kOT.findMany NOT called, no -1 sentinel used', async () => {
+    prisma.businessDay.findFirst.mockResolvedValue(null);
+
+    await service.getActiveKots(2);
+
+    // GAP 3: Must NOT execute findMany with a -1 sentinel or any other query
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('KotsService.getActiveKots — Task #3B-2 Strict store_id Integer Validation (1–13)', () => {
+  let service: KotsService;
+  let prisma: any;
+  let gateway: { broadcast: jest.Mock };
+
+  beforeEach(async () => {
+    prisma = {
+      kOT: { findMany: jest.fn().mockResolvedValue([]) },
+      businessDay: { findFirst: jest.fn().mockResolvedValue({ id: 5, dayStart: new Date() }) },
+      $transaction: jest.fn((cb: any) => cb(prisma)),
+    };
+    gateway = { broadcast: jest.fn() };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        KotsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AppGateway, useValue: gateway },
+      ],
+    }).compile();
+
+    service = module.get<KotsService>(KotsService);
+  });
+
+  // 1. 1 → accepted
+  it('1: 1 → accepted and produces store_id = 1 in Prisma WHERE clause', async () => {
+    await service.getActiveKots(1);
+    expect(prisma.businessDay.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ store_id: 1 }) }),
+    );
+    expect(prisma.kOT.findMany).toHaveBeenCalledTimes(1);
+    const whereArg = prisma.kOT.findMany.mock.calls[0][0].where;
+    expect(whereArg.store_id).toBe(1);
+  });
+
+  // 2. 2 → accepted
+  it('2: 2 → accepted and produces store_id = 2 in Prisma WHERE clause', async () => {
+    await service.getActiveKots(2);
+    expect(prisma.businessDay.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ store_id: 2 }) }),
+    );
+    expect(prisma.kOT.findMany).toHaveBeenCalledTimes(1);
+    const whereArg = prisma.kOT.findMany.mock.calls[0][0].where;
+    expect(whereArg.store_id).toBe(2);
+  });
+
+  // 3. positive integer → accepted
+  it('3: positive integer (e.g. 42) → accepted and produces store_id = 42 in Prisma WHERE clause', async () => {
+    await service.getActiveKots(42);
+    expect(prisma.businessDay.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ store_id: 42 }) }),
+    );
+    expect(prisma.kOT.findMany).toHaveBeenCalledTimes(1);
+    const whereArg = prisma.kOT.findMany.mock.calls[0][0].where;
+    expect(whereArg.store_id).toBe(42);
+  });
+
+  // 4. 0 → rejected
+  it('4: 0 → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(0)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 5. -1 → rejected
+  it('5: -1 → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(-1)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 6. 2.5 → rejected
+  it('6: 2.5 → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(2.5)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 7. 1.1 → rejected
+  it('7: 1.1 → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(1.1)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 8. NaN → rejected
+  it('8: NaN → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(NaN)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 9. Infinity → rejected
+  it('9: Infinity → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(Infinity)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 10. -Infinity → rejected
+  it('10: -Infinity → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(-Infinity)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 11. "1" → rejected
+  it('11: "1" (string) → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots('1' as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 12. null → rejected
+  it('12: null → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(null as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 13. undefined → rejected
+  it('13: undefined → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(undefined as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 14. true → rejected
+  it('14: true (boolean) → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(true as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 15. false → rejected
+  it('15: false (boolean) → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots(false as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 16. {} → rejected
+  it('16: {} (object) → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots({} as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
+  });
+
+  // 17. [] → rejected
+  it('17: [] (array) → rejected BEFORE businessDay.findFirst and kOT.findMany', async () => {
+    await expect(service.getActiveKots([] as any)).rejects.toThrow(
+      'A valid store_id is required to fetch active KOTs',
+    );
+    expect(prisma.businessDay.findFirst).not.toHaveBeenCalled();
+    expect(prisma.kOT.findMany).not.toHaveBeenCalled();
   });
 });

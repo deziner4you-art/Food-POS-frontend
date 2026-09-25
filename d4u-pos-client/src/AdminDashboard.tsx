@@ -3,6 +3,9 @@ import { TrendingUp, Users, DollarSign, ShoppingBag, ArrowUpRight, Database, Dow
 import { db } from './db';
 import { customAlert, customSuccess, customConfirm } from './utils/alerts';
 import { BACKEND_URL } from './config/backend';
+import { validateBackupKots, restoreBackupData } from './utils/backupRestore';
+
+export { validateBackupKots, restoreBackupData };
 
 export default function AdminDashboard({ currentUser }: { currentUser?: any }) {
   const storeId = currentUser?.store_id || 1;
@@ -109,13 +112,13 @@ export default function AdminDashboard({ currentUser }: { currentUser?: any }) {
         const json = JSON.parse(event.target?.result as string);
         if (!json.data) throw new Error('Invalid backup format');
         
+        // Pre-validate KOT identities BEFORE confirmation prompt and BEFORE clearing database
+        if (json.data.kots) {
+          validateBackupKots(json.data.kots);
+        }
+
         if (await customConfirm('WARNING: This will overwrite all current local data with the backup. Proceed?')) {
-          await db.transaction('rw', db.kots, db.inventory, db.crmCustomers, db.staffLogs, async () => {
-            if (json.data.kots) { await db.kots.clear(); await db.kots.bulkAdd(json.data.kots); }
-            if (json.data.inventory) { await db.inventory.clear(); await db.inventory.bulkAdd(json.data.inventory); }
-            if (json.data.crmCustomers) { await db.crmCustomers.clear(); await db.crmCustomers.bulkAdd(json.data.crmCustomers); }
-            if (json.data.staffLogs) { await db.staffLogs.clear(); await db.staffLogs.bulkAdd(json.data.staffLogs); }
-          });
+          await restoreBackupData(json.data, db);
           customSuccess('Backup restored successfully! Please refresh the page.');
           setTimeout(() => window.location.reload(), 2000);
         }

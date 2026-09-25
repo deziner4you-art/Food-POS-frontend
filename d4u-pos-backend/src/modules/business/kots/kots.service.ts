@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
@@ -36,25 +36,51 @@ export class KotsService {
   // apply client-side, keeps the response itself bounded rather than growing
   // unboundedly while relying on the UI to hide the excess.
   //
-  // RC1 FIX: Only KOTs from the current OPEN business day are returned.
-  // Stale NEW/PREPARING KOTs from previous (closed) business days were leaking
-  // through because there was no day boundary in the query. We now:
-  //   1. Look up the currently OPEN BusinessDay for this store.
-  //   2. Filter by business_day_id = that day's id.
-  //   3. Fall back to a calendar-day createdAt boundary (today midnight) for any
-  //      KOT that was created without a business_day_id (e.g. online orders that
-  //      arrived outside a POS business day) so they still appear during today's
-  //      service without requiring a schema migration.
-  // Maximum age of a NEW/PREPARING KOT that will still appear on the KDS.
-  // An OPEN BusinessDay may span multiple calendar days if the operator forgets
-  // to close it — a kitchen ticket that is 19 hours old is genuinely stuck, not
-  // an active preparation job.  18 hours matches a typical double-shift service
-  // window and is well above any realistic maximum cook time.
-  // READY tickets are NOT subject to this cap — their own 5-minute display
-  // window (READY_TICKET_WINDOW_MS) already constrains them tightly.
-  private static readonly KOT_ACTIVE_WINDOW_MS = 18 * 60 * 60 * 1000; // 18 h
+  // Task #3B FIX — STRICT IDENTITY GATE:
+  //
+  // Active KOT query now requires EXPLICIT business_day_id on every returned KOT.
+  //
+  // Previous behaviour (removed):
+  //   • An OR-branch `{ business_day_id: null, createdAt >= openDay.dayStart }` was
+  //     returning KOTs with NO business_day_id as "active".  This fabricated day
+  //     identity on the client side because the KOT carried no authoritative value.
+  //   • A second 18-hour rolling fallback (used when no BusinessDay was open) also
+  //     returned identity-less KOTs, violating RULE 3.
+  //
+  // New behaviour:
+  //   1. If an OPEN BusinessDay exists  → only KOTs whose business_day_id = openDay.id
+  //      are returned.  KOTs with NULL business_day_id are NOT returned.
+  //   2. If NO OPEN BusinessDay exists  → the active list is always empty.  There is
+  //      no rolling-window fallback.  An empty kitchen display is the correct and
+  //      safe behaviour in that state.
+  //
+  // The 18-hour staleness cap for READY-ticket display is still kept for the case
+  // where a BD has been open for an unusually long time (operator forgot to close it).
+  private static readonly KOT_ACTIVE_WINDOW_MS = 18 * 60 * 60 * 1000; // 18 h — staleness cap only
 
   async getActiveKots(store_id: number, includeReady: boolean = false) {
+    // Task #3B-2: Strict store_id Integer Validation.
+    // A valid store_id must be a finite positive integer (Prisma Int identifier).
+    // Rejects null, undefined, 0, negative numbers, NaN, Infinity, -Infinity,
+    // floats (e.g. 2.5, 1.1), strings, booleans, objects, arrays.
+    if (typeof store_id !== 'number' || !Number.isInteger(store_id) || store_id <= 0) {
+      throw new BadRequestException('A valid store_id is required to fetch active KOTs');
+    }
+
+    // RC1: Scope to the current OPEN business day only.
+    const openDay = await this.prisma.businessDay.findFirst({
+      where: { store_id, status: 'OPEN' },
+      orderBy: { id: 'desc' },
+      select: { id: true, dayStart: true },
+    });
+
+    // Task #3B-1 (GAP 3): Remove the -1 sentinel.
+    // If NO open BusinessDay exists, return zero active KOTs immediately.
+    // Do NOT query recent KOTs, do NOT invent a business-day ID, and do NOT use a sentinel value.
+    if (!openDay) {
+      return [];
+    }
+
     // Rolling 18-hour staleness boundary shared by both code paths below.
     // Computed once so the timestamp is identical for every clause in the query.
     const stalenessBoundary = new Date(Date.now() - KotsService.KOT_ACTIVE_WINDOW_MS);
@@ -68,70 +94,21 @@ export class KotsService {
         }
       : { status: { in: ['NEW', 'PREPARING'] } };
 
-    const where: any = { ...statusFilter };
+    const dayBoundaryFilter = {
+      AND: [
+        // Strict BD membership — null is explicitly excluded
+        { business_day_id: openDay.id },
+        // Staleness guard
+        { createdAt: { gte: stalenessBoundary } },
+      ],
+    };
 
-    if (store_id && !isNaN(store_id)) {
-      where.store_id = store_id;
-
-      // RC1: Scope to the current OPEN business day only.
-      const openDay = await this.prisma.businessDay.findFirst({
-        where: { store_id, status: 'OPEN' },
-        orderBy: { id: 'desc' },
-        select: { id: true, dayStart: true },
-      });
-
-      if (openDay) {
-        // An open business day exists.
-        //
-        // RC1 FIX (original): filter by business_day_id = openDay.id so KOTs
-        // from *closed* business days never appear on the active KDS.
-        //
-        // FIX 1 SUPPLEMENT: also require createdAt >= now - 18h so a KOT that
-        // is genuinely stuck/abandoned (e.g. from a BD that has been OPEN for
-        // multiple days because the operator forgot to close it) cannot block
-        // the kitchen view.  This is an AND condition on top of the BD filter:
-        // a KOT must be *both* in the correct BD *and* recent.
-        //
-        // READY KOTs: the existing 5-minute readyAt window is tighter than 18h,
-        // so the staleness boundary is only meaningful for NEW/PREPARING here.
-        const dayBoundaryFilter = {
-          AND: [
-            {
-              // BD membership: belongs directly to the open BD, or belongs to
-              // no BD but was created after the BD opened (some online paths).
-              OR: [
-                { business_day_id: openDay.id },
-                { business_day_id: null, createdAt: { gte: openDay.dayStart } },
-              ],
-            },
-            // Staleness guard: KOT must be less than 18 hours old.
-            // Applied to all tickets including READY (though READY has its own
-            // tighter window via statusFilter above, the extra AND is harmless).
-            { createdAt: { gte: stalenessBoundary } },
-          ],
-        };
-
-        // Merge status filter with day+staleness boundary using AND
-        delete where.OR; // avoid accidental merge
-        if (statusFilter.OR) {
-          // includeReady path: wrap status alternatives inside AND
-          where.AND = [{ OR: statusFilter.OR }, dayBoundaryFilter];
-        } else {
-          // Simple status filter: merge directly
-          Object.assign(where, dayBoundaryFilter);
-        }
-      } else {
-        // No open business day: fall back to an 18-hour rolling window.
-        // Using 18h instead of calendar midnight so a restaurant open past
-        // midnight never loses KOTs created before midnight when the date rolls.
-        const dayBoundaryFilter = { createdAt: { gte: stalenessBoundary } };
-        if (statusFilter.OR) {
-          where.AND = [{ OR: statusFilter.OR }, dayBoundaryFilter];
-        } else {
-          Object.assign(where, dayBoundaryFilter);
-        }
-      }
-    }
+    const where: any = {
+      store_id,
+      ...(statusFilter.OR
+        ? { AND: [{ OR: statusFilter.OR }, dayBoundaryFilter] }
+        : { ...statusFilter, ...dayBoundaryFilter }),
+    };
 
     return this.prisma.kOT.findMany({
       where,
@@ -160,97 +137,124 @@ export class KotsService {
     id: number,
     status: 'PREPARING' | 'READY' | 'CANCELLED',
   ) {
-    const now = new Date();
-    const data: any = { status };
+    const existing = await this.prisma.kOT.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException(`KOT #${id} not found`);
 
-    if (status === 'PREPARING') data.acceptedAt = now;
-    if (status === 'READY') data.readyAt = now;
-
-    const kot = await this.prisma.kOT.update({
-      where: { id },
-      data,
-      include: { order: true },
-    });
-
-    // Order کا status بھی اپڈیٹ کریں
-    if (status === 'READY') {
-      await this.prisma.order.update({
-        where: { id: kot.order_id },
-        data: { status: 'READY' },
-      });
-    } else if (status === 'PREPARING') {
-      await this.prisma.order.update({
-        where: { id: kot.order_id },
-        data: { status: 'PREPARING' },
-      });
+    // Authoritative KOT State-Machine Transition Guard (Codex Finding #1):
+    // Authoritative lifecycle: NEW -> PREPARING (accept) -> READY (bump)
+    // Direct bypass from NEW -> READY is strictly rejected.
+    if (status === 'PREPARING' && existing.status !== 'NEW') {
+      throw new BadRequestException(
+        `Invalid KOT status transition from ${existing.status} to PREPARING. Only NEW tickets can be accepted into PREPARING.`,
+      );
     }
+    if (status === 'READY' && existing.status !== 'PREPARING') {
+      throw new BadRequestException(
+        `Invalid KOT status transition from ${existing.status} to READY. A ticket must be in PREPARING before it can be marked READY.`,
+      );
+    }
+    if (status === 'CANCELLED' && existing.status === 'READY') {
+      throw new BadRequestException(
+        `Cannot cancel KOT #${id}: ticket is already marked READY.`,
+      );
+    }
+
+    // Atomically update KOT, POS Order, and linked OnlineOrder within a single transaction (Finding #7)
+    const { kot, broadcastEvents } = await this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const data: any = { status };
+
+      if (status === 'PREPARING') data.acceptedAt = now;
+      if (status === 'READY') data.readyAt = now;
+
+      const updatedKot = await tx.kOT.update({
+        where: { id },
+        data,
+        include: { order: true },
+      });
+
+      // Update Order status
+      if (status === 'READY') {
+        await tx.order.update({
+          where: { id: updatedKot.order_id },
+          data: { status: 'READY' },
+        });
+      } else if (status === 'PREPARING') {
+        await tx.order.update({
+          where: { id: updatedKot.order_id },
+          data: { status: 'PREPARING' },
+        });
+      }
+
+      const events: Array<{ event: string; payload: any; room?: string }> = [];
+
+      // KDS realtime notification
+      events.push({
+        event: 'kds_update',
+        payload: {
+          kot_id: id,
+          order_id: updatedKot.order_id,
+          status,
+          store_id: updatedKot.store_id,
+          business_day_id: updatedKot.business_day_id,
+        },
+      });
+
+      // Task 6A — POS-native delivery orders only (order_source = 'DELIVERY'):
+      // Emit the Rider-facing offer using the POS Order's own identity.
+      // MUST NOT fire for Website-origin orders (order_source = 'ONLINE') —
+      // those are handled by block 2 below using the authoritative OnlineOrder identity.
+      if ((status === 'PREPARING' || status === 'READY') && updatedKot.order?.order_source?.toUpperCase() === 'DELIVERY') {
+        const linkedOnlineCheck = await tx.onlineOrder.findUnique({
+          where: { posOrderId: updatedKot.order_id },
+          select: { id: true },
+        });
+        if (!linkedOnlineCheck) {
+          const fullOrder = await tx.order.findUnique({
+            where: { id: updatedKot.order_id },
+            include: { customer: true, items: { include: { product: true } }, rider: true },
+          });
+          if (fullOrder) {
+            events.push({
+              event: 'order_updated',
+              payload: formatPosOrderForRider(fullOrder),
+              room: `store_${updatedKot.store_id}`,
+            });
+          }
+        }
+      }
+
+      // Website orders that were given a real kitchen ticket at CONFIRMED
+      // time: mirror PREPARING/READY back onto the actual OnlineOrder row
+      if ((status === 'PREPARING' || status === 'READY') && updatedKot.order?.order_source === 'ONLINE') {
+        const linkedOnlineOrder = await tx.onlineOrder.findUnique({
+          where: { posOrderId: updatedKot.order_id },
+        });
+        if (linkedOnlineOrder) {
+          const newStatus = status === 'PREPARING' ? 'KITCHEN_PREPARING' : 'READY';
+          const updatedOnlineOrder = await tx.onlineOrder.update({
+            where: { id: linkedOnlineOrder.id },
+            data: { status: newStatus, kdsStatus: status },
+          });
+          events.push({
+            event: 'order_updated',
+            payload: updatedOnlineOrder,
+            room: `store_${updatedKot.store_id}`,
+          });
+        }
+      }
+
+      return { kot: updatedKot, broadcastEvents: events };
+    });
 
     console.log(`[KDS] KOT #${id} → ${status}`);
 
-    // POS اور Website کو فوری اطلاع
-    this.gateway.broadcast('kds_update', {
-      kot_id: id,
-      order_id: kot.order_id,
-      status,
-      store_id: kot.store_id,
-    });
-
-    // Task 6A — POS-native delivery orders only (order_source = 'DELIVERY'):
-    // Emit the Rider-facing offer using the POS Order's own identity.
-    // MUST NOT fire for Website-origin orders (order_source = 'ONLINE') —
-    // those are handled by block 2 below using the authoritative OnlineOrder
-    // identity. Emitting formatPosOrderForRider for an ONLINE-sourced POS
-    // Order would create a competing Rider offer under the internal POS
-    // Order id instead of the customer-facing OnlineOrder id, which breaks
-    // claim URL routing, Rider history, and Website order tracking.
-    //
-    // Guard: order_source is 'DELIVERY' (mixed case) for POS-native orders
-    // and 'ONLINE' for Website orders — these are mutually exclusive. The
-    // additional posOrderId=null check below makes the exclusion explicit
-    // for safety: if this POS Order is the linked twin of an OnlineOrder
-    // (posOrderId would point back to it via the unique reverse relation),
-    // skip the POS broadcast entirely — block 2 owns that identity.
-    if ((status === 'PREPARING' || status === 'READY') && kot.order?.order_source?.toUpperCase() === 'DELIVERY') {
-      // Confirm this is NOT a Website-linked POS Order before broadcasting
-      const linkedOnlineCheck = await this.prisma.onlineOrder.findUnique({
-        where: { posOrderId: kot.order_id },
-        select: { id: true },
-      });
-      if (!linkedOnlineCheck) {
-        // Genuine POS-native delivery — use POS Order identity
-        const fullOrder = await this.prisma.order.findUnique({
-          where: { id: kot.order_id },
-          include: { customer: true, items: { include: { product: true } }, rider: true },
-        });
-        if (fullOrder) {
-          this.gateway.broadcast('order_updated', formatPosOrderForRider(fullOrder), `store_${kot.store_id}`);
-        }
-      }
-      // If linkedOnlineCheck is non-null this order is ONLINE-origin — block 2
-      // below will broadcast the authoritative OnlineOrder representation.
-    }
-
-    // Website orders that were given a real kitchen ticket at CONFIRMED
-    // time (see OnlineOrdersService.createKitchenTicketForOnlineOrder) —
-    // mirror PREPARING/READY back onto the actual OnlineOrder row and
-    // broadcast THAT, not formatPosOrderForRider(fullOrder): the latter
-    // stamps the POS Order's own id, not the OnlineOrder's, which would
-    // silently break TrackOrderPage/Rider App's id-based matching.
-    // Task 6A: this is the ONE and ONLY Rider-facing broadcast for
-    // Website-origin orders — block 1 above is explicitly suppressed when
-    // a linked OnlineOrder exists, ensuring exactly one identity (OnlineOrder.id)
-    // reaches the Rider App.
-    if ((status === 'PREPARING' || status === 'READY') && kot.order?.order_source === 'ONLINE') {
-      const linkedOnlineOrder = await this.prisma.onlineOrder.findUnique({
-        where: { posOrderId: kot.order_id },
-      });
-      if (linkedOnlineOrder) {
-        const newStatus = status === 'PREPARING' ? 'KITCHEN_PREPARING' : 'READY';
-        const updatedOnlineOrder = await this.prisma.onlineOrder.update({
-          where: { id: linkedOnlineOrder.id },
-          data: { status: newStatus, kdsStatus: status },
-        });
-        this.gateway.broadcast('order_updated', updatedOnlineOrder, `store_${kot.store_id}`);
+    // Emit all realtime events ONLY after transaction commits successfully
+    for (const evt of broadcastEvents) {
+      if (evt.room) {
+        this.gateway.broadcast(evt.event, evt.payload, evt.room);
+      } else {
+        this.gateway.broadcast(evt.event, evt.payload);
       }
     }
 

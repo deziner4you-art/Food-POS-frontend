@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>D4U Production Multi-Tab Test Harness</title>
+</head>
+<body>
+  <h1>D4U Multi-Tab Production Test</h1>
+  <div id="status">Loading production code...</div>
+  <script type="module">
+    import {
+      acquireSyncSequence,
+      syncAndReconcileBackendKots,
+      getLatestAppliedSyncSequence,
+      setLatestAppliedSyncSequence,
+      withCrossTabLock,
+      getSyncScopeKey,
+      isBrowserEnvironment,
+      isWebLocksSupported,
+      resetSyncSequences,
+      clearSyncSequencesIdb,
+      closeSeqDb,
+      setTestHookDuringReconciliation,
+      db
+    } from '/src/db.ts';
+
+    window.D4U_SYNC = {
+      acquireSyncSequence,
+      syncAndReconcileBackendKots,
+      getLatestAppliedSyncSequence,
+      setLatestAppliedSyncSequence,
+      withCrossTabLock,
+      getSyncScopeKey,
+      isBrowserEnvironment,
+      isWebLocksSupported,
+      resetSyncSequences,
+      clearSyncSequencesIdb,
+      closeSeqDb,
+      setTestHookDuringReconciliation,
+      db
+    };
+    window.__D4U_READY__ = true;
+    document.getElementById('status').innerText = 'Ready';
+  </script>
+</body>
+</html>

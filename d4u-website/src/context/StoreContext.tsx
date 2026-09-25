@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useMemo, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useMemo, useEffect, useCallback, type ReactNode } from 'react';
 import type { Category, CategoryGroup, CartItem, CustomerProfile, HeroSlide, Product, Promotion, ProductVariant } from '../types';
 import { BACKEND_URL, useStoreData, useStores } from '../hooks/useStoreData';
 import { getProductDiscount } from '../utils/campaignDiscount';
@@ -178,14 +178,14 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
 
   const [isTrackerModalOpen, setIsTrackerModalOpen] = useState(false);
 
-  const setActiveOrder = (order: any) => {
+  const setActiveOrder = useCallback((order: any) => {
     setActiveOrderState(order);
     if (order) {
       localStorage.setItem('d4u_active_online_order', JSON.stringify(order));
     } else {
       localStorage.removeItem('d4u_active_online_order');
     }
-  };
+  }, []);
 
   // Rehydrate activeOrder from backend on mount and poll while active
   useEffect(() => {

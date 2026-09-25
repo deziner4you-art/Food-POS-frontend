@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from './db';
+import { db, syncAndReconcileBackendKots, acquireSyncSequence, isValidPosIntegerId } from './db';
 import type { OfflineKOT } from './db';
 import { io } from 'socket.io-client';
 import { BACKEND_URL } from './config/backend';
@@ -9,6 +9,7 @@ import { AnimatePresence, motion } from 'framer-motion'; // using framer-motion 
 import { ShieldAlert, Check } from 'lucide-react';
 import { customConfirm } from './utils/alerts';
 import { apiFetch } from './pos/api';
+import { isKotEligible } from './utils/kotEligibility';
 
 import Sidebar from './kds/components/Sidebar';
 import Header from './kds/components/Header';
@@ -80,7 +81,12 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     setIsVerifyingInventoryPin(true);
     setInventoryPinError('');
     try {
-      const storeId = currentUser?.store_id || 1;
+      if (!isValidPosIntegerId(currentUser?.store_id)) {
+        setInventoryPinError('Active store identity is missing or invalid');
+        setIsVerifyingInventoryPin(false);
+        return;
+      }
+      const storeId = currentUser.store_id;
       const res = await apiFetch(`/cms/settings/${storeId}/verify-inventory-pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -152,7 +158,8 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
 
   const syncInventory = async () => {
     try {
-      const storeId = currentUser?.store_id || 1;
+      if (!isValidPosIntegerId(currentUser?.store_id)) return;
+      const storeId = currentUser.store_id;
       const res = await apiFetch(`/inventory/items/${storeId}`, { auth: true });
       if (res.ok) {
         const data = await res.json();
@@ -200,91 +207,85 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     if (token) setIsAdminUnlocked(true);
   }, []);
 
-  // We map Dexie OfflineKOTs to KDS Orders
-  const kots = useLiveQuery(() => db.kots.toArray()) || [];
+  // We map Dexie OfflineKOTs to KDS Orders, scoped strictly to the active store and active business day (Task #3A)
+  // RULE 1: No hardcoded || 1 fallback. If store_id is absent, currentUser has not loaded — render nothing.
+  const activeStoreId: number | null = currentUser?.store_id ?? null;
+  // Remediation Batch 4: Must initialize activeBusinessDayId as null for rendering.
+  // Cached business-day ID may NOT authorize rendering before successful authoritative backend verification.
+  const [activeBusinessDayId, setActiveBusinessDayId] = useState<number | null>(null);
+
+  const rawKots = useLiveQuery(() => db.kots.toArray()) || [];
+  const kots = rawKots.filter(k => {
+    // Task #3A identity gate: both current context identities and KOT identities must be
+    // present and matching. isKotEligible enforces all four rules with no fallbacks.
+    if (!isKotEligible(k, activeStoreId, activeBusinessDayId)) return false;
+
+    // Secondary stale-record safety mechanism for offline tickets
+    if (k.synced === false && k.startTime) {
+      const ageHours = (Date.now() - new Date(k.startTime).getTime()) / (1000 * 60 * 60);
+      if (ageHours > 24) return false;
+    }
+    return true;
+  });
+
+  // Concurrency lock for KDS component sync
+  const isSyncingRef = React.useRef(false);
 
   // Sync KOTs from Backend on Load and on Socket Event
   const syncKOTs = async () => {
+    if (isSyncingRef.current) return;
+    if (!isValidPosIntegerId(currentUser?.store_id)) {
+      console.warn('[StitchKDS] Refusing sync: store_id is missing or invalid');
+      return;
+    }
+    const storeId = currentUser.store_id;
+    isSyncingRef.current = true;
     try {
-      const storeId = currentUser?.store_id || 1;
+      // Finding #3 (Remediation Batch 2) & Remediation Batch 4:
+      // Authoritatively verify current business day for sync.
+      // Cached business-day ID may NOT authorize rendering or reconciliation before successful backend verification!
+      let authoritativeBdId: number | null = null;
+      try {
+        const bdRes = await apiFetch(`/business-day/current?store_id=${storeId}`, { auth: true });
+        if (bdRes.ok) {
+          const bdData = await bdRes.json();
+          if (bdData && isValidPosIntegerId(bdData.id)) {
+            authoritativeBdId = bdData.id;
+            setActiveBusinessDayId(bdData.id);
+            localStorage.setItem(`d4u_active_business_day_${storeId}`, String(bdData.id));
+          } else {
+            // Backend returned 200 with null/invalid/malformed id (day closed or invalid)
+            setActiveBusinessDayId(null);
+            localStorage.removeItem(`d4u_active_business_day_${storeId}`);
+          }
+        } else {
+          // If backend returns 404 or any error, day is not active
+          setActiveBusinessDayId(null);
+          localStorage.removeItem(`d4u_active_business_day_${storeId}`);
+        }
+      } catch (e) {
+        // Network failure / timeout: fail closed
+        console.warn('[StitchKDS] Network error verifying active business day:', e);
+        setActiveBusinessDayId(null);
+        localStorage.removeItem(`d4u_active_business_day_${storeId}`);
+      }
+
+      // If authoritative active business day could not be verified from backend, refuse sync safely.
+      // Destructive reconciliation must NEVER run against cached/stale identity.
+      if (!isValidPosIntegerId(authoritativeBdId)) {
+        console.warn('[StitchKDS] Refusing sync: authoritative active business day could not be verified from backend');
+        return;
+      }
+
+      // Task D & Task 2: Monotonic sync sequence acquired before async network fetch
+      const syncSeq = await acquireSyncSequence(storeId, authoritativeBdId);
+
       const res = await apiFetch(`/kots?store_id=${storeId}&includeReady=true`, { auth: true });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          // === DEDUPLICATION STRATEGY ===
-          // Pull all local KOTs; separate offline (synced=false) from
-          // previously-synced (synced=true). Offline KOTs are NEVER touched.
-          // For synced KOTs, we replace them cleanly every sync cycle.
-          const allLocalKots = await db.kots.toArray();
-          const offlineKots = allLocalKots.filter(k => k.synced !== true);
-          const localSyncedKots = allLocalKots.filter(k => k.synced === true);
-
-          // Build a map: backendKotId → existing Dexie ++id
-          // This lets us preserve the Dexie row identity across syncs so that
-          // no existing record is ever re-inserted as a new row.
-          const localMap = new Map(
-            localSyncedKots
-              .filter(k => k.backendKotId != null)
-              .map(k => [k.backendKotId, k.id])
-          );
-
-          // Incoming backend IDs for this sync cycle
-          const incomingBackendIds = new Set(data.map((k: any) => k.id));
-
-          // Determine synced KOTs to delete:
-          //  1. Records with a known backendKotId that is no longer in the backend response
-          //     (cancelled, bumped out, aged out of the READY window, etc.)
-          //  2. Legacy orphan records that have NO backendKotId at all — these are
-          //     pre-fix records that can never be matched to any backend KOT and will
-          //     loop as "stuck PREPARING" forever if not cleaned up here.
-          const idsToDelete = localSyncedKots
-            .filter(k => k.backendKotId == null || !incomingBackendIds.has(k.backendKotId))
-            .map(k => k.id)
-            .filter((id): id is number => typeof id === 'number');
-
-          if (idsToDelete.length > 0) {
-            await db.kots.bulkDelete(idsToDelete);
-          }
-
-          // Build the mapped records. For each backend KOT:
-          //   - If we have an existing Dexie row for it → set id so bulkPut UPDATES it
-          //   - If it's new → leave id=undefined so Dexie auto-increments a fresh row
-          const mappedRaw = data.map((k: any) => ({
-            id: localMap.get(k.id),
-            backendKotId: k.id,
-            orderId: k.order_id,
-            type: k.order?.order_source === 'ONLINE'
-              ? (k.order?.onlineOrder?.type === 'PICKUP' ? 'Pickup' : 'Online')
-              : k.order?.order_source?.toUpperCase() === 'DELIVERY'
-                ? 'Delivery'
-                : (k.order?.order_source?.toUpperCase() === 'TAKE AWAY' || k.order?.order_source?.toUpperCase() === 'PICKUP')
-                  ? 'Pickup'
-                  : 'Walk-in',
-            customer: k.order?.customer?.name || '',
-            customerPhone: k.order?.customer?.phone || '',
-            items: k.items ? JSON.stringify(k.items) : '[]',
-            notes: k.notes,
-            timePlaced: new Date(k.createdAt).toLocaleTimeString(),
-            prepTimeMinutes: k.prep_time_minutes || 10,
-            status: k.status,
-            // RC2 FIX: k.start_time does not exist on the Prisma KOT model.
-            // The authoritative preparation-start timestamp is acceptedAt,
-            // set by kots.service.ts updateKotStatus() when status = PREPARING.
-            startTime: k.acceptedAt ? new Date(k.acceptedAt).toISOString() : '',
-            totalAmount: k.order?.total_amount || 0,
-            paymentMethod: k.order?.payment_method || 'CASH',
-            printCount: 0,
-            synced: true,
-          }));
-
-          // Final dedup guard: if for any reason two backend records map to the
-          // same backendKotId, keep only the last one (should never happen but
-          // prevents bulkPut from throwing a constraint error).
-          const deduped = Array.from(
-            new Map(mappedRaw.map((r: any) => [r.backendKotId, r])).values()
-          );
-
-          await db.kots.bulkPut(deduped);
+          // Cross-tab safe transactional reconciliation and upsert with sequence check
+          await syncAndReconcileBackendKots(data, storeId, authoritativeBdId, syncSeq);
         }
       }
       
@@ -299,6 +300,8 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
       console.log('Offline: Using local KOTs', e); 
       setToast({ id: Math.random().toString(), title: 'Offline Mode', subtitle: 'Showing locally cached KOTs.' });
       setTimeout(() => setToast(null), 4000);
+    } finally {
+      isSyncingRef.current = false;
     }
   };
 
@@ -309,7 +312,8 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     // never receive kds_update/order_updated regardless of event name.
     // Only ever refreshed via the initial syncKOTs() call and the manual
     // Reset button.
-    const storeId = currentUser?.store_id || 1;
+    const storeId = currentUser?.store_id;
+    if (!isValidPosIntegerId(storeId)) return;
     const joinRoom = () => socket.emit('join_store', { store_id: storeId });
     if (socket.connected) joinRoom();
     const onKdsChange = () => {
@@ -690,7 +694,8 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
     if (!ingredient) return;
     
     try {
-      const storeId = currentUser?.store_id || 1;
+      if (!isValidPosIntegerId(currentUser?.store_id)) return;
+      const storeId = currentUser.store_id;
       const res = await apiFetch(`/kitchen/stock-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

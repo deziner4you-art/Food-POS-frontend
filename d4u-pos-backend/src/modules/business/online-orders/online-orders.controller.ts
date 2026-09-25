@@ -44,6 +44,7 @@ export class OnlineOrdersController {
     @Query('phone') phone?: string,
     @Query('store_id') store_id?: string,
     @Query('activeOnly') activeOnly?: string,
+    @Query('business_day_id') business_day_id?: string,
     @CurrentUser() authenticatedUser?: any,
   ) {
     if (phone) {
@@ -52,6 +53,7 @@ export class OnlineOrdersController {
     return this.service.getAllOnlineOrders(
       store_id ? Number(store_id) : undefined,
       activeOnly === 'true',
+      business_day_id ? Number(business_day_id) : undefined,
     );
   }
 
