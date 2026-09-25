@@ -12,6 +12,22 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: d4u_ci
+          POSTGRES_PASSWORD: d4u_ci_pass
+          POSTGRES_DB: d4u_pos_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -21,11 +37,14 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Build Backend
+      - name: Build Backend (install, migrate, test, build)
         working-directory: ./d4u-pos-backend
+        env:
+          DATABASE_URL: postgresql://d4u_ci:d4u_ci_pass@localhost:5432/d4u_pos_ci?schema=public
         run: |
           npm ci
           npx prisma generate
+          npx prisma migrate deploy
           npm run test
           npm run build
 
