@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Build Backend (install, migrate, test, build)
+      - name: Build Backend (install, migrate, seed, test, build)
         working-directory: ./d4u-pos-backend
         env:
           DATABASE_URL: postgresql://d4u_ci:d4u_ci_pass@localhost:5432/d4u_pos_ci?schema=public
@@ -45,6 +45,7 @@ jobs:
           npm ci
           npx prisma generate
           npx prisma migrate deploy
+          npx ts-node prisma/seed.ts
           npm run test
           npm run build
 
