@@ -59,6 +59,13 @@ export class RiderService {
       // the exact string "DELIVERY" and never matched a single POS order.
       order_source: { equals: 'DELIVERY', mode: 'insensitive' },
       store_id: Number(storeId),
+      // Fix: A DISPATCHED order with no rider claim is permanently orphaned
+      NOT: {
+        AND: [
+          { status: 'DISPATCHED' },
+          { claimedByRiderId: null },
+        ],
+      },
     };
 
     const onlineOrders = await this.prisma.onlineOrder.findMany({
