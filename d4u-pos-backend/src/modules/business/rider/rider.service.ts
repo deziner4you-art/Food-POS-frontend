@@ -784,4 +784,221 @@ export class RiderService {
 
     throw new NotFoundException('Location not found');
   }
+
+  // =====================================================================
+  // Sprint 29.3 / 29.3A — Admin Delivery Exception Recovery
+  // =====================================================================
+  // Exception states that qualify for admin recovery:
+  //   DISPATCHED + no rider — orphaned dispatch (Sprint 29.3)
+  //   PRINT_BILL + no rider — billed order never dispatched (Sprint 29.3A)
+  // Both are reset to READY so a rider can claim them normally.
+  // =====================================================================
+
+  private static readonly EXCEPTION_STATUSES = ['DISPATCHED', 'PRINT_BILL'] as const;
+  private static readonly TERMINAL_STATUSES = [
+    'SETTLED', 'DELIVERED', 'CANCELLED',
+  ] as const;
+
+  /**
+   * Returns OnlineOrders and POS Orders that are in an exception state
+   * (DISPATCHED or PRINT_BILL) with no rider assigned, for the given store.
+   * Only managers / admins of that store (or Super Admin) may call this.
+   */
+  async getDeliveryExceptions(storeIdStr: string, callerJwt: any) {
+    const storeId = Number(storeIdStr);
+    if (!storeId) throw new BadRequestException('store_id is required.');
+
+    // Resolve authoritative caller from DB
+    const caller = await this.prisma.user.findUnique({ where: { id: callerJwt.sub } });
+    if (!caller) throw new ForbiddenException('Caller not found.');
+
+    const isSuperAdmin = caller.role?.name === 'Super Admin' || callerJwt.role === 'Super Admin';
+    if (!isSuperAdmin && Number(caller.store_id) !== storeId) {
+      throw new ForbiddenException('Cross-store access denied.');
+    }
+
+    // Online orders in exception state with no rider
+    const onlineExceptions = await this.prisma.onlineOrder.findMany({
+      where: {
+        store_id: storeId,
+        status: { in: [...RiderService.EXCEPTION_STATUSES] },
+        claimedByRiderId: null,
+        order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+
+    // POS delivery orders in exception state with no rider
+    const posExceptions = await this.prisma.order.findMany({
+      where: {
+        store_id: storeId,
+        status: { in: [...RiderService.EXCEPTION_STATUSES] },
+        rider_id: null,
+        order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+
+    const onlineMapped = onlineExceptions.map((o) => ({
+      id: o.id,
+      isPos: false,
+      status: o.status,
+      customer_name: o.customer_name ?? null,
+      customerAddress: o.customer_address ?? null,
+      created_at: o.created_at,
+      exceptionType: o.status === 'DISPATCHED' ? 'DISPATCHED_NO_RIDER' : 'PRINT_BILL_NO_RIDER',
+    }));
+
+    const posMapped = posExceptions.map((o) => ({
+      id: o.id,
+      isPos: true,
+      status: o.status,
+      customer_name: o.customer_name ?? null,
+      customerAddress: o.customer_address ?? null,
+      created_at: o.created_at,
+      exceptionType: o.status === 'DISPATCHED' ? 'DISPATCHED_NO_RIDER' : 'PRINT_BILL_NO_RIDER',
+    }));
+
+    return [...onlineMapped, ...posMapped].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
+  }
+
+  /**
+   * Resets a DISPATCHED or PRINT_BILL order (with no assigned rider) back to READY.
+   *
+   * Safety guarantees:
+   * - Server always fetches the current order from DB (never trusts client state).
+   * - Checks store scope against the caller's authoritative store_id from DB.
+   * - Rejects if a rider is now assigned (concurrent claim).
+   * - Rejects terminal states (SETTLED / DELIVERED / CANCELLED).
+   * - Uses a WHERE-scoped updateMany as an atomic CAS; fails if the order
+   *   changed state between the fetch and the update (optimistic concurrency).
+   * - Writes a SystemAuditLog entry and broadcasts order_updated.
+   * - POS twin order is synchronized when posOrderId is set.
+   */
+  async adminRecoverDeliveryException(orderId: number, callerJwt: any, reason: string) {
+    // 1. Validate mandatory reason
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('A reason is required for recovery.');
+    }
+
+    // 2. Resolve authoritative caller from DB
+    const caller = await this.prisma.user.findUnique({ where: { id: callerJwt.sub } });
+    if (!caller) throw new ForbiddenException('Caller not found.');
+
+    // 3. Riders may not perform this action
+    if (caller.role?.name === 'Rider') {
+      throw new ForbiddenException('Riders may not recover delivery exceptions.');
+    }
+
+    // 4. Try online order first
+    let order: any = await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
+    let isPos = false;
+
+    // 5. Fall back to POS order
+    if (!order) {
+      order = await this.prisma.order.findUnique({ where: { id: orderId } });
+      isPos = true;
+    }
+
+    if (!order) throw new NotFoundException(`Order #${orderId} not found.`);
+
+    // 6. Store scope check (Super Admin bypasses)
+    const isSuperAdmin = caller.role?.name === 'Super Admin' || callerJwt.role === 'Super Admin';
+    if (!isSuperAdmin && Number(caller.store_id) !== Number(order.store_id)) {
+      throw new ForbiddenException('Cross-store recovery denied.');
+    }
+
+    // 7. Terminal state guard
+    if ((RiderService.TERMINAL_STATUSES as readonly string[]).includes(order.status)) {
+      throw new BadRequestException(
+        `Order #${orderId} is in terminal state '${order.status}' and cannot be recovered.`,
+      );
+    }
+
+    // 8. Must be an eligible exception state
+    if (!(RiderService.EXCEPTION_STATUSES as readonly string[]).includes(order.status)) {
+      throw new BadRequestException(
+        `Order #${orderId} is in status '${order.status}' which is not an eligible exception state. ` +
+        `Eligible states: ${RiderService.EXCEPTION_STATUSES.join(', ')}.`,
+      );
+    }
+
+    // 9. Rider must still be unassigned
+    const riderId = isPos ? order.rider_id : order.claimedByRiderId;
+    if (riderId != null) {
+      throw new BadRequestException(
+        `Order #${orderId} now has a rider assigned. Recovery is no longer needed.`,
+      );
+    }
+
+    const previousStatus = order.status;
+
+    // 10. Atomic CAS update scoped to the current status + no rider
+    //     If another process changed the order between our fetch and this update,
+    //     updateMany returns { count: 0 } and we fail safely.
+    let updateResult: { count: number };
+    if (isPos) {
+      updateResult = await this.prisma.order.updateMany({
+        where: { id: orderId, status: previousStatus, rider_id: null },
+        data: { status: 'READY' },
+      });
+    } else {
+      updateResult = await this.prisma.onlineOrder.updateMany({
+        where: { id: orderId, status: previousStatus, claimedByRiderId: null },
+        data: { status: 'READY' },
+      });
+    }
+
+    if (updateResult.count === 0) {
+      throw new BadRequestException(
+        `Order #${orderId} was modified by another process before recovery could complete. ` +
+        `Please refresh and try again.`,
+      );
+    }
+
+    // 11. Sync POS twin if this was an online order with a linked posOrderId
+    if (!isPos && order.posOrderId) {
+      await this.prisma.order.updateMany({
+        where: { id: order.posOrderId },
+        data: { status: 'READY' },
+      });
+    }
+
+    // 12. Fetch updated order for broadcast
+    const updatedOrder = isPos
+      ? await this.prisma.order.findUnique({ where: { id: orderId } })
+      : await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
+
+    // 13. SystemAuditLog
+    await this.prisma.systemAuditLog.create({
+      data: {
+        action: 'DELIVERY_EXCEPTION_RESET',
+        entity: isPos ? 'Order' : 'OnlineOrder',
+        entity_id: String(orderId),
+        user_id: String(caller.id),
+        details: {
+          previousStatus,
+          newStatus: 'READY',
+          previousRider: null,
+          newRider: null,
+          reason: reason.trim(),
+          recoveredBy: caller.name || caller.id,
+        },
+      },
+    });
+
+    // 14. Real-time broadcast
+    const room = `store_${order.store_id}`;
+    this.gateway.broadcast('order_updated', updatedOrder, room);
+
+    return {
+      success: true,
+      orderId,
+      previousStatus,
+      newStatus: 'READY',
+      isPos,
+    };
+  }
 }

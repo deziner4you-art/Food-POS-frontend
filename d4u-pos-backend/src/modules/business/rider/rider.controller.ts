@@ -99,4 +99,26 @@ export class RiderOrdersController {
   ) {
     return this.service.adminForceReleaseRiderAssignment(Number(id), user);
   }
+
+  // Admin Delivery Exception Recovery:
+  // Retrieves orders that are DISPATCHED but have no rider assigned.
+  @RequirePermissions('delivery.dispatch.assign')
+  @Get('exceptions')
+  getDeliveryExceptions(
+    @CurrentUser() user: any,
+    @Query('store_id') storeId: string,
+  ) {
+    return this.service.getDeliveryExceptions(storeId, user);
+  }
+
+  // Resets a DISPATCHED + NO RIDER order back to READY.
+  @RequirePermissions('delivery.dispatch.assign')
+  @Patch(':id/recover-exception')
+  adminRecoverDeliveryException(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.service.adminRecoverDeliveryException(Number(id), user, body.reason);
+  }
 }

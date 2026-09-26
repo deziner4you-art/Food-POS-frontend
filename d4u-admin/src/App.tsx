@@ -25,6 +25,7 @@ import HQOverview from './pages/HQOverview';
 import RecycleBin from './pages/RecycleBin';
 import HealthDashboard from './pages/HealthDashboard';
 import PurchaseManager from './pages/PurchaseManager';
+import DeliveryExceptions from './pages/DeliveryExceptions';
 
 import { Megaphone, ShieldCheck, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
@@ -68,7 +69,8 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
       { path: '/purchase', label: 'Purchase & Receiving', icon: ShoppingCart, color: 'text-orange-400', bg: 'bg-orange-500/20' },
       ...(marketingEnabled || user?.role === 'Super Admin' ? [{ path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' }] : []),
       { path: '/customers', label: 'CRM & Loyalty', icon: Users, color: 'text-amber-400', bg: 'bg-amber-500/20' },
-      { path: '/cms', label: 'Website CMS', icon: Globe, color: 'text-[#ec4899]', bg: 'bg-[#ec4899]/20' }
+      { path: '/cms', label: 'Website CMS', icon: Globe, color: 'text-[#ec4899]', bg: 'bg-[#ec4899]/20' },
+      { path: '/exceptions', label: 'Delivery Exceptions', icon: Activity, color: 'text-red-400', bg: 'bg-red-500/20' }
     ];
   }
 
@@ -192,6 +194,7 @@ function MainApp({ user, handleLogout }: { user: any, handleLogout: () => void }
         <Route path="/marketing" element={<MarketingHub />} />
         <Route path="/customers" element={<CustomersManager />} />
         <Route path="/cms" element={<CmsManager />} />
+        <Route path="/exceptions" element={<DeliveryExceptions />} />
         
         {/* Super Admin Routes */}
         <Route path="/setup" element={<SetupWizard />} />

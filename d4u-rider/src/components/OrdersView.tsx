@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 import { ArrowLeft, RefreshCw, Package, MapPin, AlertTriangle, LogOut, WifiOff } from 'lucide-react';
 
@@ -208,18 +208,21 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
   };
 
-  // Task 6B Change 5: preserve Task 5E filter semantics exactly.
-
-  // Available = unclaimed + actionable delivery status
-
-  // Task 6B: order_source='ONLINE' orders show OnlineOrder.id (the .id field on the payload)
-
+  // Sprint 29.3A — Part A: Only READY + no rider shows "Accept Order".
+  // Backend claimOrder() enforces status === 'READY', so showing Accept for
+  // PRINT_BILL / RIDER_ARRIVED / DISPATCHED was always a UI lie that produced
+  // a 400 error on every attempt. UI now matches the server's claim rule.
   const availableOrders = orders.filter(o =>
-
-    ['READY', 'PRINT_BILL', 'RIDER_ARRIVED', 'DISPATCHED'].includes(o.status) &&
-
+    o.status === 'READY' &&
     o.claimedByRiderId == null
+  );
 
+  // Orders that are unclaimed but in a non-READY abnormal state — visible
+  // to the rider as informational only (no Accept button). These require
+  // Admin recovery before they become claimable again.
+  const exceptionOrders = orders.filter(o =>
+    ['PRINT_BILL', 'RIDER_ARRIVED', 'DISPATCHED'].includes(o.status) &&
+    o.claimedByRiderId == null
   );
 
   // Task 6B Change 6: preserve Task 5E-C My Active Order semantics
@@ -578,6 +581,40 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
                 availableOrders.map(o => renderOrderCard(o, false))
 
+              )}
+
+              {/* Sprint 29.3A: Orphaned non-READY unclaimed orders — shown for
+                  transparency but NOT claimable. Admin must recover them first. */}
+              {exceptionOrders.length > 0 && (
+                <div className="mt-4">
+                  <h3 className="text-amber-400 font-bold mb-3 uppercase tracking-widest text-[10px] flex items-center gap-1.5">
+                    <AlertTriangle size={12} />
+                    Requires Admin Recovery
+                  </h3>
+                  {exceptionOrders.map(o => (
+                    <div key={o.id} className="bg-slate-900 border border-amber-500/30 p-4 rounded-2xl shadow-sm mb-3 opacity-75">
+                      <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-bold text-slate-100">#{o.id}</span>
+                          {o.isPos && (
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full uppercase tracking-wider">POS</span>
+                          )}
+                        </div>
+                        <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-md bg-amber-500/20 text-amber-400">
+                          {o.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
+                        <p className="text-sm text-slate-300">{o.customerAddress || 'Customer Address'}</p>
+                      </div>
+                      <div className="w-full mt-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm">
+                        <AlertTriangle size={14} />
+                        <span>Contact Admin to Recover</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
 
             </div>

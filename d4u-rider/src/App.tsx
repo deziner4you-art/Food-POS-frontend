@@ -497,10 +497,11 @@ export default function App() {
         // 1. Prefer an order already claimed by THIS rider
         let targetOrder = orders.find(o => String(o.claimedByRiderId) === String(riderId) && o.status !== 'SETTLED');
         
-        // 2. Otherwise find an available READY/unclaimed delivery
+        // Sprint 29.3A: Only READY + no rider can be auto-restored.
+        // PRINT_BILL / RIDER_ARRIVED / DISPATCHED orphans require Admin recovery first.
         if (!targetOrder) {
-          targetOrder = orders.find(o => 
-            ['READY', 'PRINT_BILL', 'RIDER_ARRIVED', 'DISPATCHED', 'OUT_FOR_DELIVERY'].includes(o.status) && 
+          targetOrder = orders.find(o =>
+            o.status === 'READY' &&
             o.claimedByRiderId == null
           );
         }
