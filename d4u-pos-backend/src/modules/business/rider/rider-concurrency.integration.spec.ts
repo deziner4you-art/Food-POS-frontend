@@ -183,7 +183,7 @@ describe('Task #2A — Real PostgreSQL Concurrency Integration Test', () => {
     });
 
     const serviceA = new RiderService(wrappedPrismaA, mockGateway);
-    const serviceB = new RiderService(prismaB, mockGateway);
+    const serviceB = new RiderService(prismaB as any, mockGateway);
 
     // Step 1: Start Transaction A
     const promiseA = serviceA.claimOrder(orderA.id, { sub: testRiderA.id });
@@ -295,8 +295,8 @@ describe('Task #2A — Real PostgreSQL Concurrency Integration Test', () => {
       data: { status: 'SETTLED' },
     });
 
-    const serviceRiderA = new RiderService(prismaA, mockGateway);
-    const serviceRiderB = new RiderService(prismaB, mockGateway);
+    const serviceRiderA = new RiderService(prismaA as any, mockGateway);
+    const serviceRiderB = new RiderService(prismaB as any, mockGateway);
 
     // Fire concurrent claims for Rider A and Rider B
     const [resDiffA, resDiffB] = await Promise.all([

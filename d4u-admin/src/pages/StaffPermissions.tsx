@@ -276,7 +276,25 @@ export default function StaffPermissions() {
       const res = await apiFetch(`/users/${user.id}`, { 
         method: 'DELETE'
       });
-      if (!res.ok) throw new Error('Delete failed');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          const actionMsg = errorData.message || `Cannot delete ${user.name} because they have associated business history.`;
+          const shouldDeactivate = await customConfirm(
+            `${actionMsg}\n\nWould you like to deactivate ${user.name} instead to preserve business history?`
+          );
+          if (shouldDeactivate) {
+            const deactRes = await apiFetch(`/users/${user.id}/deactivate`, { method: 'PATCH' });
+            if (deactRes.ok) {
+              customSuccess(`${user.name} has been deactivated.`);
+              fetchData();
+              return;
+            }
+          }
+          return;
+        }
+        throw new Error(errorData.message || 'Delete failed');
+      }
       customSuccess(`${user.name} removed.`);
       fetchData();
     } catch (err: any) {

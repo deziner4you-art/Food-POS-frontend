@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
@@ -175,6 +176,54 @@ export class UsersService {
   async deleteUser(id: number) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException(`User #${id} not found`);
-    return this.prisma.user.delete({ where: { id } });
+
+    try {
+      return await this.prisma.user.delete({ where: { id } });
+    } catch (err: any) {
+      // Prisma error code P2003: Foreign key constraint failed
+      if (
+        err.code === 'P2003' ||
+        (typeof err.message === 'string' &&
+          (err.message.includes('foreign key constraint') ||
+            err.message.includes('Foreign key constraint') ||
+            err.message.includes('P2003')))
+      ) {
+        throw new ConflictException(
+          `Cannot delete User #${id} (${user.name}) because they have associated business history (such as orders, deliveries, or financial records). Deactivate or suspend the user instead to preserve historical records.`,
+        );
+      }
+      throw err;
+    }
+  }
+
+  // Safe Rider Deactivation:
+  // Hard-deleting a rider who has FK-dependent order history will always
+  // fail at the database level (FK constraint on Order.rider_id / delivered
+  // records). This method suspends the user instead — the rider can no
+  // longer log in, but all historical order data is preserved intact.
+  // Reverts cleanly with reactivateUser below.
+  async deactivateUser(id: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { role: true },
+    });
+    if (!user) throw new NotFoundException(`User #${id} not found`);
+
+    return this.prisma.user.update({
+      where: { id },
+      data: { status: 'SUSPENDED' },
+      include: { role: true, store: true },
+    });
+  }
+
+  async reactivateUser(id: number) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException(`User #${id} not found`);
+
+    return this.prisma.user.update({
+      where: { id },
+      data: { status: 'ACTIVE' },
+      include: { role: true, store: true },
+    });
   }
 }

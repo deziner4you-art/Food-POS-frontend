@@ -63,4 +63,40 @@ export class RiderOrdersController {
   ) {
     return this.service.claimOrder(Number(id), user);
   }
+
+  // Delivery Release / Recovery:
+  // Allows a rider to release (un-claim) a previously accepted order back
+  // to the available pool. Identity comes exclusively from the verified
+  // JWT — the rider can only release their own order. The backend enforces
+  // the status gate (no release once cash hand-off has started).
+  @RequirePermissions('delivery.dispatch.claim')
+  @Patch(':id/release')
+  releaseOrder(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    return this.service.releaseRiderAssignment(Number(id), user);
+  }
+
+  // Admin / Manager Force-Release:
+  // Authorized recovery action allowing a manager/admin (with delivery.dispatch.assign)
+  // to force-release an order's stuck rider assignment. Caller's identity and store
+  // scope come strictly from JWT / authoritative user record.
+  @RequirePermissions('delivery.dispatch.assign')
+  @Patch(':id/force-release')
+  adminForceReleaseOrder(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    return this.service.adminForceReleaseRiderAssignment(Number(id), user);
+  }
+
+  @RequirePermissions('delivery.dispatch.assign')
+  @Patch(':id/admin-force-release')
+  adminForceReleaseOrderAlias(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    return this.service.adminForceReleaseRiderAssignment(Number(id), user);
+  }
 }

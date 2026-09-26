@@ -9,6 +9,8 @@ interface ActiveRideViewProps {
   activeOrder: DeliveryOrder | null;
   onAccept: () => void;
   onDecline: () => void;
+  /** Called to release (un-claim) an already-accepted delivery back to the pool. */
+  onRelease?: () => Promise<void>;
   onArriveRest: () => void;
   onPickedUp: () => void;
   onDelivered: () => void;
@@ -27,6 +29,7 @@ export default function ActiveRideView({
   activeOrder,
   onAccept,
   onDecline,
+  onRelease,
   onArriveRest,
   onPickedUp,
   onDelivered,
@@ -41,6 +44,8 @@ export default function ActiveRideView({
 }: ActiveRideViewProps) {
 
   const [prepTimeLeft, setPrepTimeLeft] = React.useState<string>('');
+  const [confirmRelease, setConfirmRelease] = React.useState(false);
+  const [releasing, setReleasing] = React.useState(false);
   
   React.useEffect(() => {
     if (!activeOrder?.estimatedReadyAt) {
@@ -225,10 +230,47 @@ export default function ActiveRideView({
                   </div>
                 )}
               </div>
-              <button className="w-10 h-10 bg-slate-950 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-200">
-                <X size={20} />
-              </button>
+              {/* Release button — hidden when DELIVERED (cash hand-off started) */}
+              {onRelease && status !== 'DELIVERED' && (
+                <button
+                  onClick={() => setConfirmRelease(true)}
+                  className="w-10 h-10 bg-slate-950 rounded-full flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-red-950/50 transition-colors"
+                  title="Release this delivery"
+                >
+                  <X size={20} />
+                </button>
+              )}
             </div>
+
+            {/* Inline release confirmation */}
+            {confirmRelease && (
+              <div className="mb-4 p-4 bg-red-950/60 border border-red-700/50 rounded-xl">
+                <p className="text-red-300 font-bold text-sm mb-1">Release this delivery?</p>
+                <p className="text-slate-400 text-xs mb-4">Order #{activeOrder?.id} will be returned to the available pool. This cannot be undone.</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      setReleasing(true);
+                      if (onRelease) await onRelease();
+                      setReleasing(false);
+                      setConfirmRelease(false);
+                    }}
+                    disabled={releasing}
+                    className="flex-1 bg-red-600 text-white font-bold py-2.5 rounded-lg text-sm active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    {releasing ? 'Releasing...' : 'Yes, Release'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmRelease(false)}
+                    disabled={releasing}
+                    className="flex-1 bg-slate-800 text-slate-300 font-bold py-2.5 rounded-lg text-sm active:scale-95 transition-all"
+                  >
+                    Keep Delivery
+                  </button>
+                </div>
+              </div>
+            )}
+
 
             {status === 'ARRIVED_REST' && (
               activeOrder?.bridgeStatus === 'DISPATCHED' ? (

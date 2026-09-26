@@ -816,6 +816,50 @@ export default function App() {
     setCurrentPathIndex(0);
   };
 
+  // Delivery Release Flow:
+  // Called when the rider taps "Release Delivery" from an ACCEPTED/in-progress
+  // state. Unlike handleDeclineOrder (which is only for un-claimed OFFERED
+  // orders), this hits the backend first to atomically clear the assignment
+  // before doing the local state cleanup. The backend status gate means
+  // release is only permitted before cash hand-off (DELIVERED+).
+  const handleReleaseOrder = async (): Promise<void> => {
+    if (!activeOrder) return;
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/rider-orders/${activeOrder.id}/release`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}`,
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const { toast } = require('react-hot-toast');
+        const msg: string = data?.message || '';
+        if (res.status === 400 && msg.toLowerCase().includes('cash')) {
+          toast.error(
+            'Cannot release: cash hand-off has already started. Contact your cashier to resolve this order.',
+            { duration: 8000 },
+          );
+        } else {
+          toast.error(msg || 'Could not release this order. Please try again.');
+        }
+        return;
+      }
+    } catch {
+      const { toast } = require('react-hot-toast');
+      toast.error('Network error — could not release this order.');
+      return;
+    }
+
+    // Backend release succeeded — clean up local state so the rider is
+    // immediately available for a new delivery.
+    const { toast } = require('react-hot-toast');
+    toast.success(`Order #${activeOrder.id} released. You are available for a new delivery.`);
+    handleDeclineOrder();
+  };
+
   const handleArriveAtRestaurant = async () => {
     if (activeOrder?.bridgeStatus === 'READY') {
       const success = await updateBridgeStatus('RIDER_ARRIVED');
@@ -936,6 +980,7 @@ export default function App() {
                 activeOrder={activeOrder}
                 onAccept={handleAcceptOrder}
                 onDecline={handleDeclineOrder}
+                onRelease={handleReleaseOrder}
                 onArriveRest={handleArriveAtRestaurant}
                 onPickedUp={handleConfirmPickedUp}
                 onDelivered={handleMarkDelivered}

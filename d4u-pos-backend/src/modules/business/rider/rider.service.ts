@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
@@ -353,6 +353,348 @@ export class RiderService {
       this.gateway.broadcast('order_updated', updatedOrder, `store_${updatedOrder.store_id}`);
       return { success: true, order: updatedOrder };
     }
+  }
+
+  // Rider Release / Decline Flow (Delivery Recovery):
+  // Allows a rider to voluntarily release (un-claim) an order they already
+  // accepted, making it available again for the next available rider.
+  //
+  // Safety gates:
+  //   1. JWT identity   — derived from authenticated JWT sub only; never from request body.
+  //   2. Rider existence + role — authenticated sub must resolve to a real User with
+  //      role = 'Rider' (mirrors claimOrder guard at line ~215).
+  //   3. Store ownership — riderUser.store_id must equal the order's store_id
+  //      (Blocker #1 fix: mirrors claimOrder store mismatch check at line ~230).
+  //   4. Claim ownership — the authenticated rider must be the one who claimed
+  //      the order (claimedByRiderId / rider_id matches riderId).
+  //   5. Status gate — release is blocked once cash hand-off is imminent OR the
+  //      order has reached a terminal state that must never revert to READY:
+  //        Non-releasable: DELIVERED, WAITING_CASH_SETTLEMENT, SETTLED, CANCELLED,
+  //                        VOIDED (Blocker #2 fix), COMPLETED (Blocker #2 fix).
+  //        Releasable: READY, RIDER_ACCEPTED, RIDER_ARRIVED, PRINT_BILL,
+  //                    DISPATCHED, OUT_FOR_DELIVERY.
+  //
+  // On success: clears claimedByRiderId / rider_id and resets the order
+  // status to READY so another rider can claim it normally. A real-time
+  // order_updated broadcast fires so the POS, KDS, and any other rider
+  // app all see the order become available again immediately.
+  async releaseRiderAssignment(id: number, authenticatedUser: any) {
+    const riderId = Number(authenticatedUser?.sub);
+    if (!authenticatedUser || !Number.isFinite(riderId) || riderId <= 0) {
+      throw new BadRequestException('A valid authenticated rider identity is required.');
+    }
+
+    // Blocker #1 fix: load the authoritative rider User record from the database.
+    // This mirrors the pattern used in claimOrder (see ~line 215) and is required
+    // to: (a) confirm the JWT sub maps to a real, existing user; (b) confirm the
+    // user's role is Rider; (c) obtain riderUser.store_id for the store mismatch
+    // check below. Trusting only claimedByRiderId is insufficient — an attacker
+    // with a valid JWT for a different store could otherwise skip the store gate.
+    const riderUser = await this.prisma.user.findUnique({
+      where: { id: riderId },
+      include: { role: true },
+    });
+    if (!riderUser) {
+      throw new BadRequestException('Rider does not exist.');
+    }
+    if (riderUser.role?.name !== 'Rider') {
+      throw new BadRequestException('Authenticated user is not a rider.');
+    }
+
+    // Blocker #2 fix: VOIDED and COMPLETED are added as non-releasable terminal
+    // statuses. Without this guard, an order in either terminal state that still
+    // held a claimedByRiderId (edge case) would be silently reset to READY —
+    // an invalid backward lifecycle transition.
+    //
+    // Non-releasable statuses (ordered by lifecycle position):
+    //   DELIVERED             — food handed to customer; cash hand-off imminent
+    //   WAITING_CASH_SETTLEMENT — COD cash is in transit back to cashier
+    //   SETTLED               — cashier accepted the cash; fully closed
+    //   CANCELLED             — order was cancelled (terminal)
+    //   VOIDED                — order was voided (terminal; Blocker #2)
+    //   COMPLETED             — order lifecycle complete (terminal; Blocker #2)
+    const nonReleasableStatuses = [
+      'DELIVERED',
+      'WAITING_CASH_SETTLEMENT',
+      'SETTLED',
+      'CANCELLED',
+      'VOIDED',     // Blocker #2: terminal — must never revert to READY
+      'COMPLETED',  // Blocker #2: terminal — must never revert to READY
+    ];
+
+    // ── Try OnlineOrder first ────────────────────────────────────────────
+    const onlineOrder = await this.prisma.onlineOrder.findUnique({ where: { id } });
+    if (onlineOrder) {
+      if (onlineOrder.claimedByRiderId !== riderId) {
+        throw new BadRequestException(
+          `Cannot release Order #${id}: it is not assigned to you.`,
+        );
+      }
+      // Blocker #1 fix: store mismatch check — mirrors claimOrder line ~230.
+      // Prevents a rider from a different store from releasing an order even
+      // if they somehow know the order ID.
+      if (!riderUser.store_id || riderUser.store_id !== onlineOrder.store_id) {
+        throw new BadRequestException('Rider store mismatch.');
+      }
+      if (nonReleasableStatuses.includes(onlineOrder.status)) {
+        // Provide a status-specific message: cash hand-off vs. terminal void/complete.
+        const isCashState = ['DELIVERED', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(onlineOrder.status);
+        throw new BadRequestException(
+          isCashState
+            ? `Cannot release Order #${id}: cash hand-off has started (status: ${onlineOrder.status}). Contact your cashier to resolve this order.`
+            : `Cannot release Order #${id}: this order is in a terminal state (status: ${onlineOrder.status}) and cannot be released.`,
+        );
+      }
+
+      const updated = await this.prisma.onlineOrder.update({
+        where: { id },
+        data: {
+          claimedByRiderId: null,
+          claimedByRiderName: null,
+          status: 'READY',
+        },
+      });
+
+      this.gateway.broadcast('order_updated', updated, `store_${updated.store_id}`);
+      console.log(`[RIDER RELEASE] Online Order #${id} released by Rider #${riderId} (was ${onlineOrder.status})`);
+      return { success: true, orderId: id, orderType: 'ONLINE', previousStatus: onlineOrder.status };
+    }
+
+    // ── Fall back to POS Order ───────────────────────────────────────────
+    const posOrder = await this.prisma.order.findUnique({
+      where: { id },
+      include: { customer: true, items: { include: { product: true } }, rider: true },
+    });
+    if (posOrder) {
+      if (posOrder.rider_id !== riderId) {
+        throw new BadRequestException(
+          `Cannot release POS Order #${id}: it is not assigned to you.`,
+        );
+      }
+      // Blocker #1 fix: store mismatch check — mirrors claimOrder line ~230.
+      if (!riderUser.store_id || riderUser.store_id !== posOrder.store_id) {
+        throw new BadRequestException('Rider store mismatch.');
+      }
+      if (nonReleasableStatuses.includes(posOrder.status)) {
+        const isCashState = ['DELIVERED', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(posOrder.status);
+        throw new BadRequestException(
+          isCashState
+            ? `Cannot release POS Order #${id}: cash hand-off has started (status: ${posOrder.status}). Contact your cashier to resolve this order.`
+            : `Cannot release POS Order #${id}: this order is in a terminal state (status: ${posOrder.status}) and cannot be released.`,
+        );
+      }
+
+      await this.prisma.order.update({
+        where: { id },
+        data: { rider_id: null, status: 'READY' },
+      });
+      const refreshed = await this.prisma.order.findUniqueOrThrow({
+        where: { id },
+        include: { customer: true, items: { include: { product: true } }, rider: true },
+      });
+      const formatted = formatPosOrderForRider(refreshed);
+      this.gateway.broadcast('order_updated', formatted, `store_${posOrder.store_id}`);
+      console.log(`[RIDER RELEASE] POS Order #${id} released by Rider #${riderId} (was ${posOrder.status})`);
+      return { success: true, orderId: id, orderType: 'POS', previousStatus: posOrder.status };
+    }
+
+    throw new NotFoundException('Order not found.');
+  }
+
+  // Admin / Manager Force-Release Flow (Delivery Recovery):
+  // Allows an authorized administrator or store manager (with delivery.dispatch.assign)
+  // to voluntarily release a stuck rider assignment from an order, making it available
+  // again for other riders.
+  //
+  // Safety gates:
+  //   1. Authenticated identity — derived from JWT sub.
+  //   2. Admin user existence & authorization — must be an active User whose role is not 'Rider'.
+  //   3. Store isolation — order must belong to the caller's permitted store scope.
+  //   4. Rider assignment existence — order must currently have an assigned rider to be force-released.
+  //   5. Status gate — terminal states (DELIVERED, WAITING_CASH_SETTLEMENT, SETTLED,
+  //      CANCELLED, VOIDED, COMPLETED) can NEVER be force-released back to READY.
+  //
+  // On success: clears rider assignment, preserves order identity / store / business day,
+  // resets status to READY, synchronizes OnlineOrder <-> POS twin, logs audit record,
+  // and broadcasts store-scoped order_updated real-time event.
+  async adminForceReleaseRiderAssignment(id: number, authenticatedUser: any) {
+    const adminId = Number(authenticatedUser?.sub);
+    if (!authenticatedUser || !Number.isFinite(adminId) || adminId <= 0) {
+      throw new BadRequestException('A valid authenticated admin identity is required.');
+    }
+
+    const adminUser = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      include: { role: true },
+    });
+    if (!adminUser) {
+      throw new BadRequestException('Admin user does not exist.');
+    }
+    if (adminUser.role?.name === 'Rider') {
+      throw new ForbiddenException('Riders are not authorized to perform admin force-release.');
+    }
+
+    const nonReleasableStatuses = [
+      'DELIVERED',
+      'WAITING_CASH_SETTLEMENT',
+      'SETTLED',
+      'CANCELLED',
+      'VOIDED',
+      'COMPLETED',
+    ];
+
+    // ── Try OnlineOrder first ────────────────────────────────────────────
+    const onlineOrder = await this.prisma.onlineOrder.findUnique({ where: { id } });
+    if (onlineOrder) {
+      // Store isolation check
+      const callerStoreId = Number(authenticatedUser.active_store_id) || adminUser.store_id;
+      if (adminUser.role?.name !== 'Super Admin' && callerStoreId && callerStoreId !== onlineOrder.store_id) {
+        throw new ForbiddenException('You do not have access to this store');
+      }
+
+      if (!onlineOrder.claimedByRiderId) {
+        throw new BadRequestException(`Order #${id} does not have an assigned rider.`);
+      }
+
+      if (nonReleasableStatuses.includes(onlineOrder.status)) {
+        const isCashState = ['DELIVERED', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(onlineOrder.status);
+        throw new BadRequestException(
+          isCashState
+            ? `Cannot force-release Order #${id}: cash hand-off has started (status: ${onlineOrder.status}). Contact your cashier to resolve this order.`
+            : `Cannot force-release Order #${id}: this order is in a terminal state (status: ${onlineOrder.status}) and cannot be released.`,
+        );
+      }
+
+      const releasedRiderId = onlineOrder.claimedByRiderId;
+      const updated = await this.prisma.onlineOrder.update({
+        where: { id },
+        data: {
+          claimedByRiderId: null,
+          claimedByRiderName: null,
+          riderAssigned: false,
+          status: 'READY',
+        },
+      });
+
+      // Synchronize linked POS order if bridge exists
+      if (onlineOrder.posOrderId) {
+        await this.prisma.order.updateMany({
+          where: { id: onlineOrder.posOrderId },
+          data: {
+            rider_id: null,
+            status: 'READY',
+          },
+        });
+      }
+
+      this.gateway.broadcast('order_updated', updated, `store_${updated.store_id}`);
+      console.log(`[ADMIN FORCE-RELEASE] Online Order #${id} rider #${releasedRiderId} released by Admin #${adminId} (was ${onlineOrder.status})`);
+
+      if (this.prisma.systemAuditLog) {
+        await this.prisma.systemAuditLog.create({
+          data: {
+            action: 'FORCE_RELEASE_RIDER',
+            entity: 'OnlineOrder',
+            entity_id: id,
+            user_id: adminId,
+            user_name: adminUser.name,
+            details: {
+              storeId: onlineOrder.store_id,
+              releasedRiderId,
+              previousStatus: onlineOrder.status,
+              releasedBy: adminUser.name,
+            },
+          },
+        }).catch(() => {});
+      }
+
+      return {
+        success: true,
+        orderId: id,
+        orderType: 'ONLINE',
+        previousStatus: onlineOrder.status,
+        releasedRiderId,
+      };
+    }
+
+    // ── Fall back to POS Order ───────────────────────────────────────────
+    const posOrder = await this.prisma.order.findUnique({
+      where: { id },
+      include: { customer: true, items: { include: { product: true } }, rider: true },
+    });
+    if (posOrder) {
+      // Store isolation check
+      const callerStoreId = Number(authenticatedUser.active_store_id) || adminUser.store_id;
+      if (adminUser.role?.name !== 'Super Admin' && callerStoreId && callerStoreId !== posOrder.store_id) {
+        throw new ForbiddenException('You do not have access to this store');
+      }
+
+      if (!posOrder.rider_id) {
+        throw new BadRequestException(`POS Order #${id} does not have an assigned rider.`);
+      }
+
+      if (nonReleasableStatuses.includes(posOrder.status)) {
+        const isCashState = ['DELIVERED', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(posOrder.status);
+        throw new BadRequestException(
+          isCashState
+            ? `Cannot force-release POS Order #${id}: cash hand-off has started (status: ${posOrder.status}). Contact your cashier to resolve this order.`
+            : `Cannot force-release POS Order #${id}: this order is in a terminal state (status: ${posOrder.status}) and cannot be released.`,
+        );
+      }
+
+      const releasedRiderId = posOrder.rider_id;
+      await this.prisma.order.update({
+        where: { id },
+        data: { rider_id: null, status: 'READY' },
+      });
+
+      // Synchronize linked OnlineOrder twin if exists
+      await this.prisma.onlineOrder.updateMany({
+        where: { posOrderId: id },
+        data: {
+          claimedByRiderId: null,
+          claimedByRiderName: null,
+          riderAssigned: false,
+          status: 'READY',
+        },
+      });
+
+      const refreshed = await this.prisma.order.findUniqueOrThrow({
+        where: { id },
+        include: { customer: true, items: { include: { product: true } }, rider: true },
+      });
+      const formatted = formatPosOrderForRider(refreshed);
+      this.gateway.broadcast('order_updated', formatted, `store_${posOrder.store_id}`);
+      console.log(`[ADMIN FORCE-RELEASE] POS Order #${id} rider #${releasedRiderId} released by Admin #${adminId} (was ${posOrder.status})`);
+
+      if (this.prisma.systemAuditLog) {
+        await this.prisma.systemAuditLog.create({
+          data: {
+            action: 'FORCE_RELEASE_RIDER',
+            entity: 'Order',
+            entity_id: id,
+            user_id: adminId,
+            user_name: adminUser.name,
+            details: {
+              storeId: posOrder.store_id,
+              releasedRiderId,
+              previousStatus: posOrder.status,
+              releasedBy: adminUser.name,
+            },
+          },
+        }).catch(() => {});
+      }
+
+      return {
+        success: true,
+        orderId: id,
+        orderType: 'POS',
+        previousStatus: posOrder.status,
+        releasedRiderId,
+      };
+    }
+
+    throw new NotFoundException('Order not found.');
   }
 
   async getRiderAvailability(storeIdStr: string) {

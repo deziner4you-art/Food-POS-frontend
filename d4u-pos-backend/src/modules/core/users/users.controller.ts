@@ -63,6 +63,22 @@ export class UsersController {
     return this.usersService.deleteUser(id);
   }
 
+  // Safe suspension for riders with FK-dependent order history.
+  // Use instead of DELETE when hard-delete fails with a constraint error.
+  @RequirePermissions('auth.users.update')
+  @Patch(':id/deactivate')
+  deactivateUser(@Param('id', ParseIntPipe) id: number) {
+    console.log(`[DEACTIVATE USER] #${id}`);
+    return this.usersService.deactivateUser(id);
+  }
+
+  @RequirePermissions('auth.users.update')
+  @Patch(':id/reactivate')
+  reactivateUser(@Param('id', ParseIntPipe) id: number) {
+    console.log(`[REACTIVATE USER] #${id}`);
+    return this.usersService.reactivateUser(id);
+  }
+
   @RequirePermissions('auth.users.create')
   @Post('upload')
   @UseInterceptors(

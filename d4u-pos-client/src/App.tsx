@@ -344,6 +344,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   // waiter to actually notice and acknowledge them — a header toast is too
   // easy to miss, so these use a centered popup instead.
   const [alertModalMessage, setAlertModalMessage] = useState<string | null>(null);
+  const [forceReleaseConfirmOrder, setForceReleaseConfirmOrder] = useState<any | null>(null);
+  const [forceReleasing, setForceReleasing] = useState(false);
   const [activeWaiters, setActiveWaiters] = useState<any[]>([]);
   const [terminalSessions, setTerminalSessions] = useState<any[]>([]);
   // Held orders are persisted in Dexie (see db.ts `heldOrders` table) so they survive
@@ -581,6 +583,69 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   useEffect(() => { if (activeMenu === 'Terminal') fetchTerminalPanelOrders(); }, [activeMenu, fetchTerminalPanelOrders]);
   useEffect(() => { fetchRiderAvailability(); }, [fetchRiderAvailability]);
   useEffect(() => { if (activeMenu === 'Delivery') fetchRiderAvailability(); }, [activeMenu, fetchRiderAvailability]);
+
+  // Admin Force-Release Rider Recovery Action:
+  // Releases a stuck rider assignment without cancelling, deleting, or altering order contents.
+  const handleAdminForceRelease = async (order: any) => {
+    if (!order) return;
+    const targetOrderId = order.bridgeOrderId || order.id;
+    setForceReleasing(true);
+    try {
+      const res = await apiFetch(`/rider-orders/${targetOrderId}/force-release`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        auth: true,
+      });
+
+      if (res.ok) {
+        // Immediate local state update for responsiveness
+        setActiveDeliveries(prev => prev.map(d => {
+          if (d.bridgeOrderId === targetOrderId || d.id === targetOrderId) {
+            return {
+              ...d,
+              status: 'READY',
+              claimedByRiderId: null,
+              claimedByRiderName: null,
+              rider: 'Waiting for Rider',
+            };
+          }
+          return d;
+        }));
+
+        setBackendOnlineOrders(prev => prev.map(o => {
+          if (o.id === targetOrderId) {
+            return {
+              ...o,
+              status: 'READY',
+              claimedByRiderId: null,
+              claimedByRiderName: null,
+              riderAssigned: false,
+            };
+          }
+          return o;
+        }));
+
+        setToast({
+          message: `Rider assignment released for Order #${targetOrderId}. Order remains active and ready for a new rider.`,
+          type: 'success',
+        });
+        setForceReleaseConfirmOrder(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setToast({
+          message: data.message || `Failed to release rider assignment for Order #${targetOrderId}.`,
+          type: 'error',
+        });
+      }
+    } catch {
+      setToast({
+        message: `Network error — could not release rider assignment for Order #${targetOrderId}.`,
+        type: 'error',
+      });
+    } finally {
+      setForceReleasing(false);
+    }
+  };
 
   // Settles a READY waiter order directly via the real settle endpoint --
   // NOT by reloading it into the cart and running it through the normal Pay
@@ -3366,6 +3431,32 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       </div>
                     </div>
                     <div className="delivery-address"><MapPin size={14} /><span>{del.address}</span></div>
+                    {!['DELIVERED', 'WAITING_CASH_SETTLEMENT', 'SETTLED', 'CANCELLED', 'VOIDED', 'COMPLETED'].includes(del.status) &&
+                      Boolean(del.claimedByRiderId || (del.rider && !['Waiting for Rider', 'Rider Not Available', 'Rider Not Assigned', 'Chef Preparing'].includes(del.rider))) && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Rider Assignment</span>
+                        <button
+                          type="button"
+                          className="btn-action"
+                          style={{
+                            fontSize: '0.7rem',
+                            padding: '3px 8px',
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#fbbf24',
+                            border: '1px solid rgba(245, 158, 11, 0.35)',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setForceReleaseConfirmOrder(del);
+                          }}
+                        >
+                          Release Rider
+                        </button>
+                      </div>
+                    )}
                     {['READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DELIVERED', 'WAITING_CASH_SETTLEMENT'].includes(del.status) && (
                       <div className="delivery-settlement-box" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-between items-center w-full">
@@ -5692,6 +5783,93 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               </div>
             </div>
             <button className="btn-action" style={{ width: '100%', padding: '15px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', marginTop: '20px' }} onClick={() => setWaiterPinModalOpen(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* FORCE-RELEASE RIDER ASSIGNMENT CONFIRMATION MODAL */}
+      {forceReleaseConfirmOrder && (
+        <div className="modal-overlay" onClick={() => !forceReleasing && setForceReleaseConfirmOrder(null)}>
+          <div
+            className="modal-content animate-slide-up"
+            style={{ width: '440px', textAlign: 'center', background: '#1e293b', border: '1px solid rgba(245, 158, 11, 0.4)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '24px' }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                <AlertTriangle size={28} color="#fbbf24" />
+              </div>
+              <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: 'bold', margin: '0 0 10px 0' }}>
+                Release Rider Assignment?
+              </h3>
+              <p style={{ color: '#cbd5e1', fontSize: '0.9rem', lineHeight: '1.5', margin: '0 0 16px 0' }}>
+                Are you sure you want to release the assigned rider from <strong>Order #{forceReleaseConfirmOrder.id || forceReleaseConfirmOrder.bridgeOrderId}</strong>?
+              </p>
+
+              <div style={{ background: '#0f172a', borderRadius: '8px', padding: '12px', marginBottom: '16px', textAlign: 'left', fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ color: '#94a3b8' }}>Order ID:</span>
+                  <span style={{ color: 'white', fontWeight: 'bold' }}>#{forceReleaseConfirmOrder.id || forceReleaseConfirmOrder.bridgeOrderId}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ color: '#94a3b8' }}>Assigned Rider:</span>
+                  <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>
+                    {forceReleaseConfirmOrder.claimedByRiderName
+                      ? forceReleaseConfirmOrder.claimedByRiderName
+                      : (forceReleaseConfirmOrder.claimedByRiderId
+                        ? `Rider #${forceReleaseConfirmOrder.claimedByRiderId}`
+                        : (forceReleaseConfirmOrder.rider || 'Assigned Rider'))}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Current Status:</span>
+                  <span style={{ color: '#94a3b8' }}>{forceReleaseConfirmOrder.status}</span>
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '8px', padding: '10px 12px', marginBottom: '20px', textAlign: 'left' }}>
+                <p style={{ color: '#93c5fd', fontSize: '0.8rem', lineHeight: '1.4', margin: 0 }}>
+                  ℹ️ <strong>Note:</strong> The order will <strong>NOT</strong> be deleted or cancelled. It will be returned to <strong>READY</strong> status so another rider can accept it.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  type="button"
+                  disabled={forceReleasing}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: '#334155',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    cursor: forceReleasing ? 'not-allowed' : 'pointer',
+                  }}
+                  onClick={() => setForceReleaseConfirmOrder(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={forceReleasing}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: '#f59e0b',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#0f172a',
+                    fontWeight: 'bold',
+                    cursor: forceReleasing ? 'not-allowed' : 'pointer',
+                  }}
+                  onClick={() => handleAdminForceRelease(forceReleaseConfirmOrder)}
+                >
+                  {forceReleasing ? 'Releasing...' : 'Confirm Release'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
