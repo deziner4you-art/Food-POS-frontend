@@ -121,4 +121,15 @@ export class RiderOrdersController {
   ) {
     return this.service.adminRecoverDeliveryException(Number(id), user, body.reason);
   }
+
+  // Force settles/clears a delivery order permanently (e.g. past days' stale orders).
+  @RequirePermissions('delivery.dispatch.assign')
+  @Patch(':id/admin-force-settle')
+  adminForceSettleDeliveryException(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.service.adminForceSettleDeliveryException(Number(id), user, body.reason);
+  }
 }

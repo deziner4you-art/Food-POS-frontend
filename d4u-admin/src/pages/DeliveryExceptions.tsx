@@ -32,7 +32,9 @@ export default function DeliveryExceptions() {
     fetchExceptions();
   }, [selectedBranchId]);
 
-  const handleResetOrder = async (e: React.FormEvent) => {
+  const [actionType, setActionType] = useState<'recover' | 'settle'>('recover');
+
+  const handleAction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedException) return;
     if (!reason.trim()) {
@@ -42,7 +44,11 @@ export default function DeliveryExceptions() {
 
     setRecovering(true);
     try {
-      const res = await apiFetch(`/rider-orders/${selectedException.id}/recover-exception`, {
+      const endpoint = actionType === 'settle'
+        ? `/rider-orders/${selectedException.id}/admin-force-settle`
+        : `/rider-orders/${selectedException.id}/recover-exception`;
+
+      const res = await apiFetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason }),
@@ -50,15 +56,19 @@ export default function DeliveryExceptions() {
       
       const data = await res.json();
       if (res.ok) {
-        toast.success(`Order #${selectedException.id} successfully reset to READY`);
+        toast.success(
+          actionType === 'settle'
+            ? `Order #${selectedException.id} successfully settled and cleared`
+            : `Order #${selectedException.id} successfully reset to READY`
+        );
         setSelectedException(null);
         setReason('');
         fetchExceptions();
       } else {
-        toast.error(data.message || 'Failed to recover order');
+        toast.error(data.message || `Failed to ${actionType} order`);
       }
     } catch (err) {
-      toast.error('Network error during recovery');
+      toast.error(`Network error during ${actionType}`);
     }
     setRecovering(false);
   };
@@ -76,10 +86,10 @@ export default function DeliveryExceptions() {
         <div>
           <h1 className="text-3xl font-black text-white flex items-center gap-3">
             <AlertCircle className="text-red-500" size={32} /> 
-            Delivery Exceptions
+            Delivery Exceptions & Stale Clear
           </h1>
           <p className="text-stitch-muted mt-2">
-            Investigate and recover orders that have abnormal delivery states (e.g., dispatched without a rider, or billed but never dispatched).
+            Recover orphaned delivery orders or force settle stale deliveries from past shifts that are blocking riders.
           </p>
         </div>
         <button 
@@ -101,7 +111,7 @@ export default function DeliveryExceptions() {
                 <th className="p-4">Customer</th>
                 <th className="p-4">Source</th>
                 <th className="p-4">Status</th>
-                <th className="p-4">Exception Type</th>
+                <th className="p-4">Rider / Exception</th>
                 <th className="p-4">Age</th>
                 <th className="p-4 text-right pr-6">Action</th>
               </tr>
@@ -137,22 +147,44 @@ export default function DeliveryExceptions() {
                   <td className="p-4 text-orange-400 font-bold">
                     {order.status}
                   </td>
-                  <td className="p-4 text-red-400 font-bold flex items-center gap-2">
-                    <AlertCircle size={16} />
-                    {order.exceptionType.replace(/_/g, ' ')}
+                  <td className="p-4 font-medium">
+                    <div className="flex flex-col">
+                      <span className="text-red-400 font-bold flex items-center gap-1.5">
+                        <AlertCircle size={15} />
+                        {order.exceptionType.replace(/_/g, ' ')}
+                      </span>
+                      {order.riderName && (
+                        <span className="text-xs text-slate-400 mt-0.5 font-normal">
+                          Assigned: <strong className="text-slate-200">{order.riderName}</strong>
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="p-4 text-stitch-muted flex items-center gap-1">
                     <Clock size={14} />
                     {getAgeText(order.created_at)}
                   </td>
                   <td className="p-4 pr-6 text-right">
-                    <button 
-                      onClick={() => setSelectedException(order)}
-                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors shadow-lg shadow-red-500/20 flex items-center gap-2 ml-auto"
-                    >
-                      <RotateCcw size={14} />
-                      Recover
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      {order.isOrphan && (
+                        <button 
+                          onClick={() => { setSelectedException(order); setActionType('recover'); }}
+                          className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors shadow-lg shadow-red-500/20 flex items-center gap-1.5"
+                          title="Reset status back to READY so a rider can claim"
+                        >
+                          <RotateCcw size={14} />
+                          Recover
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => { setSelectedException(order); setActionType('settle'); }}
+                        className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors shadow-lg shadow-purple-600/20 flex items-center gap-1.5"
+                        title="Permanently complete/clear this delivery order"
+                      >
+                        <RefreshCw size={14} />
+                        Force Settle
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -161,37 +193,52 @@ export default function DeliveryExceptions() {
         </div>
       </div>
 
-      {/* Recovery Modal */}
+      {/* Confirmation Modal */}
       {selectedException && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-fade-in">
           <div className="bg-stitch-panel border border-stitch-border rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in">
             <h3 className="text-xl font-black text-white flex items-center gap-2 mb-4">
-              <RotateCcw className="text-red-500" />
-              Reset to READY
+              {actionType === 'settle' ? (
+                <>
+                  <RefreshCw className="text-purple-400" />
+                  Force Settle & Clear Order
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="text-red-500" />
+                  Reset to READY
+                </>
+              )}
             </h3>
             
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
-              <p className="text-red-200 text-sm leading-relaxed font-medium">
-                Order <strong className="text-white">#{selectedException.id}</strong> is{' '}
-                <strong className="text-orange-400">{selectedException.status.replace(/_/g, ' ')}</strong> but has no assigned rider.
+            <div className={`p-4 mb-6 rounded-xl border ${actionType === 'settle' ? 'bg-purple-500/10 border-purple-500/30 text-purple-200' : 'bg-red-500/10 border-red-500/30 text-red-200'}`}>
+              <p className="text-sm leading-relaxed font-medium">
+                Order <strong className="text-white">#{selectedException.id}</strong> is currently{' '}
+                <strong className="text-orange-400">{selectedException.status.replace(/_/g, ' ')}</strong>
+                {selectedException.riderName ? ` (with ${selectedException.riderName})` : ' (no rider)'}.
                 <br /><br />
-                {selectedException.status === 'PRINT_BILL'
-                  ? 'This order was billed but never dispatched to a rider. Resetting it to '
-                  : 'This order was dispatched without a rider. Resetting it to '}
-                <strong className="text-green-400">READY</strong> will make it available again for Riders to claim.
+                {actionType === 'settle' ? (
+                  <span>
+                    This will mark the order as <strong className="text-purple-300">SETTLED</strong> permanently. It will be cleared from the Rider app and POS queues immediately.
+                  </span>
+                ) : (
+                  <span>
+                    Resetting to <strong className="text-green-400">READY</strong> will return this order to the available pool for riders to claim.
+                  </span>
+                )}
               </p>
             </div>
 
-            <form onSubmit={handleResetOrder}>
+            <form onSubmit={handleAction}>
               <div className="mb-6">
                 <label className="block text-stitch-muted text-sm font-bold mb-2">
-                  Reason for Recovery (Required)
+                  Reason for Action (Required)
                 </label>
                 <textarea
                   value={reason}
                   onChange={e => setReason(e.target.value)}
-                  placeholder="e.g., Order was dispatched without rider assignment."
-                  className="w-full bg-stitch-surface border border-stitch-border rounded-xl p-3 text-white focus:outline-none focus:border-red-500 transition-colors resize-none h-24"
+                  placeholder={actionType === 'settle' ? 'e.g., Stale order from previous day, already completed/cleared.' : 'e.g., Order was dispatched without rider assignment.'}
+                  className="w-full bg-stitch-surface border border-stitch-border rounded-xl p-3 text-white focus:outline-none focus:border-purple-500 transition-colors resize-none h-24"
                   required
                   disabled={recovering}
                 />
@@ -209,14 +256,20 @@ export default function DeliveryExceptions() {
                 <button
                   type="submit"
                   disabled={recovering || !reason.trim()}
-                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-red-500/25 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2"
+                  className={`flex-1 font-bold py-3 rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 text-white ${
+                    actionType === 'settle' 
+                      ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/25'
+                      : 'bg-red-500 hover:bg-red-600 shadow-red-500/25'
+                  }`}
                 >
                   {recovering ? (
                     <RefreshCw className="animate-spin" size={18} />
+                  ) : actionType === 'settle' ? (
+                    <RefreshCw size={18} />
                   ) : (
                     <RotateCcw size={18} />
                   )}
-                  {recovering ? 'Resetting...' : 'Confirm Reset'}
+                  {recovering ? 'Processing...' : actionType === 'settle' ? 'Confirm Settle' : 'Confirm Reset'}
                 </button>
               </div>
             </form>

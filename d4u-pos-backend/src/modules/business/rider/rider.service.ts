@@ -820,27 +820,35 @@ export class RiderService {
       throw new ForbiddenException('Cross-store access denied.');
     }
 
-    // Online orders in exception state with no rider
+    // 1. Online orders: either orphaned (PRINT_BILL/DISPATCHED without rider)
+    // or active/stale delivery orders that are un-settled
     const onlineExceptions = await this.prisma.onlineOrder.findMany({
       where: {
         store_id: storeId,
-        status: { in: [...RiderService.EXCEPTION_STATUSES] },
-        claimedByRiderId: null,
         type: { equals: 'DELIVERY', mode: 'insensitive' },
+        status: { notIn: ['SETTLED', 'CANCELLED'] },
+        OR: [
+          { status: { in: [...RiderService.EXCEPTION_STATUSES] }, claimedByRiderId: null },
+          { claimedByRiderId: { not: null } },
+        ],
       },
       orderBy: { createdAt: 'asc' },
     });
 
-    // POS delivery orders in exception state with no rider
+    // 2. POS delivery orders: either orphaned or active/stale
     const posExceptions = await this.prisma.order.findMany({
       where: {
         store_id: storeId,
-        status: { in: [...RiderService.EXCEPTION_STATUSES] },
-        rider_id: null,
         order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+        status: { notIn: ['SETTLED', 'CANCELLED'] },
+        OR: [
+          { status: { in: [...RiderService.EXCEPTION_STATUSES] }, rider_id: null },
+          { rider_id: { not: null } },
+        ],
       },
       include: {
         customer: true,
+        rider: true,
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -852,7 +860,11 @@ export class RiderService {
       customer_name: o.customer ?? null,
       customerAddress: o.customerAddress ?? null,
       created_at: o.createdAt,
-      exceptionType: o.status === 'DISPATCHED' ? 'DISPATCHED_NO_RIDER' : 'PRINT_BILL_NO_RIDER',
+      riderName: o.claimedByRiderName || (o.claimedByRiderId ? `Rider #${o.claimedByRiderId}` : null),
+      isOrphan: o.claimedByRiderId == null,
+      exceptionType: o.claimedByRiderId == null 
+        ? (o.status === 'DISPATCHED' ? 'DISPATCHED_NO_RIDER' : o.status === 'PRINT_BILL' ? 'PRINT_BILL_NO_RIDER' : `${o.status}_NO_RIDER`)
+        : `ACTIVE_DELIVERY (${o.status})`,
     }));
 
     const posMapped = posExceptions.map((o) => ({
@@ -862,12 +874,120 @@ export class RiderService {
       customer_name: o.customer?.name ?? 'Walk-in',
       customerAddress: o.delivery_address ?? null,
       created_at: o.createdAt,
-      exceptionType: o.status === 'DISPATCHED' ? 'DISPATCHED_NO_RIDER' : 'PRINT_BILL_NO_RIDER',
+      riderName: o.rider?.name || (o.rider_id ? `Rider #${o.rider_id}` : null),
+      isOrphan: o.rider_id == null,
+      exceptionType: o.rider_id == null
+        ? (o.status === 'DISPATCHED' ? 'DISPATCHED_NO_RIDER' : o.status === 'PRINT_BILL' ? 'PRINT_BILL_NO_RIDER' : `${o.status}_NO_RIDER`)
+        : `ACTIVE_DELIVERY (${o.status})`,
     }));
 
     return [...onlineMapped, ...posMapped].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     );
+  }
+
+  /**
+   * Permanently settles/completes a delivery order from Admin Delivery Exceptions.
+   * Can be used on orphaned or stale in-progress orders (e.g. past days' orders
+   * that are blocking riders or no longer active on POS).
+   */
+  async adminForceSettleDeliveryException(orderId: number, callerJwt: any, reason: string) {
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('A reason is required for force settling.');
+    }
+
+    const caller = await this.prisma.user.findUnique({
+      where: { id: callerJwt.sub },
+      include: { role: true },
+    });
+    if (!caller) throw new ForbiddenException('Caller not found.');
+
+    if (caller.role?.name === 'Rider') {
+      throw new ForbiddenException('Riders may not force settle delivery exceptions.');
+    }
+
+    let order: any = await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
+    let isPos = false;
+
+    if (!order) {
+      order = await this.prisma.order.findUnique({ where: { id: orderId } });
+      isPos = true;
+    }
+
+    if (!order) throw new NotFoundException(`Order #${orderId} not found.`);
+
+    const isSuperAdmin = caller.role?.name === 'Super Admin' || callerJwt.role === 'Super Admin';
+    if (!isSuperAdmin && Number(caller.store_id) !== Number(order.store_id)) {
+      throw new ForbiddenException('Cross-store settlement denied.');
+    }
+
+    if (order.status === 'SETTLED' || order.status === 'CANCELLED') {
+      throw new BadRequestException(`Order #${orderId} is already ${order.status}.`);
+    }
+
+    const previousStatus = order.status;
+    const previousRiderId = isPos ? order.rider_id : order.claimedByRiderId;
+
+    if (isPos) {
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          status: 'SETTLED',
+          payment_status: 'PAID',
+        },
+      });
+    } else {
+      await this.prisma.onlineOrder.update({
+        where: { id: orderId },
+        data: {
+          status: 'SETTLED',
+          kdsStatus: 'READY',
+        },
+      });
+      if (order.posOrderId) {
+        await this.prisma.order.updateMany({
+          where: { id: order.posOrderId },
+          data: {
+            status: 'SETTLED',
+            payment_status: 'PAID',
+          },
+        });
+      }
+    }
+
+    const updatedOrder = isPos
+      ? await this.prisma.order.findUnique({ where: { id: orderId } })
+      : await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
+
+    if (this.prisma.systemAuditLog) {
+      await this.prisma.systemAuditLog.create({
+        data: {
+          action: 'DELIVERY_EXCEPTION_FORCE_SETTLE',
+          entity: isPos ? 'Order' : 'OnlineOrder',
+          entity_id: Number(orderId),
+          user_id: Number(caller.id),
+          user_name: caller.name,
+          details: {
+            previousStatus,
+            newStatus: 'SETTLED',
+            previousRiderId,
+            reason: reason.trim(),
+            settledBy: caller.name || caller.id,
+          },
+        },
+      }).catch(() => {});
+    }
+
+    const room = `store_${order.store_id}`;
+    this.gateway.broadcast('order_updated', updatedOrder, room);
+
+    return {
+      success: true,
+      orderId,
+      previousStatus,
+      newStatus: 'SETTLED',
+      message: `Order #${orderId} has been successfully settled and cleared.`,
+    };
   }
 
   /**
