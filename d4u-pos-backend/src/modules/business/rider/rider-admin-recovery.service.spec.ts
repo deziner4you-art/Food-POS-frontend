@@ -27,8 +27,8 @@ describe('RiderService — Sprint 29.3A Admin Delivery Exception Recovery', () =
   let prisma: any;
   let gateway: any;
 
-  const ADMIN = { sub: 'admin-1', role: { name: 'Admin' }, store_id: 1, id: 'admin-1', name: 'Admin One' };
-  const RIDER = { sub: 'rider-1', role: { name: 'Rider' }, store_id: 1, id: 'rider-1', name: 'Rider One' };
+  const ADMIN = { sub: 1, role: { name: 'Admin' }, store_id: 1, id: 1, name: 'Admin One' };
+  const RIDER = { sub: 2, role: { name: 'Rider' }, store_id: 1, id: 2, name: 'Rider One' };
 
   beforeEach(async () => {
     prisma = {
@@ -216,8 +216,8 @@ describe('RiderService — Sprint 29.3A Admin Delivery Exception Recovery', () =
         data: expect.objectContaining({
           action: 'DELIVERY_EXCEPTION_RESET',
           entity: 'OnlineOrder',
-          entity_id: '1',
-          user_id: 'admin-1',
+          entity_id: 1,
+          user_id: 1,
           details: expect.objectContaining({
             previousStatus: 'DISPATCHED',
             newStatus: 'READY',
@@ -265,8 +265,8 @@ describe('RiderService — Sprint 29.3A Admin Delivery Exception Recovery', () =
         data: expect.objectContaining({
           action: 'DELIVERY_EXCEPTION_RESET',
           entity: 'OnlineOrder',
-          entity_id: '25',
-          user_id: 'admin-1',
+          entity_id: 25,
+          user_id: 1,
           details: expect.objectContaining({
             previousStatus: 'PRINT_BILL',
             newStatus: 'READY',

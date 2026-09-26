@@ -809,7 +809,10 @@ export class RiderService {
     if (!storeId) throw new BadRequestException('store_id is required.');
 
     // Resolve authoritative caller from DB
-    const caller = await this.prisma.user.findUnique({ where: { id: callerJwt.sub } });
+    const caller = await this.prisma.user.findUnique({
+      where: { id: callerJwt.sub },
+      include: { role: true },
+    });
     if (!caller) throw new ForbiddenException('Caller not found.');
 
     const isSuperAdmin = caller.role?.name === 'Super Admin' || callerJwt.role === 'Super Admin';
@@ -823,9 +826,9 @@ export class RiderService {
         store_id: storeId,
         status: { in: [...RiderService.EXCEPTION_STATUSES] },
         claimedByRiderId: null,
-        order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+        type: { equals: 'DELIVERY', mode: 'insensitive' },
       },
-      orderBy: { created_at: 'asc' },
+      orderBy: { createdAt: 'asc' },
     });
 
     // POS delivery orders in exception state with no rider
@@ -836,16 +839,19 @@ export class RiderService {
         rider_id: null,
         order_source: { equals: 'DELIVERY', mode: 'insensitive' },
       },
-      orderBy: { created_at: 'asc' },
+      include: {
+        customer: true,
+      },
+      orderBy: { createdAt: 'asc' },
     });
 
     const onlineMapped = onlineExceptions.map((o) => ({
       id: o.id,
       isPos: false,
       status: o.status,
-      customer_name: o.customer_name ?? null,
-      customerAddress: o.customer_address ?? null,
-      created_at: o.created_at,
+      customer_name: o.customer ?? null,
+      customerAddress: o.customerAddress ?? null,
+      created_at: o.createdAt,
       exceptionType: o.status === 'DISPATCHED' ? 'DISPATCHED_NO_RIDER' : 'PRINT_BILL_NO_RIDER',
     }));
 
@@ -853,9 +859,9 @@ export class RiderService {
       id: o.id,
       isPos: true,
       status: o.status,
-      customer_name: o.customer_name ?? null,
-      customerAddress: o.customer_address ?? null,
-      created_at: o.created_at,
+      customer_name: o.customer?.name ?? 'Walk-in',
+      customerAddress: o.delivery_address ?? null,
+      created_at: o.createdAt,
       exceptionType: o.status === 'DISPATCHED' ? 'DISPATCHED_NO_RIDER' : 'PRINT_BILL_NO_RIDER',
     }));
 
@@ -884,7 +890,10 @@ export class RiderService {
     }
 
     // 2. Resolve authoritative caller from DB
-    const caller = await this.prisma.user.findUnique({ where: { id: callerJwt.sub } });
+    const caller = await this.prisma.user.findUnique({
+      where: { id: callerJwt.sub },
+      include: { role: true },
+    });
     if (!caller) throw new ForbiddenException('Caller not found.');
 
     // 3. Riders may not perform this action
@@ -972,22 +981,25 @@ export class RiderService {
       : await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
 
     // 13. SystemAuditLog
-    await this.prisma.systemAuditLog.create({
-      data: {
-        action: 'DELIVERY_EXCEPTION_RESET',
-        entity: isPos ? 'Order' : 'OnlineOrder',
-        entity_id: String(orderId),
-        user_id: String(caller.id),
-        details: {
-          previousStatus,
-          newStatus: 'READY',
-          previousRider: null,
-          newRider: null,
-          reason: reason.trim(),
-          recoveredBy: caller.name || caller.id,
+    if (this.prisma.systemAuditLog) {
+      await this.prisma.systemAuditLog.create({
+        data: {
+          action: 'DELIVERY_EXCEPTION_RESET',
+          entity: isPos ? 'Order' : 'OnlineOrder',
+          entity_id: Number(orderId),
+          user_id: Number(caller.id),
+          user_name: caller.name,
+          details: {
+            previousStatus,
+            newStatus: 'READY',
+            previousRider: null,
+            newRider: null,
+            reason: reason.trim(),
+            recoveredBy: caller.name || caller.id,
+          },
         },
-      },
-    });
+      }).catch(() => {});
+    }
 
     // 14. Real-time broadcast
     const room = `store_${order.store_id}`;
