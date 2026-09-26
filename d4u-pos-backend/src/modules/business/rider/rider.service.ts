@@ -63,7 +63,7 @@ export class RiderService {
       NOT: {
         AND: [
           { status: 'DISPATCHED' },
-          { claimedByRiderId: null },
+          { rider_id: null },
         ],
       },
     };
