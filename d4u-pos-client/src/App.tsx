@@ -6303,6 +6303,7 @@ export default function App() {
           const parsed = JSON.parse(main);
           if (parsed?.role === 'Chef') {
             localStorage.setItem('d4u_kds_user', main);
+            localStorage.removeItem('d4u_main_user');
             return parsed;
           }
         }
