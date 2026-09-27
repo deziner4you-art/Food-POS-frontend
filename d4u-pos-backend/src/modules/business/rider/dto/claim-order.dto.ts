@@ -1,6 +1,9 @@
 import { IsOptional } from 'class-validator';
 
 export class ClaimOrderDto {
+  @IsOptional()
+  entityType?: 'ONLINE' | 'POS' | string;
+
   // Task #2J: the server now derives the claiming rider's identity from the
   // authenticated JWT (request.user.sub), never from this field -- it's
   // accepted-but-ignored, kept optional only so the existing rider app's

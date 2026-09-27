@@ -6,6 +6,11 @@
  * and satisfy active delivery lifecycle progression rules.
  */
 import { isValidPosIntegerId } from '../db';
+import {
+  getCanonicalDeliveryIdentity,
+  getCanonicalDeliveryIdentityKey,
+  normalizeDeliveryEntityType,
+} from './deliveryIdentity';
 
 export interface DeliveryCardIdentity {
   store_id?: number | null;
@@ -95,6 +100,10 @@ export function filterEligibleDeliveries(
 
 export interface KdsDeliveryUpdateEvent {
   order_id?: number | null;
+  entityType?: 'ONLINE' | 'POS' | string | null;
+  entity_type?: 'ONLINE' | 'POS' | string | null;
+  entityId?: number | null;
+  entity_id?: number | null;
   status?: string | null;
   store_id?: number | null;
   business_day_id?: number | null;
@@ -138,7 +147,22 @@ export function applyKdsDeliveryUpdate(
     return { deliveries: current, becameReadyDeliveryId: null };
   }
 
-  const index = current.findIndex(d => d.bridgeOrderId === event.order_id || d.id === event.order_id);
+  const rawEntityType = event.entityType ?? event.entity_type;
+  const explicitEntityType = normalizeDeliveryEntityType(rawEntityType);
+  const eventIdentity = getCanonicalDeliveryIdentity({
+    entityType: rawEntityType,
+    entityId: event.entityId ?? event.entity_id,
+  });
+
+  // Requirement 1, 2, 3: Reject any event without valid canonical entityType and entityId.
+  // Legacy numeric-only matching (delivery.id === order_id or delivery.bridgeOrderId === order_id)
+  // is completely removed so a numeric event can never mutate any delivery.
+  if (!explicitEntityType || !eventIdentity) {
+    return { deliveries: current, becameReadyDeliveryId: null };
+  }
+
+  const eventKey = getCanonicalDeliveryIdentityKey(eventIdentity);
+  const index = current.findIndex(d => getCanonicalDeliveryIdentityKey(d) === eventKey);
   if (index < 0) {
     // Socket updates never create delivery cards. The authoritative READY/KOT
     // path owns insertion and supplies the complete identity-bearing record.
@@ -172,6 +196,6 @@ export function applyKdsDeliveryUpdate(
 
   return {
     deliveries: current.map((delivery, itemIndex) => itemIndex === index ? updated : delivery),
-    becameReadyDeliveryId: existing.status === 'READY' ? null : (updated.id ?? updated.bridgeOrderId ?? null),
+    becameReadyDeliveryId: existing.status === 'READY' ? null : updated.entityId,
   };
 }

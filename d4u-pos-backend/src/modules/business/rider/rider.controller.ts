@@ -24,8 +24,8 @@ export class RiderController {
 
   @RequirePermissions('delivery.tracking.read')
   @Get('gps/:orderId')
-  getRiderGps(@Param('orderId') orderId: string) {
-    return this.service.getRiderGps(orderId);
+  getRiderGps(@Param('orderId') orderId: string, @Query('entityType') entityType?: string) {
+    return this.service.getRiderGps(orderId, entityType);
   }
 }
 
@@ -61,7 +61,9 @@ export class RiderOrdersController {
     @Param('id') id: string,
     @Body() body: ClaimOrderDto,
   ) {
-    return this.service.claimOrder(Number(id), user);
+    return body?.entityType
+      ? this.service.claimOrder(Number(id), user, body.entityType)
+      : this.service.claimOrder(Number(id), user);
   }
 
   // Delivery Release / Recovery:
@@ -74,8 +76,9 @@ export class RiderOrdersController {
   releaseOrder(
     @CurrentUser() user: any,
     @Param('id') id: string,
+    @Query('entityType') entityType?: string,
   ) {
-    return this.service.releaseRiderAssignment(Number(id), user);
+    return this.service.releaseRiderAssignment(Number(id), user, entityType);
   }
 
   // Admin / Manager Force-Release:
@@ -87,8 +90,9 @@ export class RiderOrdersController {
   adminForceReleaseOrder(
     @CurrentUser() user: any,
     @Param('id') id: string,
+    @Query('entityType') entityType?: string,
   ) {
-    return this.service.adminForceReleaseRiderAssignment(Number(id), user);
+    return this.service.adminForceReleaseRiderAssignment(Number(id), user, entityType);
   }
 
   @RequirePermissions('delivery.dispatch.assign')
@@ -96,8 +100,9 @@ export class RiderOrdersController {
   adminForceReleaseOrderAlias(
     @CurrentUser() user: any,
     @Param('id') id: string,
+    @Query('entityType') entityType?: string,
   ) {
-    return this.service.adminForceReleaseRiderAssignment(Number(id), user);
+    return this.service.adminForceReleaseRiderAssignment(Number(id), user, entityType);
   }
 
   // Admin Delivery Exception Recovery:
@@ -118,8 +123,9 @@ export class RiderOrdersController {
     @CurrentUser() user: any,
     @Param('id') id: string,
     @Body() body: { reason: string },
+    @Query('entityType') entityType?: string,
   ) {
-    return this.service.adminRecoverDeliveryException(Number(id), user, body.reason);
+    return this.service.adminRecoverDeliveryException(Number(id), user, body.reason, entityType);
   }
 
   // Force settles/clears a delivery order permanently (e.g. past days' stale orders).
@@ -129,7 +135,8 @@ export class RiderOrdersController {
     @CurrentUser() user: any,
     @Param('id') id: string,
     @Body() body: { reason: string },
+    @Query('entityType') entityType?: string,
   ) {
-    return this.service.adminForceSettleDeliveryException(Number(id), user, body.reason);
+    return this.service.adminForceSettleDeliveryException(Number(id), user, body.reason, entityType);
   }
 }

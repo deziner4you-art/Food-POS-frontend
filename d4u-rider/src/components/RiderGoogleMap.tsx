@@ -78,7 +78,7 @@ export const RiderGoogleMap: React.FC<RiderGoogleMapProps> = ({
 
   // Initialize Google Maps
   useEffect(() => {
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    const apiKey = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_GOOGLE_MAPS_API_KEY;
 
     if (!apiKey || apiKey.trim() === '' || apiKey === 'YOUR_GOOGLE_MAPS_API_KEY') {
       setMapApiStatus('missing_key');

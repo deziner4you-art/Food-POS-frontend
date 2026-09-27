@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Store, Navigation, MapPin, Radio, Shield, AlertTriangle, RefreshCw, ZoomIn, ZoomOut, Compass } from 'lucide-react';
+import { getDeliveryIdentityKey } from '../utils/deliveryIdentity';
 
 interface RiderLocationData {
   riderId: number;
@@ -16,8 +17,8 @@ interface RiderLocationData {
 
 interface DeliveryGoogleMapProps {
   activeDeliveries: any[];
-  selectedDeliveryId: number | null;
-  onSelectDelivery?: (id: number) => void;
+  selectedDeliveryId: string | null;
+  onSelectDelivery?: (id: string) => void;
   storeId?: number;
   storeName?: string;
   socket?: any;
@@ -358,7 +359,7 @@ export const DeliveryGoogleMap: React.FC<DeliveryGoogleMapProps> = ({
           activeInfoWindowRef.current = infoWindow;
 
           if (assignedDelivery && onSelectDelivery) {
-            onSelectDelivery(assignedDelivery.id);
+            onSelectDelivery(getDeliveryIdentityKey(assignedDelivery) || '');
           }
         });
 
@@ -387,7 +388,7 @@ export const DeliveryGoogleMap: React.FC<DeliveryGoogleMapProps> = ({
   // 5. Center map on selected delivery's rider if selected
   useEffect(() => {
     if (mapStatus !== 'ready' || !mapInstanceRef.current || !selectedDeliveryId) return;
-    const selectedDel = activeDeliveries.find(d => d.id === selectedDeliveryId);
+    const selectedDel = activeDeliveries.find(d => getDeliveryIdentityKey(d) === selectedDeliveryId);
     if (!selectedDel || !selectedDel.claimedByRiderId) return;
 
     const riderLoc = riderLocations.get(Number(selectedDel.claimedByRiderId));
@@ -439,7 +440,7 @@ export const DeliveryGoogleMap: React.FC<DeliveryGoogleMapProps> = ({
 
   // Convert map to array for telemetry list
   const riderList = Array.from(riderLocations.values());
-  const selectedDel = activeDeliveries.find(d => d.id === selectedDeliveryId) || activeDeliveries[0];
+  const selectedDel = activeDeliveries.find(d => getDeliveryIdentityKey(d) === selectedDeliveryId) || activeDeliveries[0];
 
   return (
     <div className="delivery-map-section relative w-full h-full min-h-[420px] bg-[#070e1d] rounded-xl overflow-hidden flex flex-col border border-slate-800 shadow-2xl">

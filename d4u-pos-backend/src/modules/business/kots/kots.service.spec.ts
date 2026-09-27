@@ -88,13 +88,13 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
 
       await service.acceptKOT(42);
 
-      expect(gateway.broadcast).toHaveBeenCalledWith('kds_update', {
+      expect(gateway.broadcast).toHaveBeenCalledWith('kds_update', expect.objectContaining({
         kot_id: 42,
         order_id: 900,
         status: 'PREPARING',
         store_id: 67,
         business_day_id: 88,
-      });
+      }));
     });
 
     it('mirrors a linked ONLINE order to KITCHEN_PREPARING (matches the old PREPARING path exactly)', async () => {
@@ -233,13 +233,13 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
 
       await service.cancelKOT(42);
 
-      expect(gateway.broadcast).toHaveBeenCalledWith('kds_update', {
+      expect(gateway.broadcast).toHaveBeenCalledWith('kds_update', expect.objectContaining({
         kot_id: 42,
         order_id: 900,
         status: 'CANCELLED',
         store_id: 67,
         business_day_id: 88,
-      });
+      }));
       expect(gateway.broadcast).not.toHaveBeenCalledWith('order_updated', expect.anything(), expect.anything());
     });
 
@@ -290,7 +290,7 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
 
       await service.acceptKOT(42);
 
-      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', onlineOrder, 'store_67');
+      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', expect.objectContaining({ ...onlineOrder, entityType: 'ONLINE', entityId: 501 }), 'store_67');
     });
 
     it('broadcasting order_updated to store room when online order status changes to READY', async () => {
@@ -306,7 +306,7 @@ describe('KotsService — accept/bump/cancel (Task #2P-G)', () => {
 
       await service.bumpKOT(42);
 
-      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', onlineOrder, 'store_67');
+      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', expect.objectContaining({ ...onlineOrder, entityType: 'ONLINE', entityId: 501 }), 'store_67');
     });
   });
 

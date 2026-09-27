@@ -32,6 +32,13 @@ export interface Customer {
 
 export interface DeliveryOrder {
   id: string;
+  /** Canonical delivery namespace. Numeric ids are not globally unique. */
+  entityType?: 'ONLINE' | 'POS';
+  entityId?: number | string;
+  onlineOrderId?: number | null;
+  posOrderId?: number | null;
+  store_id?: number | null;
+  businessDayId?: number | null;
   source: 'POS' | 'ONLINE_ORDER'; // link channel
   restaurantName: string;
   restaurantAddress: string;
@@ -59,6 +66,8 @@ export interface DeliveryOrder {
 export interface SavedCompletedMission {
   id: string;
   orderId: string;
+  entityType?: 'ONLINE' | 'POS';
+  entityId?: number | string;
   restaurant: string;
   customer: string;
   earnings: number;

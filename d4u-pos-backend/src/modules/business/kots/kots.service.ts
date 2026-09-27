@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
+import { formatOnlineOrderForRider } from '../../../common/utils/delivery-identity.util';
 
 @Injectable()
 export class KotsService {
@@ -188,6 +189,12 @@ export class KotsService {
 
       const events: Array<{ event: string; payload: any; room?: string }> = [];
 
+      const linkedOnlineForKds = updatedKot.order?.order_source?.toUpperCase() === 'ONLINE'
+        ? await tx.onlineOrder.findUnique({ where: { posOrderId: updatedKot.order_id }, select: { id: true } })
+        : null;
+      const kdsEntityType = linkedOnlineForKds ? 'ONLINE' : 'POS';
+      const kdsEntityId = linkedOnlineForKds?.id ?? updatedKot.order_id;
+
       // KDS realtime notification
       events.push({
         event: 'kds_update',
@@ -197,6 +204,10 @@ export class KotsService {
           status,
           store_id: updatedKot.store_id,
           business_day_id: updatedKot.business_day_id,
+          entityType: kdsEntityType,
+          entityId: kdsEntityId,
+          entity_type: kdsEntityType,
+          entity_id: kdsEntityId,
         },
       });
 
@@ -238,7 +249,11 @@ export class KotsService {
           });
           events.push({
             event: 'order_updated',
-            payload: updatedOnlineOrder,
+            payload: {
+              ...formatOnlineOrderForRider(updatedOnlineOrder),
+              businessDayId: updatedKot.business_day_id,
+              business_day_id: updatedKot.business_day_id,
+            },
             room: `store_${updatedKot.store_id}`,
           });
         }

@@ -5,6 +5,7 @@ import { AppGateway } from '../../../app.gateway';
 import { PricingService } from '../pos-orders/pricing.service';
 import { CustomersService } from '../customers/customers.service';
 import { normalizePhone } from '../../../common/utils/phone.util';
+import { formatOnlineOrderForRider } from '../../../common/utils/delivery-identity.util';
 
 @Injectable()
 export class OnlineOrdersService {
@@ -127,7 +128,7 @@ export class OnlineOrdersService {
     console.log(
       `[NEW ORDER] #${updatedOrder.id} — Store: ${storeId} — ${updatedOrder.items}`,
     );
-    this.gateway.broadcast('new_order', updatedOrder, `store_${storeId}`);
+    this.gateway.broadcast('new_order', formatOnlineOrderForRider(updatedOrder), `store_${storeId}`);
 
     // Award Loyalty Points — via the same CustomersService.earnPoints used by
     // PosOrdersService.createOrder, not a second, independent formula. The
@@ -635,7 +636,12 @@ export class OnlineOrdersService {
         // never appeared on an already-open KDS screen.
         this.gateway.broadcast(
           'kds_update',
-          { order_id: kitchenOrder.id, store_id: updated.store_id, items: kitchenOrder.items },
+          {
+            order_id: kitchenOrder.id,
+            store_id: updated.store_id,
+            business_day_id: kitchenOrder.business_day_id,
+            items: kitchenOrder.items,
+          },
           `store_${updated.store_id}`,
         );
       }
@@ -795,7 +801,7 @@ export class OnlineOrdersService {
       );
       this.gateway.broadcast(
         'order_updated',
-        updated,
+        formatOnlineOrderForRider(updated),
         `store_${updated.store_id}`,
       );
       return { success: true, order: updated };

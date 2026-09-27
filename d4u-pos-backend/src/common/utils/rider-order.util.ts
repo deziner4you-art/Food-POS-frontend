@@ -8,8 +8,15 @@
  * so the two paths can never drift apart again.
  */
 export function formatPosOrderForRider(order: any) {
+  const businessDayId = order.businessDayId ?? order.business_day_id ?? null;
   return {
     id: order.id,
+    entityType: 'POS' as const,
+    entityId: order.id,
+    onlineOrderId: null,
+    posOrderId: order.id,
+    businessDayId,
+    business_day_id: businessDayId,
     store_id: order.store_id,
     orderId: order.id,
     status: order.status,
@@ -19,12 +26,14 @@ export function formatPosOrderForRider(order: any) {
     customer: order.customer ? order.customer.name : 'Guest',
     customerPhone: order.customer ? order.customer.phone : '',
     customerAddress: order.delivery_address || 'No Address Provided',
-    items: order.items.map((i: any) => `${i.quantity}x ${i.product.name}`).join(', '),
+    items: (order.items || []).map((i: any) => `${i.quantity}x ${i.product?.name || i.name || 'Item'}`).join(', '),
     totalAmount: String(order.total_amount),
     notes: order.customer_feedback || '',
     prepTimeMinutes: 0,
     estimatedReadyAt: '',
-    timePlaced: order.createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+    timePlaced: order.createdAt instanceof Date
+      ? order.createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      : '',
     riderAssigned: !!order.rider_id,
     claimedByRiderId: order.rider_id ?? null,
     claimedByRiderName: order.rider?.name ?? null,

@@ -18,6 +18,7 @@ import { db, createOfflineKot, validateOfflineKotIdentity, isValidPosIntegerId }
 import { isKotEligible } from './utils/kotEligibility';
 import { isDeliveryEligible, isDeliveryActiveStatus, filterEligibleDeliveries, applyKdsDeliveryUpdate } from './utils/deliveryEligibility';
 import { verifyAuthoritativeBusinessDay } from './utils/businessDayVerification';
+import { getDeliveryEntityId, getDeliveryEntityType, getDeliveryIdentityKey } from './utils/deliveryIdentity';
 import KitchenDisplay from './StitchKDS'
 import TVDisplay from './TVDisplay'
 import AdminDashboard from './AdminDashboard'
@@ -588,10 +589,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   // Releases a stuck rider assignment without cancelling, deleting, or altering order contents.
   const handleAdminForceRelease = async (order: any) => {
     if (!order) return;
-    const targetOrderId = order.bridgeOrderId || order.id;
+    const targetOrderId = order.entityId ?? order.bridgeOrderId ?? order.id;
+    const targetEntityType = getDeliveryEntityType(order);
     setForceReleasing(true);
     try {
-      const res = await apiFetch(`/rider-orders/${targetOrderId}/force-release`, {
+      const res = await apiFetch(`/rider-orders/${targetOrderId}/force-release?entityType=${targetEntityType}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         auth: true,
@@ -600,7 +602,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       if (res.ok) {
         // Immediate local state update for responsiveness
         setActiveDeliveries(prev => prev.map(d => {
-          if (d.bridgeOrderId === targetOrderId || d.id === targetOrderId) {
+          if (getDeliveryIdentityKey(d) === getDeliveryIdentityKey(order)) {
             return {
               ...d,
               status: 'READY',
@@ -613,6 +615,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         }));
 
         setBackendOnlineOrders(prev => prev.map(o => {
+          if (getDeliveryIdentityKey(o) !== getDeliveryIdentityKey(order)) return o;
           if (o.id === targetOrderId) {
             return {
               ...o,
@@ -798,8 +801,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     fetchInitialData();
 
     const handleNewOrder = (order: any) => {
+      const orderKey = getDeliveryIdentityKey(order);
+      if (!orderKey) return;
       setBackendOnlineOrders(prev => {
-        if (!prev.find(o => o.id === order.id)) {
+        if (!prev.find(o => getDeliveryIdentityKey(o) === orderKey)) {
           setToast({ message: `New Order Received: #${order.id}`, type: 'success' });
           // Optional: play a notification sound here
           return [...prev, order];
@@ -809,8 +814,23 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     };
 
     const handleOrderUpdated = (order: any) => {
-      setBackendOnlineOrders(prev => {
-        const idx = prev.findIndex(o => o.id === order.id);
+      const orderEntityType = getDeliveryEntityType(order);
+      const orderEntityId = getDeliveryEntityId(order);
+      const orderIdentityKey = getDeliveryIdentityKey(order);
+      if (!orderIdentityKey) return;
+      const eventStoreId = order.posOrder?.store_id || order.store_id || order.storeId;
+      const eventBusinessDayId = order.posOrder?.business_day_id || order.business_day_id || order.businessDayId;
+      if (!isValidPosIntegerId(activeStoreId) || !isValidPosIntegerId(activeBusinessDayId) ||
+          !isValidPosIntegerId(eventStoreId) || eventStoreId !== activeStoreId) {
+        return;
+      }
+      if (eventBusinessDayId !== undefined && eventBusinessDayId !== null &&
+          (!isValidPosIntegerId(eventBusinessDayId) || eventBusinessDayId !== activeBusinessDayId)) {
+        return;
+      }
+
+      if (orderEntityType === 'ONLINE') setBackendOnlineOrders(prev => {
+        const idx = prev.findIndex(o => getDeliveryIdentityKey(o) === orderIdentityKey);
         if (idx > -1) {
           const arr = [...prev];
           arr[idx] = order;
@@ -828,27 +848,32 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       // tab on this same browser — never true when the kitchen display is a
       // separate device, which is the normal deployment.
       if (['SETTLED', 'CANCELLED', 'VOIDED', 'COMPLETED'].includes(order.status)) {
-        setActiveDeliveries(prev => prev.filter(d => d.bridgeOrderId !== order.id));
+        setActiveDeliveries(prev => prev.filter(d => getDeliveryIdentityKey(d) !== orderIdentityKey));
         return;
       }
 
       if (['KITCHEN_PREPARING', 'READY', 'RIDER_ARRIVED', 'PRINT_BILL', 'DISPATCHED', 'RIDER_ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'PAID', 'WAITING_CASH_SETTLEMENT'].includes(order.status)) {
         setActiveDeliveries(prev => {
-          const orderStoreId = order.posOrder?.store_id || order.store_id || order.storeId;
-          const orderBdId = order.posOrder?.business_day_id || order.business_day_id || order.businessDayId;
+          const orderStoreId = eventStoreId;
+          const orderBdId = eventBusinessDayId;
 
-          // Store isolation: if order store is known and mismatches active store, ignore
-          if (orderStoreId && activeStoreId && orderStoreId !== activeStoreId) {
+          // Socket delivery updates are fail-closed: the event must carry both
+          // verified identities. Never substitute the current session values.
+          if (!isValidPosIntegerId(activeStoreId) || !isValidPosIntegerId(activeBusinessDayId) ||
+              !isValidPosIntegerId(orderStoreId) || !isValidPosIntegerId(orderBdId)) {
+            return prev;
+          }
+          if (orderStoreId !== activeStoreId || orderBdId !== activeBusinessDayId) {
             return prev;
           }
 
-          // Business day isolation: if order business day is known and mismatches active business day, reject/remove
-          if (orderBdId && activeBusinessDayId && orderBdId !== activeBusinessDayId) {
-            return prev.filter(d => d.bridgeOrderId !== order.id);
-          }
-
           const updated = [...prev];
-          const existIdx = updated.findIndex(d => d.bridgeOrderId === order.id);
+          const existIdx = updated.findIndex(d => getDeliveryIdentityKey(d) === orderIdentityKey);
+          if (existIdx < 0 && !isValidPosIntegerId(orderBdId)) {
+            // An order_updated event without business-day identity may update
+            // an already verified card, but it may never create a new one.
+            return prev;
+          }
 
           let newStatus = order.status;
           if (order.status === 'KITCHEN_PREPARING') newStatus = 'PREPARING';
@@ -859,7 +884,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
           // it must never be in activeDeliveries.
           if (!isDeliveryActive(newStatus)) {
             if (existIdx > -1) {
-              return prev.filter(d => d.bridgeOrderId !== order.id);
+              return prev.filter(d => getDeliveryIdentityKey(d) !== orderIdentityKey);
             }
             return prev;
           }
@@ -888,8 +913,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 rider: riderLabel,
                 claimedByRiderId: claimedRiderId || null,
                 claimedByRiderName: claimedRiderName || null,
-                store_id: updated[existIdx].store_id || orderStoreId || activeStoreId,
-                businessDayId: updated[existIdx].businessDayId || orderBdId || activeBusinessDayId,
+                store_id: updated[existIdx].store_id ?? orderStoreId,
+                businessDayId: updated[existIdx].businessDayId ?? orderBdId,
               };
             }
           } else if ((order.type?.toUpperCase() === 'DELIVERY' || order.type?.toUpperCase() === 'ONLINE') && order.status !== 'CANCELLED') {
@@ -923,6 +948,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             const newCard = {
               id: order.orderId || order.id,
               bridgeOrderId: order.id,
+              entityType: orderEntityType,
+              entityId: orderEntityId,
+              onlineOrderId: order.onlineOrderId ?? (orderEntityType === 'ONLINE' ? order.id : null),
+              posOrderId: order.posOrderId ?? (orderEntityType === 'POS' ? order.id : null),
               customer: order.customer || 'Guest',
               address: order.customerAddress || 'No Address Provided',
               customerAddress: order.customerAddress || 'No Address Provided',
@@ -938,9 +967,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               items: parsedItems,
               // See the isPos comment on the /rider-orders reconciliation
               // block above — same reason, same flag, same source field.
-              isPos: !!order.isPos,
-              store_id: orderStoreId || activeStoreId,
-              businessDayId: orderBdId || activeBusinessDayId,
+              isPos: orderEntityType === 'POS',
+              store_id: orderStoreId,
+              businessDayId: orderBdId,
             };
             if (isDeliveryEligible(newCard, activeStoreId, activeBusinessDayId)) {
               updated.push(newCard);
@@ -954,17 +983,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         
         // Also update pendingLastDaySettlements if it matches an old order being settled
         if (order.status === 'SETTLED') {
-          setPendingLastDaySettlements(prev => prev.filter(d => d.bridgeOrderId !== order.id));
+          setPendingLastDaySettlements(prev => prev.filter(d => getDeliveryIdentityKey(d) !== orderIdentityKey));
           // Covers the case where a DIFFERENT terminal pressed Settle Cash —
           // that terminal's own click handler already moved its card to
           // completedDeliveries; this terminal only heard about it via the
           // socket broadcast, so it must do the same move here to stay in
           // sync (same "land on Completed instead of vanishing" fix).
           setActiveDeliveries(prev => {
-            const settledCard = prev.find(d => d.bridgeOrderId === order.id);
+            const settledCard = prev.find(d => getDeliveryIdentityKey(d) === orderIdentityKey);
             if (!settledCard) return prev;
             setCompletedDeliveries(cPrev => [{ ...settledCard, status: 'SETTLED' }, ...cPrev].slice(0, 20));
-            return prev.filter(d => d.bridgeOrderId !== order.id);
+            return prev.filter(d => getDeliveryIdentityKey(d) !== orderIdentityKey);
           });
         }
       }
@@ -1183,7 +1212,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const allOnlineOrders = [...onlineOrdersList, ...backendOnlineOrders];
 
   const [activeDeliveries, setActiveDeliveries] = useState<any[]>([]);
-  const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const activeDeliveriesRef = useRef<any[]>([]);
   useEffect(() => { activeDeliveriesRef.current = activeDeliveries; }, [activeDeliveries]);
 
@@ -1258,6 +1287,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             return {
               id: order.orderId || order.id,
               bridgeOrderId: order.id,
+              entityType: 'ONLINE' as const,
+              entityId: order.id,
+              onlineOrderId: order.id,
+              posOrderId: order.posOrderId ?? null,
               customer: order.customer || 'Online Guest',
               address: order.customerAddress || 'No Address Provided',
               customerAddress: order.customerAddress || 'No Address Provided',
@@ -1271,8 +1304,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               lat: '50%',
               lng: '50%',
               items: parseOrderItems(order),
-              store_id: order.store_id || storeId,
-              businessDayId: order.posOrder?.business_day_id || order.business_day_id || businessDayId,
+              store_id: order.store_id,
+              businessDayId: order.businessDayId ?? order.business_day_id,
             };
           }).filter(d => isDeliveryEligible(d, storeId, businessDayId));
         }
@@ -1314,6 +1347,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             return {
               id: order.id,
               bridgeOrderId: order.id,
+              entityType: 'POS' as const,
+              entityId: order.id,
+              onlineOrderId: null,
+              posOrderId: order.id,
               customer: order.customer?.name || order.customer_name || 'Guest',
               address: order.delivery_address || 'No Address Provided',
               customerAddress: order.delivery_address || 'No Address Provided',
@@ -1328,8 +1365,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               lng: '50%',
               isPos: true,
               items: parsedItems,
-              store_id: order.store_id || storeId,
-              businessDayId: order.business_day_id || businessDayId,
+              store_id: order.store_id,
+              businessDayId: order.businessDayId ?? order.business_day_id,
             };
           }).filter(d => isDeliveryEligible(d, storeId, businessDayId));
         }
@@ -1341,7 +1378,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       if (riderRes.ok) {
         const riderOrders: any[] = await riderRes.json();
         for (const d of combined) {
-          const ro = riderOrders.find((o: any) => o.id === d.bridgeOrderId);
+          const ro = riderOrders.find((o: any) => getDeliveryIdentityKey(o) === getDeliveryIdentityKey(d));
           if (ro && d.status !== 'SETTLED') {
             if (ro.status === 'RIDER_ACCEPTED' && d.status !== 'ON_WAY') d.status = 'ON_WAY';
             if (ro.status === 'PICKED_UP' && d.status !== 'ON_WAY') d.status = 'ON_WAY';
@@ -1359,11 +1396,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
       setActiveDeliveries(prev => {
         const validPrev = prev.filter(p => isDeliveryEligible(p, storeId, businessDayId));
-        const byBridgeId = new Map(combined.map(d => [d.bridgeOrderId, d]));
+        const byBridgeId = new Map(combined.map(d => [getDeliveryIdentityKey(d), d]));
         const updatedPrev = validPrev.map(p => {
-          const fresh = byBridgeId.get(p.bridgeOrderId);
+          const fresh = byBridgeId.get(getDeliveryIdentityKey(p));
           if (fresh) {
-            byBridgeId.delete(p.bridgeOrderId);
+            byBridgeId.delete(getDeliveryIdentityKey(p));
             return { ...p, ...fresh };
           }
           return p;
@@ -1556,6 +1593,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         newlyReady.forEach(async kot => {
           if (!isKotEligible(kot, activeStoreId, activeBusinessDayId)) return;
           if (kot.type === 'Delivery') {
+            const kotDeliveryIdentity = {
+              entityType: kot.bridgeOrderId ? 'ONLINE' : 'POS',
+              entityId: kot.bridgeOrderId || kot.orderId,
+              isPos: !kot.bridgeOrderId,
+            };
             let bridgeOk = true;
             if (kot.bridgeOrderId) {
               try {
@@ -1574,19 +1616,23 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               ? { message: `Kitchen has completed Order #${kot.orderId}`, type: 'success' }
               : { message: `Order #${kot.orderId} is ready locally but the online tracker was NOT updated.`, type: 'error' });
             setActiveDeliveries(prev => {
-              const match = prev.find(d => d.id === kot.orderId || (kot.bridgeOrderId && d.bridgeOrderId === kot.bridgeOrderId));
+              const match = prev.find(d => getDeliveryIdentityKey(d) === getDeliveryIdentityKey(kotDeliveryIdentity));
               if (match) {
-                return prev.map(d => (d.id === kot.orderId || (kot.bridgeOrderId && d.bridgeOrderId === kot.bridgeOrderId)) ? {
+                return prev.map(d => getDeliveryIdentityKey(d) === getDeliveryIdentityKey(kotDeliveryIdentity) ? {
                   ...d,
                   status: 'READY',
                   rider: 'Waiting for Rider',
-                  store_id: d.store_id || kot.store_id || activeStoreId,
-                  businessDayId: d.businessDayId || kot.businessDayId || activeBusinessDayId,
+                  store_id: d.store_id ?? kot.store_id,
+                  businessDayId: d.businessDayId ?? kot.businessDayId ?? kot.business_day_id,
                 } : d);
               }
               const newCard = {
-                id: kot.orderId,
+                id: kotDeliveryIdentity.entityId,
                 bridgeOrderId: kot.bridgeOrderId || kot.orderId,
+                entityType: kotDeliveryIdentity.entityType,
+                entityId: kotDeliveryIdentity.entityId,
+                onlineOrderId: kot.bridgeOrderId || null,
+                posOrderId: kot.bridgeOrderId ? null : kot.orderId,
                 customer: kot.customer || 'Guest',
                 address: kot.customerAddress || 'No Address Provided',
                 status: 'READY',
@@ -1598,8 +1644,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 lat: '50%',
                 lng: '50%',
                 items: [],
-                store_id: kot.store_id || activeStoreId,
-                businessDayId: kot.businessDayId || activeBusinessDayId,
+                store_id: kot.store_id,
+                businessDayId: kot.businessDayId ?? kot.business_day_id,
               };
               if (!isDeliveryEligible(newCard, activeStoreId, activeBusinessDayId)) {
                 return prev;
@@ -1647,8 +1693,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   useEffect(() => {
     const handleGpsUpdate = (data: any) => {
+      const eventKey = getDeliveryIdentityKey({ entityType: data.entityType, entityId: data.entityId ?? data.orderId, isPos: data.entityType === 'POS' });
       setActiveDeliveries(prev => prev.map(d => 
-        d.bridgeOrderId === data.orderId 
+        getDeliveryIdentityKey(d) === eventKey
           ? { ...d, lat: data.lat + '%', lng: data.lng + '%' } 
           : d
       ));
@@ -3414,7 +3461,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 {[...visibleActiveDeliveries]
                   .filter(d => isDeliveryActive(d.status))
                   .sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0)).map(del => (
-                  <div key={del.id} className={`delivery-card ${selectedDeliveryId === del.id ? 'active' : ''}`} onClick={() => setSelectedDeliveryId(del.id)}>
+                  <div key={getDeliveryIdentityKey(del) || `${del.id}-${del.isPos ? 'POS' : 'ONLINE'}`} className={`delivery-card ${selectedDeliveryId === getDeliveryIdentityKey(del) ? 'active' : ''}`} onClick={() => setSelectedDeliveryId(getDeliveryIdentityKey(del))}>
                     <div className="delivery-card-header">
                       <div>
                         <div className="delivery-card-title">Order #{del.id}</div>
@@ -3472,7 +3519,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                     auth: true,
                                   });
                                   if (res.ok) {
-                                    setActiveDeliveries(prev => prev.map(d => d.bridgeOrderId === del.bridgeOrderId ? {
+                                    setActiveDeliveries(prev => prev.map(d => getDeliveryIdentityKey(d) === getDeliveryIdentityKey(del) ? {
                                       ...d,
                                       status: 'RIDER_ARRIVED',
                                       rider: d.claimedByRiderName ? `Rider: ${d.claimedByRiderName}` : (d.claimedByRiderId ? `Rider #${d.claimedByRiderId}` : (d.rider && d.rider !== 'Active Rider' ? d.rider : 'Waiting for Rider')),
@@ -3530,7 +3577,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                     auth: true,
                                   });
                                   if (res.ok) {
-                                    setActiveDeliveries(prev => prev.map(d => d.bridgeOrderId === del.bridgeOrderId ? { ...d, status: 'PRINT_BILL' } : d));
+                                    setActiveDeliveries(prev => prev.map(d => getDeliveryIdentityKey(d) === getDeliveryIdentityKey(del) ? { ...d, status: 'PRINT_BILL' } : d));
                                   } else {
                                     const data = await res.json().catch(() => ({}));
                                     setToast({ message: data.message || `Bill printed, but Order #${del.bridgeOrderId} status was NOT updated on the server.`, type: 'error' });
@@ -3555,7 +3602,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                     auth: true,
                                   });
                                   if (res.ok) {
-                                    setActiveDeliveries(prev => prev.map(d => d.bridgeOrderId === del.bridgeOrderId ? { ...d, status: 'DISPATCHED' } : d));
+                                    setActiveDeliveries(prev => prev.map(d => getDeliveryIdentityKey(d) === getDeliveryIdentityKey(del) ? { ...d, status: 'DISPATCHED' } : d));
                                     setToast({ message: 'Order Dispatched to Delivery App!', type: 'success' });
                                   } else {
                                     const data = await res.json().catch(() => ({}));
@@ -3590,8 +3637,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                       auth: true,
                                     });
                                     if (res.ok) {
-                                      setActiveDeliveries(prev => prev.filter(o => o.id !== del.id));
-                                      setPendingLastDaySettlements(prev => prev.filter(o => o.bridgeOrderId !== del.bridgeOrderId));
+                                      setActiveDeliveries(prev => prev.filter(o => getDeliveryIdentityKey(o) !== getDeliveryIdentityKey(del)));
+                                      setPendingLastDaySettlements(prev => prev.filter(o => getDeliveryIdentityKey(o) !== getDeliveryIdentityKey(del)));
                                       // Land on "Completed" instead of vanishing — keeps the cashier's
                                       // own view in sync with what the rider and website show at this
                                       // same moment (see RC5/RC6 in the rider workflow plan).
@@ -3643,7 +3690,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                                 auth: true,
                               });
                               if (res.ok) {
-                                setPendingLastDaySettlements(prev => prev.filter(o => o.bridgeOrderId !== del.bridgeOrderId));
+                                setPendingLastDaySettlements(prev => prev.filter(o => getDeliveryIdentityKey(o) !== getDeliveryIdentityKey(del)));
                                 setToast({ message: 'Cash Settled & Ledger Updated for Yesterday!', type: 'success' });
                               } else {
                                 const data = await res.json().catch(() => ({}));

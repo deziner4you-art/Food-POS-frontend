@@ -2,6 +2,11 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException, 
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
+import {
+  DeliveryEntityType,
+  formatOnlineOrderForRider,
+  normalizeDeliveryEntityType,
+} from '../../../common/utils/delivery-identity.util';
 
 @Injectable()
 export class RiderService {
@@ -9,6 +14,43 @@ export class RiderService {
     private prisma: PrismaService,
     private gateway: AppGateway,
   ) {}
+
+  /**
+   * Resolve the table namespace before touching a delivery row. A numeric id
+   * is not globally unique because OnlineOrder and Order have independent
+   * sequences. Legacy callers may omit entityType only while the id exists
+   * in exactly one table; ambiguous ids are rejected closed.
+   */
+  private async resolveDeliveryEntityType(
+    id: number,
+    requestedType?: unknown,
+  ): Promise<DeliveryEntityType> {
+    const explicitType = normalizeDeliveryEntityType(requestedType);
+    if (requestedType !== undefined && !explicitType) {
+      throw new BadRequestException('entityType must be ONLINE or POS.');
+    }
+    if (explicitType) return explicitType;
+
+    const [online, pos] = await Promise.all([
+      this.prisma.onlineOrder.findUnique({ where: { id } }),
+      this.prisma.order.findUnique({ where: { id } }),
+    ]);
+    if (online && pos) {
+      throw new BadRequestException(
+        `Order #${id} exists in both ONLINE and POS namespaces. entityType is required.`,
+      );
+    }
+    if (online) return 'ONLINE';
+    if (pos) return 'POS';
+    throw new NotFoundException('Order not found.');
+  }
+
+  private runInTransaction<T>(callback: (tx: any) => Promise<T>): Promise<T> {
+    if (typeof this.prisma.$transaction === 'function') {
+      return this.prisma.$transaction(callback);
+    }
+    return callback(this.prisma);
+  }
 
   async getRiderOrders(storeId?: string) {
     // Sprint 28.9: store_id must never be optional here — omitting it used
@@ -83,9 +125,10 @@ export class RiderService {
       }
     });
 
+    const formattedOnlineOrders = onlineOrders.map(formatOnlineOrderForRider);
     const formattedPosOrders = posOrders.map(formatPosOrderForRider);
 
-    const allOrders = [...onlineOrders, ...formattedPosOrders].sort(
+    const allOrders = [...formattedOnlineOrders, ...formattedPosOrders].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
     );
 
@@ -131,16 +174,23 @@ export class RiderService {
       lastUpdated: new Date().toISOString(),
     };
 
+    const entityType = await this.resolveDeliveryEntityType(orderId, body.entityType);
+    const selectedOrder = entityType === 'ONLINE'
+      ? await this.prisma.onlineOrder.findUnique({ where: { id: orderId } })
+      : await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!selectedOrder) throw new NotFoundException('Delivery not found.');
+    if (Number(selectedOrder.store_id) !== Number(riderUser.store_id)) {
+      throw new BadRequestException('Rider store mismatch.');
+    }
     try {
-      // Try finding it in OnlineOrder first
-      const onlineOrder = await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
-      if (onlineOrder) {
+      if (entityType === 'ONLINE') {
+        const onlineOrder = await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
+        if (!onlineOrder) throw new NotFoundException('Online delivery not found.');
         await this.prisma.onlineOrder.update({
           where: { id: orderId },
           data: { delivery: deliveryInfo },
         });
       } else {
-        // Otherwise it's a POS Order
         await this.prisma.order.update({
           where: { id: orderId },
           data: { delivery_info: deliveryInfo },
@@ -153,10 +203,23 @@ export class RiderService {
       );
     }
 
-    if (body.storeId) {
-      this.gateway.broadcast('gps_update', { orderId, lat, lng }, `store_${body.storeId}`);
+    const storeId = Number(selectedOrder.store_id);
+    if (storeId > 0) {
+      this.gateway.broadcast('gps_update', {
+        orderId,
+        entityType,
+        entityId: orderId,
+        lat,
+        lng,
+      }, `store_${storeId}`);
     } else {
-      this.gateway.broadcast('gps_update', { orderId, lat, lng });
+      this.gateway.broadcast('gps_update', {
+        orderId,
+        entityType,
+        entityId: orderId,
+        lat,
+        lng,
+      });
     }
     return { success: true };
   }
@@ -177,7 +240,7 @@ export class RiderService {
   // set by JwtAuthGuard). There's no separate Rider profile table in this
   // schema — User.id *is* the rider identity — so this only had to stop
   // trusting the body, not resolve through a different model.
-  async claimOrder(id: number, authenticatedUser: any) {
+  async claimOrder(id: number, authenticatedUser: any, requestedEntityType?: unknown) {
     const riderId = Number(authenticatedUser?.sub);
     if (!authenticatedUser || !Number.isFinite(riderId) || riderId <= 0) {
       throw new BadRequestException('A valid authenticated rider identity is required.');
@@ -196,9 +259,27 @@ export class RiderService {
       throw new BadRequestException('Authenticated user is not a rider.');
     }
 
+    const entityType = normalizeDeliveryEntityType(requestedEntityType);
+    if (requestedEntityType !== undefined && !entityType) {
+      throw new BadRequestException('entityType must be ONLINE or POS.');
+    }
+
     let orderStoreId: number | undefined;
-    const existingOnlineForVal = await this.prisma.onlineOrder.findUnique({ where: { id } });
-    if (existingOnlineForVal) {
+    const existingOnlineForVal = entityType === 'POS'
+      ? null
+      : await this.prisma.onlineOrder.findUnique({ where: { id } });
+    const existingPosForVal = entityType === 'ONLINE'
+      ? null
+      : await this.prisma.order.findUnique({ where: { id } });
+
+    if (existingOnlineForVal && existingPosForVal && !entityType) {
+      throw new BadRequestException(
+        `Order #${id} exists in both ONLINE and POS namespaces. entityType is required.`,
+      );
+    }
+
+    const resolvedEntityType: DeliveryEntityType = entityType || (existingOnlineForVal ? 'ONLINE' : 'POS');
+    if (existingOnlineForVal && resolvedEntityType === 'ONLINE') {
       // Authoritative Delivery Gate: Only orders in READY state can be claimed
       // by a rider. Pre-kitchen states (PENDING, CONFIRMED, KITCHEN_PREPARING)
       // and terminal states cannot be claimed.
@@ -214,7 +295,6 @@ export class RiderService {
       }
       orderStoreId = existingOnlineForVal.store_id;
     } else {
-      const existingPosForVal = await this.prisma.order.findUnique({ where: { id } });
       if (existingPosForVal) {
         if (existingPosForVal.status !== 'READY') {
           throw new BadRequestException(
@@ -265,7 +345,12 @@ export class RiderService {
           status: { notIn: terminalStatuses },
         },
       });
-      if (activeOnlineDelivery && activeOnlineDelivery.id !== id) {
+      const linkedOnlineId = resolvedEntityType === 'POS' && existingPosForVal?.order_source?.toUpperCase() === 'ONLINE'
+        ? (await tx.onlineOrder.findUnique({ where: { posOrderId: id }, select: { id: true } }))?.id
+        : undefined;
+      const linkedPosId = resolvedEntityType === 'ONLINE' ? existingOnlineForVal?.posOrderId : undefined;
+
+      if (activeOnlineDelivery && activeOnlineDelivery.id !== id && activeOnlineDelivery.id !== linkedOnlineId) {
         throw new ConflictException(
           `Finish current delivery first: Order #${activeOnlineDelivery.id} is still in progress (${activeOnlineDelivery.status}).`,
         );
@@ -278,13 +363,14 @@ export class RiderService {
           order_source: { equals: 'DELIVERY', mode: 'insensitive' },
         },
       });
-      if (activePosDelivery && activePosDelivery.id !== id) {
+      if (activePosDelivery && activePosDelivery.id !== id && activePosDelivery.id !== linkedPosId) {
         throw new ConflictException(
           `Finish current delivery first: POS Order #${activePosDelivery.id} is still in progress.`,
         );
       }
 
-      const onlineClaim = await tx.onlineOrder.updateMany({
+      const onlineClaim = resolvedEntityType === 'ONLINE'
+        ? await tx.onlineOrder.updateMany({
         where: {
           id,
           claimedByRiderId: null,
@@ -293,18 +379,29 @@ export class RiderService {
           store_id: riderUser.store_id,
         },
         data: { claimedByRiderId: riderId, claimedByRiderName: riderUser.name || null },
-      });
+      })
+        : { count: 0 };
       if (onlineClaim.count > 0) {
+        const onlineForTwin = await tx.onlineOrder.findUniqueOrThrow({ where: { id } });
+        if (onlineForTwin.posOrderId) {
+          await tx.order.updateMany({
+            where: { id: onlineForTwin.posOrderId, order_source: { equals: 'ONLINE', mode: 'insensitive' } },
+            data: { rider_id: riderId, status: onlineForTwin.status },
+          });
+        }
         const updated = await tx.onlineOrder.findUniqueOrThrow({ where: { id } });
         return { updatedOrder: updated, isPosOrder: false };
       }
 
-      const existingOnline = await tx.onlineOrder.findUnique({ where: { id } });
+      const existingOnline = resolvedEntityType === 'ONLINE'
+        ? await tx.onlineOrder.findUnique({ where: { id } })
+        : null;
       if (existingOnline) {
         throw new ConflictException('Already claimed by another rider.');
       }
 
-      const posClaim = await tx.order.updateMany({
+      const posClaim = resolvedEntityType === 'POS'
+        ? await tx.order.updateMany({
         where: {
           id,
           rider_id: null,
@@ -313,7 +410,8 @@ export class RiderService {
           store_id: riderUser.store_id,
         },
         data: { rider_id: riderId },
-      });
+      })
+        : { count: 0 };
       if (posClaim.count > 0) {
         const updated = await tx.order.findUniqueOrThrow({
           where: { id },
@@ -357,8 +455,9 @@ export class RiderService {
       this.gateway.broadcast('order_updated', formatted, `store_${updatedOrder.store_id}`);
       return { success: true, order: formatted };
     } else {
-      this.gateway.broadcast('order_updated', updatedOrder, `store_${updatedOrder.store_id}`);
-      return { success: true, order: updatedOrder };
+      const formatted = formatOnlineOrderForRider(updatedOrder);
+      this.gateway.broadcast('order_updated', formatted, `store_${updatedOrder.store_id}`);
+      return { success: true, order: formatted };
     }
   }
 
@@ -385,7 +484,7 @@ export class RiderService {
   // status to READY so another rider can claim it normally. A real-time
   // order_updated broadcast fires so the POS, KDS, and any other rider
   // app all see the order become available again immediately.
-  async releaseRiderAssignment(id: number, authenticatedUser: any) {
+  async releaseRiderAssignment(id: number, authenticatedUser: any, requestedEntityType?: unknown) {
     const riderId = Number(authenticatedUser?.sub);
     if (!authenticatedUser || !Number.isFinite(riderId) || riderId <= 0) {
       throw new BadRequestException('A valid authenticated rider identity is required.');
@@ -429,8 +528,12 @@ export class RiderService {
       'COMPLETED',  // Blocker #2: terminal — must never revert to READY
     ];
 
-    // ── Try OnlineOrder first ────────────────────────────────────────────
-    const onlineOrder = await this.prisma.onlineOrder.findUnique({ where: { id } });
+    const entityType = await this.resolveDeliveryEntityType(id, requestedEntityType);
+
+    // ── Resolve the explicitly selected namespace ───────────────────────
+    const onlineOrder = entityType === 'ONLINE'
+      ? await this.prisma.onlineOrder.findUnique({ where: { id } })
+      : null;
     if (onlineOrder) {
       if (onlineOrder.claimedByRiderId !== riderId) {
         throw new BadRequestException(
@@ -453,25 +556,35 @@ export class RiderService {
         );
       }
 
-      const updated = await this.prisma.onlineOrder.update({
-        where: { id },
-        data: {
-          claimedByRiderId: null,
-          claimedByRiderName: null,
-          status: 'READY',
-        },
+      const updated = await this.runInTransaction(async (tx: any) => {
+        const next = await tx.onlineOrder.update({
+          where: { id },
+          data: {
+            claimedByRiderId: null,
+            claimedByRiderName: null,
+            status: 'READY',
+          },
+        });
+        if (onlineOrder.posOrderId) {
+          await tx.order.updateMany({
+            where: { id: onlineOrder.posOrderId, order_source: { equals: 'ONLINE', mode: 'insensitive' } },
+            data: { rider_id: null, status: 'READY' },
+          });
+        }
+        return next;
       });
 
-      this.gateway.broadcast('order_updated', updated, `store_${updated.store_id}`);
+      const formatted = formatOnlineOrderForRider(updated);
+      this.gateway.broadcast('order_updated', formatted, `store_${updated.store_id}`);
       console.log(`[RIDER RELEASE] Online Order #${id} released by Rider #${riderId} (was ${onlineOrder.status})`);
-      return { success: true, orderId: id, orderType: 'ONLINE', previousStatus: onlineOrder.status };
+      return { success: true, orderId: id, entityType: 'ONLINE', orderType: 'ONLINE', previousStatus: onlineOrder.status };
     }
 
     // ── Fall back to POS Order ───────────────────────────────────────────
-    const posOrder = await this.prisma.order.findUnique({
+    const posOrder = entityType === 'POS' ? await this.prisma.order.findUnique({
       where: { id },
       include: { customer: true, items: { include: { product: true } }, rider: true },
-    });
+    }) : null;
     if (posOrder) {
       if (posOrder.rider_id !== riderId) {
         throw new BadRequestException(
@@ -491,18 +604,24 @@ export class RiderService {
         );
       }
 
-      await this.prisma.order.update({
-        where: { id },
-        data: { rider_id: null, status: 'READY' },
-      });
-      const refreshed = await this.prisma.order.findUniqueOrThrow({
-        where: { id },
-        include: { customer: true, items: { include: { product: true } }, rider: true },
+      const refreshed = await this.runInTransaction(async (tx: any) => {
+        await tx.order.update({
+          where: { id },
+          data: { rider_id: null, status: 'READY' },
+        });
+        await tx.onlineOrder.updateMany({
+          where: { posOrderId: id },
+          data: { claimedByRiderId: null, claimedByRiderName: null, riderAssigned: false, status: 'READY' },
+        });
+        return tx.order.findUniqueOrThrow({
+          where: { id },
+          include: { customer: true, items: { include: { product: true } }, rider: true },
+        });
       });
       const formatted = formatPosOrderForRider(refreshed);
       this.gateway.broadcast('order_updated', formatted, `store_${posOrder.store_id}`);
       console.log(`[RIDER RELEASE] POS Order #${id} released by Rider #${riderId} (was ${posOrder.status})`);
-      return { success: true, orderId: id, orderType: 'POS', previousStatus: posOrder.status };
+      return { success: true, orderId: id, entityType: 'POS', orderType: 'POS', previousStatus: posOrder.status };
     }
 
     throw new NotFoundException('Order not found.');
@@ -524,7 +643,7 @@ export class RiderService {
   // On success: clears rider assignment, preserves order identity / store / business day,
   // resets status to READY, synchronizes OnlineOrder <-> POS twin, logs audit record,
   // and broadcasts store-scoped order_updated real-time event.
-  async adminForceReleaseRiderAssignment(id: number, authenticatedUser: any) {
+  async adminForceReleaseRiderAssignment(id: number, authenticatedUser: any, requestedEntityType?: unknown) {
     const adminId = Number(authenticatedUser?.sub);
     if (!authenticatedUser || !Number.isFinite(adminId) || adminId <= 0) {
       throw new BadRequestException('A valid authenticated admin identity is required.');
@@ -550,8 +669,12 @@ export class RiderService {
       'COMPLETED',
     ];
 
-    // ── Try OnlineOrder first ────────────────────────────────────────────
-    const onlineOrder = await this.prisma.onlineOrder.findUnique({ where: { id } });
+    const entityType = await this.resolveDeliveryEntityType(id, requestedEntityType);
+
+    // ── Resolve the explicitly selected namespace ───────────────────────
+    const onlineOrder = entityType === 'ONLINE'
+      ? await this.prisma.onlineOrder.findUnique({ where: { id } })
+      : null;
     if (onlineOrder) {
       // Store isolation check
       const callerStoreId = Number(authenticatedUser.active_store_id) || adminUser.store_id;
@@ -573,28 +696,27 @@ export class RiderService {
       }
 
       const releasedRiderId = onlineOrder.claimedByRiderId;
-      const updated = await this.prisma.onlineOrder.update({
-        where: { id },
-        data: {
-          claimedByRiderId: null,
-          claimedByRiderName: null,
-          riderAssigned: false,
-          status: 'READY',
-        },
-      });
-
-      // Synchronize linked POS order if bridge exists
-      if (onlineOrder.posOrderId) {
-        await this.prisma.order.updateMany({
-          where: { id: onlineOrder.posOrderId },
+      const updated = await this.runInTransaction(async (tx: any) => {
+        const next = await tx.onlineOrder.update({
+          where: { id },
           data: {
-            rider_id: null,
+            claimedByRiderId: null,
+            claimedByRiderName: null,
+            riderAssigned: false,
             status: 'READY',
           },
         });
-      }
+        if (onlineOrder.posOrderId) {
+          await tx.order.updateMany({
+            where: { id: onlineOrder.posOrderId, order_source: { equals: 'ONLINE', mode: 'insensitive' } },
+            data: { rider_id: null, status: 'READY' },
+          });
+        }
+        return next;
+      });
 
-      this.gateway.broadcast('order_updated', updated, `store_${updated.store_id}`);
+      const formatted = formatOnlineOrderForRider(updated);
+      this.gateway.broadcast('order_updated', formatted, `store_${updated.store_id}`);
       console.log(`[ADMIN FORCE-RELEASE] Online Order #${id} rider #${releasedRiderId} released by Admin #${adminId} (was ${onlineOrder.status})`);
 
       if (this.prisma.systemAuditLog) {
@@ -618,6 +740,7 @@ export class RiderService {
       return {
         success: true,
         orderId: id,
+        entityType: 'ONLINE',
         orderType: 'ONLINE',
         previousStatus: onlineOrder.status,
         releasedRiderId,
@@ -625,10 +748,10 @@ export class RiderService {
     }
 
     // ── Fall back to POS Order ───────────────────────────────────────────
-    const posOrder = await this.prisma.order.findUnique({
+    const posOrder = entityType === 'POS' ? await this.prisma.order.findUnique({
       where: { id },
       include: { customer: true, items: { include: { product: true } }, rider: true },
-    });
+    }) : null;
     if (posOrder) {
       // Store isolation check
       const callerStoreId = Number(authenticatedUser.active_store_id) || adminUser.store_id;
@@ -650,25 +773,24 @@ export class RiderService {
       }
 
       const releasedRiderId = posOrder.rider_id;
-      await this.prisma.order.update({
-        where: { id },
-        data: { rider_id: null, status: 'READY' },
-      });
-
-      // Synchronize linked OnlineOrder twin if exists
-      await this.prisma.onlineOrder.updateMany({
-        where: { posOrderId: id },
-        data: {
-          claimedByRiderId: null,
-          claimedByRiderName: null,
-          riderAssigned: false,
-          status: 'READY',
-        },
-      });
-
-      const refreshed = await this.prisma.order.findUniqueOrThrow({
-        where: { id },
-        include: { customer: true, items: { include: { product: true } }, rider: true },
+      const refreshed = await this.runInTransaction(async (tx: any) => {
+        await tx.order.update({
+          where: { id },
+          data: { rider_id: null, status: 'READY' },
+        });
+        await tx.onlineOrder.updateMany({
+          where: { posOrderId: id },
+          data: {
+            claimedByRiderId: null,
+            claimedByRiderName: null,
+            riderAssigned: false,
+            status: 'READY',
+          },
+        });
+        return tx.order.findUniqueOrThrow({
+          where: { id },
+          include: { customer: true, items: { include: { product: true } }, rider: true },
+        });
       });
       const formatted = formatPosOrderForRider(refreshed);
       this.gateway.broadcast('order_updated', formatted, `store_${posOrder.store_id}`);
@@ -695,6 +817,7 @@ export class RiderService {
       return {
         success: true,
         orderId: id,
+        entityType: 'POS',
         orderType: 'POS',
         previousStatus: posOrder.status,
         releasedRiderId,
@@ -734,6 +857,7 @@ export class RiderService {
         });
 
         const activeOrder = activeOnline || activePos;
+        const activeEntityType = activeOnline ? 'ONLINE' : activePos ? 'POS' : null;
         const isBusy = !!activeOrder;
         const loc = typeof this.gateway.getRiderLocation === 'function' ? this.gateway.getRiderLocation(r.riderId) : null;
         return {
@@ -743,6 +867,8 @@ export class RiderService {
           isOnline: r.isOnline,
           isBusy,
           activeOrderId: activeOrder?.id || null,
+          activeEntityType,
+          activeEntityId: activeOrder?.id || null,
           activeOrderStatus: activeOrder?.status || null,
           lat: loc?.lat ?? null,
           lng: loc?.lng ?? null,
@@ -764,22 +890,15 @@ export class RiderService {
     };
   }
 
-  async getRiderGps(orderId: string) {
+  async getRiderGps(orderId: string, requestedEntityType?: unknown) {
     const id = Number(orderId);
-    const onlineOrder = await this.prisma.onlineOrder.findUnique({
-      where: { id },
-    });
-
-    if (onlineOrder && onlineOrder.delivery) {
-      return onlineOrder.delivery;
-    }
-
-    const posOrder = await this.prisma.order.findUnique({
-      where: { id }
-    });
-
-    if (posOrder && posOrder.delivery_info) {
-      return posOrder.delivery_info;
+    const entityType = await this.resolveDeliveryEntityType(id, requestedEntityType);
+    if (entityType === 'ONLINE') {
+      const onlineOrder = await this.prisma.onlineOrder.findUnique({ where: { id } });
+      if (onlineOrder?.delivery) return onlineOrder.delivery;
+    } else {
+      const posOrder = await this.prisma.order.findUnique({ where: { id } });
+      if (posOrder?.delivery_info) return posOrder.delivery_info;
     }
 
     throw new NotFoundException('Location not found');
@@ -855,6 +974,10 @@ export class RiderService {
 
     const onlineMapped = onlineExceptions.map((o) => ({
       id: o.id,
+      entityType: 'ONLINE' as const,
+      entityId: o.id,
+      onlineOrderId: o.id,
+      posOrderId: o.posOrderId ?? null,
       isPos: false,
       status: o.status,
       customer_name: o.customer ?? null,
@@ -869,6 +992,10 @@ export class RiderService {
 
     const posMapped = posExceptions.map((o) => ({
       id: o.id,
+      entityType: 'POS' as const,
+      entityId: o.id,
+      onlineOrderId: null,
+      posOrderId: o.id,
       isPos: true,
       status: o.status,
       customer_name: o.customer?.name ?? 'Walk-in',
@@ -891,7 +1018,7 @@ export class RiderService {
    * Can be used on orphaned or stale in-progress orders (e.g. past days' orders
    * that are blocking riders or no longer active on POS).
    */
-  async adminForceSettleDeliveryException(orderId: number, callerJwt: any, reason: string) {
+  async adminForceSettleDeliveryException(orderId: number, callerJwt: any, reason: string, requestedEntityType?: unknown) {
     if (!reason || !reason.trim()) {
       throw new BadRequestException('A reason is required for force settling.');
     }
@@ -906,13 +1033,11 @@ export class RiderService {
       throw new ForbiddenException('Riders may not force settle delivery exceptions.');
     }
 
-    let order: any = await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
-    let isPos = false;
-
-    if (!order) {
-      order = await this.prisma.order.findUnique({ where: { id: orderId } });
-      isPos = true;
-    }
+    const entityType = await this.resolveDeliveryEntityType(orderId, requestedEntityType);
+    let isPos = entityType === 'POS';
+    let order: any = isPos
+      ? await this.prisma.order.findUnique({ where: { id: orderId } })
+      : await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
 
     if (!order) throw new NotFoundException(`Order #${orderId} not found.`);
 
@@ -928,32 +1053,29 @@ export class RiderService {
     const previousStatus = order.status;
     const previousRiderId = isPos ? order.rider_id : order.claimedByRiderId;
 
-    if (isPos) {
-      await this.prisma.order.update({
-        where: { id: orderId },
-        data: {
-          status: 'SETTLED',
-          payment_status: 'PAID',
-        },
-      });
-    } else {
-      await this.prisma.onlineOrder.update({
-        where: { id: orderId },
-        data: {
-          status: 'SETTLED',
-          kdsStatus: 'READY',
-        },
-      });
-      if (order.posOrderId) {
-        await this.prisma.order.updateMany({
-          where: { id: order.posOrderId },
-          data: {
-            status: 'SETTLED',
-            payment_status: 'PAID',
-          },
+    await this.runInTransaction(async (tx: any) => {
+      if (isPos) {
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: 'SETTLED', payment_status: 'PAID' },
         });
+        await tx.onlineOrder.updateMany({
+          where: { posOrderId: orderId },
+          data: { status: 'SETTLED', kdsStatus: 'READY' },
+        });
+      } else {
+        await tx.onlineOrder.update({
+          where: { id: orderId },
+          data: { status: 'SETTLED', kdsStatus: 'READY' },
+        });
+        if (order.posOrderId) {
+          await tx.order.updateMany({
+            where: { id: order.posOrderId, order_source: { equals: 'ONLINE', mode: 'insensitive' } },
+            data: { status: 'SETTLED', payment_status: 'PAID' },
+          });
+        }
       }
-    }
+    });
 
     const updatedOrder = isPos
       ? await this.prisma.order.findUnique({ where: { id: orderId } })
@@ -979,11 +1101,16 @@ export class RiderService {
     }
 
     const room = `store_${order.store_id}`;
-    this.gateway.broadcast('order_updated', updatedOrder, room);
+    this.gateway.broadcast(
+      'order_updated',
+      isPos ? formatPosOrderForRider(updatedOrder) : formatOnlineOrderForRider(updatedOrder),
+      room,
+    );
 
     return {
       success: true,
       orderId,
+      entityType,
       previousStatus,
       newStatus: 'SETTLED',
       message: `Order #${orderId} has been successfully settled and cleared.`,
@@ -1003,7 +1130,7 @@ export class RiderService {
    * - Writes a SystemAuditLog entry and broadcasts order_updated.
    * - POS twin order is synchronized when posOrderId is set.
    */
-  async adminRecoverDeliveryException(orderId: number, callerJwt: any, reason: string) {
+  async adminRecoverDeliveryException(orderId: number, callerJwt: any, reason: string, requestedEntityType?: unknown) {
     // 1. Validate mandatory reason
     if (!reason || !reason.trim()) {
       throw new BadRequestException('A reason is required for recovery.');
@@ -1021,15 +1148,12 @@ export class RiderService {
       throw new ForbiddenException('Riders may not recover delivery exceptions.');
     }
 
-    // 4. Try online order first
-    let order: any = await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
-    let isPos = false;
-
-    // 5. Fall back to POS order
-    if (!order) {
-      order = await this.prisma.order.findUnique({ where: { id: orderId } });
-      isPos = true;
-    }
+    // 4. Resolve the selected namespace before loading or mutating a row.
+    const entityType = await this.resolveDeliveryEntityType(orderId, requestedEntityType);
+    const isPos = entityType === 'POS';
+    const order: any = isPos
+      ? await this.prisma.order.findUnique({ where: { id: orderId } })
+      : await this.prisma.onlineOrder.findUnique({ where: { id: orderId } });
 
     if (!order) throw new NotFoundException(`Order #${orderId} not found.`);
 
@@ -1067,32 +1191,37 @@ export class RiderService {
     // 10. Atomic CAS update scoped to the current status + no rider
     //     If another process changed the order between our fetch and this update,
     //     updateMany returns { count: 0 } and we fail safely.
-    let updateResult: { count: number };
-    if (isPos) {
-      updateResult = await this.prisma.order.updateMany({
-        where: { id: orderId, status: previousStatus, rider_id: null },
-        data: { status: 'READY' },
-      });
-    } else {
-      updateResult = await this.prisma.onlineOrder.updateMany({
-        where: { id: orderId, status: previousStatus, claimedByRiderId: null },
-        data: { status: 'READY' },
-      });
-    }
+    const updateResult = await this.runInTransaction(async (tx: any) => {
+      const result: { count: number } = isPos
+        ? await tx.order.updateMany({
+          where: { id: orderId, status: previousStatus, rider_id: null },
+          data: { status: 'READY' },
+        })
+        : await tx.onlineOrder.updateMany({
+          where: { id: orderId, status: previousStatus, claimedByRiderId: null },
+          data: { status: 'READY' },
+        });
+      if (result.count === 0) return result;
+
+      if (isPos) {
+        await tx.onlineOrder.updateMany({
+          where: { posOrderId: orderId },
+          data: { status: 'READY' },
+        });
+      } else if (order.posOrderId) {
+        await tx.order.updateMany({
+          where: { id: order.posOrderId, order_source: { equals: 'ONLINE', mode: 'insensitive' } },
+          data: { status: 'READY' },
+        });
+      }
+      return result;
+    });
 
     if (updateResult.count === 0) {
       throw new BadRequestException(
         `Order #${orderId} was modified by another process before recovery could complete. ` +
         `Please refresh and try again.`,
       );
-    }
-
-    // 11. Sync POS twin if this was an online order with a linked posOrderId
-    if (!isPos && order.posOrderId) {
-      await this.prisma.order.updateMany({
-        where: { id: order.posOrderId },
-        data: { status: 'READY' },
-      });
     }
 
     // 12. Fetch updated order for broadcast
@@ -1123,11 +1252,16 @@ export class RiderService {
 
     // 14. Real-time broadcast
     const room = `store_${order.store_id}`;
-    this.gateway.broadcast('order_updated', updatedOrder, room);
+    this.gateway.broadcast(
+      'order_updated',
+      isPos ? formatPosOrderForRider(updatedOrder) : formatOnlineOrderForRider(updatedOrder),
+      room,
+    );
 
     return {
       success: true,
       orderId,
+      entityType,
       previousStatus,
       newStatus: 'READY',
       isPos,

@@ -72,10 +72,12 @@ describe('Admin Force-Release & Rider Deactivation Tests (Tests 29–32)', () =>
 
   // ── TEST 30: Client State Update on Force-Release ─────────────────────
   describe('Test 30: Client State Update on Force-Release', () => {
-    it('should update target delivery to READY, clear rider assignments, and preserve order identity', () => {
+    it('should update target delivery to READY, clear rider assignments, and preserve order identity with canonical target', () => {
       const initialDeliveries = [
         {
           id: 501,
+          entityType: 'ONLINE',
+          entityId: 501,
           bridgeOrderId: 501,
           customer: 'Alice',
           address: '123 Main St',
@@ -87,6 +89,8 @@ describe('Admin Force-Release & Rider Deactivation Tests (Tests 29–32)', () =>
         },
         {
           id: 502,
+          entityType: 'POS',
+          entityId: 502,
           bridgeOrderId: 502,
           customer: 'Charlie',
           address: '456 Oak St',
@@ -98,7 +102,7 @@ describe('Admin Force-Release & Rider Deactivation Tests (Tests 29–32)', () =>
         },
       ];
 
-      const updated = applyForceReleaseSuccess(initialDeliveries, 501);
+      const updated = applyForceReleaseSuccess(initialDeliveries, { entityType: 'ONLINE', entityId: 501 });
 
       // Order 501 updated
       const released = updated.find(d => d.id === 501);
@@ -114,6 +118,83 @@ describe('Admin Force-Release & Rider Deactivation Tests (Tests 29–32)', () =>
       const untouched = updated.find(d => d.id === 502);
       expect(untouched.status).toBe('OUT_FOR_DELIVERY');
       expect(untouched.claimedByRiderId).toBe(99);
+    });
+
+    // Requirement 7 Tests
+    it('ONLINE:28 force-release changes only ONLINE:28', () => {
+      const deliveries = [
+        { id: 28, entityType: 'ONLINE', entityId: 28, status: 'DISPATCHED', claimedByRiderId: 10 },
+        { id: 28, entityType: 'POS', entityId: 28, status: 'DISPATCHED', claimedByRiderId: 20 },
+      ];
+      const updated = applyForceReleaseSuccess(deliveries, { entityType: 'ONLINE', entityId: 28 });
+      expect(updated.find(d => d.entityType === 'ONLINE')?.status).toBe('READY');
+      expect(updated.find(d => d.entityType === 'ONLINE')?.claimedByRiderId).toBeNull();
+      expect(updated.find(d => d.entityType === 'POS')?.status).toBe('DISPATCHED');
+      expect(updated.find(d => d.entityType === 'POS')?.claimedByRiderId).toBe(20);
+    });
+
+    it('POS:28 force-release changes only POS:28', () => {
+      const deliveries = [
+        { id: 28, entityType: 'ONLINE', entityId: 28, status: 'DISPATCHED', claimedByRiderId: 10 },
+        { id: 28, entityType: 'POS', entityId: 28, status: 'DISPATCHED', claimedByRiderId: 20 },
+      ];
+      const updated = applyForceReleaseSuccess(deliveries, { entityType: 'POS', entityId: 28 });
+      expect(updated.find(d => d.entityType === 'POS')?.status).toBe('READY');
+      expect(updated.find(d => d.entityType === 'POS')?.claimedByRiderId).toBeNull();
+      expect(updated.find(d => d.entityType === 'ONLINE')?.status).toBe('DISPATCHED');
+      expect(updated.find(d => d.entityType === 'ONLINE')?.claimedByRiderId).toBe(10);
+    });
+
+    it('Numeric-only force-release target does not mutate any record', () => {
+      const deliveries = [
+        { id: 28, entityType: 'ONLINE', entityId: 28, status: 'DISPATCHED', claimedByRiderId: 10 },
+      ];
+      // Numeric ID passed directly
+      const updatedNum = applyForceReleaseSuccess(deliveries, 28 as any);
+      expect(updatedNum[0].status).toBe('DISPATCHED');
+      expect(updatedNum[0].claimedByRiderId).toBe(10);
+
+      // Object without entityType
+      const updatedNoType = applyForceReleaseSuccess(deliveries, { entityId: 28 } as any);
+      expect(updatedNoType[0].status).toBe('DISPATCHED');
+      expect(updatedNoType[0].claimedByRiderId).toBe(10);
+    });
+
+    it('rejects isPos-only, id-only, and bridgeOrderId-only targets', () => {
+      const deliveries = [
+        { id: 28, entityType: 'ONLINE', entityId: 28, status: 'DISPATCHED', claimedByRiderId: 10 },
+        { id: 28, entityType: 'POS', entityId: 28, status: 'DISPATCHED', claimedByRiderId: 20 },
+      ];
+
+      for (const target of [
+        { isPos: true, entityId: 28 },
+        { entityType: 'ONLINE', id: 28 },
+        { entityType: 'POS', bridgeOrderId: 28 },
+      ]) {
+        expect(applyForceReleaseSuccess(deliveries, target as any)).toEqual(deliveries);
+      }
+    });
+
+    it('does not release a delivery card missing canonical identity', () => {
+      const deliveries = [
+        { id: 28, status: 'DISPATCHED', claimedByRiderId: 10 },
+      ];
+
+      expect(applyForceReleaseSuccess(deliveries, { entityType: 'ONLINE', entityId: 28 })).toEqual(deliveries);
+    });
+
+    it('Both ONLINE:28 and POS:28 remain separate', () => {
+      const deliveries = [
+        { id: 28, entityType: 'ONLINE', entityId: 28, status: 'DISPATCHED', claimedByRiderId: 10 },
+        { id: 28, entityType: 'POS', entityId: 28, status: 'DISPATCHED', claimedByRiderId: 20 },
+      ];
+      const updated = applyForceReleaseSuccess(deliveries, { entityType: 'ONLINE', entityId: 28 });
+      const online = updated.find(d => d.entityType === 'ONLINE');
+      const pos = updated.find(d => d.entityType === 'POS');
+      expect(online?.status).toBe('READY');
+      expect(pos?.status).toBe('DISPATCHED');
+      expect(online?.entityId).toBe(28);
+      expect(pos?.entityId).toBe(28);
     });
   });
 

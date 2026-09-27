@@ -60,7 +60,7 @@ export function getForceReleaseConfirmationDetails(order: any) {
     };
   }
 
-  const orderId = order.id || order.bridgeOrderId || 'Unknown';
+  const orderId = order.entityId ?? order.id ?? order.bridgeOrderId ?? 'Unknown';
   const riderName =
     order.claimedByRiderName ||
     (order.claimedByRiderId ? `Rider #${order.claimedByRiderId}` : (order.rider || 'Assigned Rider'));
@@ -73,14 +73,38 @@ export function getForceReleaseConfirmationDetails(order: any) {
   };
 }
 
+import {
+  getCanonicalDeliveryIdentity,
+  getCanonicalDeliveryIdentityKey,
+} from './deliveryIdentity';
+
+export interface CanonicalDeliveryTarget {
+  entityType: 'ONLINE' | 'POS';
+  entityId: number;
+}
+
 /**
  * Applies the force-release update to a list of active deliveries.
+ * Requirement 6: Numeric-only targets are rejected/ignored.
+ * An explicit canonical identity ({ entityType, entityId }) is strictly required.
  */
-export function applyForceReleaseSuccess(deliveries: any[], targetOrderId: number | string): any[] {
-  if (!Array.isArray(deliveries)) return [];
+export function applyForceReleaseSuccess(
+  deliveries: any[],
+  target: unknown,
+): any[] {
+  if (!Array.isArray(deliveries) || !target || typeof target !== 'object') {
+    return Array.isArray(deliveries) ? deliveries : [];
+  }
+
+  const targetIdentity = getCanonicalDeliveryIdentity(target);
+  if (!targetIdentity) {
+    return deliveries;
+  }
+
+  const targetKey = getCanonicalDeliveryIdentityKey(targetIdentity);
 
   return deliveries.map(d => {
-    if (d.bridgeOrderId === targetOrderId || d.id === targetOrderId) {
+    if (getCanonicalDeliveryIdentityKey(d) === targetKey) {
       return {
         ...d,
         status: 'READY',

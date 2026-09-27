@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
 import { ArrowLeft, RefreshCw, Package, MapPin, AlertTriangle, LogOut, WifiOff } from 'lucide-react';
+import { getDeliveryIdentityKey } from '../deliveryIdentity';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 
@@ -46,7 +47,7 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
   const [errorMessage, setErrorMessage] = useState('');
 
-  const [claimingId, setClaimingId] = useState<number | string | null>(null);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
 
@@ -186,7 +187,7 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
     if (claimingId !== null) return;
 
-    setClaimingId(order.id);
+    setClaimingId(getDeliveryIdentityKey(order));
 
     try {
 
@@ -237,7 +238,7 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
   const renderOrderCard = (order: any, isActive: boolean) => (
 
-    <div key={order.id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-sm mb-4">
+    <div key={getDeliveryIdentityKey(order) || `${order.id}-${order.isPos ? 'POS' : 'ONLINE'}`} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-sm mb-4">
 
       <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-3">
 
@@ -357,13 +358,13 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
           onClick={() => handleAccept(order)}
 
-          disabled={claimingId === order.id || activeOrders.length > 0}
+          disabled={claimingId === getDeliveryIdentityKey(order) || activeOrders.length > 0}
 
           className="w-full mt-3 bg-primary text-slate-900 font-bold py-2.5 rounded-xl shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
 
         >
 
-          {claimingId === order.id ? (
+          {claimingId === getDeliveryIdentityKey(order) ? (
 
             <>
 
@@ -630,4 +631,3 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
   );
 
 }
-

@@ -176,10 +176,10 @@ describe('RiderService', () => {
   describe('updateRiderGps — identity binding (Task #2K)', () => {
     it('1. Rider A sends a GPS update -> tracking records Rider A\'s authenticated User.id', async () => {
       prisma.user.findUnique.mockResolvedValue(RIDER_A);
-      prisma.onlineOrder.findUnique.mockResolvedValue(null); // treated as a POS order
+      prisma.order.findUnique.mockResolvedValue({ id: 900, store_id: 67 });
       prisma.order.update.mockResolvedValue({});
 
-      const result = await service.updateRiderGps({ orderId: 900, lat: 24.9, lng: 67.1 }, { sub: RIDER_A.id });
+      const result = await service.updateRiderGps({ orderId: 900, entityType: 'POS', lat: 24.9, lng: 67.1 }, { sub: RIDER_A.id });
 
       expect(result.success).toBe(true);
       expect(prisma.order.update).toHaveBeenCalledWith({
@@ -190,10 +190,10 @@ describe('RiderService', () => {
 
     it('2. Rider A sends body.riderId = Rider B -> tracking still records Rider A, never Rider B', async () => {
       prisma.user.findUnique.mockResolvedValue(RIDER_A);
-      prisma.onlineOrder.findUnique.mockResolvedValue(null);
+      prisma.order.findUnique.mockResolvedValue({ id: 901, store_id: 67 });
       prisma.order.update.mockResolvedValue({});
 
-      await service.updateRiderGps({ orderId: 901, lat: 1, lng: 2, riderId: String(RIDER_B_ID) }, { sub: RIDER_A.id });
+      await service.updateRiderGps({ orderId: 901, entityType: 'POS', lat: 1, lng: 2, riderId: String(RIDER_B_ID) }, { sub: RIDER_A.id });
 
       const writtenData = prisma.order.update.mock.calls[0][0].data.delivery_info;
       expect(writtenData.riderId).toBe(RIDER_A.id);
@@ -206,10 +206,10 @@ describe('RiderService', () => {
 
     it('3. Rider A omits body.riderId -> tracking still records Rider A (identity never depended on the body field)', async () => {
       prisma.user.findUnique.mockResolvedValue(RIDER_A);
-      prisma.onlineOrder.findUnique.mockResolvedValue(null);
+      prisma.order.findUnique.mockResolvedValue({ id: 902, store_id: 67 });
       prisma.order.update.mockResolvedValue({});
 
-      await service.updateRiderGps({ orderId: 902, lat: 1, lng: 2 }, { sub: RIDER_A.id });
+      await service.updateRiderGps({ orderId: 902, entityType: 'POS', lat: 1, lng: 2 }, { sub: RIDER_A.id });
 
       expect(prisma.order.update.mock.calls[0][0].data.delivery_info.riderId).toBe(RIDER_A.id);
     });
@@ -227,10 +227,10 @@ describe('RiderService', () => {
 
     it('5. no hardcoded \'R1\' fallback remains anywhere in the recorded identity', async () => {
       prisma.user.findUnique.mockResolvedValue(RIDER_A);
-      prisma.onlineOrder.findUnique.mockResolvedValue(null);
+      prisma.order.findUnique.mockResolvedValue({ id: 903, store_id: 67 });
       prisma.order.update.mockResolvedValue({});
 
-      await service.updateRiderGps({ orderId: 903, lat: 1, lng: 2 }, { sub: RIDER_A.id });
+      await service.updateRiderGps({ orderId: 903, entityType: 'POS', lat: 1, lng: 2 }, { sub: RIDER_A.id });
 
       const writtenData = prisma.order.update.mock.calls[0][0].data.delivery_info;
       expect(writtenData.riderId).not.toBe('R1');
@@ -245,16 +245,16 @@ describe('RiderService', () => {
 
     it('6. existing GPS update behavior (lat/lng/lastUpdated, online-order routing, broadcast) is unchanged apart from the identity source', async () => {
       prisma.user.findUnique.mockResolvedValue(RIDER_A);
-      prisma.onlineOrder.findUnique.mockResolvedValue({ id: 904 }); // this one IS an online order
+      prisma.onlineOrder.findUnique.mockResolvedValue({ id: 904, store_id: 67 }); // this one IS an online order
       prisma.onlineOrder.update.mockResolvedValue({});
 
-      const result = await service.updateRiderGps({ orderId: 904, lat: 5, lng: 6, storeId: 67 }, { sub: RIDER_A.id });
+      const result = await service.updateRiderGps({ orderId: 904, entityType: 'ONLINE', lat: 5, lng: 6, storeId: 67 }, { sub: RIDER_A.id });
 
       expect(prisma.onlineOrder.update).toHaveBeenCalledWith({
         where: { id: 904 },
         data: { delivery: expect.objectContaining({ riderId: RIDER_A.id, lat: 5, lng: 6, lastUpdated: expect.any(String) }) },
       });
-      expect(gateway.broadcast).toHaveBeenCalledWith('gps_update', { orderId: 904, lat: 5, lng: 6 }, 'store_67');
+      expect(gateway.broadcast).toHaveBeenCalledWith('gps_update', { orderId: 904, entityType: 'ONLINE', entityId: 904, lat: 5, lng: 6 }, 'store_67');
       expect(result).toEqual({ success: true });
     });
     it('7. a rider with an active unfinished delivery cannot claim another order (Fix 6)', async () => {

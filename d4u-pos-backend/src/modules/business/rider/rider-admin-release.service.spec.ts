@@ -313,7 +313,7 @@ describe('RiderService — adminForceReleaseRiderAssignment (Admin Recovery)', (
       });
 
       await expect(
-        service.adminForceReleaseRiderAssignment(510, { sub: ADMIN_STORE_10.id, active_store_id: 10 }),
+        service.adminForceReleaseRiderAssignment(510, { sub: ADMIN_STORE_10.id, active_store_id: 10 }, 'ONLINE'),
       ).rejects.toThrow(BadRequestException);
     }
     expect(prisma.onlineOrder.update).not.toHaveBeenCalled();
@@ -417,7 +417,7 @@ describe('RiderService — adminForceReleaseRiderAssignment (Admin Recovery)', (
     // Both OnlineOrder and linked POS order assignments are updated
     expect(prisma.onlineOrder.update).toHaveBeenCalled();
     expect(prisma.order.updateMany).toHaveBeenCalledWith({
-      where: { id: 900 },
+      where: { id: 900, order_source: { equals: 'ONLINE', mode: 'insensitive' } },
       data: { rider_id: null, status: 'READY' },
     });
   });
@@ -434,11 +434,11 @@ describe('RiderService — adminForceReleaseRiderAssignment (Admin Recovery)', (
     const updated = { id: 516, store_id: 10, claimedByRiderId: null, status: 'READY' };
     prisma.onlineOrder.update.mockResolvedValue(updated);
 
-    await service.adminForceReleaseRiderAssignment(516, { sub: ADMIN_STORE_10.id, active_store_id: 10 });
+    await service.adminForceReleaseRiderAssignment(516, { sub: ADMIN_STORE_10.id, active_store_id: 10 }, 'ONLINE');
 
     expect(gateway.broadcast).toHaveBeenCalledWith(
       'order_updated',
-      updated,
+      expect.objectContaining({ ...updated, entityType: 'ONLINE', entityId: 516 }),
       'store_10',
     );
   });

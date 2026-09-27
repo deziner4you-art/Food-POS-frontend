@@ -1,6 +1,9 @@
 import { IsOptional, IsNotEmpty } from 'class-validator';
 
 export class UpdateGpsDto {
+  @IsOptional()
+  entityType?: 'ONLINE' | 'POS' | string;
+
   @IsNotEmpty()
   orderId: number | string;
 

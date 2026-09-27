@@ -500,7 +500,7 @@ describe('RiderService — releaseRiderAssignment (Sprint 29.1 Delivery Recovery
         status: termStatus,
       });
 
-      await expect(service.releaseRiderAssignment(516, { sub: RIDER_A.id })).rejects.toThrow(
+      await expect(service.releaseRiderAssignment(516, { sub: RIDER_A.id }, 'ONLINE')).rejects.toThrow(
         BadRequestException,
       );
     }
@@ -665,11 +665,11 @@ describe('RiderService — releaseRiderAssignment (Sprint 29.1 Delivery Recovery
     const updatedOnline = { id: 522, store_id: 10, claimedByRiderId: null, status: 'READY' };
     prisma.onlineOrder.update.mockResolvedValue(updatedOnline);
 
-    await service.releaseRiderAssignment(522, { sub: RIDER_A.id });
+    await service.releaseRiderAssignment(522, { sub: RIDER_A.id }, 'ONLINE');
 
     expect(gateway.broadcast).toHaveBeenCalledWith(
       'order_updated',
-      updatedOnline,
+      expect.objectContaining({ ...updatedOnline, entityType: 'ONLINE', entityId: 522 }),
       'store_10',
     );
 

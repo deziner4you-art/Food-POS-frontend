@@ -197,7 +197,7 @@ describe('RiderService — Sprint 29.3A Admin Delivery Exception Recovery', () =
 
       prisma.onlineOrder.updateMany.mockResolvedValue({ count: 1 });
 
-      const result = await service.adminRecoverDeliveryException(1, ADMIN, 'Orphaned dispatch');
+      const result = await service.adminRecoverDeliveryException(1, ADMIN, 'Orphaned dispatch', 'ONLINE');
 
       // Test 9: result status is READY
       expect(result.success).toBe(true);
@@ -229,7 +229,7 @@ describe('RiderService — Sprint 29.3A Admin Delivery Exception Recovery', () =
       });
 
       // Test 10: realtime broadcast emitted
-      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', mockUpdated, 'store_1');
+      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', expect.objectContaining({ ...mockUpdated, entityType: 'ONLINE', entityId: 1 }), 'store_1');
     });
 
     // ---------------------------------------------------------------
@@ -247,7 +247,7 @@ describe('RiderService — Sprint 29.3A Admin Delivery Exception Recovery', () =
 
       prisma.onlineOrder.updateMany.mockResolvedValue({ count: 1 });
 
-      const result = await service.adminRecoverDeliveryException(25, ADMIN, 'Billed but never dispatched');
+      const result = await service.adminRecoverDeliveryException(25, ADMIN, 'Billed but never dispatched', 'ONLINE');
 
       // Test 9: becomes READY
       expect(result.success).toBe(true);
@@ -278,7 +278,7 @@ describe('RiderService — Sprint 29.3A Admin Delivery Exception Recovery', () =
       });
 
       // Test 10: realtime broadcast
-      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', mockUpdated, 'store_1');
+      expect(gateway.broadcast).toHaveBeenCalledWith('order_updated', expect.objectContaining({ ...mockUpdated, entityType: 'ONLINE', entityId: 25 }), 'store_1');
     });
 
     // ---------------------------------------------------------------
@@ -297,10 +297,10 @@ describe('RiderService — Sprint 29.3A Admin Delivery Exception Recovery', () =
       prisma.onlineOrder.updateMany.mockResolvedValue({ count: 1 });
       prisma.order.updateMany.mockResolvedValue({ count: 1 });
 
-      await service.adminRecoverDeliveryException(1, ADMIN, 'Twin sync test');
+      await service.adminRecoverDeliveryException(1, ADMIN, 'Twin sync test', 'ONLINE');
 
       expect(prisma.order.updateMany).toHaveBeenCalledWith({
-        where: { id: 10 },
+        where: { id: 10, order_source: { equals: 'ONLINE', mode: 'insensitive' } },
         data: { status: 'READY' },
       });
     });

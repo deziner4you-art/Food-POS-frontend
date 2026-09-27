@@ -45,8 +45,8 @@ export default function DeliveryExceptions() {
     setRecovering(true);
     try {
       const endpoint = actionType === 'settle'
-        ? `/rider-orders/${selectedException.id}/admin-force-settle`
-        : `/rider-orders/${selectedException.id}/recover-exception`;
+        ? `/rider-orders/${selectedException.entityId ?? selectedException.id}/admin-force-settle?entityType=${selectedException.entityType || (selectedException.isPos ? 'POS' : 'ONLINE')}`
+        : `/rider-orders/${selectedException.entityId ?? selectedException.id}/recover-exception?entityType=${selectedException.entityType || (selectedException.isPos ? 'POS' : 'ONLINE')}`;
 
       const res = await apiFetch(endpoint, {
         method: 'PATCH',

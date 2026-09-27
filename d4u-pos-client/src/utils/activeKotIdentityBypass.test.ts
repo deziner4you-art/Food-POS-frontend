@@ -614,6 +614,9 @@ describe('Phase 3 Final Task: Close All Active KOT Identity Bypasses', () => {
       const baseDelivery = {
         id: 501,
         bridgeOrderId: 501,
+        entityType: 'POS',
+        entityId: 501,
+        isPos: true,
         store_id: STORE_ID,
         businessDayId: AUTHORITATIVE_BD,
         status: 'PREPARING',
@@ -622,7 +625,14 @@ describe('Phase 3 Final Task: Close All Active KOT Identity Bypasses', () => {
       it('updates a matching store and business-day delivery to READY', () => {
         const result = applyKdsDeliveryUpdate(
           [baseDelivery],
-          { order_id: 501, status: 'READY', store_id: STORE_ID, business_day_id: AUTHORITATIVE_BD },
+          {
+            order_id: 501,
+            entityType: 'POS',
+            entityId: 501,
+            status: 'READY',
+            store_id: STORE_ID,
+            business_day_id: AUTHORITATIVE_BD,
+          },
           STORE_ID,
           AUTHORITATIVE_BD,
         );
@@ -681,7 +691,14 @@ describe('Phase 3 Final Task: Close All Active KOT Identity Bypasses', () => {
         const readyDelivery = { ...baseDelivery, status: 'READY' };
         const result = applyKdsDeliveryUpdate(
           [readyDelivery],
-          { order_id: 501, status: 'PREPARING', store_id: STORE_ID, business_day_id: AUTHORITATIVE_BD },
+          {
+            order_id: 501,
+            entityType: 'POS',
+            entityId: 501,
+            status: 'PREPARING',
+            store_id: STORE_ID,
+            business_day_id: AUTHORITATIVE_BD,
+          },
           STORE_ID,
           AUTHORITATIVE_BD,
         );

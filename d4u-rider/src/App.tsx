@@ -3,12 +3,12 @@ import { DeliveryStatus, DeliveryOrder, SavedCompletedMission, RiderStats } from
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
 import { generateGridPath } from './utils';
 import { io } from 'socket.io-client';
+import { getDeliveryEntityType, getDeliveryIdentityKey } from './deliveryIdentity';
 
 // New Components
 import ActiveRideView from './components/ActiveRideView';
 import HistoryView from './components/HistoryView';
 import SettleCashView from './components/SettleCashView';
-import POSPanel from './components/POSPanel';
 import LoginView from './components/LoginView';
 import OrdersView from './components/OrdersView';
 import { Clock, Navigation, CheckSquare, LogOut, List } from 'lucide-react';
@@ -303,7 +303,14 @@ export default function App() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}`,
         },
-        body: JSON.stringify({ orderId: activeOrder.id, storeId: activeOrder.store_id || 1, lat: driverCoords.y, lng: driverCoords.x })
+        body: JSON.stringify({
+          orderId: activeOrder.entityId ?? activeOrder.id,
+          entityId: activeOrder.entityId ?? activeOrder.id,
+          entityType: getDeliveryEntityType(activeOrder),
+          storeId: activeOrder.store_id,
+          lat: driverCoords.y,
+          lng: driverCoords.x,
+        })
       }).catch(() => {
         const { toast } = require('react-hot-toast');
         toast.error('Failed to sync GPS location with backend.');
@@ -350,9 +357,10 @@ export default function App() {
       // Order table, not OnlineOrder -- PATCHing /online-orders/:id for one
       // of these always failed (wrong resource), which is why status buttons
       // like "Confirm Picked Up" silently did nothing for POS orders.
+      const deliveryId = activeOrder.entityId ?? activeOrder.id;
       const endpoint = activeOrder.isPos
-        ? `${BACKEND_URL}/pos-orders/${activeOrder.id}/status`
-        : `${BACKEND_URL}/online-orders/${activeOrder.id}`;
+        ? `${BACKEND_URL}/pos-orders/${deliveryId}/status`
+        : `${BACKEND_URL}/online-orders/${deliveryId}`;
       const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: {
@@ -398,6 +406,12 @@ export default function App() {
     console.log('[RIDER] Restoring order state from REST payload:', targetOrder);
     const deliveryOrder: DeliveryOrder = {
       id: targetOrder.id,
+      entityType: getDeliveryEntityType(targetOrder),
+      entityId: targetOrder.entityId ?? targetOrder.id,
+      onlineOrderId: targetOrder.onlineOrderId ?? (getDeliveryEntityType(targetOrder) === 'ONLINE' ? targetOrder.id : null),
+      posOrderId: targetOrder.posOrderId ?? (getDeliveryEntityType(targetOrder) === 'POS' ? targetOrder.id : null),
+      store_id: targetOrder.store_id ?? riderStoreId,
+      businessDayId: targetOrder.businessDayId ?? targetOrder.business_day_id ?? null,
       source: targetOrder.isPos ? 'POS' : 'ONLINE_ORDER',
       isPos: !!targetOrder.isPos,
       restaurantName: riderStoreName || 'Restaurant',
@@ -465,7 +479,7 @@ export default function App() {
   const handleResumeOrder = (orderToResume: any) => {
     if (!orderToResume) return;
 
-    if (activeOrder && String(activeOrder.id) === String(orderToResume.id)) {
+    if (activeOrder && getDeliveryIdentityKey(activeOrder) === getDeliveryIdentityKey(orderToResume)) {
       setActiveOrder(prev => prev ? { ...prev, bridgeStatus: orderToResume.status, estimatedReadyAt: orderToResume.estimatedReadyAt } : null);
       setCurrentView('map');
       return;
@@ -599,6 +613,8 @@ export default function App() {
     emitPresence(isOnlineRef.current);
 
     socket.on('order_updated', (order: any) => {
+      const eventIdentityKey = getDeliveryIdentityKey(order);
+      if (!eventIdentityKey) return;
       setLastOrderUpdate(Date.now());
       // Task 7B: use refs instead of closure values — avoids stale reads when
       // the socket was registered before the latest render.
@@ -624,6 +640,12 @@ export default function App() {
         console.log('[RIDER] Task 7B — new available order via realtime:', order.id, order.status, order.store_id);
         const deliveryOrder: DeliveryOrder = {
           id: order.id,
+          entityType: getDeliveryEntityType(order),
+          entityId: order.entityId ?? order.id,
+          onlineOrderId: order.onlineOrderId ?? (getDeliveryEntityType(order) === 'ONLINE' ? order.id : null),
+          posOrderId: order.posOrderId ?? (getDeliveryEntityType(order) === 'POS' ? order.id : null),
+          store_id: order.store_id ?? riderStoreId,
+          businessDayId: order.businessDayId ?? order.business_day_id ?? null,
           source: order.isPos ? 'POS' : 'ONLINE_ORDER',
           isPos: !!order.isPos,
           restaurantName: riderStoreName || 'Restaurant',
@@ -650,7 +672,7 @@ export default function App() {
       }
 
       // 3. Sync active order updates
-      if (currentActiveOrder && order.id === currentActiveOrder.id) {
+      if (currentActiveOrder && eventIdentityKey === getDeliveryIdentityKey(currentActiveOrder)) {
         // If this order is still just an unaccepted offer and another rider's
         // claim landed first, drop it instead of leaving a dead offer on
         // screen — RiderService.claimOrder is the atomic lock; this is the
@@ -670,7 +692,7 @@ export default function App() {
 
       // 4. Handle settlements
       if (order.status === 'SETTLED') {
-        setCompletedLedger(prev => prev.map(m => m.orderId == order.id ? { ...m, settled: true } : m));
+        setCompletedLedger(prev => prev.map(m => getDeliveryIdentityKey(m) === eventIdentityKey ? { ...m, settled: true } : m));
       }
     });
 
@@ -722,7 +744,7 @@ export default function App() {
     // claimed server-side but became unreachable (handleResumeOrder used to
     // block switching back). Block the claim here instead, before it ever
     // reaches the server.
-    if (orderToClaim && activeOrder && String(activeOrder.id) !== String(orderToClaim.id)) {
+    if (orderToClaim && activeOrder && getDeliveryIdentityKey(activeOrder) !== getDeliveryIdentityKey(orderToClaim)) {
       const { toast } = require('react-hot-toast');
       toast.error('Finish your current delivery before accepting a new one.');
       return false;
@@ -735,13 +757,14 @@ export default function App() {
     // order_updated event could accept the same order — a client-side race
     // with no server lock.
     try {
-      const res = await fetch(`${BACKEND_URL}/rider-orders/${targetOrder.id}/claim`, {
+      const targetDeliveryId = targetOrder.entityId ?? targetOrder.id;
+      const res = await fetch(`${BACKEND_URL}/rider-orders/${targetDeliveryId}/claim?entityType=${getDeliveryEntityType(targetOrder)}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('d4u_rider_token')}`,
         },
-        body: JSON.stringify({ riderId, riderName }),
+        body: JSON.stringify({ riderId, riderName, entityType: getDeliveryEntityType(targetOrder) }),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -776,6 +799,12 @@ export default function App() {
 
     const deliveryOrder: DeliveryOrder = orderToClaim ? {
       id: targetOrder.id,
+      entityType: getDeliveryEntityType(targetOrder),
+      entityId: targetOrder.entityId ?? targetOrder.id,
+      onlineOrderId: targetOrder.onlineOrderId ?? (getDeliveryEntityType(targetOrder) === 'ONLINE' ? targetOrder.id : null),
+      posOrderId: targetOrder.posOrderId ?? (getDeliveryEntityType(targetOrder) === 'POS' ? targetOrder.id : null),
+      store_id: targetOrder.store_id ?? riderStoreId,
+      businessDayId: targetOrder.businessDayId ?? targetOrder.business_day_id ?? null,
       source: targetOrder.isPos ? 'POS' : 'ONLINE_ORDER',
       isPos: !!targetOrder.isPos,
       restaurantName: riderStoreName || 'Restaurant',
@@ -827,7 +856,8 @@ export default function App() {
     if (!activeOrder) return;
 
     try {
-      const res = await fetch(`${BACKEND_URL}/rider-orders/${activeOrder.id}/release`, {
+      const deliveryId = activeOrder.entityId ?? activeOrder.id;
+      const res = await fetch(`${BACKEND_URL}/rider-orders/${deliveryId}/release?entityType=${getDeliveryEntityType(activeOrder)}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -904,6 +934,8 @@ export default function App() {
     const newMissionLog: SavedCompletedMission = {
       id: `milestone-${Date.now()}`,
       orderId: activeOrder.id,
+      entityType: getDeliveryEntityType(activeOrder),
+      entityId: activeOrder.entityId ?? activeOrder.id,
       restaurant: activeOrder.restaurantName,
       customer: activeOrder.customerName,
       earnings: activeOrder.earnings + feedback.tip,
