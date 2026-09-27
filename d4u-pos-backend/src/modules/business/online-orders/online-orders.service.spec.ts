@@ -354,6 +354,7 @@ describe('OnlineOrdersService.updateOrderStatus — State Machine Hardening (Fin
           status: expect.objectContaining({ in: expect.arrayContaining(['READY']) }),
         }),
         orderBy: { id: 'desc' },
+        include: { posOrder: { select: { business_day_id: true } } },
       });
       expect(res).toHaveLength(1);
     });
@@ -369,8 +370,22 @@ describe('OnlineOrdersService.updateOrderStatus — State Machine Hardening (Fin
           posOrder: { business_day_id: 10 },
         }),
         orderBy: { id: 'desc' },
+        include: { posOrder: { select: { business_day_id: true } } },
       });
       expect(res).toHaveLength(1);
+    });
+
+    it('returns linked POS business-day identity for active OnlineOrders', async () => {
+      prisma.onlineOrder.findMany = jest.fn().mockResolvedValue([
+        { id: 204, type: 'DELIVERY', status: 'RIDER_ARRIVED', posOrder: { business_day_id: 10 } },
+      ]);
+
+      const res = await service.getAllOnlineOrders(STORE_ID, true, 10);
+
+      expect(res[0]).toEqual(expect.objectContaining({
+        businessDayId: 10,
+        business_day_id: 10,
+      }));
     });
 
     it('non-delivery order (PICKUP) attempting RIDER_ARRIVED is rejected', async () => {

@@ -231,9 +231,30 @@ export class OnlineOrdersService {
         business_day_id: business_day_id,
       };
     }
-    return this.prisma.onlineOrder.findMany({
+    const orders = await this.prisma.onlineOrder.findMany({
       where: whereClause,
       orderBy: { id: 'desc' },
+      ...(activeOnly
+        ? { include: { posOrder: { select: { business_day_id: true } } } }
+        : {}),
+    });
+
+    if (!activeOnly) return orders;
+
+    // POS active-delivery hydration is fail-closed and therefore requires the
+    // authoritative business-day identity on every returned OnlineOrder. The
+    // day lives on the linked POS twin, so expose it at the top level instead
+    // of returning only the relation used by the query filter.
+    return orders.map((order: any) => {
+      const businessDayId = order.businessDayId
+        ?? order.business_day_id
+        ?? order.posOrder?.business_day_id
+        ?? null;
+      return {
+        ...order,
+        businessDayId,
+        business_day_id: businessDayId,
+      };
     });
   }
 
