@@ -29,6 +29,18 @@ export class BusinessDayController {
     );
   }
 
+  @RequirePermissions('pos.business_day.read')
+  @Get('report')
+  getDayReport(
+    @Query('store_id') store_id: string,
+    @Query('business_day_id') business_day_id?: string,
+  ) {
+    return this.service.getDayReport(
+      Number(store_id),
+      business_day_id ? Number(business_day_id) : undefined,
+    );
+  }
+
   // POST /business-day/start — Day Start بٹن
   @RequirePermissions('pos.business_day.start')
   @Post('start')

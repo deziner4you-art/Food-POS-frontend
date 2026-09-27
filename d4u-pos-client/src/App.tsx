@@ -18,6 +18,7 @@ import { db, createOfflineKot, validateOfflineKotIdentity, isValidPosIntegerId }
 import { isKotEligible } from './utils/kotEligibility';
 import { isDeliveryEligible, isDeliveryActiveStatus, filterEligibleDeliveries, applyKdsDeliveryUpdate } from './utils/deliveryEligibility';
 import { verifyAuthoritativeBusinessDay } from './utils/businessDayVerification';
+import { getOpeningCashInTotal, isOpeningCashFlow } from './utils/businessDayGate';
 import { getDeliveryEntityId, getDeliveryEntityType, getDeliveryIdentityKey } from './utils/deliveryIdentity';
 import KitchenDisplay from './StitchKDS'
 import TVDisplay from './TVDisplay'
@@ -271,6 +272,18 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   // Phase 3 Final Blocker: Authoritative POS Business Day Context
   // Initialize as null (unverified). Cached business-day ID may NOT authorize rendering or watchers.
   const [activeBusinessDayId, setActiveBusinessDayId] = useState<number | null>(null);
+  const [daySummary, setDaySummary] = useState({
+    totalSales: 0,
+    totalOrders: 0,
+    cashSales: 0,
+    cardSales: 0,
+    onlineSales: 0,
+    cashIn: 0,
+    openingCashIn: 0,
+    cashOut: 0,
+    expectedCash: 0,
+    openingFloat: 0,
+  });
 
   const verifyBusinessDay = useCallback(async () => {
     const verifiedId = await verifyAuthoritativeBusinessDay(activeStoreId);
@@ -293,6 +306,41 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [verifyBusinessDay]);
+
+  const refreshDaySummary = useCallback(async () => {
+    if (!activeStoreId || !activeBusinessDayId) return;
+    try {
+      const response = await apiFetch(
+        `/business-day/report?store_id=${activeStoreId}&business_day_id=${activeBusinessDayId}`,
+        { auth: true },
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data) {
+        setDaySummary({
+          totalSales: Number(data.totalSales || 0),
+          totalOrders: Number(data.totalOrders || 0),
+          cashSales: Number(data.cashSales || 0),
+          cardSales: Number(data.cardSales || 0),
+          onlineSales: Number(data.onlineSales || 0),
+          cashIn: Number(data.cashIn || 0),
+          openingCashIn: Number(data.openingCashIn || 0),
+          cashOut: Number(data.cashOut || 0),
+          expectedCash: Number(data.expectedCash || 0),
+          openingFloat: Number(data.openingFloat || 0),
+        });
+      }
+    } catch {
+      // The backend remains authoritative; retain the last verified summary.
+    }
+  }, [activeStoreId, activeBusinessDayId]);
+
+  useEffect(() => {
+    refreshDaySummary();
+    if (!activeBusinessDayId) return;
+    const interval = setInterval(refreshDaySummary, 15000);
+    return () => clearInterval(interval);
+  }, [refreshDaySummary, activeBusinessDayId]);
 
   const [activeMenu, setActiveMenu] = useState('Home');
   const [isWaiterConnected, setIsWaiterConnected] = useState(false);
@@ -327,6 +375,9 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [modalType, setModalType] = useState<'NONE' | 'CASH_OUT' | 'DAY_CLOSE' | 'HOLD_ORDERS' | 'SETTINGS' | 'PAYMENT' | 'MANAGER_AUTH' | 'KOT_PREVIEW' | 'ADD_CUSTOM_ITEM' | 'DELIVERY_DETAILS' | 'DISCOUNT_AUTH' | 'SELECT_VARIANT' | 'ADD_ONS' | 'CUSTOMER_HISTORY'>('NONE');
+  useEffect(() => {
+    if (modalType === 'DAY_CLOSE') refreshDaySummary();
+  }, [modalType, refreshDaySummary]);
   const [pendingVariantProduct, setPendingVariantProduct] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'SIZES' | 'TOPPINGS'>('SIZES');
   // Accumulated Extra Toppings picks for the SELECT_VARIANT modal, keyed by
@@ -443,8 +494,6 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   const [selectedChatId, setSelectedChatId] = useState(1)
 
   const [activeShift, setActiveShift] = useState<'Shift 1' | 'Shift 2'>(() => (localStorage.getItem('d4u_active_shift') as 'Shift 1' | 'Shift 2') || 'Shift 1');
-  const [shift1Sales, setShift1Sales] = useState(14500);
-  const [shift2Sales, setShift2Sales] = useState(10000);
 
   const [customItemName, setCustomItemName] = useState('');
   const [customItemPrice, setCustomItemPrice] = useState('');
@@ -3769,7 +3818,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               activeDeliveries={visibleActiveDeliveries.filter(d => isDeliveryActive(d.status))}
               selectedDeliveryId={selectedDeliveryId}
               onSelectDelivery={(id) => setSelectedDeliveryId(id)}
-              storeId={activeStoreId || currentUser?.store_id || 1}
+              storeId={activeStoreId ?? undefined}
               storeName={currentUser?.store_name}
               socket={socket}
             />
@@ -4065,12 +4114,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '15px' }}>
               <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '15px 20px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px' }}>TODAY TOTAL REVENUE</span>
-                <span style={{ color: 'var(--accent-green)', fontSize: '1.6rem', fontWeight: 'bold' }}>Rs. {activeShift === 'Shift 1' ? shift1Sales.toLocaleString() : (shift1Sales + shift2Sales).toLocaleString()}</span>
-                <span style={{ color: 'var(--accent-green)', fontSize: '0.8rem' }}>+12.4% from yesterday</span>
+                <span style={{ color: 'var(--accent-green)', fontSize: '1.6rem', fontWeight: 'bold' }}>Rs. {daySummary.totalSales.toLocaleString()}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{daySummary.totalOrders} genuine orders in this business day</span>
               </div>
               <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '15px 20px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px' }}>ACTIVE ORDER NUMBER</span>
-                <span style={{ color: 'var(--accent-yellow)', fontSize: '1.6rem', fontWeight: 'bold' }}>#{kots.length > 0 ? kots[0].orderId : '45555'}</span>
+                <span style={{ color: 'var(--accent-yellow)', fontSize: '1.6rem', fontWeight: 'bold' }}>{kots.length > 0 ? `#${kots[0].orderId}` : '—'}</span>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>In-queue pending ticket</span>
               </div>
               <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '15px 20px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -4297,7 +4346,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       {(activeMenu === 'Home' || activeMenu === 'Online') && (
         <aside className="cart-sidebar">
           <div className="cart-header">
-            <h2>Order #45555</h2>
+            <h2>Current Order</h2>
             <div className="cart-header-actions"><Printer size={20} /><Trash2 size={20} color="var(--primary)" onClick={() => setCart([])} /></div>
           </div>
           <div style={{ padding: '0 16px 10px', marginTop: '10px' }}>
@@ -4634,12 +4683,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                      const res = await apiFetch('/cash-flow/out', {
                        method: 'POST',
                        headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({ store_id: Number(currentUser?.store_id), user_id: Number(currentUser?.id) || 1, amount: amt, comment: reason }),
+                        body: JSON.stringify({ store_id: Number(currentUser?.store_id), user_id: Number(currentUser?.id), amount: amt, comment: reason }),
                        auth: true,
                      });
                      if (!res.ok) throw new Error('Cash Out failed');
 
-                     const shiftSales = activeShift === 'Shift 1' ? shift1Sales : shift2Sales;
+                     const shiftSales = daySummary.totalSales;
                      setPrintData({ type: 'BILL', data: { orderType: 'Cash Out Receipt', cashOutAmount: amt, cashOutReason: reason, shiftSales, time: new Date().toLocaleString() }, printCount: 1 });
                      setToast({ message: `Cash Out of Rs. ${amt} recorded! Printing...`, type: 'success' });
                      setModalType('NONE');
@@ -4670,10 +4719,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
               {(() => {
                 const pendingOrders = visibleActiveDeliveries.filter(d => d.status !== 'SETTLED' && d.status !== 'CANCELLED');
                 const requiresPin = pendingOrders.length > 0;
-                const openingFloat = Number(localStorage.getItem('d4u_cashin_amt') || 0);
-                const shiftSales = activeShift === 'Shift 1' ? shift1Sales : (shift1Sales + shift2Sales);
-                const cashSales = shiftSales;
-                const expectedCash = openingFloat + cashSales;
+                const openingFloat = daySummary.openingFloat;
+                const shiftSales = daySummary.totalSales;
+                const cashSales = daySummary.cashSales;
+                const expectedCash = daySummary.expectedCash;
 
                 const pakDenoms = [
                   { value: 5000, label: 'Rs. 5,000 Note', type: 'note' },
@@ -4701,14 +4750,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   cashierName: currentUser?.name || 'Cashier',
                   managerName: handoverManagerName || 'Manager',
                   time: new Date().toLocaleString(),
-                  dayId: 1,
+                  dayId: activeBusinessDayId,
                   openingFloat,
-                  totalOrders: visibleActiveDeliveries.length || 1,
+                  totalOrders: daySummary.totalOrders,
                   cashSales,
-                  cardSales: 0,
-                  onlineSales: 0,
+                  openingCashIn: daySummary.openingCashIn,
+                  cardSales: daySummary.cardSales,
+                  onlineSales: daySummary.onlineSales,
                   totalNetSales: shiftSales,
-                  cashOutAmount: 0,
+                  cashOutAmount: daySummary.cashOut,
                   expectedCash,
                   countedCash: totalCountedCash,
                   variance,
@@ -4746,8 +4796,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
-                        store_id: currentUser?.store_id || 1,
-                        closed_by: currentUser?.id || 1,
+                  store_id: currentUser?.store_id,
+                  closed_by: currentUser?.id,
                         closingCash: totalCountedCash,
                         notes: JSON.stringify({
                           managerName: payload.managerName,
@@ -4801,6 +4851,11 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Opening Float</div>
                         <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white', marginTop: '4px' }}>Rs. {openingFloat.toLocaleString()}</div>
+                      </div>
+
+                      <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Cashier Cash In</div>
+                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white', marginTop: '4px' }}>Rs. {daySummary.openingCashIn.toLocaleString()}</div>
                       </div>
 
                       <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
@@ -5754,11 +5809,6 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 if (!isDeliveryOrder && posSettings.billPrintQty > 0) {
                   setPrintData({ type: 'BILL', data: currentOrder, printCount: posSettings.billPrintQty });
                 }
-                if (!isDeliveryOrder) {
-                  if (activeShift === 'Shift 1') setShift1Sales(prev => prev + grandTotal);
-                  else setShift2Sales(prev => prev + grandTotal);
-                }
-
                 setOrderNotes('');
                 setCart([]); setCashGiven(''); setModalType('NONE');
                 setPromotionOverrideActive(false); // one-transaction-only manual override
@@ -6045,6 +6095,14 @@ type DayRecord = {
   closingCash?: number | null;
   totalSales?: number | null;
   totalOrders?: number | null;
+  cashSales?: number | null;
+  cardSales?: number | null;
+  onlineSales?: number | null;
+  cashIn?: number | null;
+  openingCashIn?: number | null;
+  cashOut?: number | null;
+  expectedCash?: number | null;
+  voidedOrders?: number | null;
   notes?: string | null;
   starter?: { id?: number; name?: string } | null;
   closer?: { id?: number; name?: string } | null;
@@ -6124,7 +6182,7 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
       const res = await apiFetch('/business-day/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: currentUser.store_id, started_by: currentUser.id || 1, openingFloat: 0 }),
+        body: JSON.stringify({ store_id: currentUser.store_id, started_by: currentUser.id, openingFloat: 0 }),
         auth: true,
       });
       const data = await res.json();
@@ -6174,17 +6232,7 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
     actionBtn: { background: '#374151', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 12px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' },
   };
 
-  const demoRows: DayRecord[] = history.length > 0 ? [...history].reverse() : [
-    { id: 635, dayStart: '2020-02-25T14:41:37', dayClose: '2020-02-25T15:28:58' },
-    { id: 626, dayStart: '2020-02-24T16:29:14', dayClose: '2020-02-25T06:00:02' },
-    { id: 558, dayStart: '2020-02-18T15:15:28', dayClose: '2020-02-19T06:00:02' },
-    { id: 442, dayStart: '2020-02-03T17:05:08', dayClose: '2020-02-06T17:36:54' },
-    { id: 441, dayStart: '2020-02-03T17:05:08', dayClose: '2020-02-16T06:00:02' },
-    { id: 367, dayStart: '2020-01-23T17:07:35', dayClose: '2020-01-24T06:00:01' },
-    { id: 329, dayStart: '2020-01-18T14:46:09', dayClose: '2020-01-23T14:03:12' },
-    { id: 316, dayStart: '2020-01-16T20:03:53', dayClose: '2020-01-17T06:00:02' },
-    { id: 11,  dayStart: '2019-11-15T09:36:32', dayClose: '2019-12-24T06:03:43' },
-  ];
+  const reportRows: DayRecord[] = history;
 
   const getDayStart = (record: DayRecord) => record.dayStart || record.opened_at;
   const getDayClose = (record: DayRecord) => record.dayClose || record.closed_at;
@@ -6230,15 +6278,19 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
               <th style={s.th}>ID</th>
               <th style={s.th}>Day Start</th>
               <th style={s.th}>Day Close</th>
+              <th style={s.th}>Sales / Orders</th>
+              <th style={s.th}>Cash In / Out</th>
               <th style={s.th}>Reports</th>
             </tr>
           </thead>
           <tbody>
-            {history.map((row) => (
+            {reportRows.map((row) => (
               <tr key={row.id}>
                 <td style={s.td}>{row.id}</td>
                 <td style={s.td}>{fmt(getDayStart(row))}</td>
                 <td style={s.td}>{getDayClose(row) ? fmt(getDayClose(row)) : <em style={{ color: '#9ca3af' }}>Active</em>}</td>
+                <td style={s.td}>{money(row.totalSales)}<br /><small>{row.totalOrders ?? 0} orders</small></td>
+                <td style={s.td}>{money(row.cashIn)} / {money(row.cashOut)}</td>
                 <td style={s.td}>
                   <button style={s.actionBtn} onClick={() => setSelectedReport(row)}>
                     <span>≡</span> action
@@ -6275,10 +6327,17 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
                 ['Day Close', getDayClose(selectedReport) ? fmt(getDayClose(selectedReport)) : 'Still Open'],
                 ['Started By', selectedReport.starter?.name || '—'],
                 ['Closed By', selectedReport.closer?.name || '—'],
-                ['Opening Cash', money(selectedReport.openingFloat)],
-                ['Closing Cash', selectedReport.closingCash == null ? '—' : money(selectedReport.closingCash)],
+                  ['Opening Cash', money(selectedReport.openingFloat)],
+                  ['Cashier Opening In', money(selectedReport.openingCashIn)],
+                  ['Closing Cash', selectedReport.closingCash == null ? '—' : money(selectedReport.closingCash)],
                 ['Total Orders', String(selectedReport.totalOrders ?? 0)],
                 ['Total Sales', money(selectedReport.totalSales)],
+                ['Cash Sales', money(selectedReport.cashSales)],
+                ['Card Sales', money(selectedReport.cardSales)],
+                ['Online Sales', money(selectedReport.onlineSales)],
+                ['Cash In', money(selectedReport.cashIn)],
+                ['Cash Out', money(selectedReport.cashOut)],
+                ['Expected Cash', money(selectedReport.expectedCash)],
               ].map(([label, value]) => (
                 <div key={label} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '11px 12px' }}>
                   <div style={{ color: '#6b7280', fontSize: '0.72rem', marginBottom: '4px' }}>{label}</div>
@@ -6306,10 +6365,10 @@ function CashInPage({ currentUser, onCashIn, onLogout }: { currentUser: any; onC
   const [errMsg, setErrMsg] = useState('');
 
   useEffect(() => {
-    fetch(BACKEND_URL + `/cash-flow?store_id=${currentUser.store_id}`)
+    apiFetch(`/cash-flow?store_id=${currentUser.store_id}`, { auth: true })
       .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data)) setHistory(data.reverse());
+        if (Array.isArray(data)) setHistory([...data].reverse());
       })
       .catch(console.error);
   }, [currentUser]);
@@ -6321,7 +6380,7 @@ function CashInPage({ currentUser, onCashIn, onLogout }: { currentUser: any; onC
       const res = await apiFetch('/cash-flow/in', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: currentUser.store_id, user_id: currentUser.id || 1, amount: parseFloat(amount), comment }),
+        body: JSON.stringify({ store_id: currentUser.store_id, user_id: currentUser.id, amount: parseFloat(amount), comment, is_opening_float: true }),
         auth: true,
       });
       const data = await res.json();
@@ -6352,7 +6411,7 @@ function CashInPage({ currentUser, onCashIn, onLogout }: { currentUser: any; onC
     actionBtn: { background: 'transparent', border: 'none', cursor: 'pointer', color: '#374151', padding: '4px', marginLeft: '5px' }
   };
 
-  const demoRows = history;
+  const cashFlowRows = history;
 
   return (
     <div style={s.page}>
@@ -6387,11 +6446,11 @@ function CashInPage({ currentUser, onCashIn, onLogout }: { currentUser: any; onC
             </tr>
           </thead>
           <tbody>
-            {demoRows.map((row) => (
+            {cashFlowRows.map((row) => (
               <tr key={row.id}>
                 <td style={s.td}>{row.id}</td>
                 <td style={s.td}>{fmt(row.timestamp || row.created_at)}</td>
-                <td style={s.td}>{row.type === 'CASH_IN' ? row.amount : 0}</td>
+                <td style={s.td}>{row.type === 'CASH_IN' || row.type === 'OPENING_FLOAT' ? row.amount : 0}</td>
                 <td style={s.td}>{row.type === 'CASH_OUT' ? fmt(row.timestamp || row.created_at) : '—'}</td>
                 <td style={s.td}>{row.type === 'CASH_OUT' ? row.amount : '—'}</td>
                 <td style={s.td}>
@@ -6458,6 +6517,7 @@ export default function App() {
   // Day-start state is verified from the backend after login. A cached value
   // must never bypass the Day Start gate after a previous day was closed.
   const [dayStartTime, setDayStartTime] = useState<Date | null>(null);
+  const [dayGateState, setDayGateState] = useState<'checking' | 'needs_start' | 'ready'>('checking');
   const [isCashedIn, setIsCashedIn] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('d4u_is_cashed_in') || 'false'); } catch { return false; }
   });
@@ -6510,6 +6570,71 @@ export default function App() {
     window.addEventListener('auth_session_expired', handleSessionExpired);
     return () => { window.removeEventListener('auth_session_expired', handleSessionExpired); };
   }, []);
+
+  // Keep the day gate stable while the authoritative backend check is in
+  // flight. Previously DayStartPage rendered first and disappeared a moment
+  // later when an already-open day was found, causing a visible screen flash.
+  useEffect(() => {
+    const user = loggedInUser;
+    const needsDayGate = !!user && POS_AUTHORIZED_ROLES.some(role => role.toLowerCase() === String(user.role || '').trim().toLowerCase());
+    if (!needsDayGate) {
+      if (!user && import.meta.env.DEV) setDayGateState('ready');
+      return;
+    }
+
+    let cancelled = false;
+    setDayGateState('checking');
+    setDayStartTime(null);
+
+    const clearCachedDay = () => {
+      localStorage.removeItem('d4u_day_start');
+      localStorage.removeItem('d4u_is_cashed_in');
+      localStorage.removeItem('d4u_cashin_amt');
+      if (user.store_id) localStorage.removeItem(`d4u_active_business_day_${user.store_id}`);
+      localStorage.removeItem('d4u_active_business_day_id');
+    };
+
+    const verifySessionDay = async () => {
+      try {
+        const response = await apiFetch(`/business-day/current?store_id=${user.store_id}`, { auth: true });
+        const day = response.ok ? await response.json() : null;
+        if (cancelled) return;
+        if (!day?.id) {
+          clearCachedDay();
+          setIsCashedIn(false);
+          setCashInAmount(0);
+          setDayGateState('needs_start');
+          return;
+        }
+
+        const dayId = String(day.id);
+        localStorage.setItem(`d4u_active_business_day_${user.store_id}`, dayId);
+        localStorage.setItem('d4u_active_business_day_id', dayId);
+        setDayStartTime(new Date(day.dayStart));
+
+        const cashResponse = await apiFetch(`/cash-flow?store_id=${user.store_id}&business_day_id=${day.id}`, { auth: true });
+        const flows = cashResponse.ok ? await cashResponse.json() : [];
+        const openingCashIns = Array.isArray(flows)
+          ? flows.filter(isOpeningCashFlow)
+          : [];
+        const cashInTotal = getOpeningCashInTotal(openingCashIns);
+        if (cancelled) return;
+        setCashInAmount(cashInTotal);
+        setIsCashedIn(openingCashIns.length > 0);
+        setDayGateState('ready');
+      } catch {
+        if (cancelled) return;
+        clearCachedDay();
+        setDayStartTime(null);
+        setIsCashedIn(false);
+        setCashInAmount(0);
+        setDayGateState('needs_start');
+      }
+    };
+
+    verifySessionDay();
+    return () => { cancelled = true; };
+  }, [loggedInUser?.id, loggedInUser?.store_id, loggedInUser?.role]);
 
   useEffect(() => {
     const storeId = loggedInUser?.store_id;
@@ -6590,6 +6715,8 @@ export default function App() {
 
   const handleUserLogin = (user: any) => {
     setLoggedInUser(user);
+    setDayGateState('checking');
+    setDayStartTime(null);
     setForceShowLogin(false);
     if (user?.role === 'Chef') {
       localStorage.setItem('d4u_kds_user', JSON.stringify(user));
@@ -6710,12 +6837,17 @@ export default function App() {
     return null;
   }
 
+  if (dayGateState === 'checking') {
+    return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', color: '#374151', fontFamily: 'sans-serif' }}>Verifying business day…</div>;
+  }
+
   if (!dayStartTime) {
     return (
       <DayStartPage
         currentUser={activeUser}
         onDayStart={(time, resetCashIn = false) => {
           setDayStartTime(time);
+          setDayGateState('ready');
           if (resetCashIn) {
             setIsCashedIn(false);
             setCashInAmount(0);

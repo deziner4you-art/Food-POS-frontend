@@ -772,6 +772,27 @@ export class OnlineOrdersService {
               });
             }
 
+            // Website cash/COD sales must enter the same cash ledger as POS
+            // cash settlements. Without this record the business-day report
+            // showed the sale but the expected till cash stayed understated.
+            const settlementMethod = String(updated.paymentMethod || 'CASH').toUpperCase();
+            if (['CASH', 'COD'].includes(settlementMethod)) {
+              await this.prisma.cashFlow.create({
+                data: {
+                  store_id: updated.store_id,
+                  business_day_id: targetDay.id,
+                  // CashFlow.user_id is a required User foreign key.  The
+                  // online-order transition has no cashier JWT context, so
+                  // use the verified business-day starter as the auditable
+                  // system actor instead of the invalid sentinel id 0.
+                  user_id: targetDay.started_by,
+                  type: 'CASH_IN',
+                  amount: total_amount,
+                  comment: `Online Order #${updated.id} Cash Settlement`,
+                },
+              });
+            }
+
             // If the target day is ALREADY CLOSED, we retroactively update its totals
             if (targetDay.status === 'CLOSED') {
               await this.prisma.businessDay.update({

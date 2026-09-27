@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 
 @Injectable()
@@ -11,10 +11,20 @@ export class CashFlowService {
     user_id: any;
     amount: any;
     comment?: string;
+    is_opening_float?: boolean;
   }) {
-    const store_id = Number(body.store_id) || 1;
-    const user_id = Number(body.user_id) || 1;
-    const amount = parseFloat(body.amount) || 0;
+    const store_id = Number(body.store_id);
+    const user_id = Number(body.user_id);
+    const amount = Number(body.amount);
+    if (!Number.isInteger(store_id) || store_id <= 0) {
+      throw new BadRequestException('A valid store_id is required.');
+    }
+    if (!Number.isInteger(user_id) || user_id <= 0) {
+      throw new BadRequestException('A valid user_id is required.');
+    }
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new BadRequestException('A valid non-negative cash-in amount is required.');
+    }
 
     // Active Business Day تلاش کریں
     const openDay = await this.prisma.businessDay.findFirst({
@@ -32,9 +42,9 @@ export class CashFlowService {
         store_id,
         business_day_id: openDay.id,
         user_id,
-        type: 'CASH_IN',
+        type: body.is_opening_float ? 'OPENING_FLOAT' : 'CASH_IN',
         amount,
-        comment: body.comment ?? 'Opening Float',
+        comment: body.comment ?? (body.is_opening_float ? 'Opening Float' : 'Cash In'),
       },
       include: { user: { select: { id: true, name: true } } },
     });
@@ -52,9 +62,18 @@ export class CashFlowService {
     amount: any;
     comment?: string;
   }) {
-    const store_id = Number(body.store_id) || 1;
-    const user_id = Number(body.user_id) || 1;
-    const amount = parseFloat(body.amount) || 0;
+    const store_id = Number(body.store_id);
+    const user_id = Number(body.user_id);
+    const amount = Number(body.amount);
+    if (!Number.isInteger(store_id) || store_id <= 0) {
+      throw new BadRequestException('A valid store_id is required.');
+    }
+    if (!Number.isInteger(user_id) || user_id <= 0) {
+      throw new BadRequestException('A valid user_id is required.');
+    }
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new BadRequestException('A valid non-negative cash-out amount is required.');
+    }
 
     const openDay = await this.prisma.businessDay.findFirst({
       where: { store_id, status: 'OPEN' },
@@ -116,7 +135,7 @@ export class CashFlowService {
     });
 
     const cashIn = flows
-      .filter((f) => f.type === 'CASH_IN')
+      .filter((f) => f.type === 'CASH_IN' || f.type === 'OPENING_FLOAT')
       .reduce((s, f) => s + f.amount, 0);
     const cashOut = flows
       .filter((f) => f.type === 'CASH_OUT')

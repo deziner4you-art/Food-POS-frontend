@@ -39,6 +39,7 @@ describe('OnlineOrdersService.updateOrderStatus — Rider ownership (Task #2Q-B3
       product: { findFirst: jest.fn() },
       inventoryItem: { update: jest.fn() },
       inventoryTransactionLog: { create: jest.fn() },
+      cashFlow: { create: jest.fn() },
       $transaction: jest.fn(),
     };
     gateway = { broadcast: jest.fn() };
@@ -653,5 +654,4 @@ describe('OnlineOrdersService.updateOrderStatus — State Machine Hardening (Fin
     });
   });
 });
-
 

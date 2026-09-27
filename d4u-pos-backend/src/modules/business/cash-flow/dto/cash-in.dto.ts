@@ -16,4 +16,7 @@ export class CashInDto {
   @IsString()
   @IsOptional()
   comment?: string;
+
+  @IsOptional()
+  is_opening_float?: boolean;
 }
