@@ -34,6 +34,14 @@ export default function DeliveryExceptions() {
 
   const [actionType, setActionType] = useState<'recover' | 'settle'>('recover');
 
+  const getCanonicalExceptionIdentity = (exception: any) => {
+    const entityType = exception?.entityType;
+    const entityId = exception?.entityId;
+    if (entityType !== 'ONLINE' && entityType !== 'POS') return null;
+    if (!Number.isInteger(entityId) || entityId <= 0) return null;
+    return { entityType, entityId } as const;
+  };
+
   const handleAction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedException) return;
@@ -42,11 +50,18 @@ export default function DeliveryExceptions() {
       return;
     }
 
+    const identity = getCanonicalExceptionIdentity(selectedException);
+    if (!identity) {
+      toast.error('This exception has no valid delivery identity. Refresh the list and try again.');
+      return;
+    }
+
     setRecovering(true);
     try {
+      const identityQuery = new URLSearchParams({ entityType: identity.entityType }).toString();
       const endpoint = actionType === 'settle'
-        ? `/rider-orders/${selectedException.entityId ?? selectedException.id}/admin-force-settle?entityType=${selectedException.entityType || (selectedException.isPos ? 'POS' : 'ONLINE')}`
-        : `/rider-orders/${selectedException.entityId ?? selectedException.id}/recover-exception?entityType=${selectedException.entityType || (selectedException.isPos ? 'POS' : 'ONLINE')}`;
+        ? `/rider-orders/${identity.entityId}/admin-force-settle?${identityQuery}`
+        : `/rider-orders/${identity.entityId}/recover-exception?${identityQuery}`;
 
       const res = await apiFetch(endpoint, {
         method: 'PATCH',
