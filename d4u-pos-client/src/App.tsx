@@ -635,8 +635,30 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         setForceReleaseConfirmOrder(null);
       } else {
         const data = await res.json().catch(() => ({}));
+        const message = data.message || `Failed to release rider assignment for Order #${targetOrderId}.`;
+
+        // The backend is authoritative for lifecycle state. A delivery card
+        // can be stale when cash hand-off begins on another terminal; sync the
+        // rejected status locally so the UI removes the invalid Release Rider
+        // action and exposes the settlement action instead.
+        const statusFromMessage = typeof message === 'string'
+          ? message.match(/status:\s*([A-Z_]+)/i)?.[1]?.toUpperCase()
+          : undefined;
+        if (statusFromMessage && ['DELIVERED', 'WAITING_CASH_SETTLEMENT', 'SETTLED'].includes(statusFromMessage)) {
+          setActiveDeliveries(prev => prev.map(d =>
+            getDeliveryIdentityKey(d) === getDeliveryIdentityKey(order)
+              ? { ...d, status: statusFromMessage }
+              : d
+          ));
+          setBackendOnlineOrders(prev => prev.map(o =>
+            getDeliveryIdentityKey(o) === getDeliveryIdentityKey(order)
+              ? { ...o, status: statusFromMessage }
+              : o
+          ));
+          setForceReleaseConfirmOrder(null);
+        }
         setToast({
-          message: data.message || `Failed to release rider assignment for Order #${targetOrderId}.`,
+          message,
           type: 'error',
         });
       }
@@ -1880,12 +1902,24 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       }
     }
 
-    // Task #3C-1: Resolve and strictly validate active store and open business day
+    // Task #3C-1: Resolve and strictly validate the authoritative open
+    // business day. POSApp verifies this asynchronously on mount, so retry
+    // the authoritative lookup here as well when a cashier clicks quickly
+    // before that verification has finished. Never use cached localStorage as
+    // the authority for creating a KOT.
     const activeStoreId = currentUser?.store_id;
-    const rawBd = activeStoreId
-      ? localStorage.getItem(`d4u_active_business_day_${activeStoreId}`)
-      : null;
-    const activeBusinessDayId = rawBd ? Number(rawBd) : undefined;
+    let resolvedBusinessDayId = activeBusinessDayId;
+    if (!isValidPosIntegerId(resolvedBusinessDayId)) {
+      resolvedBusinessDayId = await verifyAuthoritativeBusinessDay(activeStoreId);
+      setActiveBusinessDayId(resolvedBusinessDayId);
+    }
+
+    if (!isValidPosIntegerId(activeStoreId) || !isValidPosIntegerId(resolvedBusinessDayId)) {
+      const errMsg = 'Cannot create KOT: Open Business Day identity is missing or invalid. Please open a business day before taking orders.';
+      setToast({ message: errMsg, type: 'error' });
+      setAlertModalMessage(errMsg);
+      return;
+    }
 
     const newKot = {
       orderId: nextOrderId,
@@ -1908,7 +1942,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     };
 
     try {
-      await createOfflineKot(newKot, activeStoreId, activeBusinessDayId);
+      await createOfflineKot(newKot, activeStoreId, resolvedBusinessDayId);
     } catch (kotErr: any) {
       const errMsg = kotErr?.message || 'Cannot create KOT: Missing active store or open business day.';
       setToast({ message: errMsg, type: 'error' });
@@ -4708,7 +4742,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   });
 
                   try {
-                    await apiFetch('/business-day/close', {
+                    const closeRes = await apiFetch('/business-day/close', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
@@ -4726,8 +4760,22 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                       }),
                       auth: true,
                     });
+
+                    if (!closeRes.ok) {
+                      let message = `Day close failed (HTTP ${closeRes.status}).`;
+                      try {
+                        const body = await closeRes.json();
+                        if (body?.message) message = body.message;
+                      } catch {
+                        // Keep the HTTP fallback when the response is not JSON.
+                      }
+                      setToast({ message, type: 'error' });
+                      return;
+                    }
                   } catch (e) {
                     console.error('Day close failed', e);
+                    setToast({ message: e instanceof Error ? e.message : 'Day close failed. Please try again.', type: 'error' });
+                    return;
                   }
 
                   setToast({ message: 'Day Closed & Handover Recorded!', type: 'success' });
@@ -5986,7 +6034,21 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   )
 }
 
-type DayRecord = { id: number; dayStart: string; dayClose: string };
+type DayRecord = {
+  id: number;
+  dayStart?: string | null;
+  dayClose?: string | null;
+  opened_at?: string | null;
+  closed_at?: string | null;
+  status?: string;
+  openingFloat?: number | null;
+  closingCash?: number | null;
+  totalSales?: number | null;
+  totalOrders?: number | null;
+  notes?: string | null;
+  starter?: { id?: number; name?: string } | null;
+  closer?: { id?: number; name?: string } | null;
+};
 
 function fmt(iso: string | null | undefined) {
   if (!iso) return '—';
@@ -5996,10 +6058,11 @@ function fmt(iso: string | null | undefined) {
     + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any; onDayStart: (t: Date) => void; onLogout?: () => void }) {
+function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any; onDayStart: (t: Date, resetCashIn?: boolean) => void; onLogout?: () => void }) {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState('');
+  const [selectedReport, setSelectedReport] = useState<DayRecord | null>(null);
 
   useEffect(() => {
     apiFetch(`/business-day/history?store_id=${currentUser.store_id}`, { auth: true })
@@ -6012,7 +6075,8 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
 
   const lastRecord = history[0] ?? null;
 
-  // On mount, check if there's already an open day — if so, auto-proceed
+  // On mount, check the backend's authoritative day state. Local storage must
+  // never be enough to bypass the Day Start gate after a day has been closed.
   useEffect(() => {
     const checkOpenDay = async () => {
       try {
@@ -6020,14 +6084,35 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
         if (res.ok) {
           const data = await res.json();
           if (data && data.id) {
-            // A day is already open — save active business day and proceed directly
+            // A day is already open — save the authoritative identity and proceed.
             localStorage.setItem(`d4u_active_business_day_${currentUser.store_id}`, String(data.id));
             localStorage.setItem('d4u_active_business_day_id', String(data.id));
             onDayStart(new Date(data.dayStart || new Date()));
+          } else {
+            // No open day: remove stale client state so the Day Start page stays
+            // authoritative even when an older tab/session left cached values.
+            localStorage.removeItem('d4u_day_start');
+            localStorage.removeItem('d4u_is_cashed_in');
+            localStorage.removeItem('d4u_cashin_amt');
+            localStorage.removeItem(`d4u_active_business_day_${currentUser.store_id}`);
+            localStorage.removeItem('d4u_active_business_day_id');
           }
+        } else {
+          // Fail closed on 404/5xx: do not let stale local state authorize a day.
+          localStorage.removeItem('d4u_day_start');
+          localStorage.removeItem('d4u_is_cashed_in');
+          localStorage.removeItem('d4u_cashin_amt');
+          localStorage.removeItem(`d4u_active_business_day_${currentUser.store_id}`);
+          localStorage.removeItem('d4u_active_business_day_id');
         }
       } catch (e) {
-        // ignore — will fall through to manual Day Start
+        // Fail closed on network/auth failure; stale local state must not bypass
+        // the manual Day Start gate.
+        localStorage.removeItem('d4u_day_start');
+        localStorage.removeItem('d4u_is_cashed_in');
+        localStorage.removeItem('d4u_cashin_amt');
+        localStorage.removeItem(`d4u_active_business_day_${currentUser.store_id}`);
+        localStorage.removeItem('d4u_active_business_day_id');
       }
     };
     checkOpenDay();
@@ -6044,12 +6129,14 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        if (data.businessDay?.id || data.id) {
-          const bdId = String(data.businessDay?.id || data.id);
+        const startedDayId = data.day?.id || data.businessDay?.id || data.id;
+        if (startedDayId) {
+          const bdId = String(startedDayId);
           localStorage.setItem(`d4u_active_business_day_${currentUser.store_id}`, bdId);
           localStorage.setItem('d4u_active_business_day_id', bdId);
         }
-        onDayStart(new Date());
+        // A newly started day must begin a fresh cash-in session.
+        onDayStart(new Date(), true);
       } else if (data.message && data.message.includes('already open')) {
         // Day is already open — fetch current day to store id and auto-proceed
         try {
@@ -6062,7 +6149,7 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
             }
           }
         } catch {}
-        onDayStart(new Date());
+         onDayStart(new Date(), false);
       } else {
         setErrMsg(data.message || 'Error starting day');
       }
@@ -6099,6 +6186,19 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
     { id: 11,  dayStart: '2019-11-15T09:36:32', dayClose: '2019-12-24T06:03:43' },
   ];
 
+  const getDayStart = (record: DayRecord) => record.dayStart || record.opened_at;
+  const getDayClose = (record: DayRecord) => record.dayClose || record.closed_at;
+  const getReportNotes = (record: DayRecord) => {
+    if (!record.notes) return 'No notes recorded.';
+    try {
+      const parsed = JSON.parse(record.notes);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return record.notes;
+    }
+  };
+  const money = (value: number | null | undefined) => `Rs. ${Number(value || 0).toLocaleString()}`;
+
   return (
     <div style={s.page}>
       {/* Left Panel */}
@@ -6109,8 +6209,10 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
         </div>
         {lastRecord ? (
           <div style={s.closedTime}>
-            Closed Time<br />
-            <strong>{fmt(lastRecord.dayClose || lastRecord.dayStart)}</strong>
+            Day Start<br />
+            <strong>{fmt(getDayStart(lastRecord))}</strong><br />
+            Day Close<br />
+            <strong>{getDayClose(lastRecord) ? fmt(getDayClose(lastRecord)) : 'Still Open'}</strong>
           </div>
         ) : (
           <div style={s.closedTime}>No previous session found.</div>
@@ -6135,10 +6237,10 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
             {history.map((row) => (
               <tr key={row.id}>
                 <td style={s.td}>{row.id}</td>
-                <td style={s.td}>{fmt(row.opened_at)}</td>
-                <td style={s.td}>{row.closed_at ? fmt(row.closed_at) : <em style={{ color: '#9ca3af' }}>Active</em>}</td>
+                <td style={s.td}>{fmt(getDayStart(row))}</td>
+                <td style={s.td}>{getDayClose(row) ? fmt(getDayClose(row)) : <em style={{ color: '#9ca3af' }}>Active</em>}</td>
                 <td style={s.td}>
-                  <button style={s.actionBtn}>
+                  <button style={s.actionBtn} onClick={() => setSelectedReport(row)}>
                     <span>≡</span> action
                   </button>
                 </td>
@@ -6147,6 +6249,51 @@ function DayStartPage({ currentUser, onDayStart, onLogout }: { currentUser: any;
           </tbody>
         </table>
       </div>
+
+      {selectedReport && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '20px' }}
+          onClick={() => setSelectedReport(null)}
+        >
+          <div
+            style={{ background: '#fff', width: '620px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.25)', color: '#111827' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Business Day Report #{selectedReport.id}</h2>
+                <div style={{ color: '#6b7280', fontSize: '0.82rem', marginTop: '4px' }}>
+                  {selectedReport.status === 'OPEN' || !getDayClose(selectedReport) ? 'Active session' : 'Closed session'}
+                </div>
+              </div>
+              <button onClick={() => setSelectedReport(null)} style={{ border: 'none', background: '#f3f4f6', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', fontSize: '1.1rem' }}>×</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '18px' }}>
+              {[
+                ['Day Start', fmt(getDayStart(selectedReport))],
+                ['Day Close', getDayClose(selectedReport) ? fmt(getDayClose(selectedReport)) : 'Still Open'],
+                ['Started By', selectedReport.starter?.name || '—'],
+                ['Closed By', selectedReport.closer?.name || '—'],
+                ['Opening Cash', money(selectedReport.openingFloat)],
+                ['Closing Cash', selectedReport.closingCash == null ? '—' : money(selectedReport.closingCash)],
+                ['Total Orders', String(selectedReport.totalOrders ?? 0)],
+                ['Total Sales', money(selectedReport.totalSales)],
+              ].map(([label, value]) => (
+                <div key={label} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '11px 12px' }}>
+                  <div style={{ color: '#6b7280', fontSize: '0.72rem', marginBottom: '4px' }}>{label}</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '14px' }}>
+              <div style={{ color: '#374151', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Session Notes / Recorded Details</div>
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: '#f9fafb', borderRadius: '8px', padding: '12px', color: '#4b5563', fontSize: '0.78rem', lineHeight: 1.5 }}>{getReportNotes(selectedReport)}</pre>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -6308,9 +6455,9 @@ export default function App() {
       return null;
     }
   });
-  const [dayStartTime, setDayStartTime] = useState<Date | null>(() => {
-    try { const d = localStorage.getItem('d4u_day_start'); return d ? new Date(d) : null; } catch { return null; }
-  });
+  // Day-start state is verified from the backend after login. A cached value
+  // must never bypass the Day Start gate after a previous day was closed.
+  const [dayStartTime, setDayStartTime] = useState<Date | null>(null);
   const [isCashedIn, setIsCashedIn] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('d4u_is_cashed_in') || 'false'); } catch { return false; }
   });
@@ -6563,7 +6710,21 @@ export default function App() {
     return null;
   }
 
-  if (!dayStartTime) return <DayStartPage currentUser={activeUser} onDayStart={setDayStartTime} onLogout={handleLogout} />;
+  if (!dayStartTime) {
+    return (
+      <DayStartPage
+        currentUser={activeUser}
+        onDayStart={(time, resetCashIn = false) => {
+          setDayStartTime(time);
+          if (resetCashIn) {
+            setIsCashedIn(false);
+            setCashInAmount(0);
+          }
+        }}
+        onLogout={handleLogout}
+      />
+    );
+  }
   if (!isCashedIn) return <CashInPage currentUser={activeUser} onCashIn={(amount) => { setCashInAmount(amount); setIsCashedIn(true); }} onLogout={handleLogout} />;
 
   return <POSApp currentUser={activeUser} dayStartTime={dayStartTime} onLogout={handleLogout} onCashOut={handleLogout} />;
