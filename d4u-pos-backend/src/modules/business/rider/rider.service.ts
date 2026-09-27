@@ -16,6 +16,21 @@ export class RiderService {
   ) {}
 
   /**
+   * OnlineOrder keeps the business-day identity on its linked POS twin.
+   * Enrich only linked online records before broadcasting; unlinked records
+   * remain unchanged and fail closed in POS until an authoritative identity
+   * exists.
+   */
+  private async enrichOnlineOrderEvent(order: any) {
+    if (!order?.posOrderId) return order;
+    const posOrder = await this.prisma.order.findUnique({
+      where: { id: order.posOrderId },
+      select: { business_day_id: true },
+    });
+    return posOrder ? { ...order, posOrder } : order;
+  }
+
+  /**
    * Resolve the table namespace before touching a delivery row. A numeric id
    * is not globally unique because OnlineOrder and Order have independent
    * sequences. Legacy callers may omit entityType only while the id exists
@@ -133,6 +148,122 @@ export class RiderService {
     );
 
     return allOrders;
+  }
+
+  /**
+   * Returns the authenticated rider's historical delivery activity for a
+   * bounded time window. This is deliberately separate from getRiderOrders:
+   * the latter is an active-queue endpoint and intentionally excludes terminal
+   * rows. Reports must read both delivery namespaces and must never trust a
+   * riderId supplied by the client.
+   */
+  async getRiderActivity(
+    storeIdStr: string,
+    authenticatedUser: any,
+    fromStr?: string,
+    toStr?: string,
+  ) {
+    const storeId = Number(storeIdStr);
+    const riderId = Number(authenticatedUser?.sub);
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+      throw new BadRequestException('A valid store_id is required.');
+    }
+    if (!Number.isInteger(riderId) || riderId <= 0) {
+      throw new ForbiddenException('Authenticated rider identity is required.');
+    }
+
+    const rider = await this.prisma.user.findUnique({
+      where: { id: riderId },
+      include: { role: true },
+    });
+    if (!rider || rider.role?.name !== 'Rider') {
+      throw new ForbiddenException('Only an authenticated rider may view rider activity.');
+    }
+
+    const tokenStoreId = Number(
+      authenticatedUser?.active_store_id ?? authenticatedUser?.store_id,
+    );
+    if (Number(rider.store_id) !== storeId || (tokenStoreId > 0 && tokenStoreId !== storeId)) {
+      throw new ForbiddenException('Cross-store rider activity access denied.');
+    }
+
+    const from = fromStr ? new Date(fromStr) : new Date(0);
+    const to = toStr ? new Date(toStr) : new Date();
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) {
+      throw new BadRequestException('from/to must be valid ISO dates with from before to.');
+    }
+    const createdAt = { gte: from, lt: to };
+
+    const [onlineOrders, posOrders] = await Promise.all([
+      this.prisma.onlineOrder.findMany({
+        where: {
+          store_id: storeId,
+          type: { equals: 'DELIVERY', mode: 'insensitive' },
+          claimedByRiderId: riderId,
+          createdAt,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          store_id: storeId,
+          order_source: { equals: 'DELIVERY', mode: 'insensitive' },
+          rider_id: riderId,
+          createdAt,
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          customer: true,
+          items: { include: { product: true } },
+          rider: true,
+          onlineOrder: { select: { id: true } },
+        },
+      }),
+    ]);
+
+    const onlineById = new Map(onlineOrders.map((order: any) => [order.id, order]));
+    const linkedPosIds = new Set(
+      onlineOrders
+        .map((order: any) => order.posOrderId)
+        .filter((id: unknown): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0),
+    );
+
+    const onlineRecords = onlineOrders.map((order: any) => ({
+      ...formatOnlineOrderForRider(order),
+      activityAt: order.createdAt,
+      activityStatus: order.status,
+      totalAmount: String(order.totalAmount ?? '0'),
+      logicalDeliveryKey: order.posOrderId
+        ? `ONLINE:${order.id}:POS:${order.posOrderId}`
+        : `ONLINE:${order.id}`,
+    }));
+
+    const posRecords = posOrders
+      // A linked POS twin is represented by its OnlineOrder record when both
+      // rows are present in this window. This prevents one rider trip from
+      // being counted twice while preserving explicit twin ids in the record.
+      .filter((order: any) => !linkedPosIds.has(order.id))
+      .map((order: any) => {
+        const formatted = formatPosOrderForRider(order);
+        const linkedOnlineId = order.onlineOrder?.id ?? null;
+        const linkedOnline = linkedOnlineId ? onlineById.get(linkedOnlineId) : null;
+        return {
+          ...formatted,
+          activityAt: order.createdAt,
+          activityStatus: order.status,
+          totalAmount: String(order.total_amount ?? '0'),
+          onlineOrderId: linkedOnlineId,
+          logicalDeliveryKey: linkedOnline
+            ? `ONLINE:${linkedOnline.id}:POS:${order.id}`
+            : `POS:${order.id}`,
+        };
+      });
+
+    const records = [...onlineRecords, ...posRecords].sort(
+      (a: any, b: any) => new Date(b.activityAt).getTime() - new Date(a.activityAt).getTime(),
+    );
+
+    return { from: from.toISOString(), to: to.toISOString(), records };
   }
 
   // Task #2K: the rider identity recorded here used to come from
@@ -389,7 +520,10 @@ export class RiderService {
             data: { rider_id: riderId, status: onlineForTwin.status },
           });
         }
-        const updated = await tx.onlineOrder.findUniqueOrThrow({ where: { id } });
+        const updated = await tx.onlineOrder.findUniqueOrThrow({
+          where: { id },
+          include: { posOrder: { select: { business_day_id: true } } },
+        });
         return { updatedOrder: updated, isPosOrder: false };
       }
 
@@ -574,7 +708,7 @@ export class RiderService {
         return next;
       });
 
-      const formatted = formatOnlineOrderForRider(updated);
+      const formatted = formatOnlineOrderForRider(await this.enrichOnlineOrderEvent(updated));
       this.gateway.broadcast('order_updated', formatted, `store_${updated.store_id}`);
       console.log(`[RIDER RELEASE] Online Order #${id} released by Rider #${riderId} (was ${onlineOrder.status})`);
       return { success: true, orderId: id, entityType: 'ONLINE', orderType: 'ONLINE', previousStatus: onlineOrder.status };
@@ -715,7 +849,7 @@ export class RiderService {
         return next;
       });
 
-      const formatted = formatOnlineOrderForRider(updated);
+      const formatted = formatOnlineOrderForRider(await this.enrichOnlineOrderEvent(updated));
       this.gateway.broadcast('order_updated', formatted, `store_${updated.store_id}`);
       console.log(`[ADMIN FORCE-RELEASE] Online Order #${id} rider #${releasedRiderId} released by Admin #${adminId} (was ${onlineOrder.status})`);
 
@@ -1101,9 +1235,10 @@ export class RiderService {
     }
 
     const room = `store_${order.store_id}`;
+    const eventOrder = isPos ? updatedOrder : await this.enrichOnlineOrderEvent(updatedOrder);
     this.gateway.broadcast(
       'order_updated',
-      isPos ? formatPosOrderForRider(updatedOrder) : formatOnlineOrderForRider(updatedOrder),
+      isPos ? formatPosOrderForRider(updatedOrder) : formatOnlineOrderForRider(eventOrder),
       room,
     );
 
@@ -1252,9 +1387,10 @@ export class RiderService {
 
     // 14. Real-time broadcast
     const room = `store_${order.store_id}`;
+    const eventOrder = isPos ? updatedOrder : await this.enrichOnlineOrderEvent(updatedOrder);
     this.gateway.broadcast(
       'order_updated',
-      isPos ? formatPosOrderForRider(updatedOrder) : formatOnlineOrderForRider(updatedOrder),
+      isPos ? formatPosOrderForRider(updatedOrder) : formatOnlineOrderForRider(eventOrder),
       room,
     );
 

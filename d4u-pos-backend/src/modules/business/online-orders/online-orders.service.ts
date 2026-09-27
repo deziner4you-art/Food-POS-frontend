@@ -597,6 +597,7 @@ export class OnlineOrdersService {
           const finalResult = await tx.onlineOrder.update({
             where: { id: result.id },
             data: { posOrderId: order.id },
+            include: { posOrder: { select: { business_day_id: true } } },
           });
 
           return { onlineOrder: finalResult, order };
@@ -608,6 +609,7 @@ export class OnlineOrdersService {
         updated = await this.prisma.onlineOrder.update({
           where: { id },
           data: updateData,
+          include: { posOrder: { select: { business_day_id: true } } },
         });
 
         // Log the transition
@@ -820,6 +822,9 @@ export class OnlineOrdersService {
       console.log(
         `[STATUS UPDATE] Order #${id} → kdsStatus: ${updated.kdsStatus}`,
       );
+      // OnlineOrder stores the business-day identity on its linked POS twin.
+      // The update query includes that relation so a verified cashier can
+      // accept the rider event without guessing the current business day.
       this.gateway.broadcast(
         'order_updated',
         formatOnlineOrderForRider(updated),
