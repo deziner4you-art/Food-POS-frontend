@@ -768,10 +768,32 @@ export default function App() {
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        const errMsg: string = errData.message || '';
+        // Nest may return a string, an array of validation messages, or an
+        // object-shaped error response. Keep claim failures actionable instead
+        // of allowing a non-string message to break the error handler itself.
+        const rawMessage = errData?.message;
+        const errMsg: string = Array.isArray(rawMessage)
+          ? rawMessage.filter((value: unknown) => typeof value === 'string').join(', ')
+          : typeof rawMessage === 'string' ? rawMessage : '';
         const { toast } = require('react-hot-toast');
-        if (res.status === 409) {
-          toast.error('Order already taken by another rider.');
+        if (res.status === 409 && errMsg.toLowerCase().includes('finish current delivery first')) {
+          // This is the rider's own active-delivery guard, not a lost race
+          // against another rider. Show the actual blocking order so the rider
+          // can open My Active Order, resume it, and complete or release it.
+          const activeOrderMatch = errMsg.match(/(?:POS\s+)?Order\s+#(\d+)/i);
+          const activeOrderNumber = activeOrderMatch?.[1];
+          toast.error(
+            activeOrderNumber
+              ? `Order #${activeOrderNumber} is still active. Resume it and complete or release it before accepting another order.`
+              : 'Your current delivery is still active. Resume it and complete or release it before accepting another order.',
+            { duration: 9000 },
+          );
+        } else if (res.status === 409) {
+          toast.error('This order was already accepted by another rider. Please refresh the order list.');
+        } else if (res.status === 403) {
+          // Distinguish an RBAC deployment/configuration problem from an order
+          // state rejection. Read access alone does not prove claim access.
+          toast.error('Your rider account is not enabled to accept deliveries. Please ask the manager to enable delivery claim access.', { duration: 9000 });
         } else if (res.status === 400 && errMsg.toLowerCase().includes('store')) {
           // Task 6A Change 3: clear, actionable store-mismatch message.
           // Backend returns 400 'Rider store mismatch.' when the rider's
@@ -1051,7 +1073,9 @@ export default function App() {
 
           {currentView === 'settle' && (
             <SettleCashView 
-              stats={riderStats} 
+              riderStoreId={riderStoreId}
+              riderId={riderId}
+              riderToken={riderToken}
               onBack={() => setCurrentView('map')} 
               onSettle={() => {
                 setRiderStats(prev => ({ ...prev, todayEarnings: 0 }));

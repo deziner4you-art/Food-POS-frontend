@@ -84,3 +84,20 @@ export interface RiderStats {
   todayEarnings: number;
   battery: number;
 }
+
+export interface RiderActivityRecord {
+  id: number;
+  entityType: 'ONLINE' | 'POS';
+  entityId: number;
+  onlineOrderId?: number | null;
+  posOrderId?: number | null;
+  status?: string;
+  activityStatus?: string;
+  activityAt: string;
+  totalAmount?: string | number;
+  customer?: string | null;
+  customerAddress?: string | null;
+  source?: string;
+  isPos?: boolean;
+  logicalDeliveryKey?: string;
+}

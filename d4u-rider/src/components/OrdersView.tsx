@@ -564,7 +564,7 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
                 <div className="text-center py-3 mb-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
 
-                  <p className="text-amber-400 text-xs font-semibold">Finish your active delivery before accepting a new one.</p>
+                  <p className="text-amber-400 text-xs font-semibold">Your active delivery is blocking new claims. Tap Resume Delivery above, then complete it or use Release Delivery if it is genuinely stuck.</p>
 
                 </div>
 
