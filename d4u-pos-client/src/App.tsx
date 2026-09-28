@@ -14,12 +14,13 @@ import { formatCurrency } from './utils/currency';
 const socket = io(BACKEND_URL);
 import { Home, Search, Printer, Trash2, Plus, Minus, Store, Clock, X, Settings, Moon, Banknote, PauseCircle, Globe, Truck, Users, MapPin, Phone, CheckCircle, Navigation, MessageCircle, ChefHat, Lock, Check, CreditCard, Landmark, User, Maximize, Receipt, LogOut, UtensilsCrossed, AlertTriangle } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, createOfflineKot, validateOfflineKotIdentity, isValidPosIntegerId } from './db';
+import { db, createOfflineKot, validateOfflineKotIdentity, isValidPosIntegerId, syncAndReconcileBackendKots, acquireSyncSequence } from './db';
 import { isKotEligible } from './utils/kotEligibility';
 import { isDeliveryEligible, isDeliveryActiveStatus, filterEligibleDeliveries, applyKdsDeliveryUpdate } from './utils/deliveryEligibility';
 import { verifyAuthoritativeBusinessDay } from './utils/businessDayVerification';
 import { getOpeningCashInTotal, isOpeningCashFlow } from './utils/businessDayGate';
 import { getDeliveryEntityId, getDeliveryEntityType, getDeliveryIdentityKey } from './utils/deliveryIdentity';
+import { normalizePosKotMode, subscriptionHasKdsModule } from './utils/posKotMode';
 import KitchenDisplay from './StitchKDS'
 import TVDisplay from './TVDisplay'
 import AdminDashboard from './AdminDashboard'
@@ -265,7 +266,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
   );
 }
 
-function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUser: typeof USERS[0]; dayStartTime: Date | null; onLogout: () => void; onCashOut: () => void }) {
+function POSApp({ currentUser, dayStartTime, onLogout, onCashOut, hasKdsPackage = false }: { currentUser: typeof USERS[0]; dayStartTime: Date | null; onLogout: () => void; onCashOut: () => void; hasKdsPackage?: boolean }) {
   const isWaiterMode = currentUser?.role === 'Waiter';
 
   const activeStoreId: number | null = isValidPosIntegerId(currentUser?.store_id) ? currentUser.store_id : null;
@@ -407,17 +408,36 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const [posSettings, setPosSettings] = useState(() => {
     const saved = localStorage.getItem('d4u_pos_settings');
-    return saved ? JSON.parse(saved) : {
+    const parsed = saved ? JSON.parse(saved) : {
       printerName: 'Default Printer',
       billPrintQty: 1,
       kotPrintQty: 1,
-      kotMode: 'SCREEN',
+      kotMode: hasKdsPackage ? 'SCREEN' : 'PRINT',
       tillLockEnabled: false,
       duplicateKOTEnabled: true,
       allowCustomItems: false,
       discountPassword: ''
     };
+    return { ...parsed, kotMode: normalizePosKotMode(parsed.kotMode, hasKdsPackage) };
   });
+
+  // POS-only customers always use the actionable POS KOT workflow.  A KDS
+  // package may additionally choose SCREEN, where the POS remains a monitor.
+  useEffect(() => {
+    setPosSettings(previous => {
+      const normalizedMode = normalizePosKotMode(previous.kotMode, hasKdsPackage);
+      if (previous.kotMode === normalizedMode) return previous;
+      return {
+        ...previous,
+        kotMode: normalizedMode,
+        kotPrintQty: normalizedMode === 'SCREEN' ? 0 : Math.max(1, previous.kotPrintQty || 1),
+      };
+    });
+  }, [hasKdsPackage]);
+
+  const [posKotAcceptOrder, setPosKotAcceptOrder] = useState<Order | null>(null);
+  const [posKotPrepMinutes, setPosKotPrepMinutes] = useState(10);
+  const [posKotActionBusy, setPosKotActionBusy] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('d4u_pos_settings', JSON.stringify(posSettings));
@@ -523,6 +543,41 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
   const rawKots = useLiveQuery(() => db.kots.toArray()) || [];
   const kots = rawKots.filter(k => isKotEligible(k, activeStoreId, activeBusinessDayId));
+
+  // POS KOT mode must be a live data source by itself.  Previously only the
+  // dedicated KDS component performed backend KOT reconciliation, so a
+  // restaurant running without that add-on could print a KOT and then lose
+  // the ticket from the POS KOT screen until a full reload.
+  const posKotSyncingRef = useRef(false);
+  const syncPosKots = useCallback(async () => {
+    if (posKotSyncingRef.current || !activeStoreId || !activeBusinessDayId) return;
+    posKotSyncingRef.current = true;
+    try {
+      const syncSeq = await acquireSyncSequence(activeStoreId, activeBusinessDayId);
+      const response = await apiFetch(
+        `/kots?store_id=${activeStoreId}&includeReady=true`,
+        { auth: true },
+      );
+      if (!response.ok) return;
+      const payload = await response.json();
+      if (Array.isArray(payload)) {
+        await syncAndReconcileBackendKots(
+          payload,
+          activeStoreId,
+          activeBusinessDayId,
+          syncSeq,
+        );
+      }
+    } catch (error) {
+      console.warn('[POS KOT] Backend sync unavailable; retaining local KOTs.', error);
+    } finally {
+      posKotSyncingRef.current = false;
+    }
+  }, [activeStoreId, activeBusinessDayId]);
+
+  useEffect(() => {
+    if (activeStoreId && activeBusinessDayId) void syncPosKots();
+  }, [activeStoreId, activeBusinessDayId, syncPosKots]);
   const filteredKots = kots
     .filter(k => {
       const query = kotSearchQuery.toLowerCase().trim();
@@ -566,11 +621,19 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
     if (kot.status === 'PREPARING') status = 'preparing';
     if (kot.status === 'READY') status = 'completed';
 
-    const totalSecs = (kot.prepTimeMinutes || 10) * 60;
+    const savedPrepMinutes = kot.backendKotId
+      ? Number(localStorage.getItem(`d4u_pos_kot_prep_${activeStoreId}_${activeBusinessDayId}_${kot.backendKotId}`) || 0)
+      : 0;
+    const prepMinutes = savedPrepMinutes > 0 ? savedPrepMinutes : (kot.prepTimeMinutes || 10);
+    const totalSecs = prepMinutes * 60;
     const remaining = totalSecs - elapsed;
     
     return {
       id: kot.orderId.toString(),
+      backendKotId: kot.backendKotId,
+      backendOrderId: kot.orderId,
+      displayId: kot.orderId.toString(),
+      dexieId: kot.id,
       tableName: kot.type || 'Takeaway',
       items: parsedItems,
       instructions: kot.notes || '',
@@ -584,6 +647,88 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   });
 
   const [orderNotes, setOrderNotes] = useState('');
+
+  const findPosKotForOrder = useCallback((order: Order) => {
+    if (order.backendKotId != null) {
+      return kots.find(kot => kot.backendKotId === order.backendKotId) || null;
+    }
+    if (order.dexieId != null) {
+      return kots.find(kot => kot.id === order.dexieId) || null;
+    }
+    return kots.find(kot => String(kot.orderId) === String(order.backendOrderId || order.id)) || null;
+  }, [kots]);
+
+  const handlePosKotAcceptClick = useCallback((order: Order) => {
+    if (posSettings.kotMode !== 'PRINT') return;
+    setPosKotPrepMinutes(10);
+    setPosKotAcceptOrder(order);
+  }, [posSettings.kotMode]);
+
+  const handlePosKotAccept = useCallback(async () => {
+    if (!posKotAcceptOrder || posSettings.kotMode !== 'PRINT' || posKotActionBusy) return;
+    const kot = findPosKotForOrder(posKotAcceptOrder);
+    if (!kot?.id) return;
+
+    setPosKotActionBusy(true);
+    try {
+      if (kot.backendKotId) {
+        const response = await apiFetch(`/kots/${kot.backendKotId}/accept`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          auth: true,
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body?.message || `Server error (${response.status})`);
+        }
+        localStorage.setItem(
+          `d4u_pos_kot_prep_${activeStoreId}_${activeBusinessDayId}_${kot.backendKotId}`,
+          String(posKotPrepMinutes),
+        );
+      }
+
+      await db.kots.update(kot.id, {
+        status: 'PREPARING',
+        prepTimeMinutes: posKotPrepMinutes,
+        startTime: new Date().toISOString(),
+      });
+      setPosKotAcceptOrder(null);
+      setToast({ message: `Order #${posKotAcceptOrder.displayId || posKotAcceptOrder.id} accepted. Preparation timer started.`, type: 'success' });
+      void syncPosKots();
+    } catch (error: any) {
+      setToast({ message: `KOT accept failed: ${error?.message || 'Please try again.'}`, type: 'error' });
+    } finally {
+      setPosKotActionBusy(false);
+    }
+  }, [posKotAcceptOrder, posSettings.kotMode, posKotActionBusy, findPosKotForOrder, activeStoreId, activeBusinessDayId, posKotPrepMinutes, syncPosKots]);
+
+  const handlePosKotReady = useCallback(async (order: Order) => {
+    if (posSettings.kotMode !== 'PRINT' || posKotActionBusy) return;
+    const kot = findPosKotForOrder(order);
+    if (!kot?.id) return;
+
+    setPosKotActionBusy(true);
+    try {
+      if (kot.backendKotId) {
+        const response = await apiFetch(`/kots/${kot.backendKotId}/bump`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          auth: true,
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body?.message || `Server error (${response.status})`);
+        }
+      }
+      await db.kots.update(kot.id, { status: 'READY' });
+      setToast({ message: `Order #${order.displayId || order.id} is READY and available for the next delivery step.`, type: 'success' });
+      void syncPosKots();
+    } catch (error: any) {
+      setToast({ message: `KOT ready update failed: ${error?.message || 'Please try again.'}`, type: 'error' });
+    } finally {
+      setPosKotActionBusy(false);
+    }
+  }, [posSettings.kotMode, posKotActionBusy, findPosKotForOrder, syncPosKots]);
 
   const rawPendingKots = useLiveQuery(
     () => db.kots.where('status').equals('PENDING').toArray()
@@ -995,6 +1140,10 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       // refetches the Waiter panel's list rather than trying to patch state
       // from each event's own (minimal) payload shape.
       const handleTerminalPanelRefresh = () => fetchTerminalPanelOrders();
+      const handleNewKot = () => {
+        handleTerminalPanelRefresh();
+        void syncPosKots();
+      };
 
       const joinStore = () => {
         socket.emit('join_store', { store_id: currentUser?.store_id });
@@ -1008,7 +1157,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       socket.on('new_order', handleNewOrder);
       socket.on('order_updated', handleOrderUpdated);
       socket.on('negative_inventory_alert', handleNegativeInventoryAlert);
-      socket.on('new_kot', handleTerminalPanelRefresh);
+      socket.on('new_kot', handleNewKot);
       socket.on('order_settled', handleTerminalPanelRefresh);
       socket.on('order_voided', handleTerminalPanelRefresh);
       socket.on('waiter_connected', () => setIsWaiterConnected(true));
@@ -1044,7 +1193,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         socket.off('new_order', handleNewOrder);
         socket.off('order_updated', handleOrderUpdated);
         socket.off('negative_inventory_alert', handleNegativeInventoryAlert);
-        socket.off('new_kot', handleTerminalPanelRefresh);
+        socket.off('new_kot', handleNewKot);
         socket.off('order_settled', handleTerminalPanelRefresh);
         socket.off('order_voided', handleTerminalPanelRefresh);
         socket.off('waiter_connected');
@@ -1052,7 +1201,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         socket.off('rider_presence_updated');
         socket.off('marketing_update');
       };
-    }, [currentUser, activeStoreId, activeBusinessDayId]);
+    }, [currentUser, activeStoreId, activeBusinessDayId, syncPosKots]);
 
   // ---------------------------------------------------------------
   // WAITER MODE: own-orders tracking, heartbeat, real-time status toasts
@@ -1117,6 +1266,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
   useEffect(() => {
     const handleKdsUpdate = (data: { kot_id: number; order_id: number; status: string; store_id: number; business_day_id?: number | null }) => {
       if (data.store_id !== currentUser?.store_id) return;
+      void syncPosKots();
       if (isWaiterMode) {
         const mine = waiterOrders.find(o => o.id === data.order_id);
         if (mine) {
@@ -1153,7 +1303,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
       socket.off('kds_update', handleKdsUpdate);
       socket.off('order_settled', handleOrderSettledInWaiter);
     };
-  }, [isWaiterMode, waiterOrders, currentUser?.store_id, activeStoreId, activeBusinessDayId, fetchTerminalPanelOrders]);
+  }, [isWaiterMode, waiterOrders, currentUser?.store_id, activeStoreId, activeBusinessDayId, fetchTerminalPanelOrders, syncPosKots]);
 
   // ---------------------------------------------------------------
   // CASHIER: persistent "Connected Waiters" list (backed by TerminalSession,
@@ -1855,6 +2005,7 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         setCart([]);
         setOrderNotes('');
         setToast({ message: `Delivery Order #${realOrderId} sent to Kitchen!`, type: 'success' });
+        void syncPosKots();
         return;
       } catch (e) {
         console.error('Delivery KOT backend create failed, falling back to local:', e);
@@ -2011,7 +2162,8 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
 
     // DELIVERY GATE: Do not add pre-READY online order to activeDeliveries.
     // It will enter activeDeliveries when kitchen marks it READY.
-    setToast({ message: `Order #${newKot.orderId} sent to KDS Kitchen!`, type: 'success' });
+    void syncPosKots();
+    setToast({ message: `Order #${newKot.orderId} sent to ${posSettings.kotMode === 'PRINT' ? 'POS KOT' : 'KDS Kitchen'}!`, type: 'success' });
   };
 
   const handleSendTerminalOrder = async () => {
@@ -3024,20 +3176,23 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                 </h3>
                 {posSettings.kotMode === 'SCREEN' && (
                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                     <span style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '0.8rem' }}>Screen Active</span>
+                     <span style={{ color: 'var(--accent-green)', fontWeight: 'bold', fontSize: '0.8rem' }}>KDS Monitor (Read-only)</span>
                      <button className="btn-action btn-order" onClick={() => window.open('/kitchen', '_blank')} style={{ padding: '6px 12px', fontSize: '0.75rem', minHeight: '30px' }}>
                        Open Screen
                      </button>
                    </div>
                 )}
+                {posSettings.kotMode === 'PRINT' && (
+                  <span style={{ color: 'var(--accent-yellow)', fontWeight: 'bold', fontSize: '0.8rem' }}>POS KOT Workflow</span>
+                )}
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
                 <KitchenView 
                   orders={mappedOrders}
-                  onMarkReady={() => {}}
-                  onSimulateOrder={() => {}}
+                  onMarkReady={handlePosKotReady}
+                  onAcceptOrderClick={handlePosKotAcceptClick}
                   isEmergencyStop={false}
-                  readOnly={true}
+                  readOnly={posSettings.kotMode !== 'PRINT'}
                 />
               </div>
             </div>
@@ -4938,6 +5093,42 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
         </div>
       )}
 
+      {/* POS KOT ACCEPTANCE MODAL — only available in actionable POS KOT mode */}
+      {posKotAcceptOrder && posSettings.kotMode === 'PRINT' && (
+        <div className="modal-overlay" style={{ zIndex: 1200 }}>
+          <div className="modal-content animate-slide-up" style={{ width: '430px', maxWidth: '92%', borderRadius: '12px' }}>
+            <div className="modal-header">
+              <h2><Clock size={22} color="var(--accent-yellow)" /> Accept KOT #{posKotAcceptOrder.displayId || posKotAcceptOrder.id}</h2>
+              <X size={22} style={{ cursor: 'pointer' }} onClick={() => { if (!posKotActionBusy) setPosKotAcceptOrder(null); }} />
+            </div>
+            <div style={{ padding: '22px' }}>
+              <p style={{ color: 'var(--text-muted)', marginTop: 0, lineHeight: 1.5 }}>
+                Select the preparation time. The order will move to Preparing immediately after acceptance.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', margin: '18px 0 22px' }}>
+                {[10, 15, 20, 30].map(minutes => (
+                  <button
+                    key={minutes}
+                    type="button"
+                    onClick={() => setPosKotPrepMinutes(minutes)}
+                    style={{
+                      padding: '12px 6px', borderRadius: '8px', cursor: 'pointer',
+                      border: posKotPrepMinutes === minutes ? '2px solid var(--accent-yellow)' : '1px solid var(--border-color)',
+                      background: posKotPrepMinutes === minutes ? 'rgba(251,191,36,0.16)' : 'var(--bg-base)',
+                      color: 'white', fontWeight: 'bold',
+                    }}
+                  >{minutes} min</button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" onClick={() => setPosKotAcceptOrder(null)} disabled={posKotActionBusy} style={{ flex: 1, padding: '13px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'transparent', color: 'white', cursor: 'pointer' }}>Cancel</button>
+                <button type="button" onClick={handlePosKotAccept} disabled={posKotActionBusy} style={{ flex: 1, padding: '13px', borderRadius: '8px', border: 'none', background: 'var(--accent-green)', color: '#00311f', fontWeight: 'bold', cursor: 'pointer' }}>{posKotActionBusy ? 'Accepting...' : 'Accept & Start'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SETTINGS MODAL */}
       {modalType === 'SETTINGS' && (
         <div className="modal-overlay">
@@ -4961,9 +5152,14 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut }: { currentUse
                   <div>
                     <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontWeight: '500' }}>KOT Operation Mode</label>
                     <select value={posSettings.kotMode} onChange={e => setPosSettings({...posSettings, kotMode: e.target.value, kotPrintQty: e.target.value === 'SCREEN' ? 0 : 1})} style={{ width: '100%', padding: '12px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '8px', fontSize: '0.95rem' }}>
-                      <option value="SCREEN">Kitchen Display (Screen)</option>
-                      <option value="PRINT">Thermal Print (Paper)</option>
+                      <option value="PRINT">POS KOT (Print + Accept/Ready)</option>
+                      {hasKdsPackage && <option value="SCREEN">KDS Monitor (Read-only)</option>}
                     </select>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '7px', lineHeight: 1.4 }}>
+                      {hasKdsPackage
+                        ? 'KDS package active: choose the actionable POS KOT workflow or the read-only KDS monitor.'
+                        : 'POS package: KOT workflow is enabled. The dedicated KDS option is available only with the KDS add-on.'}
+                    </p>
                   </div>
                   <div style={{ padding: '16px', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Discount Password Protection</label>
@@ -6325,12 +6521,37 @@ export default function App() {
   });
   const [forceShowLogin, setForceShowLogin] = useState(false);
   const [isSuspended, setIsSuspended] = useState<{suspended: boolean, reason: string}>({suspended: false, reason: ''});
+  // Package entitlement is authoritative for the KDS option.  Null/failed
+  // verification intentionally means POS-only until the server proves that
+  // this brand has an active KDS module.
+  const [hasKdsPackage, setHasKdsPackage] = useState(false);
 
   useEffect(() => {
     const handleSuspend = (e: any) => setIsSuspended({suspended: true, reason: e.detail});
     window.addEventListener('subscription_suspended', handleSuspend);
     return () => window.removeEventListener('subscription_suspended', handleSuspend);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const brandId = loggedInUser?.brand_id;
+    if (!brandId) {
+      setHasKdsPackage(false);
+      return () => { cancelled = true; };
+    }
+
+    setHasKdsPackage(false);
+    apiFetch(`/subscription/${brandId}`, { auth: true })
+      .then(response => response.ok ? response.json() : null)
+      .then(subscription => {
+        if (!cancelled) setHasKdsPackage(subscriptionHasKdsModule(subscription));
+      })
+      .catch(() => {
+        if (!cancelled) setHasKdsPackage(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [loggedInUser?.brand_id]);
 
   const handleLogout = () => {
     if (loggedInUser?.role === 'Waiter') {
@@ -6569,6 +6790,17 @@ export default function App() {
       );
     }
 
+    if (!hasKdsPackage) {
+      return (
+        <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: 'white', fontFamily: 'sans-serif' }}>
+          <ChefHat size={64} color="#ef4444" style={{ marginBottom: '20px' }} />
+          <h1 style={{ fontSize: '2rem', margin: 0 }}>KDS Add-on Required</h1>
+          <p style={{ color: '#94a3b8', marginTop: '10px' }}>This restaurant is using the POS KOT workflow. Add the KDS package to open the dedicated kitchen screen.</p>
+          <button onClick={handleLogout} style={{ marginTop: '20px', background: '#3b82f6', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Logout</button>
+        </div>
+      );
+    }
+
     return (
       <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
         <KitchenDisplay currentUser={activeUser} onLogout={() => setLoggedInUser(null)} />
@@ -6582,7 +6814,7 @@ export default function App() {
       window.location.replace('/waiter');
       return null;
     }
-    return <POSApp currentUser={activeUser} dayStartTime={null} onLogout={handleLogout} onCashOut={handleLogout} />;
+    return <POSApp currentUser={activeUser} dayStartTime={null} onLogout={handleLogout} onCashOut={handleLogout} hasKdsPackage={hasKdsPackage} />;
   }
 
   // Rider Role Guard — Rider cannot access POS register
@@ -6658,5 +6890,5 @@ export default function App() {
   }
   if (!isCashedIn) return <CashInPage currentUser={activeUser} onCashIn={(amount) => { setCashInAmount(amount); setIsCashedIn(true); }} onLogout={handleLogout} />;
 
-  return <POSApp currentUser={activeUser} dayStartTime={dayStartTime} onLogout={handleLogout} onCashOut={handleLogout} />;
+  return <POSApp currentUser={activeUser} dayStartTime={dayStartTime} onLogout={handleLogout} onCashOut={handleLogout} hasKdsPackage={hasKdsPackage} />;
 }
