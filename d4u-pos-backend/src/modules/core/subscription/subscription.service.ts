@@ -105,38 +105,137 @@ export class SubscriptionService {
   // SAAS PRICING (A LA CARTE)
   // -------------------------------------------------------------
   async getPricing(currency: string) {
+    const normCurrency = (currency || 'USD').trim().toUpperCase();
     try {
-      const prices = await this.prisma.saaSPricing.findMany({ where: { currency } });
-      if (prices.length > 0) return prices.map((price) => ({ ...price, persisted: true }));
+      const prices = await this.prisma.saaSPricing.findMany({ where: { currency: normCurrency } });
+      const priceMap = new Map(prices.map((p) => [p.module_key, p]));
+
+      return DEFAULT_PRICING.map(([module_key, module_name], index) => {
+        const persisted = priceMap.get(module_key);
+        if (persisted) {
+          return {
+            ...persisted,
+            persisted: true,
+          };
+        }
+        return {
+          id: null,
+          module_key,
+          module_name,
+          currency: normCurrency,
+          price_monthly: 0,
+          price_yearly: 0,
+          persisted: false,
+          fallback_id: `default-${index + 1}`,
+        };
+      });
     } catch (error) {
       // A missing/drifted SaaSPricing table must not make the package editor
       // render zero modules. The fallback is read-only; it never mutates DB.
       console.error('SaaSPricing unavailable; using registry defaults.', error);
+      return DEFAULT_PRICING.map(([module_key, module_name], index) => ({
+        id: null,
+        module_key,
+        module_name,
+        currency: normCurrency,
+        price_monthly: 0,
+        price_yearly: 0,
+        persisted: false,
+        fallback_id: `default-${index + 1}`,
+      }));
     }
-
-    return DEFAULT_PRICING.map(([module_key, module_name], index) => ({
-      id: null,
-      module_key,
-      module_name,
-      currency,
-      price_monthly: 0,
-      price_yearly: 0,
-      persisted: false,
-      fallback_id: `default-${index + 1}`,
-    }));
   }
 
-  async updatePricing(id: number, data: { price_monthly: number }) {
-    if (!Number.isInteger(id) || id <= 0) {
-      throw new BadRequestException('A valid pricing record is required.');
+  async saveBulkPricing(currency: string, items: { module_key: string; price_monthly: number }[]) {
+    if (!currency || typeof currency !== 'string') {
+      throw new BadRequestException('A valid currency is required.');
     }
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException('At least one module pricing item is required.');
+    }
+
+    const normCurrency = currency.trim().toUpperCase();
+    const defaultNames = new Map<string, string>(DEFAULT_PRICING.map(([key, name]) => [key, name]));
+
+    const operations = items.map((item) => {
+      const key = normalizeModuleKey(item?.module_key);
+      if (!key) {
+        throw new BadRequestException(`Unknown module key: ${item?.module_key || 'empty'}`);
+      }
+      const price = Number(item?.price_monthly);
+      if (!Number.isFinite(price) || price < 0) {
+        throw new BadRequestException(`Invalid price for module: ${key}`);
+      }
+      const module_name = defaultNames.get(key) || key;
+
+      return this.prisma.saaSPricing.upsert({
+        where: {
+          module_key_currency: {
+            module_key: key,
+            currency: normCurrency,
+          },
+        },
+        update: {
+          price_monthly: price,
+          module_name,
+        },
+        create: {
+          module_key: key,
+          module_name,
+          price_monthly: price,
+          currency: normCurrency,
+        },
+      });
+    });
+
+    await this.prisma.$transaction(operations);
+
+    return this.getPricing(normCurrency);
+  }
+
+  async updatePricing(
+    idOrKey: number | string,
+    data: { price_monthly: number; currency?: string; module_key?: string },
+  ) {
     const price = Number(data?.price_monthly);
     if (!Number.isFinite(price) || price < 0) {
       throw new BadRequestException('price_monthly must be a non-negative number.');
     }
-    return this.prisma.saaSPricing.update({
-      where: { id },
-      data: { price_monthly: price },
+
+    const numId = Number(idOrKey);
+    if (Number.isInteger(numId) && numId > 0) {
+      return this.prisma.saaSPricing.update({
+        where: { id: numId },
+        data: { price_monthly: price },
+      });
+    }
+
+    const moduleKey = normalizeModuleKey(data?.module_key || String(idOrKey));
+    if (!moduleKey) {
+      throw new BadRequestException('A valid pricing record is required.');
+    }
+
+    const currency = (data?.currency || 'USD').trim().toUpperCase();
+    const defaultNames = new Map<string, string>(DEFAULT_PRICING.map(([k, n]) => [k, n]));
+    const module_name = defaultNames.get(moduleKey) || moduleKey;
+
+    return this.prisma.saaSPricing.upsert({
+      where: {
+        module_key_currency: {
+          module_key: moduleKey,
+          currency,
+        },
+      },
+      update: {
+        price_monthly: price,
+        module_name,
+      },
+      create: {
+        module_key: moduleKey,
+        module_name,
+        price_monthly: price,
+        currency,
+      },
     });
   }
 

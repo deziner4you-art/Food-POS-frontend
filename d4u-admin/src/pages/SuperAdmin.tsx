@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, ShieldCheck, CheckCircle2, Plus, Archive, Pencil } from 'lucide-react';
+import { Settings, ShieldCheck, CheckCircle2, Plus, Archive, Pencil, Save, AlertCircle } from 'lucide-react';
 import { customAlert, customSuccess, customConfirm } from '../utils/alerts';
 import { apiFetch } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -11,11 +11,13 @@ export default function SuperAdmin() {
   const [packages, setPackages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingPricing, setSavingPricing] = useState(false);
+  const [hasPricingChanges, setHasPricingChanges] = useState(false);
   const [toast, setToast] = useState('');
   
   const [activeTab, setActiveTab] = useState<'PACKAGES' | 'MODULES'>('PACKAGES');
   const [pricingList, setPricingList] = useState<any[]>([]);
-  const [globalCurrency, setGlobalCurrency] = useState('USD');
+  const [globalCurrency, setGlobalCurrency] = useState('PKR');
 
   const currencySymbols: Record<string, string> = {
     USD: '$',
@@ -25,18 +27,19 @@ export default function SuperAdmin() {
     SR: 'SR',
     POUND: '£'
   };
-  const getSymbol = () => currencySymbols[globalCurrency] || '$';
+  const getSymbol = () => currencySymbols[globalCurrency] || 'Rs';
 
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState<any>({
     name: '',
     description: '',
-    currency: 'USD',
+    currency: 'PKR',
     monthly_rental: 0,
     billing_cycle: 'MONTHLY',
     selected_modules: []
   });
   const [editingPackageId, setEditingPackageId] = useState<number | null>(null);
+
   const fetchPackages = async () => {
     try {
       const res = await apiFetch('/subscription/package');
@@ -46,7 +49,10 @@ export default function SuperAdmin() {
       }
 
       const priceRes = await apiFetch(`/subscription/pricing?currency=${globalCurrency}`);
-      if (priceRes.ok) setPricingList(await priceRes.json());
+      if (priceRes.ok) {
+        setPricingList(await priceRes.json());
+        setHasPricingChanges(false);
+      }
       
       setLoading(false);
     } catch (e) {
@@ -58,6 +64,45 @@ export default function SuperAdmin() {
   useEffect(() => {
     fetchPackages();
   }, [globalCurrency]);
+
+  const handlePriceChange = (module_key: string, value: string) => {
+    const numVal = value === '' ? 0 : Number(value);
+    setPricingList(prev => prev.map(p => p.module_key === module_key ? { ...p, price_monthly: numVal } : p));
+    setHasPricingChanges(true);
+  };
+
+  const handleSaveAllPricing = async () => {
+    setSavingPricing(true);
+    try {
+      const payload = {
+        currency: globalCurrency,
+        items: pricingList.map(item => ({
+          module_key: item.module_key,
+          price_monthly: Number(item.price_monthly) || 0
+        }))
+      };
+      const res = await apiFetch('/subscription/pricing', {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        if (Array.isArray(updated) && updated.length > 0) {
+          setPricingList(updated);
+        }
+        setHasPricingChanges(false);
+        customSuccess(`Pricing for ${globalCurrency} saved successfully!`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        customAlert(err.message || 'Failed to save pricing');
+      }
+    } catch (e: any) {
+      console.error('Save pricing error:', e);
+      customAlert(e.message || 'Failed to save pricing');
+    } finally {
+      setSavingPricing(false);
+    }
+  };
 
   const handleSavePackage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +116,7 @@ export default function SuperAdmin() {
         billing_cycle: formData.billing_cycle,
         modules: formData.selected_modules.map((key: string) => {
           const m = pricingList.find(p => p.module_key === key);
-          return { module_key: key, price: m ? m.price_monthly : 0 };
+          return { module_key: key, price: m ? Number(m.price_monthly) || 0 : 0 };
         })
       };
 
@@ -121,28 +166,6 @@ export default function SuperAdmin() {
     }
   };
 
-  const handleUpdateModulePrice = async (id: number, newPrice: number) => {
-    if (!Number.isInteger(id) || id <= 0) {
-      customAlert('Module pricing storage is unavailable. Module selection is available, but save pricing after the pricing table is repaired.');
-      return;
-    }
-    try {
-      const res = await apiFetch(`/subscription/pricing/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ price_monthly: newPrice })
-      });
-      if (res.ok) {
-        customSuccess('Price updated');
-        setPricingList(prev => prev.map(p => p.id === id ? { ...p, price_monthly: newPrice } : p));
-      } else {
-        customAlert('Failed to update price');
-      }
-    } catch (e) {
-      console.error(e);
-      customAlert('Failed to update price');
-    }
-  };
-
   const toggleModuleSelection = (key: string) => {
     setFormData((prev: any) => ({
       ...prev,
@@ -151,6 +174,11 @@ export default function SuperAdmin() {
         : [...prev.selected_modules, key]
     }));
   };
+
+  const totalSelectedModulesValue = (formData?.selected_modules || []).reduce((sum: number, key: string) => {
+    const m = pricingList.find(p => p.module_key === key);
+    return sum + (m ? Number(m.price_monthly) || 0 : 0);
+  }, 0);
 
   if (loading) return <div className="p-10">Loading...</div>;
 
@@ -164,20 +192,40 @@ export default function SuperAdmin() {
             <p className="text-gray-500">Manage client subscriptions, modules, and architecture</p>
           </div>
         </div>
-        {activeTab === 'MODULES' && (
+        <div className="flex items-center gap-3">
+          {activeTab === 'MODULES' && (
+            <button 
+              type="button"
+              onClick={handleSaveAllPricing}
+              disabled={savingPricing}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all shadow-md ${
+                hasPricingChanges
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              } disabled:opacity-50`}
+            >
+              <Save size={18} /> {savingPricing ? 'Saving...' : `Save Pricing (${globalCurrency})`}
+            </button>
+          )}
           <button 
+            type="button"
             onClick={() => {
               setEditingPackageId(null);
               setFormData({
-                name: '', description: '', currency: globalCurrency, monthly_rental: 0, billing_cycle: 'MONTHLY', selected_modules: []
+                name: '', 
+                description: '', 
+                currency: globalCurrency, 
+                monthly_rental: 0, 
+                billing_cycle: 'MONTHLY', 
+                selected_modules: []
               });
               setShowModal(true);
             }}
             className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-lg shadow-purple-200"
           >
-            <Plus size={18} /> Create Package from Modules
+            <Plus size={18} /> {activeTab === 'MODULES' ? 'Create Package from Modules' : 'Create SaaS Package'}
           </button>
-        )}
+        </div>
       </div>
 
       <div className="flex border-b border-gray-200 mb-6">
@@ -232,7 +280,7 @@ export default function SuperAdmin() {
                     <button 
                       onClick={() => {
                         setEditingPackageId(pkg.id);
-                        setGlobalCurrency(pkg.currency); // Ensure pricing list switches to this currency to show modules correctly
+                        setGlobalCurrency(pkg.currency);
                         setFormData({
                           name: pkg.name,
                           description: pkg.description || '',
@@ -262,62 +310,86 @@ export default function SuperAdmin() {
           </table>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-          <table className="w-full text-left text-sm text-gray-700">
-            <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
-              <tr>
-                <th className="p-4 font-bold">Module Name</th>
-                <th className="p-4 font-bold">Module Key</th>
-                <th className="p-4 font-bold">
-                  <select 
-                    value={globalCurrency} 
-                    onChange={e => setGlobalCurrency(e.target.value)}
-                    className="bg-transparent font-bold outline-none cursor-pointer text-gray-500 hover:text-purple-600 uppercase text-xs tracking-wider"
-                  >
-                    <option value="USD">Currency (USD)</option>
-                    <option value="PKR">Currency (PKR)</option>
-                    <option value="AED">Currency (AED)</option>
-                    <option value="QR">Currency (QR)</option>
-                    <option value="SR">Currency (SR)</option>
-                    <option value="POUND">Currency (POUND)</option>
-                  </select>
-                </th>
-                <th className="p-4 font-bold text-right">Monthly Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pricingList.map(item => (
-                <tr key={item.module_key} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
-                  <td className="p-4 font-bold text-gray-900">{item.module_name}</td>
-                  <td className="p-4"><span className="bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-mono">{item.module_key}</span></td>
-                  <td className="p-4 text-gray-500 font-bold">{globalCurrency}</td>
-                  <td className="p-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <span className="text-gray-400 font-bold">{getSymbol()}</span>
-                      <input 
-                        type="number"
-                        defaultValue={item.price_monthly}
-                        disabled={item.persisted === false}
-                        title={item.persisted === false ? 'Pricing storage is unavailable; module selection still uses registry defaults.' : 'Update module price'}
-                        onBlur={(e) => {
-                          const val = Number(e.target.value);
-                          if (val !== item.price_monthly) {
-                            handleUpdateModulePrice(item.id, val);
-                          }
-                        }}
-                        className="w-24 p-2 border border-gray-200 rounded text-right font-mono font-bold outline-none focus:border-purple-500"
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {pricingList.length === 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-purple-50/60 p-4 rounded-xl border border-purple-100">
+            <div className="flex items-center gap-2 text-purple-900 text-sm">
+              <AlertCircle size={18} className="text-purple-600 flex-shrink-0" />
+              <span>
+                Set monthly base rates for each module in <strong>{globalCurrency}</strong>. Click <strong>Save Pricing</strong> to persist rates for packages and subscriptions.
+              </span>
+            </div>
+            <button 
+              type="button"
+              onClick={handleSaveAllPricing}
+              disabled={savingPricing}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shadow-md ${
+                hasPricingChanges
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              } disabled:opacity-50 flex-shrink-0`}
+            >
+              <Save size={16} /> {savingPricing ? 'Saving...' : `Save Pricing (${globalCurrency})`}
+            </button>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+            <table className="w-full text-left text-sm text-gray-700">
+              <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-gray-500">No module pricing found in database.</td>
+                  <th className="p-4 font-bold">Module Name</th>
+                  <th className="p-4 font-bold">Module Key</th>
+                  <th className="p-4 font-bold">
+                    <select 
+                      value={globalCurrency} 
+                      onChange={e => setGlobalCurrency(e.target.value)}
+                      className="bg-white border border-gray-200 rounded px-2 py-1 font-bold outline-none cursor-pointer text-gray-700 hover:text-purple-600 uppercase text-xs tracking-wider"
+                    >
+                      <option value="PKR">Currency (PKR)</option>
+                      <option value="USD">Currency (USD)</option>
+                      <option value="AED">Currency (AED)</option>
+                      <option value="QR">Currency (QR)</option>
+                      <option value="SR">Currency (SR)</option>
+                      <option value="POUND">Currency (POUND)</option>
+                    </select>
+                  </th>
+                  <th className="p-4 font-bold text-right">Monthly Price</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {pricingList.map(item => (
+                  <tr key={item.module_key} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                    <td className="p-4 font-bold text-gray-900">{item.module_name}</td>
+                    <td className="p-4"><span className="bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-mono">{item.module_key}</span></td>
+                    <td className="p-4 text-gray-500 font-bold">{globalCurrency}</td>
+                    <td className="p-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <span className="text-gray-400 font-bold">{getSymbol()}</span>
+                        <input 
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={item.price_monthly ?? 0}
+                          onChange={(e) => handlePriceChange(item.module_key, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSaveAllPricing();
+                            }
+                          }}
+                          className="w-28 p-2 border border-gray-200 rounded-lg text-right font-mono font-bold outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all text-gray-900 bg-white"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {pricingList.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="p-8 text-center text-gray-500">No module pricing found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -325,7 +397,9 @@ export default function SuperAdmin() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <h3 className="text-xl font-bold text-gray-800">Create SaaS Package</h3>
+              <h3 className="text-xl font-bold text-gray-800">
+                {editingPackageId ? 'Edit SaaS Package' : 'Create SaaS Package'}
+              </h3>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
             </div>
             
@@ -348,7 +422,7 @@ export default function SuperAdmin() {
                     readOnly
                     type="text" 
                     value={formData.currency}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none text-gray-500 cursor-not-allowed"
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none text-gray-500 cursor-not-allowed font-bold"
                   />
                 </div>
                 <div className="col-span-2">
@@ -369,7 +443,7 @@ export default function SuperAdmin() {
                     min="0"
                     value={formData.monthly_rental}
                     onChange={e => setFormData({ ...formData, monthly_rental: Number(e.target.value) })}
-                    className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-purple-500 transition-colors text-gray-900"
+                    className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-purple-500 transition-colors text-gray-900 font-bold font-mono"
                   />
                 </div>
                 <div>
@@ -387,10 +461,27 @@ export default function SuperAdmin() {
               </div>
 
               <div>
-                <h4 className="text-md font-bold text-gray-800 mb-4 border-b pb-2">Select Modules</h4>
+                <div className="flex items-center justify-between mb-4 border-b pb-2">
+                  <h4 className="text-md font-bold text-gray-800">Select Modules</h4>
+                  {totalSelectedModulesValue > 0 && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-gray-500">
+                        Sum: <strong className="text-purple-700 font-mono text-sm">{getSymbol()}{totalSelectedModulesValue.toLocaleString()}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setFormData((prev: any) => ({ ...prev, monthly_rental: totalSelectedModulesValue }))}
+                        className="text-xs bg-purple-100 hover:bg-purple-200 text-purple-800 font-bold px-2.5 py-1 rounded transition-colors"
+                      >
+                        Set as Rental
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {pricingList.map(mod => {
                     const isSelected = formData.selected_modules.includes(mod.module_key);
+                    const modPrice = Number(mod.price_monthly) || 0;
                     return (
                       <label key={mod.module_key} className={`flex items-center gap-3 cursor-pointer p-3 rounded-xl border transition-colors ${isSelected ? 'border-purple-200 bg-purple-50/50' : 'border-gray-100 bg-gray-50/50 hover:bg-gray-100'}`}>
                         <input 
@@ -401,7 +492,9 @@ export default function SuperAdmin() {
                         />
                         <div className="flex-1">
                           <span className="text-gray-700 font-medium select-none block">{mod.module_name}</span>
-                          <span className="text-gray-400 text-xs font-mono">{mod.module_key} &bull; {getSymbol()}{mod.price_monthly}</span>
+                          <span className="text-gray-500 text-xs font-mono font-semibold">
+                            {mod.module_key} &bull; {getSymbol()}{modPrice.toLocaleString()}
+                          </span>
                         </div>
                       </label>
                     );
@@ -423,7 +516,7 @@ export default function SuperAdmin() {
                 disabled={saving}
                 className="px-6 py-2.5 rounded-xl font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-200 transition-colors disabled:opacity-50"
               >
-                {saving ? 'Saving...' : 'Create Package'}
+                {saving ? 'Saving...' : editingPackageId ? 'Update Package' : 'Create Package'}
               </button>
             </div>
           </div>
@@ -432,3 +525,4 @@ export default function SuperAdmin() {
     </div>
   );
 }
+

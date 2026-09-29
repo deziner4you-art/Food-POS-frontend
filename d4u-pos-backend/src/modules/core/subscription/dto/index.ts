@@ -1,5 +1,21 @@
 import { IsString, IsNumber, IsOptional, IsArray, IsBoolean } from 'class-validator';
 
+export class PricingItemDto {
+  @IsString()
+  module_key: string;
+
+  @IsNumber()
+  price_monthly: number;
+}
+
+export class SaveBulkPricingDto {
+  @IsString()
+  currency: string;
+
+  @IsArray()
+  items: PricingItemDto[];
+}
+
 export class CreatePackageDto {
   @IsString()
   name: string;

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Body, Param, Query, Patch, Req } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
-import { CreatePackageDto, OnboardClientDto } from './dto';
+import { CreatePackageDto, OnboardClientDto, SaveBulkPricingDto } from './dto';
 import { CurrentUser, Public, RequirePermissions, SkipSubscription } from '../../../common/decorators';
 import { EntitlementService } from './entitlement.service';
 
@@ -44,12 +44,24 @@ export class SubscriptionController {
   }
 
   @RequirePermissions('system.subscription.manage')
+  @Put('pricing')
+  saveBulkPricing(@Body() body: SaveBulkPricingDto) {
+    return this.subscriptionService.saveBulkPricing(body.currency, body.items);
+  }
+
+  @RequirePermissions('system.subscription.manage')
+  @Post('pricing/bulk')
+  saveBulkPricingPost(@Body() body: SaveBulkPricingDto) {
+    return this.subscriptionService.saveBulkPricing(body.currency, body.items);
+  }
+
+  @RequirePermissions('system.subscription.manage')
   @Put('pricing/:id')
   updatePricing(
     @Param('id') id: string,
-    @Body() body: { price_monthly: number },
+    @Body() body: { price_monthly: number; currency?: string; module_key?: string },
   ) {
-    return this.subscriptionService.updatePricing(Number(id), body);
+    return this.subscriptionService.updatePricing(id, body);
   }
 
   /** Authenticated, active-workspace capability snapshot. */
