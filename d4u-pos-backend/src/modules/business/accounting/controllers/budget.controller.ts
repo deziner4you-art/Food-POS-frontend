@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Put, Body, Param, Query, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { BudgetService } from '../services/budget.service';
 import { BudgetAnalysisService } from '../services/budget-analysis.service';
 import { CreateBudgetInput } from '../interfaces/budget.interface';
@@ -7,6 +7,7 @@ import { BudgetAnalysisFilter } from '../interfaces/budget-analysis.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/budget')
+@RequireModule('ACCOUNTING')
 export class BudgetController {
   constructor(
     private readonly budgetService: BudgetService,

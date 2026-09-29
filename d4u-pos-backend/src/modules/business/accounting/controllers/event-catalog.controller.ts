@@ -1,10 +1,11 @@
 import { Controller, Get, Param, NotFoundException, BadRequestException } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { BusinessEvent } from '../enums/business-event.enum';
 import { BUSINESS_EVENT_CATALOG } from '../catalog/business-event-catalog';
 import { ACCOUNTING_EVENT_MAPPING } from '../catalog/accounting-event-mapping';
 
 @Controller('accounting/event-catalog')
+@RequireModule('ACCOUNTING')
 export class EventCatalogController {
 
   @RequirePermissions('finance.system_accounts.read')

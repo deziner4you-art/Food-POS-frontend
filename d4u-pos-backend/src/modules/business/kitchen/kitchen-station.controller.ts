@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { RequireModule, RequirePermissions, CurrentUser } from '../../../common/decorators';
 import { KitchenStationService } from './kitchen-station.service';
 import { CreateKitchenStationDto, UpdateKitchenStationDto, AssignProductStationDto } from './dto';
 
 @Controller('kitchen/stations')
+@RequireModule('KDS')
 export class KitchenStationController {
   constructor(private readonly service: KitchenStationService) {}
 

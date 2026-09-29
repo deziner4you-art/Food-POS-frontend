@@ -289,7 +289,7 @@ export class InventoryService {
   }
 
   // --- EXCEL IMPORT LOGIC ---
-  async importExcelData() {
+  async importExcelData(store_id: number) {
     // Look in the User's Downloads directory for the specific file
     const downloadsPath = path.join(os.homedir(), 'Downloads');
     const filePath = path.join(downloadsPath, 'Final NEW COSTING SHEET.xls');
@@ -351,9 +351,6 @@ export class InventoryService {
     }
 
     let importedCount = 0;
-
-    // Default store_id = 1 (Head Office / Main Branch for global inventory)
-    const store_id = 1;
 
     for (const [name, price] of uniqueItems.entries()) {
       // Check if it exists

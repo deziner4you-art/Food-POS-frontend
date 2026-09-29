@@ -15,6 +15,24 @@ type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
 export class CustomersService {
   constructor(private prisma: PrismaService) {}
 
+  /** Resolve and authorize a customer against the caller's active store. */
+  async getCustomerForTenant(id: number, authenticatedUser: any) {
+    const storeId = Number(authenticatedUser?.active_store_id ?? authenticatedUser?.store_id);
+    if (!authenticatedUser || !Number.isFinite(storeId) || storeId <= 0) {
+      throw new BadRequestException('A valid authenticated store context is required.');
+    }
+
+    const [store, customer] = await Promise.all([
+      this.prisma.store.findUnique({ where: { id: storeId }, select: { id: true, brand_id: true } }),
+      this.prisma.customer.findUnique({ where: { id } }),
+    ]);
+    if (!store) throw new BadRequestException('Store not found for authenticated session.');
+    if (!customer || customer.brand_id !== store.brand_id) {
+      throw new NotFoundException('Customer not found');
+    }
+    return { customer, store };
+  }
+
   // تمام گاہک (CRM Grid)
   //
   // Task #2Q-D1: brand_id used to be a client-supplied argument, trusted
@@ -132,20 +150,14 @@ export class CustomersService {
   // through a customer id instead of a phone query param. The customer
   // lookup itself is unchanged -- only the OnlineOrder query gets the fix.
   async getCustomerOrders(id: number, authenticatedUser?: any) {
-    const storeId = Number(authenticatedUser?.active_store_id ?? authenticatedUser?.store_id);
-    if (!authenticatedUser || !Number.isFinite(storeId) || storeId <= 0) {
-      throw new BadRequestException('A valid authenticated store context is required.');
-    }
-
-    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
-    if (!store) {
-      throw new BadRequestException('Store not found for authenticated session.');
-    }
+    const { customer: authorizedCustomer, store } = await this.getCustomerForTenant(id, authenticatedUser);
+    const storeId = store.id;
 
     const customer = await this.prisma.customer.findUnique({
       where: { id },
       include: {
         orders: {
+          where: { store_id: storeId },
           include: { items: { include: { product: true } } },
           orderBy: { id: 'desc' },
           take: 50,
@@ -161,16 +173,32 @@ export class CustomersService {
       take: 50,
     });
 
-    return { ...customer, onlineOrders };
+    // The initial lookup above is intentionally repeated with the historical
+    // relation include so the response keeps its existing shape. The first
+    // lookup remains the authoritative tenant gate.
+    return { ...customer, onlineOrders, brand_id: authorizedCustomer.brand_id };
   }
 
   // نیا گاہک رجسٹر
   async createCustomer(body: {
-    brand_id: number;
+    brand_id?: number;
+    store_id?: number;
     phone: string;
     name: string;
     address?: string;
-  }) {
+  }, authenticatedUser?: any) {
+    const storeId = Number(
+      authenticatedUser?.active_store_id ?? authenticatedUser?.store_id ?? body.store_id,
+    );
+    if (!Number.isFinite(storeId) || storeId <= 0) {
+      throw new BadRequestException('A valid store context is required.');
+    }
+    const store = await this.prisma.store.findUnique({
+      where: { id: storeId },
+      select: { brand_id: true },
+    });
+    if (!store?.brand_id) throw new BadRequestException('Store not found for authenticated session.');
+
     // Find-or-create: phone is globally unique (not per-brand), so a
     // cashier typing a number that's already registered under ANY brand
     // used to hard-fail with "already exists" even though, from the
@@ -190,7 +218,9 @@ export class CustomersService {
 
     const customer = await this.prisma.customer.create({
       data: {
-        brand_id: body.brand_id,
+        // The request body may contain a legacy brand_id, but the active
+        // store is authoritative and prevents cross-tenant fabrication.
+        brand_id: store.brand_id,
         phone,
         name: body.name,
         address: body.address ?? null,
@@ -202,7 +232,8 @@ export class CustomersService {
   }
 
   // گاہک کی معلومات اپڈیٹ
-  async updateCustomer(id: number, body: { name?: string; address?: string }) {
+  async updateCustomer(id: number, body: { name?: string; address?: string }, authenticatedUser?: any) {
+    if (authenticatedUser) await this.getCustomerForTenant(id, authenticatedUser);
     const customer = await this.prisma.customer.update({
       where: { id },
       data: {
@@ -304,7 +335,8 @@ export class CustomersService {
   }
 
   // گاہک کا Wallet Balance
-  async getWalletBalance(customer_id: number) {
+  async getWalletBalance(customer_id: number, authenticatedUser?: any) {
+    if (authenticatedUser) await this.getCustomerForTenant(customer_id, authenticatedUser);
     const customer = await this.prisma.customer.findUnique({
       where: { id: customer_id },
       select: { id: true, name: true, phone: true, loyalty_points: true },
@@ -321,7 +353,8 @@ export class CustomersService {
   }
 
   // delete customer
-  async deleteCustomer(id: number) {
+  async deleteCustomer(id: number, authenticatedUser?: any) {
+    if (authenticatedUser) await this.getCustomerForTenant(id, authenticatedUser);
     await this.prisma.customer.delete({ where: { id } });
     return { success: true };
   }

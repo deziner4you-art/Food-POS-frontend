@@ -19,7 +19,7 @@ interface Brand {
 
 interface AdminContextType {
   selectedBranchId: number | null;
-  setSelectedBranchId: (id: number) => void;
+  setSelectedBranchId: (id: number | null) => void;
   activeBrandId: number | null;
   setActiveBrandId: (id: number | null) => void;
   branches: Store[];
@@ -29,7 +29,21 @@ interface AdminContextType {
   dirtyModules: Record<string, boolean>;
   setModuleDirty: (moduleName: string, isDirty: boolean) => void;
   checkWorkspaceDirty: () => boolean;
+  entitlementLoading: boolean;
+  entitlementChecked: boolean;
+  hasModule: (moduleKey: AdminModuleKey) => boolean;
 }
+
+export type AdminModuleKey =
+  | 'pos'
+  | 'inventory'
+  | 'recipes'
+  | 'vendors'
+  | 'marketing'
+  | 'crm'
+  | 'cms'
+  | 'rider'
+  | 'analytics';
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
@@ -46,6 +60,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     return sessionStorage.getItem('adminIsBranchEntered') === 'true';
   });
   const [dirtyModules, setDirtyModules] = useState<Record<string, boolean>>({});
+  const [entitlementLoading, setEntitlementLoading] = useState(false);
+  const [entitlementChecked, setEntitlementChecked] = useState(false);
+  const [capabilities, setCapabilities] = useState<Partial<Record<AdminModuleKey, boolean>>>({});
 
   const setModuleDirty = (moduleName: string, isDirty: boolean) => {
     setDirtyModules(prev => ({ ...prev, [moduleName]: isDirty }));
@@ -55,6 +72,57 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     // Return true if ANY module is dirty (or could enhance to check active only)
     return Object.values(dirtyModules).some(isDirty => isDirty);
   };
+
+  // The selected branch's active subscription is the only source of truth for
+  // Admin feature visibility. Missing, invalid, expired, or failed lookups
+  // intentionally produce an empty capability set (fail closed).
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedBranchId || !Number.isInteger(Number(selectedBranchId)) || Number(selectedBranchId) <= 0) {
+      setCapabilities({});
+      setEntitlementChecked(false);
+      setEntitlementLoading(false);
+      return;
+    }
+
+    setEntitlementLoading(true);
+    setEntitlementChecked(false);
+    setCapabilities({});
+    apiFetch(`/subscription/entitlements/current?store_id=${selectedBranchId}`)
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const source = data?.capabilities;
+        setCapabilities(source && typeof source === 'object' ? {
+          pos: source.pos === true,
+          inventory: source.inventory === true,
+          recipes: source.recipes === true,
+          vendors: source.vendors === true,
+          marketing: source.marketing === true,
+          crm: source.crm === true,
+          cms: source.cms === true,
+          rider: source.rider === true,
+          analytics: source.analytics === true,
+        } : {});
+        setEntitlementChecked(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCapabilities({});
+        setEntitlementChecked(true);
+      })
+      .finally(() => {
+        if (!cancelled) setEntitlementLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [selectedBranchId]);
+
+  const hasModule = (moduleKey: AdminModuleKey) =>
+    entitlementChecked && capabilities[moduleKey] === true;
 
   useEffect(() => {
     
@@ -112,7 +180,12 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       activeBrandId, setActiveBrandId, 
       branches, brands, 
       isBranchEntered, setIsBranchEntered,
-      dirtyModules, setModuleDirty, checkWorkspaceDirty
+      dirtyModules,
+      setModuleDirty,
+      checkWorkspaceDirty,
+      entitlementLoading,
+      entitlementChecked,
+      hasModule,
     }}>
       {children}
     </AdminContext.Provider>

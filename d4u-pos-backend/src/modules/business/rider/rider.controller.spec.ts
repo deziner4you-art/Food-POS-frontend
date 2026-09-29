@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RiderController, RiderOrdersController } from './rider.controller';
 import { RiderService } from './rider.service';
 import { PERMISSIONS_KEY } from '../../../common/decorators/permissions.decorator';
+import { REQUIRED_MODULE_KEY } from '../../../common/decorators/require-module.decorator';
 
 describe('RiderController', () => {
   let controller: RiderController;
@@ -21,6 +22,10 @@ describe('RiderController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  it('requires the Rider package module at controller level', () => {
+    expect(Reflect.getMetadata(REQUIRED_MODULE_KEY, RiderController)).toBe('RIDER');
   });
 
   // Task #2Q-B2: system.create never matched any seeded permission or the
@@ -79,6 +84,10 @@ describe('RiderOrdersController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  it('requires the Rider package module for every rider-order route', () => {
+    expect(Reflect.getMetadata(REQUIRED_MODULE_KEY, RiderOrdersController)).toBe('RIDER');
   });
 
   // Task #2Q-B2: system.view never matched any seeded permission or the

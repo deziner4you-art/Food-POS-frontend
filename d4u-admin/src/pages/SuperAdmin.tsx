@@ -122,6 +122,10 @@ export default function SuperAdmin() {
   };
 
   const handleUpdateModulePrice = async (id: number, newPrice: number) => {
+    if (!Number.isInteger(id) || id <= 0) {
+      customAlert('Module pricing storage is unavailable. Module selection is available, but save pricing after the pricing table is repaired.');
+      return;
+    }
     try {
       const res = await apiFetch(`/subscription/pricing/${id}`, {
         method: 'PUT',
@@ -283,7 +287,7 @@ export default function SuperAdmin() {
             </thead>
             <tbody>
               {pricingList.map(item => (
-                <tr key={item.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+                <tr key={item.module_key} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
                   <td className="p-4 font-bold text-gray-900">{item.module_name}</td>
                   <td className="p-4"><span className="bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-mono">{item.module_key}</span></td>
                   <td className="p-4 text-gray-500 font-bold">{globalCurrency}</td>
@@ -293,6 +297,8 @@ export default function SuperAdmin() {
                       <input 
                         type="number"
                         defaultValue={item.price_monthly}
+                        disabled={item.persisted === false}
+                        title={item.persisted === false ? 'Pricing storage is unavailable; module selection still uses registry defaults.' : 'Update module price'}
                         onBlur={(e) => {
                           const val = Number(e.target.value);
                           if (val !== item.price_monthly) {

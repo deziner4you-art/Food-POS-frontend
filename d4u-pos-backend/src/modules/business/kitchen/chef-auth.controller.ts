@@ -1,9 +1,10 @@
 import { Controller, Post, Get, Body, Param, Query } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../common/decorators';
 import { ChefSessionService } from './chef-session.service';
 import { GenerateChefPinDto, ChefLoginDto, ResumeChefSessionDto, ChefHeartbeatDto } from './dto';
 
 @Controller('kitchen/chef-auth')
+@RequireModule('KDS')
 export class ChefAuthController {
   constructor(private readonly service: ChefSessionService) {}
 

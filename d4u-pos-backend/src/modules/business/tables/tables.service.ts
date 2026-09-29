@@ -5,6 +5,12 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
 
 const ASSIGNABLE_STATUSES = ['AVAILABLE', 'RESERVED'];
+const TERMINAL_ORDER_STATUSES = new Set([
+  'SETTLED',
+  'VOIDED',
+  'CANCELLED',
+  'COMPLETED',
+]);
 
 @Injectable()
 export class TablesService {
@@ -45,14 +51,44 @@ export class TablesService {
     order_id: number,
     client: PrismaClientOrTx = this.prisma,
   ) {
-    const table = await this.findOrCreate(store_id, label, client);
+    let table = await this.findOrCreate(store_id, label, client);
     const alreadyHeldByThisOrder = table.current_order_id === order_id;
 
     if (!alreadyHeldByThisOrder) {
       if (table.status === 'OCCUPIED') {
-        throw new ConflictException(
-          `Table ${label} is already occupied by order #${table.current_order_id}`,
+        const currentOrder = table.current_order_id == null
+          ? null
+          : await client.order.findUnique({
+              where: { id: table.current_order_id },
+              select: { id: true, status: true, business_day_id: true, store_id: true },
+            });
+        const openDay = await client.businessDay.findFirst({
+          where: { store_id, status: 'OPEN' },
+          orderBy: { id: 'desc' },
+          select: { id: true },
+        });
+        const belongsToClosedOrPreviousDay = Boolean(
+          currentOrder && openDay && currentOrder.business_day_id !== openDay.id,
         );
+        const staleTablePointer = !currentOrder
+          || currentOrder.store_id !== store_id
+          || TERMINAL_ORDER_STATUSES.has(String(currentOrder.status).toUpperCase())
+          || belongsToClosedOrPreviousDay;
+
+        if (staleTablePointer) {
+          // A previous failed/old terminal flow must not permanently block a
+          // new waiter order. This runs inside the caller's transaction, so
+          // the stale pointer is cleared together with the new assignment.
+          await client.restaurantTable.update({
+            where: { id: table.id },
+            data: { status: 'AVAILABLE', current_order_id: null },
+          });
+          table = { ...table, status: 'AVAILABLE', current_order_id: null };
+        } else {
+          throw new ConflictException(
+            `Table ${label} is already occupied by order #${table.current_order_id}`,
+          );
+        }
       }
       if (!ASSIGNABLE_STATUSES.includes(table.status)) {
         throw new ConflictException(

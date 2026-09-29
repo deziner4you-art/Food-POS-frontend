@@ -1,8 +1,9 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../common/decorators';
 import { RecipeAvailabilityService } from './recipe-availability.service';
 
 @Controller('kitchen/availability')
+@RequireModule('KDS')
 export class RecipeAvailabilityController {
   constructor(private readonly service: RecipeAvailabilityService) {}
 

@@ -11,7 +11,7 @@ import {
   UploadedFile,
   Query,
 } from '@nestjs/common';
-import { RequirePermissions, Public } from '../../../common/decorators';
+import { RequirePermissions, Public, RequireModule } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -47,6 +47,7 @@ const bannerStorage = diskStorage({
 });
 
 @Controller('cms')
+@RequireModule('CMS')
 export class CmsController {
   constructor(private readonly cmsService: CmsService) {}
 
@@ -56,15 +57,17 @@ export class CmsController {
   // as GET /marketing/campaign?store_id=. Previously neither route accepted
   // store_id at all, so every banner for the brand showed on every branch.
   @Public()
+  @RequireModule('ONLINE_WEBSITE')
   @Get('banners/:brand_id')
   getBannersByBrand(@Param('brand_id') brandId: string, @Query('store_id') storeId?: string) {
     return this.cmsService.getBanners(parseInt(brandId), storeId ? parseInt(storeId) : undefined);
   }
 
   @Public()
+  @RequireModule('ONLINE_WEBSITE')
   @Get('banners')
   getBanners(@Query('brand_id') brandId?: string, @Query('store_id') storeId?: string) {
-    return this.cmsService.getBanners(brandId ? parseInt(brandId) : 1, storeId ? parseInt(storeId) : undefined);
+    return this.cmsService.getBanners(brandId ? parseInt(brandId) : undefined, storeId ? parseInt(storeId) : undefined);
   }
 
   @RequirePermissions('system.create')
@@ -124,16 +127,18 @@ export class CmsController {
 
   // --- Settings ---
   @Public()
+  @RequireModule('ONLINE_WEBSITE')
   @Get('settings/:store_id')
   getSettingsByStore(@Param('store_id') storeId: string) {
     return this.cmsService.getSettings(parseInt(storeId));
   }
 
   @Public()
+  @RequireModule('ONLINE_WEBSITE')
   @Get('settings')
   getSettings(@Query('store_id') storeId?: string) {
-    const id = (storeId && storeId !== 'undefined') ? parseInt(storeId, 10) : 1;
-    return this.cmsService.getSettings(id);
+    const id = (storeId && storeId !== 'undefined') ? parseInt(storeId, 10) : undefined;
+    return this.cmsService.getSettings(id as number);
   }
 
   @RequirePermissions('system.update')
@@ -145,7 +150,8 @@ export class CmsController {
     return this.cmsService.updateSettings(storeId, body);
   }
 
-  @RequirePermissions('system.create')
+  @Public()
+  @RequireModule('ONLINE_WEBSITE')
   @Post('subscribe')
   subscribe(@Body() body: SubscribeDto) {
     return this.cmsService.subscribeNewsletter(body.store_id, body.email);
@@ -155,6 +161,7 @@ export class CmsController {
   // KDS terminal), rather than introducing a brand-new permission key just
   // for this. Only ever returns a boolean — never the PIN or its hash.
   @RequirePermissions('kitchen.sessions.create')
+  @RequireModule('KDS')
   @Post('settings/:storeId/verify-inventory-pin')
   async verifyInventoryPin(
     @Param('storeId', ParseIntPipe) storeId: number,

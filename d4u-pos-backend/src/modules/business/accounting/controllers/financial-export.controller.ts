@@ -1,10 +1,11 @@
 import { Controller, Post, Body, Req, Res } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { FinancialExportService } from '../services/financial-export.service';
 import { ExportRequest } from '../interfaces/financial-export.interface';
 import { getSessionStoreId, getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/export')
+@RequireModule('ACCOUNTING')
 export class FinancialExportController {
   constructor(private readonly exportService: FinancialExportService) {}
 

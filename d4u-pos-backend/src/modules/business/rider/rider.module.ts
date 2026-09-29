@@ -6,9 +6,10 @@ import {
 } from './rider.controller';
 import { PrismaModule } from '../../../database/prisma/prisma.module';
 import { AppGateway } from '../../../app.gateway';
+import { TablesModule } from '../tables/tables.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, TablesModule],
   controllers: [
     RiderController,
     RiderOrdersController,

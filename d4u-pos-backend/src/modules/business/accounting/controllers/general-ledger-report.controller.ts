@@ -1,11 +1,12 @@
 import { Controller, Get, Param, Query, Req, ParseIntPipe } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { GeneralLedgerReportService } from '../services/general-ledger-report.service';
 import { GeneralLedgerDrilldownService } from '../services/general-ledger-drilldown.service';
 import { GeneralLedgerFilter } from '../interfaces/general-ledger-filter.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/general-ledger-report')
+@RequireModule('ACCOUNTING')
 export class GeneralLedgerReportController {
   constructor(
     private readonly glReportService: GeneralLedgerReportService,

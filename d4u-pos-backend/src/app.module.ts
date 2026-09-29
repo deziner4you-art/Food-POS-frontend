@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
+import { ModuleEntitlementGuard } from './common/guards/module-entitlement.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AppGateway } from './app.gateway';
@@ -87,6 +88,10 @@ import { KitchenModule } from './modules/business/kitchen/kitchen.module';
     {
       provide: APP_GUARD,
       useClass: SubscriptionGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ModuleEntitlementGuard,
     },
   ],
 })

@@ -1,10 +1,11 @@
 import { Controller, Get, Post, Body, Param, Query, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { DepreciationService } from '../services/depreciation.service';
 import { DepreciationPostingService } from '../services/depreciation-posting.service';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/depreciation')
+@RequireModule('ACCOUNTING')
 export class DepreciationController {
   constructor(
     private readonly depreciationService: DepreciationService,

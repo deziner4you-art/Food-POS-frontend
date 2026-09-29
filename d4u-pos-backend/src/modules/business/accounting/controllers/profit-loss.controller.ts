@@ -1,10 +1,11 @@
 import { Controller, Get, Query, Req, ParseIntPipe } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { ProfitLossService } from '../services/profit-loss.service';
 import { ProfitLossFilter } from '../interfaces/profit-loss-filter.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/profit-loss')
+@RequireModule('ACCOUNTING')
 export class ProfitLossController {
   constructor(private readonly plService: ProfitLossService) {}
 

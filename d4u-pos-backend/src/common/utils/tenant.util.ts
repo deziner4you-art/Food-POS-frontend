@@ -1,4 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
+import { PrismaService } from '../../database/prisma/prisma.service';
 import { SystemRoles } from '../enums/roles.enum';
 
 export function validateTenantAccess(user: any, requestedStoreId?: number, requestedBrandId?: number) {
@@ -24,6 +25,86 @@ export function validateTenantAccess(user: any, requestedStoreId?: number, reque
   }
 
   return true;
+}
+
+/** Authorize a requested store against the authenticated workspace. */
+export async function assertTenantStoreAccess(
+  prisma: PrismaService,
+  user: any,
+  requestedStoreId?: number,
+): Promise<void> {
+  if (!user) throw new ForbiddenException('Authenticated user context is required.');
+
+  const storeId = Number(requestedStoreId);
+  if (!Number.isInteger(storeId) || storeId <= 0) {
+    throw new ForbiddenException('A valid store is required.');
+  }
+
+  const userId = Number(user.sub);
+  const isNumericUser = Number.isInteger(userId) && userId > 0;
+  if (!isNumericUser && typeof user.role !== 'string') {
+    throw new ForbiddenException('Unable to resolve the authenticated user.');
+  }
+
+  const [store, dbUser] = await Promise.all([
+    prisma.store.findUnique({ where: { id: storeId }, select: { id: true, brand_id: true } }),
+    isNumericUser
+      ? prisma.user.findUnique({ where: { id: userId }, select: { role: { select: { name: true } } } })
+      : Promise.resolve(null),
+  ]);
+
+  const roleName = dbUser?.role?.name ?? (isNumericUser ? null : user.role);
+  if (!store?.brand_id || !roleName) {
+    throw new ForbiddenException('The requested tenant is not available.');
+  }
+
+  if (roleName === SystemRoles.SUPER_ADMIN || roleName === 'Super Admin') return;
+
+  const activeBrandId = Number(user.active_brand_id);
+  if (!Number.isInteger(activeBrandId) || activeBrandId <= 0 || store.brand_id !== activeBrandId) {
+    throw new ForbiddenException('You do not have access to this brand.');
+  }
+
+  if (roleName === SystemRoles.HEAD_OFFICE || roleName === 'Head Office') return;
+
+  const activeStoreId = Number(user.active_store_id);
+  if (!Number.isInteger(activeStoreId) || activeStoreId <= 0 || store.id !== activeStoreId) {
+    throw new ForbiddenException('You do not have access to this store.');
+  }
+}
+
+/** Authorize a brand-scoped report against the authenticated workspace. */
+export async function assertTenantBrandAccess(
+  prisma: PrismaService,
+  user: any,
+  requestedBrandId?: number,
+): Promise<void> {
+  if (!user) throw new ForbiddenException('Authenticated user context is required.');
+  const brandId = Number(requestedBrandId);
+  if (!Number.isInteger(brandId) || brandId <= 0) {
+    throw new ForbiddenException('A valid brand is required.');
+  }
+
+  const userId = Number(user.sub);
+  const isNumericUser = Number.isInteger(userId) && userId > 0;
+  if (!isNumericUser && typeof user.role !== 'string') {
+    throw new ForbiddenException('Unable to resolve the authenticated user.');
+  }
+
+  const [brand, dbUser] = await Promise.all([
+    prisma.brand.findUnique({ where: { id: brandId }, select: { id: true } }),
+    isNumericUser
+      ? prisma.user.findUnique({ where: { id: userId }, select: { role: { select: { name: true } } } })
+      : Promise.resolve(null),
+  ]);
+  const roleName = dbUser?.role?.name ?? (isNumericUser ? null : user.role);
+  if (!brand || !roleName) throw new ForbiddenException('The requested tenant is not available.');
+  if (roleName === SystemRoles.SUPER_ADMIN || roleName === 'Super Admin') return;
+
+  const activeBrandId = Number(user.active_brand_id);
+  if (!Number.isInteger(activeBrandId) || activeBrandId <= 0 || activeBrandId !== brand.id) {
+    throw new ForbiddenException('You do not have access to this brand.');
+  }
 }
 
 // Task #2R-G1a: strict active-workspace/store authorization, introduced for

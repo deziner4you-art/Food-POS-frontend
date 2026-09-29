@@ -1,11 +1,12 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { FixedAssetService } from '../services/fixed-asset.service';
 import { AssetTransferService } from '../services/asset-transfer.service';
 import { AssetDisposalService } from '../services/asset-disposal.service';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/fixed-assets')
+@RequireModule('ACCOUNTING')
 export class FixedAssetController {
   constructor(
     private readonly assetService: FixedAssetService,

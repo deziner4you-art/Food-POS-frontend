@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { Store, TrendingUp, PackageOpen, PieChart, AlertTriangle, Users, MapPin, RefreshCcw } from 'lucide-react';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+import { useAdminContext } from '../context/AdminContext';
+import { apiFetch } from '../utils/api';
 
 export default function OwnerApp() {
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<any>(null);
   const [selectedStore, setSelectedStore] = useState<any>(null);
   const [dailyData, setDailyData] = useState<any>(null);
+  const { activeBrandId } = useAdminContext();
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 30000); // Live refresh every 30s
     return () => clearInterval(interval);
-  }, []);
+  }, [activeBrandId]);
 
   const fetchData = async () => {
+    if (!activeBrandId) {
+      setOverview(null);
+      setLoading(false);
+      return;
+    }
     try {
       // Fetch high-level Brand overview
-      const res = await fetch(`${BACKEND_URL}/reports/brand/1`);
+      const res = await apiFetch(`/reports/brand/${activeBrandId}`);
       if (res.ok) {
         const data = await res.json();
         setOverview(data);
@@ -33,7 +39,7 @@ export default function OwnerApp() {
   const handleSelectStore = async (store_id: number) => {
     setSelectedStore(store_id);
     try {
-      const res = await fetch(`${BACKEND_URL}/reports/daily?store_id=${store_id}`);
+      const res = await apiFetch(`/reports/daily?store_id=${store_id}`);
       if (res.ok) {
         setDailyData(await res.json());
       }

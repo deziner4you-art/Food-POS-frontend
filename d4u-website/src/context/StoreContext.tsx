@@ -382,13 +382,12 @@ export function StoreProvider({ children, kioskMode = false }: { children: React
       // the owning brand (online-orders.controller.ts) -- it just never
       // received one from here, so every website signup fell through to
       // brand_id's hardcoded default regardless of which store the customer
-      // was actually ordering from. storeId is already in scope in this
-      // provider; login doesn't need it (it only looks up an existing
-      // customer by phone), so this only changes the register branch.
+      // was actually ordering from. Both login and registration now carry
+      // the selected store so the backend can enforce the brand boundary.
       const res = await fetch(`${BACKEND_URL}/online-orders/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(name ? { phone, name, store_id: storeId } : { phone }),
+        body: JSON.stringify(name ? { phone, name, store_id: storeId } : { phone, store_id: storeId }),
       });
       const data = await res.json();
       if (data.success) {

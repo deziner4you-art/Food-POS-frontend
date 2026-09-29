@@ -40,12 +40,28 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
          throw new Error('Access denied. You are not registered as a Rider.');
       }
 
-      const storeId = data.user.store_id || 1;
-      
-      // Save token (if we want to use JWT later)
-      if (data.access_token) {
-        localStorage.setItem('d4u_rider_token', data.access_token);
+      const storeId = Number(data.user.store_id);
+      if (!Number.isInteger(storeId) || storeId <= 0) {
+        throw new Error('Your rider account is not assigned to a valid store. Contact your administrator.');
       }
+
+      if (typeof data.access_token !== 'string' || !data.access_token) {
+        throw new Error('Login did not return a valid security token. Please try again.');
+      }
+
+      // The Rider role/permission is not enough by itself: the tenant must
+      // also have purchased the Rider module. Keep the app fail-closed before
+      // persisting a session for a store that is not entitled to deliveries.
+      const entitlementRes = await fetch(
+        `${BACKEND_URL}/subscription/entitlements/current?store_id=${storeId}`,
+        { headers: { Authorization: `Bearer ${data.access_token}` } },
+      );
+      const entitlement = entitlementRes.ok ? await entitlementRes.json() : null;
+      if (entitlement?.capabilities?.rider !== true) {
+        throw new Error('Rider delivery is not included in this store package. Contact your administrator.');
+      }
+
+      localStorage.setItem('d4u_rider_token', data.access_token);
       
       localStorage.setItem('d4u_rider_store', storeId.toString());
       localStorage.setItem('d4u_rider_name', data.user.name);

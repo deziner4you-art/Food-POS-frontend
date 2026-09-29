@@ -21,6 +21,33 @@ export default function TvBoard() {
   }
   const storeName = user?.store_name || user?.store?.name || 'HQ';
   const storeId = user?.store_id;
+  const [tvBoardEnabled, setTvBoardEnabled] = useState(false);
+  const [tvBoardEntitlementChecked, setTvBoardEntitlementChecked] = useState(false);
+
+  // TV Board is a paid tenant capability. Start closed and only unlock the
+  // renderer after the authenticated backend has confirmed the current store's
+  // entitlement. A missing/invalid session or a failed request shows no KOTs.
+  useEffect(() => {
+    setTvBoardEnabled(false);
+    setTvBoardEntitlementChecked(false);
+    if (!isValidPosIntegerId(storeId)) return;
+
+    let cancelled = false;
+    apiFetch(`/subscription/entitlements/current?store_id=${storeId}`, { auth: true })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (cancelled) return;
+        setTvBoardEnabled(data?.capabilities?.tvBoard === true);
+        setTvBoardEntitlementChecked(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTvBoardEnabled(false);
+        setTvBoardEntitlementChecked(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [storeId]);
 
   // MARKETING-003 §5 — rotation priority: Scheduled/Current (both already
   // priority-sorted by CampaignResolverService) → Upcoming. No video/image/
@@ -38,6 +65,7 @@ export default function TvBoard() {
   const activeKots = (useLiveQuery(
     () => db.kots.where('status').anyOf(['PREPARING', 'READY']).toArray()
   ) || []).filter(k => {
+    if (!tvBoardEnabled) return false;
     // Task #3A identity gate: isKotEligible enforces all four rules with no fallbacks.
     if (!isKotEligible(k, activeStoreId, activeBusinessDayId)) return false;
 
@@ -63,32 +91,27 @@ export default function TvBoard() {
     .sort((a, b) => b.id - a.id);
 
   const fetchCampaigns = () => {
+    if (!isValidPosIntegerId(storeId) || !tvBoardEnabled) {
+      setCampaigns([]);
+      setUpcoming([]);
+      return;
+    }
     // MARKETING-003 §1/§2: store-scoped, routed through the shared
     // CampaignResolverService (channel=tv) — replaces the previous global,
     // client-side-filtered fetch. apiFetch reads the real d4u_pos_token key
     // internally — the previous user?.token read was always empty, since
     // the token has never been stored on the d4u_main_user object.
-    if (storeId) {
-      apiFetch(`/marketing/campaign?store_id=${storeId}&channel=tv`, { auth: true })
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data)) setCampaigns(data);
-          else { console.error('Invalid campaigns data:', data); setCampaigns([]); }
-        })
-        .catch(console.error);
-    } else {
-      apiFetch(`/marketing/campaign`, { auth: true })
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data)) setCampaigns(data.filter((c: any) => c.published_tv || c.published_pos));
-          else { console.error('Invalid campaigns data:', data); setCampaigns([]); }
-        })
-        .catch(console.error);
-    }
+    apiFetch(`/marketing/campaign?store_id=${storeId}&channel=tv`, { auth: true })
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) setCampaigns(data);
+        else { console.error('Invalid campaigns data:', data); setCampaigns([]); }
+      })
+      .catch(console.error);
 
     // "Upcoming" tier — SCHEDULED campaigns bound for this store's TV, shown
     // after the live rotation so staff/customers can see what's coming next.
-    const listUrl = storeId ? `/marketing/campaign?store_id=${storeId}` : `/marketing/campaign`;
+    const listUrl = `/marketing/campaign?store_id=${storeId}`;
     apiFetch(listUrl, { auth: true })
       .then(res => res.json())
       .then(data => {
@@ -107,6 +130,7 @@ export default function TvBoard() {
   // Display screen happened to already sync into the shared Dexie table.
   const syncKots = async () => {
     if (isSyncingTvBoardRef.current) return;
+    if (!tvBoardEnabled) return;
     if (!isValidPosIntegerId(storeId)) {
       console.warn('[TvBoard] Refusing sync: storeId is missing or invalid');
       return;
@@ -148,7 +172,7 @@ export default function TvBoard() {
       // Task D & Task 2: Monotonic sync sequence acquired before async network fetch
       const syncSeq = await acquireSyncSequence(sid, authoritativeBdId);
 
-      const res = await apiFetch(`/kots?store_id=${sid}&includeReady=true`, { auth: true });
+      const res = await apiFetch(`/kots/tv-board?store_id=${sid}&includeReady=true`, { auth: true });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -164,6 +188,11 @@ export default function TvBoard() {
   };
 
   useEffect(() => {
+    if (!tvBoardEnabled) {
+      setCampaigns([]);
+      setUpcoming([]);
+      return;
+    }
     fetchCampaigns();
     syncKots();
 
@@ -174,6 +203,13 @@ export default function TvBoard() {
         const u = JSON.parse(localStorage.getItem('d4u_main_user') || 'null');
         if (u && u.store_id) {
           socket.emit('join_store', { store_id: u.store_id });
+          const token = localStorage.getItem('d4u_pos_token');
+          if (token) {
+            // TV Board still receives the KOT lifecycle refresh signal, but
+            // it no longer relies on the unrestricted general store room.
+            socket.emit('join_tv_board_store', { store_id: u.store_id, token });
+            socket.emit('join_marketing_store', { store_id: u.store_id, token });
+          }
         }
       } catch (e) {}
     });
@@ -183,9 +219,8 @@ export default function TvBoard() {
       fetchCampaigns();
     });
 
-    // AppGateway.broadcast() is a strict room-scoped emit — without the
-    // join_store above this would never arrive. Mirrors the identical fix
-    // already shipped for StitchKDS.tsx this session.
+    // KOT lifecycle events use the entitlement-checked KOT room; the general
+    // store room remains for unrelated store events.
     socket.on('kds_update', () => {
       syncKots();
     });
@@ -197,7 +232,7 @@ export default function TvBoard() {
       socket.off('kds_update');
       socket.disconnect();
     };
-  }, []);
+  }, [tvBoardEnabled, storeId]);
 
   // Auto-rotate Marketing Campaigns (Scheduled/Current, then Upcoming)
   useEffect(() => {
@@ -228,6 +263,21 @@ export default function TvBoard() {
   }, [currentSlide, campaigns]);
 
   // Order fetching is now handled reactively by Dexie's useLiveQuery
+
+  if (!tvBoardEnabled) {
+    return (
+      <div className="h-screen w-screen bg-slate-900 text-white flex items-center justify-center p-8 text-center">
+        <div>
+          <h1 className="text-3xl font-black mb-3">TV Board Add-on Required</h1>
+          <p className="text-slate-400">
+            {tvBoardEntitlementChecked
+              ? 'This store package does not include the TV Board module.'
+              : 'Verifying TV Board access…'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen w-screen bg-slate-900 text-white flex overflow-hidden">

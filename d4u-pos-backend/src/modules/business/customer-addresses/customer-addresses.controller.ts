@@ -1,5 +1,5 @@
 import { Controller, Get, Param } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../common/decorators';
 import { CustomerAddressesService } from './customer-addresses.service';
 
 // Staff-facing read access (POS live-lookup already gets addresses inline
@@ -10,6 +10,7 @@ import { CustomerAddressesService } from './customer-addresses.service';
 // CustomersController — NestJS allows multiple controllers per prefix as
 // long as routes don't collide.
 @Controller('customers')
+@RequireModule('CRM')
 export class CustomerAddressesController {
   constructor(private readonly service: CustomerAddressesService) {}
 

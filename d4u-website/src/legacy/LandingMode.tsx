@@ -258,11 +258,14 @@ export default function LandingMode({
       const res = await fetch(`${BACKEND_URL}/customers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brand_id: 1, name, phone, address })
+        body: JSON.stringify({ store_id: storeId, name, phone, address })
       });
       if (res.ok) {
         const data = await res.json();
-        const c = { id: data.id, name: data.name, phone: data.phone, address: data.address || address, loyalty_points: data.loyalty_points || 0 };
+        // Customers API returns { success, customer }; keep compatibility
+        // with any legacy flat response while using the real customer row.
+        const customer = data.customer ?? data;
+        const c = { id: customer.id, name: customer.name, phone: customer.phone, address: customer.address || address, loyalty_points: customer.loyalty_points || 0 };
         localStorage.setItem('d4u_customer', JSON.stringify(c));
         setCustomer(c);
         setIsLoginOpen(false);

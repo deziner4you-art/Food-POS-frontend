@@ -227,7 +227,7 @@ function mapOrderForHistoryDisplay(o: any, customerName: string, customerPhone: 
 }
 
 function AccountRoute() {
-  const { loggedInUser, loginOrRegister, logout, addAddress, updateAddress, deleteAddress, products, favoriteProductIds, toggleFavorite, addToCart } = useStore();
+  const { storeId, loggedInUser, loginOrRegister, logout, addAddress, updateAddress, deleteAddress, products, favoriteProductIds, toggleFavorite, addToCart } = useStore();
   const { setQuickViewProduct } = useOutletContext<PublicOutletContext>();
   const navigate = useNavigate();
   const [phone, setPhone] = useState('');
@@ -240,7 +240,8 @@ function AccountRoute() {
 
   useEffect(() => {
     if (!loggedInUser) return;
-    fetch(`${BACKEND_URL}/online-orders/auth/history/${loggedInUser.phone}`)
+    if (!storeId) return;
+    fetch(`${BACKEND_URL}/online-orders/auth/history/${loggedInUser.phone}?store_id=${storeId}`)
       .then((res) => res.json())
       .then((data) => {
         if (!data.success) return;
@@ -261,7 +262,7 @@ function AccountRoute() {
         setLoyaltyTransactions(data.loyaltyTransactions || []);
       })
       .catch(() => {});
-  }, [loggedInUser]);
+  }, [loggedInUser, storeId]);
 
   // Re-adds a historic order's items to the cart at TODAY's catalog price
   // (addToCart always prices off the live Product, never a stored historic

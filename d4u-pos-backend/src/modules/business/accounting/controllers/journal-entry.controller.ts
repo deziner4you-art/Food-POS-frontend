@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { JournalEntryService } from '../services/journal-entry.service';
 import { CreateJournalEntryDto } from '../dto/create-journal-entry.dto';
 import { UpdateJournalEntryDto } from '../dto/update-journal-entry.dto';
@@ -7,6 +7,7 @@ import { ReverseJournalEntryDto } from '../dto/reverse-journal-entry.dto';
 import { ApproveJournalEntryDto } from '../dto/approve-journal-entry.dto';
 
 @Controller('accounting/journal-entries')
+@RequireModule('ACCOUNTING')
 export class JournalEntryController {
   constructor(private readonly service: JournalEntryService) {}
 

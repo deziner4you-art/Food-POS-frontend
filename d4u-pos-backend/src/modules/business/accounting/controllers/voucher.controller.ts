@@ -1,11 +1,12 @@
 import { Controller, Get, Post, Put, Param, Body, Query, ParseIntPipe, Patch } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { VoucherService } from '../services/voucher.service';
 import { CreateVoucherDto } from '../dto/create-voucher.dto';
 import { UpdateVoucherDto } from '../dto/update-voucher.dto';
 import { CancelVoucherDto } from '../dto/cancel-voucher.dto';
 
 @Controller('accounting/vouchers')
+@RequireModule('ACCOUNTING')
 export class VoucherController {
   constructor(private readonly service: VoucherService) {}
 

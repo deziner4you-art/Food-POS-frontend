@@ -5,6 +5,7 @@ import { CustomerAddressesService } from '../customer-addresses/customer-address
 import { CustomerFavoritesService } from '../customer-favorites/customer-favorites.service';
 import { PERMISSIONS_KEY } from '../../../common/decorators/permissions.decorator';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
+import { BadRequestException } from '@nestjs/common';
 
 describe('OnlineOrdersController', () => {
   let controller: OnlineOrdersController;
@@ -24,6 +25,107 @@ describe('OnlineOrdersController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('public customer registration tenant identity (P0.4-A)', () => {
+    function prismaMock() {
+      return {
+        customer: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          create: jest.fn().mockResolvedValue({ id: 7, brand_id: 22, addresses: [] }),
+        },
+        store: {
+          findUnique: jest.fn().mockResolvedValue({ brand_id: 22 }),
+        },
+      };
+    }
+
+    it('derives the new customer brand from the selected store', async () => {
+      const service: any = { prisma: prismaMock() };
+      (controller as any).service = service;
+
+      await controller.webRegister({ phone: '03001234567', name: 'Customer', brand_id: 1, store_id: 9 });
+
+      expect(service.prisma.store.findUnique).toHaveBeenCalledWith({
+        where: { id: 9 },
+        select: { brand_id: true },
+      });
+      expect(service.prisma.customer.create).toHaveBeenCalledWith({
+        data: { brand_id: 22, phone: '03001234567', name: 'Customer' },
+      });
+    });
+
+    it('rejects registration without a valid store identity', async () => {
+      const service: any = { prisma: prismaMock() };
+      (controller as any).service = service;
+
+      await expect(controller.webRegister({ phone: '03001234567', name: 'Customer' }))
+        .rejects.toThrow(BadRequestException);
+      expect(service.prisma.customer.create).not.toHaveBeenCalled();
+      expect(service.prisma.store.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown store instead of fabricating a tenant', async () => {
+      const prisma = prismaMock();
+      prisma.store.findUnique.mockResolvedValue(null);
+      const service: any = { prisma };
+      (controller as any).service = service;
+
+      await expect(controller.webRegister({ phone: '03001234567', name: 'Customer', store_id: 999 }))
+        .rejects.toThrow(BadRequestException);
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('existing customer login/history tenant isolation (P0.4-B)', () => {
+    function prismaMock(customer: any = { id: 7, brand_id: 22, addresses: [] }) {
+      return {
+        customer: { findFirst: jest.fn().mockResolvedValue(customer), create: jest.fn() },
+        store: { findUnique: jest.fn().mockResolvedValue({ brand_id: 22 }) },
+        onlineOrder: { findMany: jest.fn().mockResolvedValue([]) },
+      };
+    }
+
+    it('login resolves the customer only inside the selected store brand', async () => {
+      const prisma = prismaMock();
+      (controller as any).service = { prisma };
+
+      await controller.webLogin({ phone: '03001234567', store_id: 9 });
+
+      expect(prisma.customer.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { phone: '03001234567', brand_id: 22 },
+      }));
+    });
+
+    it('login rejects when store context is missing', async () => {
+      (controller as any).service = { prisma: prismaMock() };
+      await expect(controller.webLogin({ phone: '03001234567' })).rejects.toThrow(BadRequestException);
+    });
+
+    it('cross-brand customer is not returned during registration', async () => {
+      const prisma = prismaMock({ id: 7, brand_id: 99, addresses: [] });
+      (controller as any).service = { prisma };
+
+      await expect(controller.webRegister({ phone: '03001234567', name: 'Customer', store_id: 9 }))
+        .resolves.toEqual({ success: false, message: 'Customer not found' });
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('history filters both POS and online orders to the selected store', async () => {
+      const prisma = prismaMock();
+      (controller as any).service = { prisma };
+
+      await controller.webHistory('03001234567', '9');
+
+      expect(prisma.customer.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { phone: '03001234567', brand_id: 22 },
+      }));
+      expect(prisma.onlineOrder.findMany).toHaveBeenCalledWith({
+        where: { customerPhone: '03001234567', store_id: 9 },
+        orderBy: { id: 'desc' },
+        take: 50,
+      });
+    });
   });
 
   // Task #2Q-B2: delivery.dispatch.update_status added as an additional

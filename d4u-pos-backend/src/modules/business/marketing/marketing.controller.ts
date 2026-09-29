@@ -11,7 +11,7 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
-import { RequirePermissions, CurrentUser, Public } from '../../../common/decorators';
+import { RequireModule, RequirePermissions, CurrentUser, Public } from '../../../common/decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -36,6 +36,7 @@ function buildMeta(user: any, req: any): AuditMeta {
 }
 
 @Controller('marketing')
+@RequireModule('MARKETING')
 export class MarketingController {
   constructor(private readonly marketingService: MarketingService) {}
 

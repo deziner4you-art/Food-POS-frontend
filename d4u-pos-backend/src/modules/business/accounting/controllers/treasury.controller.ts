@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Param, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { TreasuryService } from '../services/treasury.service';
 import { BankTransferService } from '../services/bank-transfer.service';
 import { CashPositionService } from '../services/cash-position.service';
@@ -7,6 +7,7 @@ import { CashForecastService } from '../services/cash-forecast.service';
 import { getSessionStoreId, getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/treasury')
+@RequireModule('ACCOUNTING')
 export class TreasuryController {
   constructor(
     private readonly treasuryService: TreasuryService,

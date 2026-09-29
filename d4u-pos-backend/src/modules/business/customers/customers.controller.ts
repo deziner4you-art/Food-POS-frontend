@@ -8,7 +8,9 @@ import {
   Query,
   Delete,
 } from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { RequireModule, RequirePermissions, CurrentUser, Public } from '../../../common/decorators';
+import { assertTenantStoreAccess } from '../../../common/utils/tenant.util';
+import { PrismaService } from '../../../database/prisma/prisma.service';
 import { CustomersService } from './customers.service';
 import {
   CreateCustomerDto,
@@ -18,8 +20,12 @@ import {
 } from './dto';
 
 @Controller('customers')
+@RequireModule('CRM')
 export class CustomersController {
-  constructor(private readonly service: CustomersService) {}
+  constructor(
+    private readonly service: CustomersService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   // GET /customers?store_id=2&search=Ali
   // Task #2Q-D1: brand_id is no longer read from the query string -- see
@@ -33,6 +39,11 @@ export class CustomersController {
     @Query('store_id') store_id?: string,
     @Query('search') search?: string,
   ) {
+    if (store_id) {
+      return assertTenantStoreAccess(this.prisma, authenticatedUser, Number(store_id)).then(() =>
+        this.service.getCustomers(authenticatedUser, Number(store_id), search),
+      );
+    }
     return this.service.getCustomers(authenticatedUser, store_id ? Number(store_id) : undefined, search);
   }
 
@@ -58,47 +69,53 @@ export class CustomersController {
   // GET /customers/:id/wallet — Loyalty Points Balance
   @RequirePermissions('crm.customers.read')
   @Get(':id/wallet')
-  getWallet(@Param('id') id: string) {
-    return this.service.getWalletBalance(Number(id));
+  getWallet(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.service.getCustomerForTenant(Number(id), user).then(() =>
+      this.service.getWalletBalance(Number(id), user),
+    );
   }
 
   // POST /customers — نیا گاہک
   @RequirePermissions('crm.customers.create')
+  @Public()
   @Post()
-  createCustomer(@Body() body: CreateCustomerDto) {
+  createCustomer(@CurrentUser() user: any, @Body() body: CreateCustomerDto) {
     console.log(`[CRM] New Customer: ${body.name} — ${body.phone}`);
-    return this.service.createCustomer(body);
+    return this.service.createCustomer(body, user);
   }
 
   // PATCH /customers/:id — گاہک اپڈیٹ
   @RequirePermissions('crm.customers.update')
   @Patch(':id')
-  updateCustomer(@Param('id') id: string, @Body() body: UpdateCustomerDto) {
-    return this.service.updateCustomer(Number(id), body);
+  updateCustomer(@CurrentUser() user: any, @Param('id') id: string, @Body() body: UpdateCustomerDto) {
+    return this.service.getCustomerForTenant(Number(id), user).then(() =>
+      this.service.updateCustomer(Number(id), body, user),
+    );
   }
 
   // POST /customers/:id/earn — پوائنٹس کمائیں
   @RequirePermissions('crm.customers.create')
   @Post(':id/earn')
-  earnPoints(@Param('id') id: string, @Body() body: EarnPointsDto) {
-    return this.service.earnPoints(
-      Number(id),
-      body.order_id,
-      body.order_amount,
-    );
+  async earnPoints(@CurrentUser() user: any, @Param('id') id: string, @Body() body: EarnPointsDto) {
+    const { store } = await this.service.getCustomerForTenant(Number(id), user);
+    return this.service.earnPoints(Number(id), body.order_id, body.order_amount, store.id);
   }
 
   // POST /customers/:id/redeem — پوائنٹس استعمال کریں
   @RequirePermissions('crm.customers.create')
   @Post(':id/redeem')
-  redeemPoints(@Param('id') id: string, @Body() body: RedeemPointsDto) {
-    return this.service.redeemPoints(Number(id), body.points);
+  redeemPoints(@CurrentUser() user: any, @Param('id') id: string, @Body() body: RedeemPointsDto) {
+    return this.service.getCustomerForTenant(Number(id), user).then(() =>
+      this.service.redeemPoints(Number(id), body.points),
+    );
   }
 
   // DELETE /customers/:id
   @RequirePermissions('crm.customers.delete')
   @Delete(':id')
-  deleteCustomer(@Param('id') id: string) {
-    return this.service.deleteCustomer(Number(id));
+  deleteCustomer(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.service.getCustomerForTenant(Number(id), user).then(() =>
+      this.service.deleteCustomer(Number(id), user),
+    );
   }
 }

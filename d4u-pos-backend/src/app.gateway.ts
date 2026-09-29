@@ -9,6 +9,9 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { TerminalService } from './modules/core/terminal/terminal.service';
+import { JwtService } from '@nestjs/jwt';
+import { EntitlementService } from './modules/core/subscription/entitlement.service';
+import { ModuleKey } from './common/entitlements/module-registry';
 
 @WebSocketGateway({
   cors: {
@@ -20,7 +23,21 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private terminalService: TerminalService) {}
+  private static readonly KDS_EVENTS = new Set([
+    'new_kot',
+    'kds_update',
+    'kot_new',
+    'kot_bump',
+    'kot_cancelled',
+  ]);
+
+  private static readonly MARKETING_EVENTS = new Set(['marketing_update']);
+
+  constructor(
+    private terminalService: TerminalService,
+    private jwtService: JwtService,
+    private entitlements: EntitlementService,
+  ) {}
 
   private activeWaiterPins: Record<string, number> = {};
   // Track active waiters: client.id -> { store_id, name }
@@ -237,6 +254,133 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { event: 'joined', data: roomName };
   }
 
+  /**
+   * POS/KOT clients receive KOT lifecycle events through a separately
+   * authorized room. This keeps KDS events out of the general store room
+   * while preserving the POS-only KOT workflow.
+   */
+  @SubscribeMessage('join_kot_store')
+  async handleJoinKotStore(
+    @MessageBody() data: { store_id?: number | string; token?: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    return this.joinEntitledModuleRoom(client, data, 'KOT_PRINT', 'kot_store');
+  }
+
+  /** Dedicated KDS room; requires the purchased KDS capability. */
+  @SubscribeMessage('join_kds_store')
+  async handleJoinKdsStore(
+    @MessageBody() data: { store_id?: number | string; token?: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    return this.joinEntitledModuleRoom(client, data, 'KDS', 'kds_store');
+  }
+
+  /** Dedicated customer TV Board room; requires the purchased TV_BOARD capability. */
+  @SubscribeMessage('join_tv_board_store')
+  async handleJoinTvBoardStore(
+    @MessageBody() data: { store_id?: number | string; token?: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    return this.joinEntitledModuleRoom(client, data, 'TV_BOARD', 'tv_board_store');
+  }
+
+  /**
+   * Marketing invalidation events use their own room. Authenticated POS/TV
+   * clients must present a valid tenant entitlement; the public website may
+   * request the same store-scoped room explicitly, but the server still
+   * verifies that the store currently has Marketing enabled.
+   */
+  @SubscribeMessage('join_marketing_store')
+  async handleJoinMarketingStore(
+    @MessageBody() data: { store_id?: number | string; token?: string; public?: boolean },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const token = this.extractSocketToken(client, data?.token);
+    if (token) {
+      return this.joinEntitledModuleRoom(client, data, 'MARKETING', 'marketing_store');
+    }
+
+    if (data?.public !== true) {
+      return { success: false, error: 'Socket authentication is required' };
+    }
+
+    const storeId = Number(data?.store_id);
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+      return { success: false, error: 'A valid store_id is required' };
+    }
+
+    try {
+      const snapshot = await this.entitlements.resolveForStore(storeId);
+      if (!this.entitlements.isCapabilityEnabled(snapshot, 'MARKETING')) {
+        return { success: false, error: 'MODULE_NOT_INCLUDED', module: 'MARKETING' };
+      }
+
+      const roomName = `marketing_store_${storeId}`;
+      client.join(roomName);
+      client.data = client.data || {};
+      client.data.entitledRooms = {
+        ...(client.data.entitledRooms || {}),
+        [roomName]: true,
+      };
+      return { success: true, room: roomName, module: 'MARKETING', public: true };
+    } catch (error) {
+      console.warn(`[SOCKET] public MARKETING room join rejected for ${client.id}:`, error);
+      return { success: false, error: 'Socket entitlement verification failed' };
+    }
+  }
+
+  private async joinEntitledModuleRoom(
+    client: Socket,
+    data: { store_id?: number | string; token?: string },
+    moduleKey: ModuleKey,
+    roomPrefix: string,
+  ) {
+    const storeId = Number(data?.store_id);
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+      return { success: false, error: 'A valid store_id is required' };
+    }
+
+    const token = this.extractSocketToken(client, data?.token);
+    if (!token) {
+      return { success: false, error: 'Socket authentication is required' };
+    }
+
+    try {
+      const user = await this.jwtService.verifyAsync(token, {
+        secret: process.env.JWT_SECRET,
+      });
+      const snapshot = await this.entitlements.resolveForAuthenticatedUser(user, storeId);
+      if (!this.entitlements.isCapabilityEnabled(snapshot, moduleKey)) {
+        return { success: false, error: 'MODULE_NOT_INCLUDED', module: moduleKey };
+      }
+
+      const roomName = `${roomPrefix}_${storeId}`;
+      client.join(roomName);
+      client.data = client.data || {};
+      client.data.socketUser = user;
+      client.data.entitledRooms = {
+        ...(client.data.entitledRooms || {}),
+        [roomName]: true,
+      };
+      return { success: true, room: roomName, module: moduleKey };
+    } catch (error) {
+      console.warn(`[SOCKET] ${moduleKey} room join rejected for ${client.id}:`, error);
+      return { success: false, error: 'Socket entitlement verification failed' };
+    }
+  }
+
+  private extractSocketToken(client: Socket, eventToken?: string): string | null {
+    if (typeof eventToken === 'string' && eventToken.trim()) return eventToken.trim();
+    const authToken = client.handshake?.auth?.token;
+    if (typeof authToken === 'string' && authToken.trim()) return authToken.trim();
+    const header = client.handshake?.headers?.authorization;
+    if (typeof header === 'string' && header.startsWith('Bearer ')) {
+      return header.slice('Bearer '.length).trim() || null;
+    }
+    return null;
+  }
+
   private resolveStoreRoom(data: { store_id?: number } | string | number): string | null {
     if (typeof data === 'number' && !isNaN(data)) return `store_${data}`;
     if (typeof data === 'string') {
@@ -353,6 +497,40 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   broadcast(event: string, payload: any, room?: string) {
     if (this.server) {
+      if (AppGateway.KDS_EVENTS.has(event)) {
+        const roomStoreId = room?.match(/^store_(\d+)$/)?.[1];
+        const payloadStoreId = payload?.store_id ?? payload?.storeId;
+        const storeId = Number(roomStoreId ?? payloadStoreId);
+        if (!Number.isInteger(storeId) || storeId <= 0) {
+          console.warn(`[SOCKET] Dropped ${event}: missing valid store identity`);
+          return;
+        }
+
+        // KOT_PRINT covers the POS-only KOT workflow. KDS covers the
+        // dedicated kitchen screen. Neither event is sent to the general
+        // store room, which may contain clients without either capability.
+        this.server.to(`kot_store_${storeId}`).emit(event, payload);
+        this.server.to(`kds_store_${storeId}`).emit(event, payload);
+        this.server.to(`tv_board_store_${storeId}`).emit(event, payload);
+        return;
+      }
+
+      if (AppGateway.MARKETING_EVENTS.has(event)) {
+        const roomStoreId = room?.match(/^store_(\d+)$/)?.[1];
+        const payloadStoreId = payload?.store_id ?? payload?.storeId;
+        const storeId = Number(roomStoreId ?? payloadStoreId);
+        if (!Number.isInteger(storeId) || storeId <= 0) {
+          console.warn(`[SOCKET] Dropped ${event}: missing valid store identity`);
+          return;
+        }
+
+        // Marketing updates are invalidation signals only. They must never
+        // enter the unrestricted general store room, where non-entitled
+        // clients could observe another tenant's campaign activity.
+        this.server.to(`marketing_store_${storeId}`).emit(event, payload);
+        return;
+      }
+
       if (room) {
         this.server.to(room).emit(event, payload);
       } else {

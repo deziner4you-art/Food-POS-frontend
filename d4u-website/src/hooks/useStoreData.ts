@@ -148,7 +148,10 @@ export function useStoreData(storeId: number | null) {
     // attached would never join the store room and would miss all room-scoped
     // 'order_updated' events. This mirrors the identical guard already in
     // StitchKDS.tsx (lines 312-314).
-    const joinStore = () => socket.emit('join_store', { store_id: storeId });
+    const joinStore = () => {
+      socket.emit('join_store', { store_id: storeId });
+      socket.emit('join_marketing_store', { store_id: storeId, public: true });
+    };
     if (socket.connected) joinStore();
     socket.on('connect', joinStore);
 

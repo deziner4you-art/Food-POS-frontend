@@ -216,13 +216,37 @@ export class MarketingService {
     return warnings;
   }
 
-  private broadcastCampaignUpdate(campaign: any) {
-    if (campaign.target_stores && campaign.target_stores.length > 0) {
-      campaign.target_stores.forEach((s: any) => {
-        this.gateway.server.to(`store_${s.id}`).emit('marketing_update', { campaignId: campaign.id, status: campaign.status });
+  private async broadcastCampaignUpdate(campaign: any) {
+    const targetStoreIds = Array.isArray(campaign.target_stores) && campaign.target_stores.length > 0
+      ? campaign.target_stores
+          .map((store: any) => Number(store?.id))
+          .filter((id: number) => Number.isInteger(id) && id > 0)
+      : await this.getBrandStoreIds(campaign.brand_id);
+
+    const payload = { campaignId: campaign.id, status: campaign.status };
+    for (const storeId of targetStoreIds) {
+      this.gateway.broadcast('marketing_update', payload, `store_${storeId}`);
+    }
+  }
+
+  private async getBrandStoreIds(brandId: unknown): Promise<number[]> {
+    const normalizedBrandId = Number(brandId);
+    if (!Number.isInteger(normalizedBrandId) || normalizedBrandId <= 0) return [];
+
+    try {
+      const stores = await this.prisma.store.findMany({
+        where: { brand_id: normalizedBrandId },
+        select: { id: true },
       });
-    } else {
-      this.gateway.server.emit('marketing_update', { campaignId: campaign.id, status: campaign.status });
+      return stores
+        .map((store: any) => Number(store?.id))
+        .filter((id: number) => Number.isInteger(id) && id > 0);
+    } catch (error) {
+      // Campaign persistence must not be rolled back because an optional
+      // realtime invalidation lookup failed. Clients can still refresh via
+      // the normal REST path.
+      console.warn('[MARKETING] Failed to resolve brand stores for socket update:', error);
+      return [];
     }
   }
 
@@ -432,7 +456,7 @@ export class MarketingService {
     await this.prepareSocialPublications(campaign);
     await this.writeAudit(campaign.id, 'CREATED', meta);
 
-    this.broadcastCampaignUpdate(campaign);
+    await this.broadcastCampaignUpdate(campaign);
     return {
       success: true,
       message:
@@ -595,7 +619,7 @@ export class MarketingService {
 
     await this.prepareSocialPublications(campaign);
     await this.writeAudit(id, 'EDITED', meta, undefined, JSON.stringify(Object.keys(updateData)));
-    this.broadcastCampaignUpdate(campaign);
+    await this.broadcastCampaignUpdate(campaign);
     return { campaign, warnings };
   }
 
@@ -619,7 +643,7 @@ export class MarketingService {
       include: { target_stores: true },
     });
     await this.writeAudit(id, 'DELETED', meta, undefined, reason);
-    this.broadcastCampaignUpdate({ ...archived, status: 'ARCHIVED' });
+    await this.broadcastCampaignUpdate({ ...archived, status: 'ARCHIVED' });
     return archived;
   }
 
@@ -630,21 +654,21 @@ export class MarketingService {
       include: { target_stores: true },
     });
     await this.writeAudit(id, 'RESTORED', meta);
-    this.broadcastCampaignUpdate(restored);
+    await this.broadcastCampaignUpdate(restored);
     return restored;
   }
 
   async pauseCampaign(id: number, meta: AuditMeta = {}) {
     const campaign = await this.prisma.marketingCampaign.update({ where: { id }, data: { status: 'PAUSED' }, include: { target_stores: true } });
     await this.writeAudit(id, 'PAUSED', meta);
-    this.broadcastCampaignUpdate(campaign);
+    await this.broadcastCampaignUpdate(campaign);
     return campaign;
   }
 
   async resumeCampaign(id: number, meta: AuditMeta = {}) {
     const campaign = await this.prisma.marketingCampaign.update({ where: { id }, data: { status: 'RUNNING' }, include: { target_stores: true } });
     await this.writeAudit(id, 'RESUMED', meta);
-    this.broadcastCampaignUpdate(campaign);
+    await this.broadcastCampaignUpdate(campaign);
     return campaign;
   }
 
@@ -658,7 +682,7 @@ export class MarketingService {
       include: { target_stores: true },
     });
     await this.writeAudit(id, 'SUBMITTED_FOR_APPROVAL', meta);
-    this.broadcastCampaignUpdate(campaign);
+    await this.broadcastCampaignUpdate(campaign);
     return campaign;
   }
 
@@ -669,7 +693,7 @@ export class MarketingService {
       include: { target_stores: true },
     });
     await this.writeAudit(id, 'APPROVED', meta);
-    this.broadcastCampaignUpdate(campaign);
+    await this.broadcastCampaignUpdate(campaign);
     return campaign;
   }
 
@@ -710,7 +734,7 @@ export class MarketingService {
       include: { target_stores: true },
     });
     await this.writeAudit(id, 'ROLLED_BACK', meta, undefined, JSON.stringify({ toVersion: version }));
-    this.broadcastCampaignUpdate(updated);
+    await this.broadcastCampaignUpdate(updated);
     return updated;
   }
 
@@ -791,7 +815,7 @@ export class MarketingService {
     });
 
     await this.writeAudit(clone.id, 'CLONED', meta, undefined, `from campaign #${source.id}`);
-    this.broadcastCampaignUpdate(clone);
+    await this.broadcastCampaignUpdate(clone);
     return clone;
   }
 
@@ -953,7 +977,7 @@ export class MarketingService {
         data: { status: 'RUNNING' },
       });
       await this.writeAudit(campaign.id, 'PUBLISHED', {});
-      this.broadcastCampaignUpdate({ ...campaign, status: 'RUNNING' });
+      await this.broadcastCampaignUpdate({ ...campaign, status: 'RUNNING' });
     }
 
     // Auto-expire MarketingCampaigns
@@ -973,7 +997,7 @@ export class MarketingService {
         data: { status: 'EXPIRED', is_active: false },
       });
       await this.writeAudit(campaign.id, 'EXPIRED', {});
-      this.broadcastCampaignUpdate({ ...campaign, status: 'EXPIRED' });
+      await this.broadcastCampaignUpdate({ ...campaign, status: 'EXPIRED' });
     }
   }
 

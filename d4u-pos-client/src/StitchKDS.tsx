@@ -306,15 +306,17 @@ export default function KitchenDisplay({ currentUser, onLogout }: { currentUser?
   };
 
   useEffect(() => {
-    // This socket connects but was never joining the store's broadcast room
-    // — AppGateway.broadcast() uses server.to(`store_${id}`).emit(...), a
-    // strict room-scoped emit, so without join_store this screen could
-    // never receive kds_update/order_updated regardless of event name.
-    // Only ever refreshed via the initial syncKOTs() call and the manual
-    // Reset button.
+    // General order events remain in store_${id}; KDS lifecycle events now
+    // arrive through the entitlement-checked kds_store_${id} room.
     const storeId = currentUser?.store_id;
     if (!isValidPosIntegerId(storeId)) return;
-    const joinRoom = () => socket.emit('join_store', { store_id: storeId });
+    const joinRoom = () => {
+      const token = localStorage.getItem('d4u_pos_token');
+      socket.emit('join_store', { store_id: storeId });
+      if (token) {
+        socket.emit('join_kds_store', { store_id: storeId, token });
+      }
+    };
     if (socket.connected) joinRoom();
     const onKdsChange = () => {
       syncKOTs();

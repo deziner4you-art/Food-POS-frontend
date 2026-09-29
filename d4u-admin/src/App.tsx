@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { Store, PackageOpen, ChefHat, Globe, LayoutDashboard, LogOut, Lock, Users, Activity, ShoppingCart } from 'lucide-react';
 import { AdminProvider, useAdminContext } from './context/AdminContext';
+import type { AdminModuleKey } from './context/AdminContext';
 import { PackageProvider } from './context/PackageContext';
-import { apiFetch } from './utils/api';
 import { getDeviceId, storeTokens, clearTokens, refreshAccessToken } from './utils/session';
 import GlobalErrorToast from './components/GlobalErrorToast';
 import GlobalHeader from './components/workspace/GlobalHeader';
@@ -37,23 +37,21 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  const { isBranchEntered, setIsBranchEntered, branches, selectedBranchId } = useAdminContext();
+  const {
+    isBranchEntered,
+    setIsBranchEntered,
+    branches,
+    selectedBranchId,
+    entitlementLoading,
+    entitlementChecked,
+    hasModule,
+  } = useAdminContext();
   const selectedBranch = branches.find(b => b.id === selectedBranchId);
 
-  // MARKETING-002: SaaS module gating — Marketing Hub disappears entirely
-  // (not just disabled) when the branch's package doesn't include it.
-  const [marketingEnabled, setMarketingEnabled] = useState(user?.role === 'Super Admin');
-  useEffect(() => {
-    if (!selectedBranchId) return;
-    if (user?.role === 'Super Admin') {
-      setMarketingEnabled(true);
-      return;
-    }
-    apiFetch(`/marketing/capabilities?store_id=${selectedBranchId}`)
-      .then(res => res.ok ? res.json() : { enabled: true })
-      .then(data => setMarketingEnabled(data.enabled !== false))
-      .catch(() => setMarketingEnabled(true));
-  }, [selectedBranchId, user?.role]);
+  // Super Admin is the intentional cross-tenant operator. Ordinary admin
+  // accounts see only modules confirmed for the selected branch package.
+  const canUse = (moduleKey: AdminModuleKey) =>
+    user?.role === 'Super Admin' || (!entitlementLoading && entitlementChecked && hasModule(moduleKey));
 
   let navItems = forceBootstrap ? [] : [
     { path: '/', label: 'Live Analytics', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' }
@@ -62,15 +60,17 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
   if (isBranchEntered) {
     navItems = [
       ...navItems,
-      { path: '/staff', label: 'Staff & Permissions', icon: Users, color: 'text-indigo-400', bg: 'bg-indigo-500/20' },
-      { path: '/menu', label: 'Menu Builder', icon: ChefHat, color: 'text-[#3b82f6]', bg: 'bg-[#3b82f6]/20' },
-      { path: '/inventory', label: 'Inventory', icon: PackageOpen, color: 'text-[#8b5cf6]', bg: 'bg-[#8b5cf6]/20' },
-      { path: '/recipes', label: 'Recipe Costing', icon: ChefHat, color: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]/20' },
-      { path: '/purchase', label: 'Purchase & Receiving', icon: ShoppingCart, color: 'text-orange-400', bg: 'bg-orange-500/20' },
-      ...(marketingEnabled || user?.role === 'Super Admin' ? [{ path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' }] : []),
-      { path: '/customers', label: 'CRM & Loyalty', icon: Users, color: 'text-amber-400', bg: 'bg-amber-500/20' },
-      { path: '/cms', label: 'Website CMS', icon: Globe, color: 'text-[#ec4899]', bg: 'bg-[#ec4899]/20' },
-      { path: '/exceptions', label: 'Delivery Exceptions', icon: Activity, color: 'text-red-400', bg: 'bg-red-500/20' }
+      ...(canUse('pos') ? [
+        { path: '/staff', label: 'Staff & Permissions', icon: Users, color: 'text-indigo-400', bg: 'bg-indigo-500/20' },
+        { path: '/menu', label: 'Menu Builder', icon: ChefHat, color: 'text-[#3b82f6]', bg: 'bg-[#3b82f6]/20' },
+      ] : []),
+      ...(canUse('inventory') ? [{ path: '/inventory', label: 'Inventory', icon: PackageOpen, color: 'text-[#8b5cf6]', bg: 'bg-[#8b5cf6]/20' }] : []),
+      ...(canUse('recipes') ? [{ path: '/recipes', label: 'Recipe Costing', icon: ChefHat, color: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]/20' }] : []),
+      ...(canUse('vendors') ? [{ path: '/purchase', label: 'Purchase & Receiving', icon: ShoppingCart, color: 'text-orange-400', bg: 'bg-orange-500/20' }] : []),
+      ...(canUse('marketing') ? [{ path: '/marketing', label: 'Marketing Hub', icon: Megaphone, color: 'text-[#10b981]', bg: 'bg-[#10b981]/20' }] : []),
+      ...(canUse('crm') ? [{ path: '/customers', label: 'CRM & Loyalty', icon: Users, color: 'text-amber-400', bg: 'bg-amber-500/20' }] : []),
+      ...(canUse('cms') ? [{ path: '/cms', label: 'Website CMS', icon: Globe, color: 'text-[#ec4899]', bg: 'bg-[#ec4899]/20' }] : []),
+      ...(canUse('rider') ? [{ path: '/exceptions', label: 'Order Clearance', icon: Activity, color: 'text-red-400', bg: 'bg-red-500/20' }] : [])
     ];
   }
 
@@ -165,6 +165,42 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
   );
 }
 
+function ModuleBoundary({
+  moduleKey,
+  user,
+  children,
+}: {
+  moduleKey: AdminModuleKey;
+  user: any;
+  children: React.ReactNode;
+}) {
+  const { isBranchEntered, selectedBranchId, entitlementLoading, entitlementChecked, hasModule } = useAdminContext();
+
+  if (user?.role === 'Super Admin') return <>{children}</>;
+  if (!isBranchEntered || !selectedBranchId) {
+    return <ModuleBlocked title="Select a branch first" detail="Choose an active branch before opening this module." />;
+  }
+  if (entitlementLoading || !entitlementChecked) {
+    return <ModuleBlocked title="Checking package access…" detail="This module will open only after the branch entitlement is verified." />;
+  }
+  if (!hasModule(moduleKey)) {
+    return <ModuleBlocked title="Module not included" detail="This feature is not included in the selected restaurant package." />;
+  }
+  return <>{children}</>;
+}
+
+function ModuleBlocked({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="min-h-[420px] flex items-center justify-center text-center">
+      <div className="max-w-md rounded-2xl border border-amber-500/30 bg-amber-500/10 p-8">
+        <Lock className="mx-auto mb-4 text-amber-400" size={34} />
+        <h2 className="text-2xl font-black text-white mb-2">{title}</h2>
+        <p className="text-slate-400">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
 
 function MainApp({ user, handleLogout }: { user: any, handleLogout: () => void }) {
   const { isBranchEntered, brands } = useAdminContext();
@@ -183,18 +219,18 @@ function MainApp({ user, handleLogout }: { user: any, handleLogout: () => void }
   return (
     <AdminLayout onLogout={handleLogout} user={user}>
       <Routes>
-        <Route path="/" element={isBranchEntered ? <Dashboard /> : <HQOverview />} />
+        <Route path="/" element={isBranchEntered ? <ModuleBoundary moduleKey="pos" user={user}><Dashboard /></ModuleBoundary> : <HQOverview />} />
         
         {/* Branch Specific Routes */}
-        <Route path="/staff" element={<StaffPermissions />} />
-        <Route path="/menu" element={<MenuManager />} />
-        <Route path="/inventory" element={<InventoryManager />} />
-        <Route path="/recipes" element={<RecipeManager />} />
-        <Route path="/purchase" element={<PurchaseManager />} />
-        <Route path="/marketing" element={<MarketingHub />} />
-        <Route path="/customers" element={<CustomersManager />} />
-        <Route path="/cms" element={<CmsManager />} />
-        <Route path="/exceptions" element={<DeliveryExceptions />} />
+        <Route path="/staff" element={<ModuleBoundary moduleKey="pos" user={user}><StaffPermissions /></ModuleBoundary>} />
+        <Route path="/menu" element={<ModuleBoundary moduleKey="pos" user={user}><MenuManager /></ModuleBoundary>} />
+        <Route path="/inventory" element={<ModuleBoundary moduleKey="inventory" user={user}><InventoryManager /></ModuleBoundary>} />
+        <Route path="/recipes" element={<ModuleBoundary moduleKey="recipes" user={user}><RecipeManager /></ModuleBoundary>} />
+        <Route path="/purchase" element={<ModuleBoundary moduleKey="vendors" user={user}><PurchaseManager /></ModuleBoundary>} />
+        <Route path="/marketing" element={<ModuleBoundary moduleKey="marketing" user={user}><MarketingHub /></ModuleBoundary>} />
+        <Route path="/customers" element={<ModuleBoundary moduleKey="crm" user={user}><CustomersManager /></ModuleBoundary>} />
+        <Route path="/cms" element={<ModuleBoundary moduleKey="cms" user={user}><CmsManager /></ModuleBoundary>} />
+        <Route path="/exceptions" element={<ModuleBoundary moduleKey="rider" user={user}><DeliveryExceptions /></ModuleBoundary>} />
         
         {/* Super Admin Routes */}
         <Route path="/setup" element={<SetupWizard />} />

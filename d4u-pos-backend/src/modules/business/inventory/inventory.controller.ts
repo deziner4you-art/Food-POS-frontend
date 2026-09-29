@@ -7,9 +7,11 @@ import {
   ParseIntPipe,
   Patch,
   Delete,
+  NotFoundException,
 } from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
-import { validateTenantAccess, assertOwnStore } from '../../../common/utils/tenant.util';
+import { RequireModule, RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { assertTenantStoreAccess, assertOwnStore } from '../../../common/utils/tenant.util';
+import { PrismaService } from '../../../database/prisma/prisma.service';
 import { InventoryService } from './inventory.service';
 import {
   CreateInventoryDto,
@@ -19,8 +21,12 @@ import {
 } from './dto';
 
 @Controller('inventory')
+@RequireModule('INVENTORY')
 export class InventoryController {
-  constructor(private readonly inventoryService: InventoryService) {}
+  constructor(
+    private readonly inventoryService: InventoryService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   // Task #2R-G1b1: migrated to assertOwnStore -- #2R-G1b confirmed zero
   // frontend caller in either d4u-pos-client or d4u-admin calls this route
@@ -87,7 +93,7 @@ export class InventoryController {
     @CurrentUser() user: any,
     @Param('store_id', ParseIntPipe) storeId: number
   ) {
-    validateTenantAccess(user, storeId);
+    await assertTenantStoreAccess(this.prisma, user, storeId);
     return this.inventoryService.getInventoryItems(storeId);
   }
 
@@ -119,7 +125,7 @@ export class InventoryController {
     @CurrentUser() user: any,
     @Body() body: CreateInventoryDto
   ) {
-    validateTenantAccess(user, body.store_id);
+    await assertTenantStoreAccess(this.prisma, user, body.store_id);
     return this.inventoryService.createInventoryItem(body);
   }
 
@@ -134,7 +140,7 @@ export class InventoryController {
     @Body() body: UpdateInventoryDto,
   ) {
     const item = await this.inventoryService.getInventoryItem(id);
-    if (item) validateTenantAccess(user, item.store_id);
+    if (item) await assertTenantStoreAccess(this.prisma, user, item.store_id);
     return this.inventoryService.updateInventoryItem(id, body);
   }
 
@@ -149,7 +155,7 @@ export class InventoryController {
     @Param('id', ParseIntPipe) id: number
   ) {
     const item = await this.inventoryService.getInventoryItem(id);
-    if (item) validateTenantAccess(user, item.store_id);
+    if (item) await assertTenantStoreAccess(this.prisma, user, item.store_id);
     return this.inventoryService.deleteInventoryItem(id);
   }
 
@@ -168,7 +174,7 @@ export class InventoryController {
     @CurrentUser() user: any,
     @Body() body: RecordPurchaseDto
   ) {
-    validateTenantAccess(user, body.store_id);
+    await assertTenantStoreAccess(this.prisma, user, body.store_id);
     return this.inventoryService.recordPurchase(
       body.store_id,
       body.inventory_id,
@@ -179,8 +185,9 @@ export class InventoryController {
 
   @RequirePermissions('inventory.create')
   @Post('import-excel')
-  async importExcel() {
-    return this.inventoryService.importExcelData();
+  async importExcel(@CurrentUser() user: any, @Body() body: { store_id?: number }) {
+    await assertTenantStoreAccess(this.prisma, user, body.store_id);
+    return this.inventoryService.importExcelData(Number(body.store_id));
   }
 
   @RequirePermissions('inventory.update')
@@ -189,6 +196,9 @@ export class InventoryController {
     @CurrentUser() user: any,
     @Body() body: { inventory_id: number; operation: 'ADD' | 'SUBTRACT'; amount: number; reason: string },
   ) {
+    const item = await this.inventoryService.getInventoryItem(body.inventory_id);
+    if (!item) throw new NotFoundException('Inventory item not found');
+    await assertTenantStoreAccess(this.prisma, user, item.store_id);
     return this.inventoryService.adjustStock({
       ...body,
       changed_by: user?.sub,
@@ -201,6 +211,9 @@ export class InventoryController {
     @CurrentUser() user: any,
     @Param('id', ParseIntPipe) id: number,
   ) {
+    const item = await this.inventoryService.getInventoryItem(id);
+    if (!item) throw new NotFoundException('Inventory item not found');
+    await assertTenantStoreAccess(this.prisma, user, item.store_id);
     return this.inventoryService.getItemHistory(id);
   }
 }

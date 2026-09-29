@@ -1,10 +1,11 @@
 import { Controller, Post, Body, Param, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { MonthEndClosingService } from '../services/month-end-closing.service';
 import { MonthEndClosingInput } from '../interfaces/month-end.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/month-end')
+@RequireModule('ACCOUNTING')
 export class MonthEndController {
   constructor(private readonly monthEndService: MonthEndClosingService) {}
 

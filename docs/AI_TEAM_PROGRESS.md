@@ -96,6 +96,8 @@ No drift, no regressions. `npx tsc --noEmit` exit 0. **No backend changes made t
 | Sprint 29.8 | Antigravity | Phase 3 Hardening from Codex Second Independent Review | Completed | `online-orders.service.ts`, `rider.service.ts`, `kots.service.ts`, `StitchKDS.tsx`, `TvBoard.tsx`, `App.tsx`, `TrackOrderPage.tsx`, `orderStatusMapper.ts` | None | None | Await user approval before commit |
 | Phase 3 Hardening | Agent 07 (Antigravity) | Remediation Batch 1: Dexie Sync & Scope Hardening | Completed | `d4u-pos-client/src/db.ts`, `d4u-pos-client/src/StitchKDS.tsx`, `d4u-pos-client/src/pages/TvBoard.tsx`, `d4u-pos-client/src/utils/staleSyncProtection.test.ts`, `d4u-pos-client/test-multitab-browser.cjs` | None | None | Independent audit by Codex |
 | Phase 3 Hardening | Agent 07 (Antigravity) | Remediation Batch 4: IndexedDB Failure Must Fail Closed & KDS/TV Business Day Verification | Completed | `d4u-pos-client/src/db.ts`, `d4u-pos-client/src/StitchKDS.tsx`, `d4u-pos-client/src/pages/TvBoard.tsx`, `d4u-pos-client/src/TVDisplay.tsx`, `d4u-pos-client/test-harness.html`, `d4u-pos-client/test-multitab-browser.cjs`, `d4u-pos-client/src/utils/staleSyncProtection.test.ts`, `d4u-pos-client/src/utils/kdsTvBusinessDayVerification.test.ts` | None | None | Awaiting Codex Audit |
+| P0.4 Hardening | Antigravity | SaaS Package Entitlements & Multi-Tenant Boundary Hardening (KDS, Marketing, Secondary Modules, Inventory, Recipes, KOT, Product Requests, Reports, Vendor, Customers Isolation) | Completed | Backend controllers, services, guards, utils, tests; d4u-admin, d4u-pos-client, d4u-rider, d4u-website | None | Customer.phone global uniqueness schema constraint handled via fail-closed application isolation | Deploy and verify production services |
+
 
 
 

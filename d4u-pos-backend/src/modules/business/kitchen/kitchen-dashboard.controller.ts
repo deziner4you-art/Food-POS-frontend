@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { RequireModule, RequirePermissions, CurrentUser } from '../../../common/decorators';
 import { KitchenDashboardService } from './kitchen-dashboard.service';
 import { TicketActionDto } from './dto';
 
 @Controller('kitchen')
+@RequireModule('KDS')
 export class KitchenDashboardController {
   constructor(private readonly service: KitchenDashboardService) {}
 

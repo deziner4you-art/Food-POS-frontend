@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SystemRoles } from '../enums/roles.enum';
+import { SKIP_SUBSCRIPTION_KEY } from '../decorators/skip-subscription.decorator';
 
 @Injectable()
 export class SubscriptionGuard implements CanActivate {
@@ -17,6 +18,15 @@ export class SubscriptionGuard implements CanActivate {
     if (isPublic) {
       return true;
     }
+
+    // Capability discovery must be able to report a fail-closed disabled
+    // snapshot when a tenant has no subscription. Authentication still runs;
+    // this only skips the legacy global subscription-existence gate.
+    const skipSubscription = this.reflector.getAllAndOverride<boolean>(SKIP_SUBSCRIPTION_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (skipSubscription) return true;
 
     const request = context.switchToHttp().getRequest();
     const user = request.user;

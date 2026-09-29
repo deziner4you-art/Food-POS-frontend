@@ -1,11 +1,12 @@
 import { Controller, Get, Query, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { FinancialKpiService } from '../services/financial-kpi.service';
 import { FinancialRatioService } from '../services/financial-ratio.service';
 import { KpiFilter } from '../interfaces/financial-kpi.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting')
+@RequireModule('ACCOUNTING')
 export class FinancialKpiController {
   constructor(
     private readonly kpiService: FinancialKpiService,

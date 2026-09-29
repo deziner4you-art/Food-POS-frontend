@@ -1,11 +1,12 @@
 import { Controller, Get, Post, Body, Param, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { BankStatementService } from '../services/bank-statement.service';
 import { BankReconciliationService } from '../services/bank-reconciliation.service';
 import { ReconciliationMatchingService } from '../services/reconciliation-matching.service';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/bank-reconciliation')
+@RequireModule('ACCOUNTING')
 export class BankReconciliationController {
   constructor(
     private readonly statementService: BankStatementService,

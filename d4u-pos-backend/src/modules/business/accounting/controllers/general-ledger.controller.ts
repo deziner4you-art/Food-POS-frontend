@@ -1,9 +1,10 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { GeneralLedgerService } from '../services/general-ledger.service';
 import { LedgerQueryDto } from '../dto/ledger-query.dto';
 
 @Controller('accounting/ledger')
+@RequireModule('ACCOUNTING')
 export class GeneralLedgerController {
   constructor(private readonly service: GeneralLedgerService) {}
 

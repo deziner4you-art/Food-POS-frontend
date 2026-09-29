@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AppGateway } from '../../../app.gateway';
 import { formatPosOrderForRider } from '../../../common/utils/rider-order.util';
+import { TablesService } from '../tables/tables.service';
 import {
   DeliveryEntityType,
   formatOnlineOrderForRider,
@@ -13,6 +14,7 @@ export class RiderService {
   constructor(
     private prisma: PrismaService,
     private gateway: AppGateway,
+    @Optional() private tablesService?: TablesService,
   ) {}
 
   /**
@@ -1142,7 +1144,70 @@ export class RiderService {
         : `ACTIVE_DELIVERY (${o.status})`,
     }));
 
-    return [...onlineMapped, ...posMapped].sort(
+    // Waiter/table exceptions are intentionally shown in this same clearance
+    // queue. Only stale/orphaned table holders are included; a genuinely
+    // active current-day waiter order remains a normal occupied table.
+    const openDay = await this.prisma.businessDay.findFirst({
+      where: { store_id: storeId, status: 'OPEN' },
+      orderBy: { id: 'desc' },
+      select: { id: true },
+    });
+    const occupiedTables = await this.prisma.restaurantTable.findMany({
+      where: { store_id: storeId, status: 'OCCUPIED', current_order_id: { not: null } },
+      select: { id: true, label: true, current_order_id: true },
+    });
+    const occupiedOrderIds = occupiedTables
+      .map((table) => table.current_order_id)
+      .filter((id): id is number => typeof id === 'number');
+    const occupiedOrders = occupiedOrderIds.length === 0
+      ? []
+      : await this.prisma.order.findMany({
+          where: {
+            id: { in: occupiedOrderIds },
+            store_id: storeId,
+            OR: [
+              { order_source: { equals: 'WAITER', mode: 'insensitive' } },
+              { terminal_session_id: { not: null } },
+            ],
+          },
+          include: { customer: true },
+        });
+    const occupiedTableByOrder = new Map(
+      occupiedTables
+        .filter((table) => typeof table.current_order_id === 'number')
+        .map((table) => [table.current_order_id as number, table]),
+    );
+    const waiterMapped = occupiedOrders
+      .filter((order) => {
+        const oldBusinessDay = Boolean(openDay && order.business_day_id !== openDay.id);
+        const oldByAge = new Date(order.createdAt).getTime() < Date.now() - 24 * 60 * 60 * 1000;
+        const terminal = ['SETTLED', 'VOIDED', 'CANCELLED', 'COMPLETED'].includes(String(order.status).toUpperCase());
+        return oldBusinessDay || oldByAge || terminal;
+      })
+      .map((order) => {
+        const table = occupiedTableByOrder.get(order.id);
+        return {
+          id: order.id,
+          entityType: 'POS' as const,
+          entityId: order.id,
+          onlineOrderId: null,
+          posOrderId: order.id,
+          isPos: true,
+          source: 'WAITER',
+          order_source: order.order_source,
+          table_no: table?.label ?? order.table_no ?? null,
+          status: order.status,
+          customer_name: order.customer?.name ?? 'Walk-in',
+          customerAddress: null,
+          created_at: order.createdAt,
+          riderName: null,
+          isOrphan: true,
+          clearAction: 'WAITER_CLEAR',
+          exceptionType: 'WAITER_TABLE_STALE',
+        };
+      });
+
+    return [...onlineMapped, ...posMapped, ...waiterMapped].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     );
   }
@@ -1401,6 +1466,150 @@ export class RiderService {
       previousStatus,
       newStatus: 'READY',
       isPos,
+    };
+  }
+
+  /**
+   * Clears a stale waiter-terminal order and releases its table. This is kept
+   * separate from delivery recovery because a waiter order must never be
+   * reset to READY or entered into the rider lifecycle.
+   */
+  async adminClearWaiterOrder(orderId: number, callerJwt: any, reason: string) {
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      throw new BadRequestException('A valid POS order id is required.');
+    }
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('A reason is required to clear a waiter order.');
+    }
+
+    const caller = await this.prisma.user.findUnique({
+      where: { id: callerJwt?.sub },
+      include: { role: true },
+    });
+    if (!caller) throw new ForbiddenException('Caller not found.');
+    if (caller.role?.name === 'Rider') {
+      throw new ForbiddenException('Riders may not clear waiter orders.');
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        store_id: true,
+        status: true,
+        order_source: true,
+        terminal_session_id: true,
+        table_no: true,
+        business_day_id: true,
+        createdAt: true,
+      },
+    });
+    if (!order) throw new NotFoundException(`Order #${orderId} not found.`);
+
+    const isWaiterOrder = String(order.order_source || '').toUpperCase() === 'WAITER'
+      || order.terminal_session_id != null;
+    if (!isWaiterOrder) {
+      throw new BadRequestException(`Order #${orderId} is not a waiter-terminal order.`);
+    }
+
+    const isSuperAdmin = caller.role?.name === 'Super Admin' || callerJwt?.role === 'Super Admin';
+    if (!isSuperAdmin && Number(caller.store_id) !== Number(order.store_id)) {
+      throw new ForbiddenException('Cross-store order clearance denied.');
+    }
+
+    const previousStatus = order.status;
+    const terminalStatuses = new Set(['SETTLED', 'VOIDED', 'CANCELLED', 'COMPLETED']);
+    const openDay = await this.prisma.businessDay.findFirst({
+      where: { store_id: order.store_id, status: 'OPEN' },
+      orderBy: { id: 'desc' },
+      select: { id: true },
+    });
+    const staleByBusinessDay = Boolean(openDay && order.business_day_id !== openDay.id);
+    const staleByAge = new Date(order.createdAt).getTime() < Date.now() - 24 * 60 * 60 * 1000;
+    const terminal = terminalStatuses.has(String(previousStatus).toUpperCase());
+    if (!staleByBusinessDay && !staleByAge && !terminal) {
+      throw new BadRequestException(
+        `Order #${orderId} is an active current-day waiter order and cannot be cleared from this queue.`,
+      );
+    }
+
+    let tableReleased = 0;
+    const result = await this.runInTransaction(async (tx: any) => {
+      let updatedOrder = order;
+      if (!terminal) {
+        const updated = await tx.order.updateMany({
+          where: { id: orderId, status: previousStatus },
+          data: {
+            status: 'VOIDED',
+            void_reason: reason.trim(),
+            void_approved_by: Number(caller.id),
+          },
+        });
+        if (updated.count === 0) {
+          throw new BadRequestException(
+            `Order #${orderId} changed before it could be cleared. Please refresh and try again.`,
+          );
+        }
+        updatedOrder = { ...order, status: 'VOIDED' };
+        if (tx.kOT?.updateMany) {
+          await tx.kOT.updateMany({
+            where: { order_id: orderId, status: { not: 'CANCELLED' } },
+            data: { status: 'CANCELLED' },
+          });
+        }
+      }
+
+      const released = this.tablesService
+        ? await this.tablesService.releaseTableByOrderId(orderId, tx)
+        : await tx.restaurantTable.updateMany({
+            where: { current_order_id: orderId },
+            data: { status: 'AVAILABLE', current_order_id: null },
+          });
+      tableReleased = released.count ?? 0;
+      return updatedOrder;
+    });
+
+    if (this.prisma.systemAuditLog) {
+      await this.prisma.systemAuditLog.create({
+        data: {
+          action: 'ORDER_CLEARANCE_WAITER_ORDER',
+          entity: 'Order',
+          entity_id: orderId,
+          user_id: Number(caller.id),
+          user_name: caller.name,
+          details: {
+            previousStatus,
+            newStatus: result.status,
+            tableNo: order.table_no,
+            tableReleased,
+            reason: reason.trim(),
+          },
+        },
+      }).catch(() => {});
+    }
+
+    this.gateway.broadcast(
+      'order_voided',
+      {
+        order_id: orderId,
+        entityType: 'POS',
+        entityId: orderId,
+        order_source: order.order_source,
+        status: result.status,
+        table_no: order.table_no,
+        tableReleased: tableReleased > 0,
+      },
+      `store_${order.store_id}`,
+    );
+
+    return {
+      success: true,
+      orderId,
+      entityType: 'POS' as const,
+      previousStatus,
+      newStatus: result.status,
+      tableReleased: tableReleased > 0,
+      message: `Waiter order #${orderId} was cleared and its table was released.`,
     };
   }
 }

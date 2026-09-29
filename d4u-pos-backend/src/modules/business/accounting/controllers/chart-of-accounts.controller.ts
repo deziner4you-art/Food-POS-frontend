@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { ChartOfAccountsService } from '../services/chart-of-accounts.service';
 import { CreateAccountGroupDto } from '../dto/create-account-group.dto';
 import { CreateAccountDto } from '../dto/create-account.dto';
@@ -7,6 +7,7 @@ import { UpdateAccountDto } from '../dto/update-account.dto';
 import { MoveAccountDto } from '../dto/move-account.dto';
 
 @Controller('accounting/coa')
+@RequireModule('ACCOUNTING')
 export class ChartOfAccountsController {
   constructor(private readonly coaService: ChartOfAccountsService) {}
 

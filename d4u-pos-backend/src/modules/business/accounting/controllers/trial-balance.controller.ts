@@ -1,10 +1,11 @@
 import { Controller, Get, Query, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { TrialBalanceService } from '../services/trial-balance.service';
 import { TrialBalanceFilter } from '../interfaces/trial-balance-filter.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/trial-balance')
+@RequireModule('ACCOUNTING')
 export class TrialBalanceController {
   constructor(private readonly trialBalanceService: TrialBalanceService) {}
 

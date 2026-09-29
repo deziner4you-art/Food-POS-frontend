@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { RequirePermissions, Public, CurrentUser } from '../../../common/decorators';
 import { OnlineOrdersService } from './online-orders.service';
@@ -71,10 +72,10 @@ export class OnlineOrdersController {
 
   @Public()
   @Post('auth/login')
-  async webLogin(@Body() body: { phone: string }) {
-    // Basic phone login without password (for prototype)
-    const customer = await this.service['prisma'].customer.findUnique({
-      where: { phone: normalizePhone(body.phone) },
+  async webLogin(@Body() body: { phone: string; store_id?: number }) {
+    const { brandId } = await this.resolveStoreBrand(body.store_id);
+    const customer = await this.service['prisma'].customer.findFirst({
+      where: { phone: normalizePhone(body.phone), brand_id: brandId },
       include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
     if (!customer) {
@@ -86,43 +87,39 @@ export class OnlineOrdersController {
   @Public()
   @Post('auth/register')
   async webRegister(@Body() body: { phone: string; name: string; brand_id?: number; store_id?: number }) {
+    const { brandId } = await this.resolveStoreBrand(body.store_id);
     const normalizedPhone = normalizePhone(body.phone);
-    let customer: any = await this.service['prisma'].customer.findUnique({
+    let customer: any = await this.service['prisma'].customer.findFirst({
       where: { phone: normalizedPhone },
       include: { addresses: { orderBy: [{ is_default: 'desc' }, { id: 'asc' }] } },
     });
     if (!customer) {
-      // Sprint 28.9: no website surface sends brand/store context to this
-      // endpoint today, so it can't reliably scope new customers — hardcoded
-      // brand_id: 1 is a known gap here (see multi-tenant audit report),
-      // preserved as-is rather than half-fixed without a frontend change to
-      // actually supply real context. Accepts either field if a future
-      // caller does provide it, resolving store_id -> its brand.
-      let brandId = body.brand_id;
-      if (!brandId && body.store_id) {
-        const store = await this.service['prisma'].store.findUnique({ where: { id: body.store_id }, select: { brand_id: true } });
-        brandId = store?.brand_id;
-      }
       customer = await this.service['prisma'].customer.create({
         data: {
-          brand_id: brandId ?? 1,
+          brand_id: brandId,
           phone: normalizedPhone,
           name: body.name,
         },
       });
       customer.addresses = [];
+    } else if (customer.brand_id !== brandId) {
+      // Customer.phone is globally unique in the current schema. Do not
+      // disclose or return a customer belonging to another brand.
+      return { success: false, message: 'Customer not found' };
     }
     return { success: true, customer };
   }
 
   @Public()
   @Get('auth/history/:phone')
-  async webHistory(@Param('phone') phone: string) {
+  async webHistory(@Param('phone') phone: string, @Query('store_id') store_id?: string) {
+    const { storeId, brandId } = await this.resolveStoreBrand(store_id);
     const normalizedPhone = normalizePhone(phone);
-    const customer = await this.service['prisma'].customer.findUnique({
-      where: { phone: normalizedPhone },
+    const customer = await this.service['prisma'].customer.findFirst({
+      where: { phone: normalizedPhone, brand_id: brandId },
       include: {
         orders: {
+          where: { store_id: storeId },
           include: { items: { include: { product: true } } },
           orderBy: { id: 'desc' },
           take: 50,
@@ -139,11 +136,26 @@ export class OnlineOrdersController {
       return { success: false, message: 'Not found' };
     }
     const onlineOrders = await this.service['prisma'].onlineOrder.findMany({
-      where: { customerPhone: normalizedPhone },
+      where: { customerPhone: normalizedPhone, store_id: storeId },
       orderBy: { id: 'desc' },
       take: 50,
     });
     return { success: true, ...customer, onlineOrders };
+  }
+
+  private async resolveStoreBrand(rawStoreId: unknown): Promise<{ storeId: number; brandId: number }> {
+    const storeId = Number(rawStoreId);
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+      throw new BadRequestException('A valid store_id is required');
+    }
+    const store = await this.service['prisma'].store.findUnique({
+      where: { id: storeId },
+      select: { brand_id: true },
+    });
+    if (!store?.brand_id) {
+      throw new BadRequestException('The selected store is invalid');
+    }
+    return { storeId, brandId: store.brand_id };
   }
 
   // Saved delivery addresses — public, same prototype-grade trust model as

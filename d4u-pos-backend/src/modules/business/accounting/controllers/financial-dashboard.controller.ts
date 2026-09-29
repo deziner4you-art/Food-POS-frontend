@@ -1,10 +1,11 @@
 import { Controller, Get, Query, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { FinancialDashboardService } from '../services/financial-dashboard.service';
 import { DashboardFilter } from '../interfaces/financial-dashboard.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/dashboard')
+@RequireModule('ACCOUNTING')
 export class FinancialDashboardController {
   constructor(private readonly dashboardService: FinancialDashboardService) {}
 

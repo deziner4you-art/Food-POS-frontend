@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { RequireModule, RequirePermissions, CurrentUser } from '../../../common/decorators';
 import { InventoryLockService } from './inventory-lock.service';
 import { CreateInventoryLockDto, UnlockInventoryDto } from './dto';
 
 @Controller('kitchen/inventory-locks')
+@RequireModule('KDS')
 export class InventoryLockController {
   constructor(private readonly service: InventoryLockService) {}
 

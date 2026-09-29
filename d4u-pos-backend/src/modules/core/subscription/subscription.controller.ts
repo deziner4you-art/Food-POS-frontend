@@ -1,11 +1,15 @@
 import { Controller, Get, Post, Put, Body, Param, Query, Patch, Req } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
 import { CreatePackageDto, OnboardClientDto } from './dto';
-import { Public } from '../../../common/decorators';
+import { CurrentUser, Public, RequirePermissions, SkipSubscription } from '../../../common/decorators';
+import { EntitlementService } from './entitlement.service';
 
 @Controller('subscription')
 export class SubscriptionController {
-  constructor(private readonly subscriptionService: SubscriptionService) {}
+  constructor(
+    private readonly subscriptionService: SubscriptionService,
+    private readonly entitlementService: EntitlementService,
+  ) {}
 
   // PACKAGES
   @Public()
@@ -14,25 +18,48 @@ export class SubscriptionController {
     return this.subscriptionService.getPackages();
   }
 
+  @RequirePermissions('system.subscription.manage')
   @Post('package')
   createPackage(@Body() body: CreatePackageDto) {
     return this.subscriptionService.createPackage(body);
   }
 
+  @RequirePermissions('system.subscription.manage')
   @Put('package/:id')
   updatePackage(@Param('id') id: string, @Body() body: CreatePackageDto) {
     return this.subscriptionService.updatePackage(+id, body);
   }
 
+  @RequirePermissions('system.subscription.manage')
   @Patch('package/:id/archive')
   archivePackage(@Param('id') id: string) {
     return this.subscriptionService.archivePackage(+id);
   }
 
   // PRICING (A LA CARTE MODULES)
+  @RequirePermissions('system.subscription.manage')
   @Get('pricing')
   getPricing(@Query('currency') currency: string) {
     return this.subscriptionService.getPricing(currency || 'USD');
+  }
+
+  @RequirePermissions('system.subscription.manage')
+  @Put('pricing/:id')
+  updatePricing(
+    @Param('id') id: string,
+    @Body() body: { price_monthly: number },
+  ) {
+    return this.subscriptionService.updatePricing(Number(id), body);
+  }
+
+  /** Authenticated, active-workspace capability snapshot. */
+  @SkipSubscription()
+  @Get('entitlements/current')
+  getCurrentEntitlements(
+    @CurrentUser() user: any,
+    @Query('store_id') storeId?: string,
+  ) {
+    return this.entitlementService.resolveForAuthenticatedUser(user, storeId);
   }
 
   // ONBOARDING

@@ -106,7 +106,7 @@ export default function MobileMode({
         if (!authName || !authPhone) throw new Error('Please enter both name and phone');
         const res = await fetch(`${BACKEND_URL}/online-orders/auth/register`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: authPhone, name: authName })
+          body: JSON.stringify({ phone: authPhone, name: authName, store_id: storeId })
         });
         const data = await res.json();
         if (data.success) {
@@ -118,7 +118,7 @@ export default function MobileMode({
         if (!authPhone) throw new Error('Please enter your phone number');
         const res = await fetch(`${BACKEND_URL}/online-orders/auth/login`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: authPhone })
+          body: JSON.stringify({ phone: authPhone, store_id: storeId })
         });
         const data = await res.json();
         if (data.success) {
@@ -137,7 +137,7 @@ export default function MobileMode({
     setIsProfileModalOpen(true);
     if (!loggedInUser) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/online-orders/auth/history/${loggedInUser.phone}`);
+      const res = await fetch(`${BACKEND_URL}/online-orders/auth/history/${loggedInUser.phone}?store_id=${storeId}`);
       const data = await res.json();
       if (data.success) {
         const allOrders = [...(data.orders || []), ...(data.onlineOrders || [])];

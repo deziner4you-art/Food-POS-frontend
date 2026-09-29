@@ -1,10 +1,11 @@
 import { Controller, Get, Query, Req, ParseIntPipe } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { BalanceSheetService } from '../services/balance-sheet.service';
 import { BalanceSheetFilter } from '../interfaces/balance-sheet-filter.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/balance-sheet')
+@RequireModule('ACCOUNTING')
 export class BalanceSheetController {
   constructor(private readonly bsService: BalanceSheetService) {}
 

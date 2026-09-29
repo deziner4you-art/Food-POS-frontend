@@ -3,6 +3,7 @@ import { SubscriptionService } from './subscription.service';
 import { SubscriptionController } from './subscription.controller';
 import { SubscriptionCron } from './subscription.cron';
 import { PrismaModule } from '../../../database/prisma/prisma.module';
+import { EntitlementService } from './entitlement.service';
 
 // @Global() — PricingService now depends on SubscriptionService, and several
 // modules (PosOrdersModule, OnlineOrdersModule, ...) each provide their own
@@ -12,8 +13,8 @@ import { PrismaModule } from '../../../database/prisma/prisma.module';
 @Global()
 @Module({
   imports: [PrismaModule],
-  providers: [SubscriptionService, SubscriptionCron],
+  providers: [SubscriptionService, SubscriptionCron, EntitlementService],
   controllers: [SubscriptionController],
-  exports: [SubscriptionService],
+  exports: [SubscriptionService, EntitlementService],
 })
 export class SubscriptionModule {}

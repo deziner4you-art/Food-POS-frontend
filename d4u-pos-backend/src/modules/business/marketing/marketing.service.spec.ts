@@ -35,7 +35,10 @@ describe('MarketingService', () => {
       marketingCampaign: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
       campaignAuditLog: { create: jest.fn().mockResolvedValue({}) },
     };
-    gateway = { server: { to: jest.fn().mockReturnValue({ emit: jest.fn() }), emit: jest.fn() } };
+    gateway = {
+      server: { to: jest.fn().mockReturnValue({ emit: jest.fn() }), emit: jest.fn() },
+      broadcast: jest.fn(),
+    };
     subscriptions = {
       getMarketingCapabilities: jest.fn().mockResolvedValue({
         enabled: true,
@@ -59,6 +62,42 @@ describe('MarketingService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('marketing socket invalidation routing', () => {
+    it('routes targeted campaigns through the scoped store room', async () => {
+      await (service as any).broadcastCampaignUpdate({
+        id: 500,
+        status: 'RUNNING',
+        target_stores: [{ id: STORE_A1.id }],
+      });
+
+      expect(gateway.broadcast).toHaveBeenCalledWith(
+        'marketing_update',
+        { campaignId: 500, status: 'RUNNING' },
+        `store_${STORE_A1.id}`,
+      );
+      expect(gateway.server.emit).not.toHaveBeenCalled();
+    });
+
+    it('resolves all stores in the campaign brand instead of broadcasting globally', async () => {
+      prisma.store.findMany.mockResolvedValue([STORE_A1, STORE_A2]);
+
+      await (service as any).broadcastCampaignUpdate({
+        id: 500,
+        brand_id: 1,
+        status: 'PAUSED',
+        target_stores: [],
+      });
+
+      expect(prisma.store.findMany).toHaveBeenCalledWith({
+        where: { brand_id: 1 },
+        select: { id: true },
+      });
+      expect(gateway.broadcast).toHaveBeenNthCalledWith(1, 'marketing_update', { campaignId: 500, status: 'PAUSED' }, 'store_67');
+      expect(gateway.broadcast).toHaveBeenNthCalledWith(2, 'marketing_update', { campaignId: 500, status: 'PAUSED' }, 'store_70');
+      expect(gateway.server.emit).not.toHaveBeenCalled();
+    });
   });
 
   // Task #2R-F2a: brand-boundary tenant isolation for getCampaigns /

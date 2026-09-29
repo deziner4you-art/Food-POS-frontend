@@ -1,10 +1,11 @@
 import { Controller, Get, Post, Body, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { ComplianceService } from '../services/compliance.service';
 import { SystemCertificationService } from '../services/system-certification.service';
 import { getSessionStoreId, getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('system')
+@RequireModule('ACCOUNTING')
 export class ComplianceController {
   constructor(
     private readonly complianceService: ComplianceService,

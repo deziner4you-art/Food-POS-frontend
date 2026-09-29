@@ -2,7 +2,26 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { CreatePackageDto, OnboardClientDto } from './dto';
 import { SystemRoles } from '../../../common/enums/roles.enum';
+import { ModuleKey, getMissingDependencies, normalizeModuleKey } from '../../../common/entitlements/module-registry';
 import * as bcrypt from 'bcryptjs';
+
+const DEFAULT_PRICING = [
+  ['VENDORS', 'Vendor Management'],
+  ['LOYALTY', 'Loyalty & Rewards'],
+  ['BASE_POS', 'Base POS System'],
+  ['KOT_PRINT', 'KOT Printing'],
+  ['ACCOUNTING', 'Accounting & Cash Flow'],
+  ['ANALYTICS', 'Advanced Analytics (Owner App)'],
+  ['CMS', 'Website CMS Builder'],
+  ['HR_PAYROLL', 'Staff HR & Payroll'],
+  ['INVENTORY', 'Advanced Inventory'],
+  ['KDS', 'Kitchen Display System'],
+  ['MARKETING', 'Marketing Hub & Campaigns'],
+  ['ONLINE_WEBSITE', 'Online Ordering Website'],
+  ['RECIPES', 'Recipe Costing & Production'],
+  ['RIDER', 'Delivery Rider App'],
+  ['TV_BOARD', 'Customer TV Board'],
+] as const;
 
 @Injectable()
 export class SubscriptionService {
@@ -19,7 +38,8 @@ export class SubscriptionService {
   }
 
   async createPackage(data: CreatePackageDto) {
-    const total_value = data.modules.reduce((sum, mod) => sum + mod.price, 0);
+    const modules = this.validatePackageModules(data.modules);
+    const total_value = modules.reduce((sum, mod) => sum + mod.price, 0);
     const discount_pct = total_value > 0 ? ((total_value - data.monthly_rental) / total_value) * 100 : 0;
 
     return this.prisma.package.create({
@@ -33,7 +53,7 @@ export class SubscriptionService {
         total_value,
         discount_pct,
         modules: {
-          create: data.modules.map(m => ({ module_key: m.module_key, price: m.price }))
+          create: modules.map(m => ({ module_key: m.module_key, price: m.price }))
         }
       },
       include: { modules: true }
@@ -41,28 +61,34 @@ export class SubscriptionService {
   }
 
   async updatePackage(id: number, data: CreatePackageDto) {
-    const total_value = data.modules.reduce((sum, mod) => sum + mod.price, 0);
+    const modules = this.validatePackageModules(data.modules);
+    const total_value = modules.reduce((sum, mod) => sum + mod.price, 0);
     const discount_pct = total_value > 0 ? ((total_value - data.monthly_rental) / total_value) * 100 : 0;
 
-    // Delete old modules
-    await this.prisma.packageModule.deleteMany({ where: { package_id: id } });
-
-    return this.prisma.package.update({
-      where: { id },
-      data: {
-        name: data.name,
-        description: data.description,
-        currency: data.currency,
-        monthly_rental: data.monthly_rental,
-        billing_cycle: data.billing_cycle,
-        total_value,
-        discount_pct,
-        modules: {
-          create: data.modules.map(m => ({ module_key: m.module_key, price: m.price }))
-        }
-      },
-      include: { modules: true }
-    });
+    const update = async (tx: any) => {
+      // Delete and recreate the module set in one transaction. A failed
+      // package update must never leave the package with zero modules.
+      await tx.packageModule.deleteMany({ where: { package_id: id } });
+      return tx.package.update({
+        where: { id },
+        data: {
+          name: data.name,
+          description: data.description,
+          currency: data.currency,
+          monthly_rental: data.monthly_rental,
+          billing_cycle: data.billing_cycle,
+          total_value,
+          discount_pct,
+          modules: {
+            create: modules.map(m => ({ module_key: m.module_key, price: m.price }))
+          }
+        },
+        include: { modules: true }
+      });
+    };
+    return typeof this.prisma.$transaction === 'function'
+      ? this.prisma.$transaction(update)
+      : update(this.prisma);
   }
 
   async archivePackage(id: number) {
@@ -79,41 +105,74 @@ export class SubscriptionService {
   // SAAS PRICING (A LA CARTE)
   // -------------------------------------------------------------
   async getPricing(currency: string) {
-    const prices = await this.prisma.saaSPricing.findMany({
-      where: { currency }
-    });
-    if (prices.length > 0) return prices;
+    try {
+      const prices = await this.prisma.saaSPricing.findMany({ where: { currency } });
+      if (prices.length > 0) return prices.map((price) => ({ ...price, persisted: true }));
+    } catch (error) {
+      // A missing/drifted SaaSPricing table must not make the package editor
+      // render zero modules. The fallback is read-only; it never mutates DB.
+      console.error('SaaSPricing unavailable; using registry defaults.', error);
+    }
 
-    const defaultModules = [
-      { name: 'Vendor Management', key: 'VENDORS' },
-      { name: 'Loyalty & Rewards', key: 'LOYALTY' },
-      { name: 'Base POS System', key: 'BASE_POS' },
-      { name: 'Accounting & Cash Flow', key: 'ACCOUNTING' },
-      { name: 'Advanced Analytics (Owner App)', key: 'ANALYTICS' },
-      { name: 'Website CMS Builder', key: 'CMS' },
-      { name: 'Staff HR & Payroll', key: 'HR_PAYROLL' },
-      { name: 'Advanced Inventory', key: 'INVENTORY' },
-      { name: 'Kitchen Display System', key: 'KDS' },
-      { name: 'Marketing Hub & Campaigns', key: 'MARKETING' },
-      { name: 'Online Ordering Website', key: 'ONLINE_WEBSITE' },
-      { name: 'Recipe Costing & Production', key: 'RECIPES' },
-      { name: 'Delivery Rider App', key: 'RIDER' },
-      { name: 'Customer TV Board', key: 'TV_BOARD' }
-    ];
+    return DEFAULT_PRICING.map(([module_key, module_name], index) => ({
+      id: null,
+      module_key,
+      module_name,
+      currency,
+      price_monthly: 0,
+      price_yearly: 0,
+      persisted: false,
+      fallback_id: `default-${index + 1}`,
+    }));
+  }
 
-    await this.prisma.saaSPricing.createMany({
-      data: defaultModules.map(m => ({
-        module_key: m.key,
-        module_name: m.name,
-        currency: currency,
-        price_monthly: 0,
-        price_yearly: 0
-      }))
+  async updatePricing(id: number, data: { price_monthly: number }) {
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new BadRequestException('A valid pricing record is required.');
+    }
+    const price = Number(data?.price_monthly);
+    if (!Number.isFinite(price) || price < 0) {
+      throw new BadRequestException('price_monthly must be a non-negative number.');
+    }
+    return this.prisma.saaSPricing.update({
+      where: { id },
+      data: { price_monthly: price },
+    });
+  }
+
+  private validatePackageModules(
+    input: { module_key: string; price: number }[] | undefined,
+  ): { module_key: ModuleKey; price: number }[] {
+    if (!Array.isArray(input) || input.length === 0) {
+      throw new BadRequestException('A package must include at least BASE_POS.');
+    }
+
+    const seen = new Set<ModuleKey>();
+    const modules = input.map((module) => {
+      const key = normalizeModuleKey(module?.module_key);
+      if (!key) throw new BadRequestException(`Unknown package module: ${module?.module_key || 'empty'}.`);
+      if (seen.has(key)) throw new BadRequestException(`Duplicate package module: ${key}.`);
+      const price = Number(module?.price);
+      if (!Number.isFinite(price) || price < 0) {
+        throw new BadRequestException(`Invalid price for package module ${key}.`);
+      }
+      seen.add(key);
+      return { module_key: key, price };
     });
 
-    return this.prisma.saaSPricing.findMany({
-      where: { currency }
-    });
+    if (!seen.has('BASE_POS')) {
+      throw new BadRequestException('Every package must include BASE_POS.');
+    }
+
+    for (const key of seen) {
+      const missing = getMissingDependencies(key, seen);
+      if (missing.length) {
+        throw new BadRequestException(
+          `Package module ${key} requires: ${missing.join(', ')}.`,
+        );
+      }
+    }
+    return modules;
   }
 
   // -------------------------------------------------------------
@@ -284,26 +343,33 @@ export class SubscriptionService {
   async getMarketingCapabilities(store_id: number) {
     const disabled = { enabled: false, allowedCampaignTypes: [] as string[], socialPublishing: false, tvBoard: false, analytics: false };
 
+    if (!Number.isInteger(store_id) || store_id <= 0) return disabled;
+
     const store = await this.prisma.store.findUnique({
       where: { id: store_id },
       include: { saas_package: { include: { modules: true } } },
     });
     const pkg = store?.saas_package;
-    const marketingModule = pkg?.modules.find((m) => m.module_key === 'MARKETING');
+    const subscription = store
+      ? await this.prisma.subscription.findUnique({ where: { brand_id: store.brand_id } })
+      : null;
+    const expiry = subscription?.expiry_date ? new Date(subscription.expiry_date) : null;
+    const activeSubscription = subscription?.status === 'ACTIVE'
+      && !!expiry
+      && Number.isFinite(expiry.getTime())
+      && expiry.getTime() >= Date.now();
+    const packageMatchesSubscription = !!pkg
+      && !!subscription
+      && pkg.id === subscription.package_id;
+    const marketingModule = pkg?.modules.find((m) => normalizeModuleKey(m.module_key) === 'MARKETING');
 
-    // If store has no package or no MARKETING module configured, grant full
-    // capabilities so campaigns always work. The SaaS gating is a commercial
-    // feature — blocking campaigns for unconfigured stores is the wrong default
-    // during setup. Stores that want to RESTRICT specific tiers should explicitly
-    // configure packages via the Super Admin panel.
-    const FULL_CAPABILITIES = {
-      enabled: true,
-      allowedCampaignTypes: ['PERCENTAGE', 'FLAT', 'BOGO', 'BUY_X_GET_Y', 'BUNDLE', 'COMBO', 'FREE_GIFT', 'HAPPY_HOUR'],
-      socialPublishing: true,
-      tvBoard: true,
-      analytics: true,
-    };
-    if (!pkg || !marketingModule) return FULL_CAPABILITIES;
+    // Marketing is a paid capability. Missing package, missing MARKETING
+    // module, inactive package, missing/expired subscription, and package
+    // mismatch must all fail closed. Never re-enable campaigns just because
+    // old data exists or setup was incomplete.
+    if (!pkg || pkg.status !== 'ACTIVE' || !marketingModule || !activeSubscription || !packageMatchesSubscription) {
+      return disabled;
+    }
 
     const cfg = (marketingModule.config as any) || null;
     if (cfg?.allowedCampaignTypes) {

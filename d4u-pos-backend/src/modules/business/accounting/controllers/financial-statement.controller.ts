@@ -1,5 +1,5 @@
 import { Controller, Post, Get, Body, Param, Query, Req, ParseIntPipe } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { FinancialStatementMappingService } from '../services/financial-statement-mapping.service';
 import { FinancialStatementBuilderService } from '../services/financial-statement-builder.service';
 import { CreateStatementSectionDto } from '../interfaces/statement-section.interface';
@@ -7,6 +7,7 @@ import { CreateStatementMappingDto } from '../interfaces/mapping.interface';
 import { getSessionStoreId, getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/financial-statements')
+@RequireModule('ACCOUNTING')
 export class FinancialStatementController {
   constructor(
     private readonly mappingService: FinancialStatementMappingService,

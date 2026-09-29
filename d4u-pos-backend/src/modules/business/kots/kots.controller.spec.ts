@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { KotsController } from './kots.controller';
 import { KotsService } from './kots.service';
 import { PERMISSIONS_KEY } from '../../../common/decorators/permissions.decorator';
+import { REQUIRED_MODULE_KEY } from '../../../common/decorators/require-module.decorator';
+import { PrismaService } from '../../../database/prisma/prisma.service';
 
 // Task #2P-B: the 3 KOT read routes were migrated off the legacy
 // sales.view compatibility-bridge code onto the real kitchen.tickets.read
@@ -28,7 +30,9 @@ describe('KotsController', () => {
     bumpKOT: jest.Mock;
     cancelKOT: jest.Mock;
     incrementPrintCount: jest.Mock;
+    getTvBoardKots: jest.Mock;
   };
+  const user = { sub: 'terminal-session-5', role: 'Chef', active_store_id: 67, active_brand_id: 10 };
 
   beforeEach(async () => {
     service = {
@@ -39,11 +43,20 @@ describe('KotsController', () => {
       bumpKOT: jest.fn(),
       cancelKOT: jest.fn(),
       incrementPrintCount: jest.fn(),
+      getTvBoardKots: jest.fn(),
     };
+    const prisma = {
+      store: { findUnique: jest.fn().mockResolvedValue({ id: 67, brand_id: 10 }) },
+      user: { findUnique: jest.fn() },
+    };
+    service.getKot.mockResolvedValue({ id: 42, store_id: 67 });
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [KotsController],
-      providers: [{ provide: KotsService, useValue: service }],
+      providers: [
+        { provide: KotsService, useValue: service },
+        { provide: PrismaService, useValue: prisma },
+      ],
     }).compile();
 
     controller = module.get<KotsController>(KotsController);
@@ -53,9 +66,18 @@ describe('KotsController', () => {
     expect(controller).toBeDefined();
   });
 
+  it('requires TV_BOARD for the dedicated TV feed instead of inheriting KOT_PRINT', () => {
+    expect(Reflect.getMetadata(REQUIRED_MODULE_KEY, controller.getTvBoardKots)).toBe('TV_BOARD');
+  });
+
   describe('@RequirePermissions metadata (Task #2P-B migration)', () => {
     it('GET /kots requires kitchen.tickets.read, not the legacy sales.view', () => {
       const metadata = Reflect.getMetadata(PERMISSIONS_KEY, controller.getActiveKots);
+      expect(metadata).toEqual(['kitchen.tickets.read']);
+    });
+
+    it('GET /kots/tv-board requires kitchen.tickets.read', () => {
+      const metadata = Reflect.getMetadata(PERMISSIONS_KEY, controller.getTvBoardKots);
       expect(metadata).toEqual(['kitchen.tickets.read']);
     });
 
@@ -106,46 +128,51 @@ describe('KotsController', () => {
   });
 
   describe('new route handlers take no client-supplied status (Task #2P-G)', () => {
-    it('acceptKot() takes only an id -- there is no body/status parameter for a caller to override', () => {
-      expect(controller.acceptKot.length).toBe(1);
-      controller.acceptKot('42');
+    it('acceptKot() takes only an id -- there is no body/status parameter for a caller to override', async () => {
+      expect(controller.acceptKot.length).toBe(2);
+      await controller.acceptKot(user, '42');
       expect(service.acceptKOT).toHaveBeenCalledWith(42);
     });
 
-    it('bumpKot() takes only an id -- there is no body/status parameter for a caller to override', () => {
-      expect(controller.bumpKot.length).toBe(1);
-      controller.bumpKot('42');
+    it('bumpKot() takes only an id -- there is no body/status parameter for a caller to override', async () => {
+      expect(controller.bumpKot.length).toBe(2);
+      await controller.bumpKot(user, '42');
       expect(service.bumpKOT).toHaveBeenCalledWith(42);
     });
 
-    it('cancelKot() takes only an id -- there is no body/status parameter for a caller to override', () => {
-      expect(controller.cancelKot.length).toBe(1);
-      controller.cancelKot('42');
+    it('cancelKot() takes only an id -- there is no body/status parameter for a caller to override', async () => {
+      expect(controller.cancelKot.length).toBe(2);
+      await controller.cancelKot(user, '42');
       expect(service.cancelKOT).toHaveBeenCalledWith(42);
     });
   });
 
   describe('existing behavior is unchanged by the decorator migration', () => {
-    it('getActiveKots() delegates to service.getActiveKots with numeric store_id and the includeReady flag unchanged', () => {
-      controller.getActiveKots('67', 'true');
+    it('getActiveKots() delegates to service.getActiveKots with numeric store_id and the includeReady flag unchanged', async () => {
+      await controller.getActiveKots(user, '67', 'true');
       expect(service.getActiveKots).toHaveBeenCalledWith(67, true);
 
-      controller.getActiveKots('67', undefined);
+      await controller.getActiveKots(user, '67', undefined);
       expect(service.getActiveKots).toHaveBeenCalledWith(67, false);
     });
 
-    it('getKotsByDay() delegates to service.getKotsByDay with numeric store_id/business_day_id unchanged', () => {
-      controller.getKotsByDay('67', '5');
+    it('getTvBoardKots() delegates to the scoped active KOT query', async () => {
+      await controller.getTvBoardKots(user, '67', 'true');
+      expect(service.getActiveKots).toHaveBeenCalledWith(67, true);
+    });
+
+    it('getKotsByDay() delegates to service.getKotsByDay with numeric store_id/business_day_id unchanged', async () => {
+      await controller.getKotsByDay(user, '67', '5');
       expect(service.getKotsByDay).toHaveBeenCalledWith(67, 5);
     });
 
-    it('getKot() delegates to service.getKot with the numeric id unchanged', () => {
-      controller.getKot('42');
+    it('getKot() delegates to service.getKot with the numeric id unchanged', async () => {
+      await controller.getKot(user, '42');
       expect(service.getKot).toHaveBeenCalledWith(42);
     });
 
-    it('incrementPrint() still delegates to service.incrementPrintCount with the same argument', () => {
-      controller.incrementPrint('42');
+    it('incrementPrint() still delegates to service.incrementPrintCount with the same argument', async () => {
+      await controller.incrementPrint(user, '42');
       expect(service.incrementPrintCount).toHaveBeenCalledWith(42);
     });
   });

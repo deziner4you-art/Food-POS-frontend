@@ -32,7 +32,7 @@ export default function DeliveryExceptions() {
     fetchExceptions();
   }, [selectedBranchId]);
 
-  const [actionType, setActionType] = useState<'recover' | 'settle'>('recover');
+  const [actionType, setActionType] = useState<'recover' | 'settle' | 'waiter-clear'>('recover');
 
   const getCanonicalExceptionIdentity = (exception: any) => {
     const entityType = exception?.entityType;
@@ -59,9 +59,11 @@ export default function DeliveryExceptions() {
     setRecovering(true);
     try {
       const identityQuery = new URLSearchParams({ entityType: identity.entityType }).toString();
-      const endpoint = actionType === 'settle'
-        ? `/rider-orders/${identity.entityId}/admin-force-settle?${identityQuery}`
-        : `/rider-orders/${identity.entityId}/recover-exception?${identityQuery}`;
+      const endpoint = actionType === 'waiter-clear'
+        ? `/rider-orders/${identity.entityId}/admin-clear-waiter?${identityQuery}`
+        : actionType === 'settle'
+          ? `/rider-orders/${identity.entityId}/admin-force-settle?${identityQuery}`
+          : `/rider-orders/${identity.entityId}/recover-exception?${identityQuery}`;
 
       const res = await apiFetch(endpoint, {
         method: 'PATCH',
@@ -72,7 +74,9 @@ export default function DeliveryExceptions() {
       const data = await res.json();
       if (res.ok) {
         toast.success(
-          actionType === 'settle'
+          actionType === 'waiter-clear'
+            ? `Waiter order #${selectedException.id} cleared and table released`
+            : actionType === 'settle'
             ? `Order #${selectedException.id} successfully settled and cleared`
             : `Order #${selectedException.id} successfully reset to READY`
         );
@@ -101,10 +105,10 @@ export default function DeliveryExceptions() {
         <div>
           <h1 className="text-3xl font-black text-white flex items-center gap-3">
             <AlertCircle className="text-red-500" size={32} /> 
-            Delivery Exceptions & Stale Clear
+            Order Clearance
           </h1>
           <p className="text-stitch-muted mt-2">
-            Recover orphaned delivery orders or force settle stale deliveries from past shifts that are blocking riders.
+            Clear stuck delivery or waiter orders, recover rider queues, and release stale occupied tables.
           </p>
         </div>
         <button 
@@ -134,20 +138,20 @@ export default function DeliveryExceptions() {
             <tbody className="text-sm">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="text-center p-8 text-stitch-muted">Loading exceptions...</td>
+                  <td colSpan={7} className="text-center p-8 text-stitch-muted">Loading clearance records...</td>
                 </tr>
               ) : exceptions.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center p-12 text-stitch-muted">
                     <div className="flex flex-col items-center gap-2">
                       <AlertCircle size={32} className="text-green-500/50" />
-                      <p>No delivery exceptions found.</p>
+                      <p>No order clearance issues found.</p>
                       <p className="text-xs">System is operating normally.</p>
                     </div>
                   </td>
                 </tr>
               ) : exceptions.map((order) => (
-                <tr key={`${order.isPos ? 'pos' : 'online'}-${order.id}`} className="border-b border-stitch-border hover:bg-white/5 transition-colors group">
+                <tr key={`${order.entityType || (order.isPos ? 'POS' : 'ONLINE')}-${order.entityId || order.id}`} className="border-b border-stitch-border hover:bg-white/5 transition-colors group">
                   <td className="p-4 pl-6 font-bold text-white">
                     #{order.id}
                   </td>
@@ -156,7 +160,7 @@ export default function DeliveryExceptions() {
                   </td>
                   <td className="p-4">
                     <span className={`px-2 py-1 rounded-lg text-xs font-bold ${order.isPos ? 'bg-indigo-500/20 text-indigo-400' : 'bg-pink-500/20 text-pink-400'}`}>
-                      {order.isPos ? 'POS' : 'ONLINE'}
+                      {order.source === 'WAITER' ? 'WAITER' : order.isPos ? 'POS' : 'ONLINE'}
                     </span>
                   </td>
                   <td className="p-4 text-orange-400 font-bold">
@@ -173,6 +177,11 @@ export default function DeliveryExceptions() {
                           Assigned: <strong className="text-slate-200">{order.riderName}</strong>
                         </span>
                       )}
+                      {order.table_no && (
+                        <span className="text-xs text-slate-400 mt-0.5 font-normal">
+                          Table: <strong className="text-slate-200">{order.table_no}</strong>
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="p-4 text-stitch-muted flex items-center gap-1">
@@ -181,7 +190,17 @@ export default function DeliveryExceptions() {
                   </td>
                   <td className="p-4 pr-6 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      {order.isOrphan && (
+                      {order.clearAction === 'WAITER_CLEAR' ? (
+                        <button
+                          onClick={() => { setSelectedException(order); setActionType('waiter-clear'); }}
+                          className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors shadow-lg shadow-red-500/20 flex items-center gap-1.5"
+                          title="Void the stale waiter order and release its table"
+                        >
+                          <RotateCcw size={14} />
+                          Clear & Release Table
+                        </button>
+                      ) : (
+                        order.isOrphan && (
                         <button 
                           onClick={() => { setSelectedException(order); setActionType('recover'); }}
                           className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors shadow-lg shadow-red-500/20 flex items-center gap-1.5"
@@ -190,15 +209,16 @@ export default function DeliveryExceptions() {
                           <RotateCcw size={14} />
                           Recover
                         </button>
+                        )
                       )}
-                      <button 
+                      {order.clearAction !== 'WAITER_CLEAR' && <button
                         onClick={() => { setSelectedException(order); setActionType('settle'); }}
                         className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors shadow-lg shadow-purple-600/20 flex items-center gap-1.5"
                         title="Permanently complete/clear this delivery order"
                       >
                         <RefreshCw size={14} />
                         Force Settle
-                      </button>
+                      </button>}
                     </div>
                   </td>
                 </tr>
@@ -213,7 +233,12 @@ export default function DeliveryExceptions() {
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-fade-in">
           <div className="bg-stitch-panel border border-stitch-border rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in">
             <h3 className="text-xl font-black text-white flex items-center gap-2 mb-4">
-              {actionType === 'settle' ? (
+              {actionType === 'waiter-clear' ? (
+                <>
+                  <RotateCcw className="text-red-500" />
+                  Clear Waiter Order & Release Table
+                </>
+              ) : actionType === 'settle' ? (
                 <>
                   <RefreshCw className="text-purple-400" />
                   Force Settle & Clear Order
@@ -232,7 +257,11 @@ export default function DeliveryExceptions() {
                 <strong className="text-orange-400">{selectedException.status.replace(/_/g, ' ')}</strong>
                 {selectedException.riderName ? ` (with ${selectedException.riderName})` : ' (no rider)'}.
                 <br /><br />
-                {actionType === 'settle' ? (
+                {actionType === 'waiter-clear' ? (
+                  <span>
+                    This will void the stale waiter order and release {selectedException.table_no ? <><strong className="text-white">table {selectedException.table_no}</strong> </> : 'the occupied table '}so a new waiter order can use it. It does not mark the order as paid.
+                  </span>
+                ) : actionType === 'settle' ? (
                   <span>
                     This will mark the order as <strong className="text-purple-300">SETTLED</strong> permanently. It will be cleared from the Rider app and POS queues immediately.
                   </span>
@@ -252,7 +281,7 @@ export default function DeliveryExceptions() {
                 <textarea
                   value={reason}
                   onChange={e => setReason(e.target.value)}
-                  placeholder={actionType === 'settle' ? 'e.g., Stale order from previous day, already completed/cleared.' : 'e.g., Order was dispatched without rider assignment.'}
+                  placeholder={actionType === 'waiter-clear' ? 'e.g., Stale waiter order; table is no longer occupied.' : actionType === 'settle' ? 'e.g., Stale order from previous day, already completed/cleared.' : 'e.g., Order was dispatched without rider assignment.'}
                   className="w-full bg-stitch-surface border border-stitch-border rounded-xl p-3 text-white focus:outline-none focus:border-purple-500 transition-colors resize-none h-24"
                   required
                   disabled={recovering}
@@ -284,7 +313,7 @@ export default function DeliveryExceptions() {
                   ) : (
                     <RotateCcw size={18} />
                   )}
-                  {recovering ? 'Processing...' : actionType === 'settle' ? 'Confirm Settle' : 'Confirm Reset'}
+                  {recovering ? 'Processing...' : actionType === 'waiter-clear' ? 'Clear & Release Table' : actionType === 'settle' ? 'Confirm Settle' : 'Confirm Reset'}
                 </button>
               </div>
             </form>

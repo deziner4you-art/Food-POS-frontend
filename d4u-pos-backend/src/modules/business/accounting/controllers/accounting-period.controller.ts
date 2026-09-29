@@ -1,10 +1,11 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { AccountingPeriodService } from '../services/accounting-period.service';
 import { CreateAccountingPeriodDto } from '../dto/create-accounting-period.dto';
 import { AccountingPeriodStatus } from '../enums/accounting-period-status.enum';
 
 @Controller('accounting/periods')
+@RequireModule('ACCOUNTING')
 export class AccountingPeriodController {
   constructor(private readonly periodService: AccountingPeriodService) {}
 

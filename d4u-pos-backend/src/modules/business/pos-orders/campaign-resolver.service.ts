@@ -83,6 +83,7 @@ export class CampaignResolverService {
   }
 
   async getCoreActiveCampaigns(store_id: number) {
+    if (!Number.isInteger(store_id) || store_id <= 0) return [];
     const capabilities = await this.subscriptions.getMarketingCapabilities(store_id);
     if (!capabilities.enabled) return [];
 
@@ -127,30 +128,21 @@ export class CampaignResolverService {
   async resolveVisibleCampaigns(params: { store_id?: number; channel: MarketingChannel }) {
     const { store_id, channel } = params;
     const publishField = CHANNEL_PUBLISH_FIELD[channel];
+    const normalizedStoreId = typeof store_id === 'number' && Number.isInteger(store_id) && store_id > 0
+      ? store_id
+      : null;
 
-    if (store_id) {
-      const capabilities = await this.subscriptions.getMarketingCapabilities(store_id);
+    if (normalizedStoreId !== null) {
+      const capabilities = await this.subscriptions.getMarketingCapabilities(normalizedStoreId);
       if (!capabilities.enabled) return [];
       if (channel === 'tv' && !capabilities.tvBoard) return [];
 
-      const campaigns = await this.getCoreActiveCampaigns(store_id);
+      const campaigns = await this.getCoreActiveCampaigns(normalizedStoreId);
       return campaigns.filter((c: any) => c[publishField] === true);
     }
 
-    // No store scoping available (legacy global consumers) — still enforce
-    // enabled/approved/soft-delete/schedule/Happy-Hour/publish-target/date range.
-    const campaigns = await this.prisma.marketingCampaign.findMany({
-      where: {
-        status: 'RUNNING',
-        is_active: true,
-        deleted_at: null,
-        approval_status: 'APPROVED',
-        [publishField]: true,
-      },
-      include: CAMPAIGN_INCLUDE,
-      orderBy: { priority: 'desc' },
-    });
-    const now = new Date();
-    return campaigns.filter((c) => this.isWithinActiveWindow(c, now) && (!c.end_date || new Date(c.end_date) >= now));
+    // No verified store identity means no tenant scope. Never execute a
+    // platform-wide campaign query for a public or legacy caller.
+    return [];
   }
 }

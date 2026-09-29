@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
-import { RequirePermissions } from '../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../common/decorators';
 import { StockRequestService } from './stock-request.service';
 import { CreateStockRequestDto, ResolveStockRequestDto } from './dto';
 
 @Controller('kitchen/stock-requests')
+@RequireModule('KDS')
 export class StockRequestController {
   constructor(private readonly service: StockRequestService) {}
 

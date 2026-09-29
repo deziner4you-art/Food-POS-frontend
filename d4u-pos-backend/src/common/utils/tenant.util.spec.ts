@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { assertOwnStore } from './tenant.util';
+import { assertTenantBrandAccess, assertTenantStoreAccess } from './tenant.util';
 
 // Task #2R-G1a: assertOwnStore is the strict active-store replacement for
 // validateTenantAccess on pos-orders/tables. #2R-G1-D found the real JWT
@@ -65,5 +66,62 @@ describe('assertOwnStore (Task #2R-G1a)', () => {
   it('9. never falls back to active_brand_id when store mismatches', () => {
     const user = { sub: 88, active_store_id: 67, active_brand_id: 1 };
     expect(() => assertOwnStore(user, 99)).toThrow(ForbiddenException);
+  });
+});
+
+describe('assertTenantStoreAccess (P0.4-C)', () => {
+  const makePrisma = (brandId = 10, roleName = 'Cashier') => ({
+    store: { findUnique: jest.fn().mockResolvedValue({ id: 7, brand_id: brandId }) },
+    user: { findUnique: jest.fn().mockResolvedValue({ role: { name: roleName } }) },
+  }) as any;
+
+  it('allows a normal user in the active store and brand', async () => {
+    await expect(assertTenantStoreAccess(makePrisma(), { sub: 5, active_store_id: 7, active_brand_id: 10 }, 7)).resolves.toBeUndefined();
+  });
+
+  it('rejects a cross-store request for a normal user', async () => {
+    await expect(assertTenantStoreAccess(makePrisma(), { sub: 5, active_store_id: 8, active_brand_id: 10 }, 7)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('allows Head Office within its active brand but rejects another brand', async () => {
+    await expect(assertTenantStoreAccess(makePrisma(10, 'HeadOffice'), { sub: 5, active_store_id: 8, active_brand_id: 10 }, 7)).resolves.toBeUndefined();
+    await expect(assertTenantStoreAccess(makePrisma(99, 'HeadOffice'), { sub: 5, active_store_id: 8, active_brand_id: 10 }, 7)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('allows Super Admin only for an existing requested store', async () => {
+    await expect(assertTenantStoreAccess(makePrisma(99, 'Super Admin'), { sub: 1 }, 7)).resolves.toBeUndefined();
+    const prisma = makePrisma();
+    prisma.store.findUnique.mockResolvedValue(null);
+    await expect(assertTenantStoreAccess(prisma, { sub: 1 }, 7)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('fails closed when authenticated tenant context is missing', async () => {
+    await expect(assertTenantStoreAccess(makePrisma(), { sub: 5 }, 7)).rejects.toThrow(ForbiddenException);
+    await expect(assertTenantStoreAccess(makePrisma(), { sub: 5, active_store_id: 7, active_brand_id: 10 }, undefined)).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe('assertTenantBrandAccess (P0.4-D2)', () => {
+  const makePrisma = (brandExists = true, roleName = 'Cashier') => ({
+    brand: { findUnique: jest.fn().mockImplementation(({ where }: any) => Promise.resolve(brandExists ? { id: where.id } : null)) },
+    user: { findUnique: jest.fn().mockResolvedValue({ role: { name: roleName } }) },
+  }) as any;
+
+  it('allows a normal user to access the active brand report', async () => {
+    await expect(assertTenantBrandAccess(makePrisma(), { sub: 5, active_brand_id: 10 }, 10)).resolves.toBeUndefined();
+  });
+
+  it('rejects a cross-brand report', async () => {
+    await expect(assertTenantBrandAccess(makePrisma(), { sub: 5, active_brand_id: 10 }, 99)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('allows Super Admin only for an existing brand', async () => {
+    await expect(assertTenantBrandAccess(makePrisma(true, 'Super Admin'), { sub: 1 }, 99)).resolves.toBeUndefined();
+    await expect(assertTenantBrandAccess(makePrisma(false, 'Super Admin'), { sub: 1 }, 99)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('fails closed when brand identity or authenticated context is missing', async () => {
+    await expect(assertTenantBrandAccess(makePrisma(), undefined, 10)).rejects.toThrow(ForbiddenException);
+    await expect(assertTenantBrandAccess(makePrisma(), { sub: 5, active_brand_id: 10 }, 0)).rejects.toThrow(ForbiddenException);
   });
 });

@@ -28,15 +28,41 @@ export default function TVDisplay() {
 
   // RULE 1: No || 1 fallback. undefined means "no session" and zero KOTs render.
   const currentStoreId: number | undefined = user?.store_id || undefined;
+  const [tvBoardEnabled, setTvBoardEnabled] = useState(false);
+  const [tvBoardEntitlementChecked, setTvBoardEntitlementChecked] = useState(false);
 
   // Remediation Batch 3 (Finding 4): TVDisplay MUST fail closed.
   // Never initialize from stale cached business day or retain cached ID on network failure.
   const [activeBusinessDayId, setActiveBusinessDayId] = useState<number | null>(null);
 
+  // The legacy /tv route is also a paid TV Board surface. Keep it closed
+  // until the current store's entitlement is confirmed by the backend.
+  useEffect(() => {
+    setTvBoardEnabled(false);
+    setTvBoardEntitlementChecked(false);
+    if (!isValidPosIntegerId(currentStoreId)) return;
+
+    let cancelled = false;
+    apiFetch(`/subscription/entitlements/current?store_id=${currentStoreId}`, { auth: true })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (cancelled) return;
+        setTvBoardEnabled(data?.capabilities?.tvBoard === true);
+        setTvBoardEntitlementChecked(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTvBoardEnabled(false);
+        setTvBoardEntitlementChecked(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [currentStoreId]);
+
   // Fetch and verify the authoritative current business day for this store on mount.
   // If backend indicates no active business day or network request fails, activeBusinessDayId is null.
   useEffect(() => {
-    if (!currentStoreId) return;
+    if (!tvBoardEnabled || !isValidPosIntegerId(currentStoreId)) return;
     apiFetch(`/business-day/current?store_id=${currentStoreId}`, { auth: true })
       .then(res => res.ok ? res.json() : null)
       .then(data => {
@@ -53,7 +79,7 @@ export default function TVDisplay() {
         setActiveBusinessDayId(null);
         localStorage.removeItem(`d4u_active_business_day_${currentStoreId}`);
       });
-  }, [currentStoreId]);
+  }, [currentStoreId, tvBoardEnabled]);
 
   // Clock tick for header time display
   const [now, setNow] = useState(Date.now());
@@ -68,11 +94,26 @@ export default function TVDisplay() {
 
   // Task #3A identity gate — applied uniformly to EVERY KOT before it can render.
   const eligibleKots = allKots.filter(k =>
-    isKotEligible(k, currentStoreId, activeBusinessDayId)
+    tvBoardEnabled && isKotEligible(k, currentStoreId, activeBusinessDayId)
   );
 
   const preparing = eligibleKots.filter(k => k.status === 'PREPARING');
   const ready = eligibleKots.filter(k => k.status === 'READY');
+
+  if (!tvBoardEnabled) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] text-white flex items-center justify-center p-8 text-center">
+        <div>
+          <h1 className="text-3xl font-black mb-3">TV Board Add-on Required</h1>
+          <p className="text-slate-400">
+            {tvBoardEntitlementChecked
+              ? 'This store package does not include the TV Board module.'
+              : 'Verifying TV Board access…'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-white flex flex-col font-sans overflow-hidden">

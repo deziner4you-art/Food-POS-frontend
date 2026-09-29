@@ -13,22 +13,26 @@ export class CmsService {
   // filtered by brand_id alone, so every banner leaked across every branch
   // of the same brand -- and with no brand check at all when store_id
   // wasn't passed, across brands too.
-  async getBanners(brand_id: number = 1, store_id?: number) {
-    const where: any = { brand_id };
-    if (store_id) {
-      // Resolve the real brand from store_id rather than trusting the
-      // separately-passed brand_id -- callers that only know their own
-      // store_id (the public website) should never be able to end up
-      // reading a different brand's banners via a mismatched/stale
-      // brand_id, same defense-in-depth the campaign resolver applies.
-      const store = await this.prisma.store.findUnique({ where: { id: store_id }, select: { brand_id: true } });
-      if (!store) return [];
-      where.brand_id = store.brand_id;
-      where.OR = [
+  async getBanners(brand_id?: number, store_id?: number) {
+    const normalizedStoreId = Number(store_id);
+    if (!Number.isInteger(normalizedStoreId) || normalizedStoreId <= 0) return [];
+
+    // Resolve the real brand from store_id rather than trusting the optional
+    // separately-passed brand_id. Public callers must always identify the
+    // branch they are asking for; there is no brand/store-1 fallback.
+    const store = await this.prisma.store.findUnique({
+      where: { id: normalizedStoreId },
+      select: { brand_id: true },
+    });
+    if (!store) return [];
+
+    const where: any = {
+      brand_id: store.brand_id,
+      OR: [
         { target_stores: { none: {} } },
-        { target_stores: { some: { id: store_id } } },
-      ];
-    }
+        { target_stores: { some: { id: normalizedStoreId } } },
+      ],
+    };
     return this.prisma.cmsBanner.findMany({
       where,
       include: { target_stores: { select: { id: true, name: true } } },
@@ -115,14 +119,19 @@ export class CmsService {
 
   // --- Settings ---
   async getSettings(store_id: number) {
+    const normalizedStoreId = Number(store_id);
+    if (!Number.isInteger(normalizedStoreId) || normalizedStoreId <= 0) {
+      throw new BadRequestException('A valid store_id is required.');
+    }
+
     let settings = await this.prisma.cmsSettings.findFirst({
-      where: { store_id },
+      where: { store_id: normalizedStoreId },
       include: { brand: true, store: true },
     });
 
     // Auto-create default settings if they don't exist
     if (!settings) {
-      const store = await this.prisma.store.findUnique({ where: { id: store_id } });
+      const store = await this.prisma.store.findUnique({ where: { id: normalizedStoreId } });
       if (!store) throw new Error('Store not found for CMS settings creation');
       
       settings = await this.prisma.cmsSettings.create({
@@ -130,7 +139,7 @@ export class CmsService {
         // matches the universal hardcoded rate every client displayed before
         // this field existed, so a brand-new branch doesn't silently start
         // at 0% tax until someone happens to open its settings.
-        data: { brand_id: store.brand_id, store_id, siteTitle: 'D4U Restaurant', tax_percentage: 10 },
+        data: { brand_id: store.brand_id, store_id: normalizedStoreId, siteTitle: 'D4U Restaurant', tax_percentage: 10 },
         include: { brand: true, store: true },
       });
     }

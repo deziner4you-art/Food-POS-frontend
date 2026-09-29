@@ -7,8 +7,7 @@ import { TrendingUp, DollarSign, ShoppingBag, Store, AlertCircle, ArrowRight } f
 import { useAdminContext } from '../context/AdminContext';
 import { customAlert } from '../utils/alerts';
 import { formatCurrency } from '../utils/currency';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3001' : 'https://pos-api.deziner4you.com';
+import { apiFetch } from '../utils/api';
 
 export default function Dashboard() {
   const [brandOverview, setBrandOverview] = useState<any[]>([]);
@@ -21,12 +20,19 @@ export default function Dashboard() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const storeIdParam = selectedBranchId ? selectedBranchId : 1; // Default to 1 if no "All" aggregation backend
+        const activeBrand = activeBrandId ? brands.find((brand) => brand.id === activeBrandId) : undefined;
+        const storeIdParam = selectedBranchId ?? activeBrand?.stores?.[0]?.id;
+        if (!activeBrandId || !storeIdParam) {
+          setBrandOverview([]);
+          setWeeklyTrend([]);
+          setTopProducts([]);
+          return;
+        }
 
         const [brandRes, weeklyRes, productsRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/reports/brand/1`),
-          fetch(`${BACKEND_URL}/reports/weekly?store_id=${storeIdParam}`),
-          fetch(`${BACKEND_URL}/reports/top-products?store_id=${storeIdParam}&limit=5`)
+          apiFetch(`/reports/brand/${activeBrandId}`),
+          apiFetch(`/reports/weekly?store_id=${storeIdParam}`),
+          apiFetch(`/reports/top-products?store_id=${storeIdParam}&limit=5`)
         ]);
 
         if (brandRes.ok) {
@@ -53,7 +59,7 @@ export default function Dashboard() {
       }
     };
     fetchData();
-  }, [selectedBranchId]);
+  }, [selectedBranchId, activeBrandId, brands]);
 
   if (loading) {
     return <div className="flex h-full items-center justify-center text-stitch-muted">Loading Analytics...</div>;

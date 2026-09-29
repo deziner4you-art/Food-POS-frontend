@@ -10,11 +10,12 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { RequireModule, RequirePermissions, CurrentUser } from '../../../common/decorators';
 import { SocialService } from './social.service';
 import { SelectFacebookPageDto, SelectInstagramAccountDto } from './dto';
 
 @Controller('marketing/social')
+@RequireModule('MARKETING')
 export class SocialController {
   constructor(private readonly socialService: SocialService) {}
 

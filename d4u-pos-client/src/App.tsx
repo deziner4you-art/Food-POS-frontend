@@ -1146,7 +1146,16 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut, hasKdsPackage 
       };
 
       const joinStore = () => {
-        socket.emit('join_store', { store_id: currentUser?.store_id });
+        const storeId = currentUser?.store_id;
+        const token = localStorage.getItem('d4u_pos_token');
+        socket.emit('join_store', { store_id: storeId });
+        if (storeId && token) {
+          // KOT lifecycle events are no longer sent through the general store
+          // room. POS-only tenants use KOT_PRINT; dedicated KDS uses its own
+          // KDS room in StitchKDS.tsx.
+          socket.emit('join_kot_store', { store_id: storeId, token });
+          socket.emit('join_marketing_store', { store_id: storeId, token });
+        }
       };
 
       if (socket.connected) {

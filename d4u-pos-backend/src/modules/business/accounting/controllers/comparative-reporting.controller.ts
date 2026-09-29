@@ -1,10 +1,11 @@
 import { Controller, Get, Query, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { ComparativeReportingService } from '../services/comparative-reporting.service';
 import { ComparativeFilter } from '../interfaces/comparative-report.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/comparative')
+@RequireModule('ACCOUNTING')
 export class ComparativeReportingController {
   constructor(private readonly compService: ComparativeReportingService) {}
 

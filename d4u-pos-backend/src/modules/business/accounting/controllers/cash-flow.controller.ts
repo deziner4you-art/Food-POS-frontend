@@ -1,10 +1,11 @@
 import { Controller, Get, Query, Req, ParseIntPipe } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { CashFlowService } from '../services/cash-flow.service';
 import { CashFlowFilter } from '../interfaces/cash-flow-filter.interface';
 import { getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting/cash-flow')
+@RequireModule('ACCOUNTING')
 export class CashFlowController {
   constructor(private readonly cfService: CashFlowService) {}
 

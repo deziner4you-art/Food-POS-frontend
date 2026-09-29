@@ -1,11 +1,12 @@
 import { Controller, Get, Post, Body, Param, Req } from '@nestjs/common';
-import { RequirePermissions } from '../../../../common/decorators';
+import { RequireModule, RequirePermissions } from '../../../../common/decorators';
 import { AccountsReceivableService } from '../services/accounts-receivable.service';
 import { CustomerReceiptService } from '../services/customer-receipt.service';
 import { CustomerAgingService } from '../services/customer-aging.service';
 import { getSessionStoreId, getSessionUserId } from '../../../../common/utils/session-context.util';
 
 @Controller('accounting')
+@RequireModule('ACCOUNTING')
 export class AccountsReceivableController {
   constructor(
     private readonly receivableService: AccountsReceivableService,

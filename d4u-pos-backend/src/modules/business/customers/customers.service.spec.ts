@@ -25,7 +25,7 @@ describe('CustomersService', () => {
   beforeEach(async () => {
     prisma = {
       store: { findUnique: jest.fn() },
-      customer: { findUnique: jest.fn(), findMany: jest.fn() },
+      customer: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn() },
       onlineOrder: { findMany: jest.fn() },
     };
 
@@ -172,11 +172,51 @@ describe('CustomersService', () => {
     });
   });
 
+  describe('createCustomer — tenant identity', () => {
+    it('derives the created customer brand from the authenticated store, not the request body', async () => {
+      prisma.store.findUnique.mockResolvedValue(STORE_A);
+      prisma.customer.findUnique.mockResolvedValue(null);
+      prisma.customer.create.mockResolvedValue({
+        id: 501, brand_id: STORE_A.brand_id, phone: '923000000002', name: 'New Customer', address: null,
+      });
+
+      await service.createCustomer(
+        { brand_id: STORE_B.brand_id, phone: '+923000000002', name: 'New Customer' },
+        STAFF_BRAND_A,
+      );
+
+      expect(prisma.customer.create).toHaveBeenCalledWith({
+        data: { brand_id: STORE_A.brand_id, phone: '923000000002', name: 'New Customer', address: null },
+      });
+    });
+
+    it('rejects customer creation without an authenticated store', async () => {
+      await expect(service.createCustomer({ brand_id: 1, phone: '923000000002', name: 'New Customer' }, undefined)).rejects.toThrow(BadRequestException);
+      expect(prisma.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('supports public website registration by deriving brand from the submitted store', async () => {
+      prisma.store.findUnique.mockResolvedValue(STORE_B);
+      prisma.customer.findUnique.mockResolvedValue(null);
+      prisma.customer.create.mockResolvedValue({
+        id: 502, brand_id: STORE_B.brand_id, phone: '923000000003', name: 'Website Customer', address: null,
+      });
+
+      await service.createCustomer(
+        { brand_id: STORE_A.brand_id, store_id: STORE_B.id, phone: '+923000000003', name: 'Website Customer' },
+      );
+
+      expect(prisma.customer.create).toHaveBeenCalledWith({
+        data: { brand_id: STORE_B.brand_id, phone: '923000000003', name: 'Website Customer', address: null },
+      });
+    });
+  });
+
   // Task #2Q-D1: the internal OnlineOrder query used to be unscoped by any
   // tenant boundary -- same class of leak as OnlineOrdersService.
   // getOrdersByPhone, reached via a customer id instead of a phone param.
   describe('getCustomerOrders — tenant isolation (Task #2Q-D1)', () => {
-    const CUSTOMER_WITH_ORDERS = { id: 500, phone: '923000000001', orders: [], addresses: [] };
+    const CUSTOMER_WITH_ORDERS = { id: 500, brand_id: STORE_A.brand_id, phone: '923000000001', orders: [], addresses: [] };
 
     it('10. same-store lookup -- the OnlineOrder query is constrained to the caller\'s own store', async () => {
       prisma.store.findUnique.mockResolvedValue(STORE_A);
@@ -197,11 +237,8 @@ describe('CustomersService', () => {
       prisma.customer.findUnique.mockResolvedValue(CUSTOMER_WITH_ORDERS);
       prisma.onlineOrder.findMany.mockResolvedValue([]);
 
-      await service.getCustomerOrders(500, WAITER_B); // synthetic session, store B
-
-      const calledWhere = prisma.onlineOrder.findMany.mock.calls[0][0].where;
-      expect(calledWhere.store_id).toBe(STORE_B.id);
-      expect(calledWhere.store_id).not.toBe(STORE_A.id);
+      await expect(service.getCustomerOrders(500, WAITER_B)).rejects.toThrow(NotFoundException); // customer belongs to A
+      expect(prisma.onlineOrder.findMany).not.toHaveBeenCalled();
     });
 
     it('12. missing/invalid authenticated store -> rejected safely, no customer or order query attempted', async () => {
@@ -212,12 +249,23 @@ describe('CustomersService', () => {
 
     it('13. the synthetic Waiter session shape (store_id, no brand claim) resolves the store correctly', async () => {
       prisma.store.findUnique.mockResolvedValue(STORE_B);
-      prisma.customer.findUnique.mockResolvedValue(CUSTOMER_WITH_ORDERS);
+      prisma.customer.findUnique.mockResolvedValue({ ...CUSTOMER_WITH_ORDERS, brand_id: STORE_B.brand_id });
       prisma.onlineOrder.findMany.mockResolvedValue([]);
 
       await service.getCustomerOrders(500, WAITER_B);
 
-      expect(prisma.store.findUnique).toHaveBeenCalledWith({ where: { id: STORE_B.id } });
+      expect(prisma.store.findUnique).toHaveBeenCalledWith({
+        where: { id: STORE_B.id },
+        select: { id: true, brand_id: true },
+      });
+    });
+
+    it('14. cross-brand customer history is rejected before online orders are queried', async () => {
+      prisma.store.findUnique.mockResolvedValue(STORE_B);
+      prisma.customer.findUnique.mockResolvedValue(CUSTOMER_WITH_ORDERS);
+
+      await expect(service.getCustomerOrders(500, WAITER_B)).rejects.toThrow(NotFoundException);
+      expect(prisma.onlineOrder.findMany).not.toHaveBeenCalled();
     });
   });
 });

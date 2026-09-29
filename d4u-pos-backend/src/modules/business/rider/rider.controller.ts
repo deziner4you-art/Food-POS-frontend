@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { RequireModule, RequirePermissions, CurrentUser } from '../../../common/decorators';
 import { RiderService } from './rider.service';
 import { UpdateGpsDto, ClaimOrderDto } from './dto';
 
 @Controller('rider')
+@RequireModule('RIDER')
 export class RiderController {
   constructor(private readonly service: RiderService) {}
 
@@ -30,6 +31,7 @@ export class RiderController {
 }
 
 @Controller('rider-orders')
+@RequireModule('RIDER')
 export class RiderOrdersController {
   constructor(private readonly service: RiderService) {}
 
@@ -138,5 +140,17 @@ export class RiderOrdersController {
     @Query('entityType') entityType?: string,
   ) {
     return this.service.adminForceSettleDeliveryException(Number(id), user, body.reason, entityType);
+  }
+
+  // Unified Order Clearance: clears a stale waiter-terminal order and
+  // releases its occupied table. This is an admin/manager action only.
+  @RequirePermissions('delivery.dispatch.assign')
+  @Patch(':id/admin-clear-waiter')
+  adminClearWaiterOrder(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.service.adminClearWaiterOrder(Number(id), user, body.reason);
   }
 }
