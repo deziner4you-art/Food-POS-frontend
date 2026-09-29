@@ -55,6 +55,12 @@ jobs:
           npm ci
           npm run build
 
+      - name: Build Admin Panel
+        working-directory: ./d4u-admin
+        run: |
+          npm ci
+          npm run build
+
       - name: Ensure Target Directories Exist & Backup
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -64,6 +70,7 @@ jobs:
           script: |
             mkdir -p /www/wwwroot/d4u-pos-backend/
             mkdir -p /www/wwwroot/d4u-pos-client/
+            mkdir -p /www/wwwroot/d4u-admin/
             
             # Backup the current application state for rollback, ignoring persistent data
             if [ -d "/www/wwwroot/d4u-pos-backend" ]; then
@@ -80,7 +87,7 @@ jobs:
           target: "/www/wwwroot/"
           strip_components: 0
 
-      - name: Deploy Frontend Artifacts via SSH
+      - name: Deploy POS Client via SSH
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_SSH_HOST_POS }}
@@ -88,6 +95,16 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY_POS }}
           source: "d4u-pos-client/dist/*"
           target: "/www/wwwroot/d4u-pos-client/"
+          strip_components: 2
+
+      - name: Deploy Admin Panel via SSH
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_SSH_HOST_POS }}
+          username: ${{ secrets.VPS_SSH_USER_POS }}
+          key: ${{ secrets.VPS_SSH_KEY_POS }}
+          source: "d4u-admin/dist/*"
+          target: "/www/wwwroot/d4u-admin/"
           strip_components: 2
 
       - name: Restart Backend & Health Check

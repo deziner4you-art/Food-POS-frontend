@@ -390,6 +390,29 @@ export default function SuperAdmin() {
               </tbody>
             </table>
           </div>
+
+          {/* Bottom Save Bar */}
+          <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200 shadow-sm mt-4">
+            <div className="text-sm text-gray-600 font-medium">
+              {hasPricingChanges ? (
+                <span className="text-amber-600 font-bold">● You have unsaved pricing changes</span>
+              ) : (
+                <span className="text-gray-500">All module rates are saved.</span>
+              )}
+            </div>
+            <button 
+              type="button"
+              onClick={handleSaveAllPricing}
+              disabled={savingPricing}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md ${
+                hasPricingChanges
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              } disabled:opacity-50`}
+            >
+              <Save size={18} /> {savingPricing ? 'Saving...' : `Save Pricing (${globalCurrency})`}
+            </button>
+          </div>
         </div>
       )}
 

@@ -649,12 +649,16 @@ export async function seedRbac(prisma: PrismaClient) {
     'Business Owner': [
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
-      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel'
+      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
+      'finance.reports.view',
+      'finance.reports.export'
     ],
     'Branch Owner': [
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
-      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel'
+      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
+      'finance.reports.view',
+      'finance.reports.export'
     ],
   };
 

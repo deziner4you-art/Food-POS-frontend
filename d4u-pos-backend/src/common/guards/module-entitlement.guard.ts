@@ -51,7 +51,18 @@ export class ModuleEntitlementGuard implements CanActivate {
       request.params?.store_id ??
       request.body?.store_id ??
       user?.active_store_id;
-    const storeId = positiveInteger(requestedStoreId);
+    let storeId = positiveInteger(requestedStoreId);
+    if (!storeId) {
+      const requestedBrandId = positiveInteger(
+        request.params?.brand_id ??
+        request.query?.brand_id ??
+        user?.active_brand_id ??
+        user?.brand_id
+      );
+      if (requestedBrandId && typeof this.entitlements.findFirstStoreIdForBrand === 'function') {
+        storeId = await this.entitlements.findFirstStoreIdForBrand(requestedBrandId);
+      }
+    }
     if (!storeId) {
       throw new ForbiddenException({
         message: 'MODULE_NOT_INCLUDED',

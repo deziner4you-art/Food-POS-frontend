@@ -123,6 +123,17 @@ export class EntitlementService {
     return this.buildSnapshot(store);
   }
 
+  async findFirstStoreIdForBrand(brandId: number): Promise<number | null> {
+    const normalizedBrandId = positiveInteger(brandId);
+    if (!normalizedBrandId) return null;
+    const store = await this.prisma.store.findFirst({
+      where: { brand_id: normalizedBrandId, status: { not: 'RECYCLED' } },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    return store?.id ?? null;
+  }
+
   async hasModule(storeId: number, moduleKey: unknown): Promise<boolean> {
     const normalizedKey = normalizeModuleKey(moduleKey);
     if (!normalizedKey) return false;
