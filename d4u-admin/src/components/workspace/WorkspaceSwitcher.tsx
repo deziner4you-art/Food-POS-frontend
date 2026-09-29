@@ -12,7 +12,7 @@ export default function WorkspaceSwitcher({ user }: { user: any }) {
   const [isLoading, setIsLoading] = useState(false);
 
   const isSuperAdmin = user?.role === 'Super Admin';
-  const isBrandAdmin = user?.role === 'Business Owner' || user?.role === 'Business Admin' || user?.role === 'HeadOffice';
+  const isBrandAdmin = user?.role === 'Brand Owner' || user?.role === 'Business Owner' || user?.role === 'Business Admin' || user?.role === 'HeadOffice';
   const isBranchManager = !isSuperAdmin && !isBrandAdmin;
 
   useEffect(() => {

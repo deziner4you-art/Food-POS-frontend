@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
-import { Store, PackageOpen, ChefHat, Globe, LayoutDashboard, LogOut, Lock, Users, Activity, ShoppingCart } from 'lucide-react';
+import { Store, PackageOpen, ChefHat, Globe, LayoutDashboard, LogOut, Lock, Users, Activity, ShoppingCart, Smartphone } from 'lucide-react';
 import { AdminProvider, useAdminContext } from './context/AdminContext';
 import type { AdminModuleKey } from './context/AdminContext';
 import { PackageProvider } from './context/PackageContext';
@@ -54,7 +54,8 @@ function AdminLayout({ children, onLogout, user, forceBootstrap }: { children: R
     user?.role === 'Super Admin' || (!entitlementLoading && entitlementChecked && hasModule(moduleKey));
 
   let navItems = forceBootstrap ? [] : [
-    { path: '/', label: 'Live Analytics', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' }
+    { path: '/', label: 'Live Analytics', icon: LayoutDashboard, color: 'text-blue-400', bg: 'bg-blue-500/20' },
+    { path: '/owner', label: 'Owner Executive App', icon: Smartphone, color: 'text-purple-400', bg: 'bg-purple-500/20' }
   ];
 
   if (isBranchEntered) {
@@ -290,8 +291,17 @@ export default function App() {
       if (!res.ok) throw new Error('Invalid Credentials');
       const data = await res.json();
 
-      if (data.user.role !== 'Super Admin' && data.user.role !== 'Business Admin' && data.user.role !== 'Admin' && data.user.role !== 'HeadOffice') {
-        throw new Error('Access Denied. Admins only.');
+      const ADMIN_ROLES = [
+        'Super Admin',
+        'Business Admin',
+        'Admin',
+        'HeadOffice',
+        'Brand Owner',
+        'Business Owner',
+        'Branch Owner',
+      ];
+      if (!ADMIN_ROLES.some(r => r.toLowerCase() === (data.user.role || '').trim().toLowerCase())) {
+        throw new Error('Access Denied. Admins and Owners only.');
       }
 
       setUser(data.user);
@@ -321,13 +331,11 @@ export default function App() {
     return () => clearInterval(interval);
   }, [user]);
 
-  // Allow /setup and /owner to load without waiting for settings or auth
+  // Allow /setup to load without waiting for settings or auth
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const isSetupRoute = currentPath === '/setup';
-  const isOwnerRoute = currentPath === '/owner';
+  const isSetupRoute = currentPath === '/setup' || currentPath === '/admin/setup';
 
   if (isSetupRoute) return <BrowserRouter basename="/admin"><Routes><Route path="/setup" element={<SetupWizard />} /></Routes></BrowserRouter>;
-  if (isOwnerRoute) return <BrowserRouter basename="/admin"><Routes><Route path="/owner" element={<OwnerApp />} /></Routes></BrowserRouter>;
 
   if (!settings) return <div className="h-screen bg-slate-900 flex items-center justify-center text-white">Loading System...</div>;
 
