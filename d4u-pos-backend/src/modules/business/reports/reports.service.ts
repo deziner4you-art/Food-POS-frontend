@@ -55,6 +55,11 @@ export class ReportsService {
     const cashOrders = orders.filter((o) => o.payment_method === 'CASH').length;
     const cardOrders = orders.filter((o) => o.payment_method === 'CARD').length;
 
+    // Order-type breakdown
+    const dineInOrders   = orders.filter((o) => o.order_source === 'Dine In');
+    const takeAwayOrders = orders.filter((o) => o.order_source === 'Take Away');
+    const deliveryOrders = orders.filter((o) => o.order_source === 'Delivery');
+
     return {
       date: targetDate.toISOString().split('T')[0],
       totalSales,
@@ -65,6 +70,11 @@ export class ReportsService {
       cashOrders,
       cardOrders,
       avgOrderValue: orders.length > 0 ? totalSales / orders.length : 0,
+      orderTypeBreakdown: {
+        dineIn:   { orders: dineInOrders.length,   sales: dineInOrders.reduce((s, o)   => s + o.total_amount, 0) },
+        takeAway: { orders: takeAwayOrders.length,  sales: takeAwayOrders.reduce((s, o) => s + o.total_amount, 0) },
+        delivery: { orders: deliveryOrders.length,  sales: deliveryOrders.reduce((s, o) => s + o.total_amount, 0) },
+      },
     };
   }
 
@@ -162,16 +172,28 @@ export class ReportsService {
       entry.total_discount += order.discount;
     }
 
+    // Order-type breakdown across all orders in period
+    const dineInOrders   = allOrders.filter((o) => o.order_source === 'Dine In');
+    const takeAwayOrders = allOrders.filter((o) => o.order_source === 'Take Away');
+    const deliveryOrders = allOrders.filter((o) => o.order_source === 'Delivery');
+
     return {
       overview: {
         posSales,
         onlineSales,
         totalSales,
+        totalOrders: allOrders.length,
         totalDiscount,
         posOrders: posOrders.length,
         onlineOrders: onlineOrdersDb.length,
-        totalOrders: allOrders.length,
         voidedCount,
+        voidedOrders: voidedCount,
+        avgOrderValue: allOrders.length > 0 ? totalSales / allOrders.length : 0,
+      },
+      orderTypeBreakdown: {
+        dineIn:   { orders: dineInOrders.length,   sales: dineInOrders.reduce((s, o)   => s + o.total_amount, 0) },
+        takeAway: { orders: takeAwayOrders.length,  sales: takeAwayOrders.reduce((s, o) => s + o.total_amount, 0) },
+        delivery: { orders: deliveryOrders.length,  sales: deliveryOrders.reduce((s, o) => s + o.total_amount, 0) },
       },
       cashierBreakdown: Array.from(cashierBreakdownMap.values()),
     };

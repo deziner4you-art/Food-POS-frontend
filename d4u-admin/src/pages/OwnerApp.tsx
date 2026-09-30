@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Store, TrendingUp, PackageOpen, PieChart, AlertTriangle,
   Users, RefreshCcw, ArrowLeft, ShieldAlert, Building2,
-  ChevronDown, Calendar, Filter,
+  ChevronDown, Calendar, Filter, UtensilsCrossed, ShoppingBag, Bike,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAdminContext } from '../context/AdminContext';
@@ -32,45 +32,68 @@ function firstDayOfMonthStr() {
 function firstDayOfYearStr() {
   return `${new Date().getFullYear()}-01-01`;
 }
-
 function dateRangeForPeriod(period: FilterPeriod, customFrom: string, customTo: string): { from: string; to: string } {
   const today = todayStr();
   switch (period) {
-    case 'today':      return { from: today,                to: today };
-    case 'yesterday':  return { from: yesterdayStr(),        to: yesterdayStr() };
-    case 'weekly':     return { from: nDaysAgoStr(6),        to: today };
-    case 'monthly':    return { from: firstDayOfMonthStr(),  to: today };
-    case 'yearly':     return { from: firstDayOfYearStr(),   to: today };
-    case 'range':      return { from: customFrom || nDaysAgoStr(6), to: customTo || today };
+    case 'today':     return { from: today,               to: today };
+    case 'yesterday': return { from: yesterdayStr(),       to: yesterdayStr() };
+    case 'weekly':    return { from: nDaysAgoStr(6),       to: today };
+    case 'monthly':   return { from: firstDayOfMonthStr(), to: today };
+    case 'yearly':    return { from: firstDayOfYearStr(),  to: today };
+    case 'range':     return { from: customFrom || nDaysAgoStr(6), to: customTo || today };
   }
 }
 
 const PERIOD_LABELS: Record<FilterPeriod, string> = {
-  today:     "Today",
-  yesterday: "Yesterday",
-  weekly:    "This Week",
-  monthly:   "This Month",
-  yearly:    "This Year",
-  range:     "Date Range",
+  today:     'Today',
+  yesterday: 'Yesterday',
+  weekly:    'This Week',
+  monthly:   'This Month',
+  yearly:    'This Year',
+  range:     'Date Range',
 };
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Helpers: normalise API response ─────────────────────────────────────────
+
+function getSalesValue(d: any)    { return d?.totalSales   ?? d?.overview?.totalSales   ?? 0; }
+function getOrdersValue(d: any)   { return d?.totalOrders  ?? d?.overview?.totalOrders  ?? 0; }
+function getAvgValue(d: any)      { return d?.avgOrderValue ?? d?.overview?.avgOrderValue ?? 0; }
+function getVoidsValue(d: any)    { return d?.voidedOrders  ?? d?.overview?.voidedOrders  ?? d?.overview?.voidedCount ?? 0; }
+function getDiscountValue(d: any) { return d?.totalDiscount ?? d?.overview?.totalDiscount ?? 0; }
+function getOrderTypeBreakdown(d: any) {
+  return d?.orderTypeBreakdown ?? null;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function OwnerApp() {
   const navigate = useNavigate();
   const { activeBrandId, setActiveBrandId, brands, branches, selectedBranchId } = useAdminContext();
 
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState<string | null>(null);
-  const [overview, setOverview]         = useState<any>(null);
-  const [selectedStore, setSelectedStore] = useState<number | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState<string | null>(null);
+  const [overview, setOverview]   = useState<any>(null);
+
+  // ── KEY FIX: Use a ref to always hold the LATEST selectedStore value.
+  // This prevents the auto-refresh closure from reading a stale initial null.
+  const [selectedStore, _setSelectedStore] = useState<number | null>(null);
+  const selectedStoreRef = useRef<number | null>(null);
+  const setSelectedStore = (id: number | null) => {
+    selectedStoreRef.current = id;
+    _setSelectedStore(id);
+  };
 
   // Filter state
-  const [period, setPeriod]             = useState<FilterPeriod>('today');
-  const [customFrom, setCustomFrom]     = useState(nDaysAgoStr(6));
-  const [customTo, setCustomTo]         = useState(todayStr());
-  const [filterData, setFilterData]     = useState<any>(null);
+  const [period, setPeriod]         = useState<FilterPeriod>('today');
+  const [customFrom, setCustomFrom] = useState(nDaysAgoStr(6));
+  const [customTo, setCustomTo]     = useState(todayStr());
+  const [filterData, setFilterData] = useState<any>(null);
   const [filterLoading, setFilterLoading] = useState(false);
+
+  // Period ref — same pattern as store ref so fetchFilteredData always gets latest
+  const periodRef    = useRef<FilterPeriod>('today');
+  const customFromRef = useRef(nDaysAgoStr(6));
+  const customToRef   = useRef(todayStr());
 
   // Authenticated user
   const user = useMemo(() => {
@@ -81,15 +104,10 @@ export default function OwnerApp() {
   }, []);
 
   // Effective brand
-  const effectiveBrandId = useMemo(() => {
-    return (
-      activeBrandId ||
-      user?.brand_id ||
-      user?.active_brand_id ||
-      user?.brand?.id ||
-      (brands && brands.length > 0 ? brands[0].id : null)
-    );
-  }, [activeBrandId, user, brands]);
+  const effectiveBrandId = useMemo(() =>
+    activeBrandId || user?.brand_id || user?.active_brand_id || user?.brand?.id ||
+    (brands && brands.length > 0 ? brands[0].id : null),
+  [activeBrandId, user, brands]);
 
   // Brand display name
   const brandName = useMemo(() => {
@@ -103,7 +121,34 @@ export default function OwnerApp() {
     if (!activeBrandId && effectiveBrandId) setActiveBrandId(effectiveBrandId);
   }, [activeBrandId, effectiveBrandId, setActiveBrandId]);
 
-  // ── Fetch overview (brand level, always today) ──────────────────────────────
+  // ── Fetch filtered data ────────────────────────────────────────────────────
+  const fetchFilteredData = useCallback(async (
+    storeId: number,
+    p: FilterPeriod,
+    cFrom: string,
+    cTo: string,
+  ) => {
+    if (!storeId) return;
+    setFilterLoading(true);
+    setFilterData(null);
+    try {
+      const { from, to } = dateRangeForPeriod(p, cFrom, cTo);
+      let res: Response;
+      if (p === 'today' || p === 'yesterday') {
+        res = await apiFetch(`/reports/daily?store_id=${storeId}&date=${from}`);
+      } else {
+        res = await apiFetch(`/reports/branch-analytics?store_id=${storeId}&start_date=${from}&end_date=${to}`);
+      }
+      if (res.ok) setFilterData(await res.json());
+      else setFilterData(null);
+    } catch {
+      setFilterData(null);
+    } finally {
+      setFilterLoading(false);
+    }
+  }, []);
+
+  // ── Fetch brand overview (auto-refresh) ────────────────────────────────────
   const fetchOverview = useCallback(async () => {
     if (!effectiveBrandId) {
       if (brands.length === 0) { setLoading(true); return; }
@@ -115,7 +160,7 @@ export default function OwnerApp() {
     setError(null);
     try {
       const candidateStoreId =
-        selectedStore ||
+        selectedStoreRef.current ||   // ← always reads LATEST value, never stale
         selectedBranchId ||
         user?.active_store_id ||
         user?.store_id ||
@@ -130,12 +175,20 @@ export default function OwnerApp() {
         const data = await res.json();
         setOverview(data);
         if (data.stores && data.stores.length > 0) {
-          const firstId = selectedStore && data.stores.some((s: any) => s.store_id === selectedStore)
-            ? selectedStore
-            : data.stores[0].store_id;
-          setSelectedStore(firstId);
+          // ── KEY FIX: if a store is already selected AND it still exists in
+          // the response, keep it. Never reset to the first store on refresh.
+          const currentId = selectedStoreRef.current;
+          const stillExists = currentId && data.stores.some((s: any) => s.store_id === currentId);
+          if (!stillExists) {
+            // Only auto-select on first load (no store chosen yet)
+            const firstId = data.stores[0].store_id;
+            setSelectedStore(firstId);
+            fetchFilteredData(firstId, periodRef.current, customFromRef.current, customToRef.current);
+          }
+          // If stillExists → do nothing: keep current branch + keep current filterData
         } else {
           setSelectedStore(null);
+          setFilterData(null);
         }
       } else {
         const errJson = await res.json().catch(() => null);
@@ -156,38 +209,7 @@ export default function OwnerApp() {
     } finally {
       setLoading(false);
     }
-  }, [effectiveBrandId, selectedStore, selectedBranchId, user, brands, branches]);
-
-  // ── Fetch filtered data for selected store + period ─────────────────────────
-  const fetchFilteredData = useCallback(async (storeId: number, p: FilterPeriod, cFrom: string, cTo: string) => {
-    if (!storeId) return;
-    setFilterLoading(true);
-    setFilterData(null);
-    try {
-      const { from, to } = dateRangeForPeriod(p, cFrom, cTo);
-
-      // For today/yesterday use the daily endpoint; for ranges use branch-analytics
-      let res: Response;
-      if (p === 'today') {
-        res = await apiFetch(`/reports/daily?store_id=${storeId}&date=${from}`);
-      } else if (p === 'yesterday') {
-        res = await apiFetch(`/reports/daily?store_id=${storeId}&date=${from}`);
-      } else {
-        res = await apiFetch(`/reports/branch-analytics?store_id=${storeId}&start_date=${from}&end_date=${to}`);
-      }
-
-      if (res.ok) {
-        const data = await res.json();
-        setFilterData(data);
-      } else {
-        setFilterData(null);
-      }
-    } catch {
-      setFilterData(null);
-    } finally {
-      setFilterLoading(false);
-    }
-  }, []);
+  }, [effectiveBrandId, selectedBranchId, user, brands, branches, fetchFilteredData]);
 
   // Auto-load on mount and every 30s
   useEffect(() => {
@@ -195,11 +217,6 @@ export default function OwnerApp() {
     const iv = setInterval(fetchOverview, 30000);
     return () => clearInterval(iv);
   }, [effectiveBrandId]);
-
-  // Fetch filtered data whenever store or period changes
-  useEffect(() => {
-    if (selectedStore) fetchFilteredData(selectedStore, period, customFrom, customTo);
-  }, [selectedStore, period, customFrom, customTo]);
 
   // ── Store dropdown change ────────────────────────────────────────────────────
   const handleStoreChange = (storeId: number) => {
@@ -210,21 +227,19 @@ export default function OwnerApp() {
   // ── Period change ────────────────────────────────────────────────────────────
   const handlePeriodChange = (p: FilterPeriod) => {
     setPeriod(p);
-    if (p !== 'range' && selectedStore) {
-      fetchFilteredData(selectedStore, p, customFrom, customTo);
+    periodRef.current = p;
+    if (p !== 'range' && selectedStoreRef.current) {
+      fetchFilteredData(selectedStoreRef.current, p, customFrom, customTo);
     }
   };
 
   const applyCustomRange = () => {
-    if (selectedStore) fetchFilteredData(selectedStore, 'range', customFrom, customTo);
+    customFromRef.current = customFrom;
+    customToRef.current   = customTo;
+    if (selectedStoreRef.current) {
+      fetchFilteredData(selectedStoreRef.current, 'range', customFrom, customTo);
+    }
   };
-
-  // ── Helper: normalise API response fields for display ───────────────────────
-  const getSalesValue   = () => filterData?.totalSales   ?? filterData?.total_sales  ?? 0;
-  const getOrdersValue  = () => filterData?.totalOrders  ?? filterData?.total_orders ?? 0;
-  const getAvgValue     = () => filterData?.avgOrderValue ?? filterData?.avg_order_value ?? 0;
-  const getVoidsValue   = () => filterData?.voidedOrders  ?? filterData?.voided_orders  ?? 0;
-  const getDiscountValue = () => filterData?.totalDiscount ?? filterData?.total_discount ?? 0;
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Loading / error / empty states
@@ -272,7 +287,7 @@ export default function OwnerApp() {
         <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-lg border border-gray-100">
           <Store className="text-purple-600 mx-auto mb-4" size={40} />
           <h2 className="text-xl font-bold text-gray-900 mb-2">No Active Branches Found</h2>
-          <p className="text-sm text-gray-500 mb-6">There are no operational stores registered under this brand yet.</p>
+          <p className="text-sm text-gray-500 mb-6">No operational stores registered under this brand yet.</p>
           <div className="flex flex-col gap-3">
             <button onClick={fetchOverview} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl transition-colors">Refresh</button>
             <button onClick={() => navigate('/')} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-colors">Back to HQ Dashboard</button>
@@ -284,6 +299,7 @@ export default function OwnerApp() {
 
   const storeList: any[] = overview.stores || [];
   const selectedStoreObj = storeList.find((s: any) => s.store_id === selectedStore);
+  const orderType = getOrderTypeBreakdown(filterData);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Main render
@@ -294,7 +310,6 @@ export default function OwnerApp() {
       {/* ── Top header ─────────────────────────────────────────────────────── */}
       <div className="bg-gradient-to-r from-purple-800 to-indigo-900 text-white px-5 pt-10 pb-6 shadow-lg rounded-b-3xl">
         <div className="flex justify-between items-center mb-5">
-          {/* Left: back + brand name */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/')}
@@ -308,8 +323,6 @@ export default function OwnerApp() {
               <p className="text-purple-200 text-xs font-medium">Live Analytics &amp; Performance</p>
             </div>
           </div>
-
-          {/* Right: brand switcher + refresh */}
           <div className="flex items-center gap-2">
             {brands.length > 1 && (
               <select
@@ -357,9 +370,7 @@ export default function OwnerApp() {
               onChange={(e) => handleStoreChange(Number(e.target.value))}
               className="w-full appearance-none bg-white border-2 border-purple-200 focus:border-purple-500 text-gray-800 font-semibold text-sm rounded-2xl px-4 py-3 pr-10 outline-none transition-all shadow-sm"
             >
-              {storeList.length === 0 && (
-                <option value="">No branches available</option>
-              )}
+              {storeList.length === 0 && <option value="">No branches available</option>}
               {storeList.map((st: any) => (
                 <option key={st.store_id} value={st.store_id}>
                   {st.store_name} — Rs. {(st.today_sales || 0).toLocaleString()} today
@@ -381,8 +392,6 @@ export default function OwnerApp() {
             <h3 className="text-gray-700 font-bold text-sm flex items-center gap-2 mb-3">
               <Filter size={15} className="text-purple-600" /> Filter Period
             </h3>
-
-            {/* Period pill buttons */}
             <div className="flex flex-wrap gap-2 mb-3">
               {(Object.keys(PERIOD_LABELS) as FilterPeriod[]).map((p) => (
                 <button
@@ -398,8 +407,6 @@ export default function OwnerApp() {
                 </button>
               ))}
             </div>
-
-            {/* Date range pickers (only when 'range' selected) */}
             {period === 'range' && (
               <div className="flex gap-3 items-end mt-2">
                 <div className="flex-1">
@@ -434,7 +441,7 @@ export default function OwnerApp() {
           </div>
         )}
 
-        {/* ── KPI Cards ────────────────────────────────────────────────────── */}
+        {/* ── KPI + Order Type Cards ───────────────────────────────────────── */}
         {selectedStore && (
           <>
             {filterLoading ? (
@@ -449,48 +456,116 @@ export default function OwnerApp() {
                   <Calendar size={12} className="inline mr-1 text-purple-400" />
                   {PERIOD_LABELS[period]}
                   {period === 'range' && ` (${customFrom} → ${customTo})`}
-                  {(period === 'weekly' || period === 'monthly' || period === 'yearly') &&
+                  {(period === 'weekly' || period === 'monthly' || period === 'yearly') && (
                     ` (${dateRangeForPeriod(period, customFrom, customTo).from} → ${dateRangeForPeriod(period, customFrom, customTo).to})`
-                  }
+                  )}
                 </p>
 
-                {/* 2×2 stat grid */}
+                {/* Main KPI 2×2 grid */}
                 <div className="grid grid-cols-2 gap-4">
-                  {/* Sales */}
                   <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col gap-1 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-16 h-16 bg-blue-50 rounded-bl-full" />
                     <PieChart size={20} className="text-blue-500 mb-2 relative z-10" />
                     <span className="text-gray-400 text-xs font-bold uppercase relative z-10">Sales</span>
-                    <span className="text-2xl font-black text-gray-800 relative z-10">Rs.{getSalesValue().toLocaleString()}</span>
+                    <span className="text-2xl font-black text-gray-800 relative z-10">Rs.{getSalesValue(filterData).toLocaleString()}</span>
                   </div>
-                  {/* Orders */}
                   <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col gap-1 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-16 h-16 bg-green-50 rounded-bl-full" />
                     <PackageOpen size={20} className="text-green-500 mb-2 relative z-10" />
                     <span className="text-gray-400 text-xs font-bold uppercase relative z-10">Orders</span>
-                    <span className="text-2xl font-black text-gray-800 relative z-10">{getOrdersValue()}</span>
+                    <span className="text-2xl font-black text-gray-800 relative z-10">{getOrdersValue(filterData)}</span>
                   </div>
-                  {/* Avg Value */}
                   <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col gap-1 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-16 h-16 bg-orange-50 rounded-bl-full" />
                     <Users size={20} className="text-orange-500 mb-2 relative z-10" />
                     <span className="text-gray-400 text-xs font-bold uppercase relative z-10">Avg Value</span>
-                    <span className="text-2xl font-black text-gray-800 relative z-10">Rs.{Math.round(getAvgValue()).toLocaleString()}</span>
+                    <span className="text-2xl font-black text-gray-800 relative z-10">Rs.{Math.round(getAvgValue(filterData)).toLocaleString()}</span>
                   </div>
-                  {/* Voids */}
                   <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col gap-1 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-16 h-16 bg-red-50 rounded-bl-full" />
                     <AlertTriangle size={20} className="text-red-500 mb-2 relative z-10" />
                     <span className="text-gray-400 text-xs font-bold uppercase relative z-10">Voids</span>
-                    <span className="text-2xl font-black text-gray-800 relative z-10">{getVoidsValue()}</span>
+                    <span className="text-2xl font-black text-gray-800 relative z-10">{getVoidsValue(filterData)}</span>
                   </div>
                 </div>
 
-                {/* Discount row (if available) */}
-                {getDiscountValue() > 0 && (
+                {/* ── Order Type Breakdown ─────────────────────────────────── */}
+                {orderType && (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="px-5 pt-4 pb-2 border-b border-gray-50">
+                      <h3 className="text-gray-800 font-bold text-sm flex items-center gap-2">
+                        <Store size={15} className="text-purple-600" />
+                        Orders by Type
+                      </h3>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+
+                      {/* Dine In */}
+                      <div className="flex items-center gap-4 px-5 py-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center shrink-0">
+                          <UtensilsCrossed size={17} className="text-purple-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-gray-800 font-bold text-sm">Dine In</p>
+                          <p className="text-gray-400 text-xs">{orderType.dineIn?.orders ?? 0} orders</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-gray-900 font-black text-sm">Rs.{(orderType.dineIn?.sales ?? 0).toLocaleString()}</p>
+                          <p className="text-gray-400 text-xs">
+                            {getOrdersValue(filterData) > 0
+                              ? `${Math.round(((orderType.dineIn?.orders ?? 0) / getOrdersValue(filterData)) * 100)}%`
+                              : '0%'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Take Away */}
+                      <div className="flex items-center gap-4 px-5 py-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                          <ShoppingBag size={17} className="text-amber-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-gray-800 font-bold text-sm">Take Away</p>
+                          <p className="text-gray-400 text-xs">{orderType.takeAway?.orders ?? 0} orders</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-gray-900 font-black text-sm">Rs.{(orderType.takeAway?.sales ?? 0).toLocaleString()}</p>
+                          <p className="text-gray-400 text-xs">
+                            {getOrdersValue(filterData) > 0
+                              ? `${Math.round(((orderType.takeAway?.orders ?? 0) / getOrdersValue(filterData)) * 100)}%`
+                              : '0%'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Delivery */}
+                      <div className="flex items-center gap-4 px-5 py-3.5">
+                        <div className="w-9 h-9 rounded-xl bg-green-100 flex items-center justify-center shrink-0">
+                          <Bike size={17} className="text-green-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-gray-800 font-bold text-sm">Delivery</p>
+                          <p className="text-gray-400 text-xs">{orderType.delivery?.orders ?? 0} orders</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-gray-900 font-black text-sm">Rs.{(orderType.delivery?.sales ?? 0).toLocaleString()}</p>
+                          <p className="text-gray-400 text-xs">
+                            {getOrdersValue(filterData) > 0
+                              ? `${Math.round(((orderType.delivery?.orders ?? 0) / getOrdersValue(filterData)) * 100)}%`
+                              : '0%'}
+                          </p>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+
+                {/* Discount row */}
+                {getDiscountValue(filterData) > 0 && (
                   <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
                     <span className="text-gray-500 text-xs font-bold uppercase">Total Discount Given</span>
-                    <span className="text-indigo-700 font-black text-lg">Rs.{getDiscountValue().toLocaleString()}</span>
+                    <span className="text-indigo-700 font-black text-lg">Rs.{getDiscountValue(filterData).toLocaleString()}</span>
                   </div>
                 )}
 
@@ -515,7 +590,12 @@ export default function OwnerApp() {
                       HQ Dashboard
                     </button>
                     <button
-                      onClick={() => { fetchOverview(); if (selectedStore) fetchFilteredData(selectedStore, period, customFrom, customTo); }}
+                      onClick={() => {
+                        fetchOverview();
+                        if (selectedStoreRef.current) {
+                          fetchFilteredData(selectedStoreRef.current, period, customFrom, customTo);
+                        }
+                      }}
                       className="flex-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold py-3 rounded-xl transition-colors text-sm"
                     >
                       Refresh Live
