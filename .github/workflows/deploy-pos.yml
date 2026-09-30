@@ -135,11 +135,18 @@ jobs:
 
             pm2 reload d4u-pos-backend || pm2 start dist/src/main.js --name d4u-pos-backend
             
-            # Health check loop
-            echo "Waiting for backend to boot..."
-            sleep 10
-            HEALTH_JSON=$(curl -sf http://127.0.0.1:3001/system/ping || echo '{"status":"FAILED"}')
-            STATUS=$(echo $HEALTH_JSON | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+            # Health check retry loop (up to 6 attempts, 5s interval)
+            echo "Waiting for backend to boot and become OPERATIONAL..."
+            STATUS="FAILED"
+            for i in $(seq 1 6); do
+              sleep 5
+              HEALTH_JSON=$(curl -sf http://127.0.0.1:3001/system/ping || echo '{"status":"FAILED"}')
+              STATUS=$(echo $HEALTH_JSON | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+              echo "Attempt $i: Status is $STATUS"
+              if [ "$STATUS" = "OPERATIONAL" ]; then
+                break
+              fi
+            done
             
             if [ "$STATUS" != "OPERATIONAL" ]; then
               echo "Health check failed! Status: $STATUS"
@@ -153,3 +160,4 @@ jobs:
               exit 1
             fi
             echo "Health check passed!"
+
