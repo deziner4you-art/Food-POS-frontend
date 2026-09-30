@@ -151,7 +151,7 @@ export const apiFetch = async (
     );
     // Return a synthetic failed response so callers don't crash
     return new Response(JSON.stringify({ message: 'Network error.' }), {
-      status: 0,
+      status: 503,
       headers: { 'Content-Type': 'application/json' },
     });
   }

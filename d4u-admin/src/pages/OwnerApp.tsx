@@ -263,6 +263,55 @@ export default function OwnerApp() {
     }
   };
 
+  const storeList: any[] = overview?.stores || [];
+  const selectedStoreObj = storeList.find((s: any) => s.store_id === selectedStore);
+  const orderType = getOrderTypeBreakdown(filterData);
+
+  const totalOrdersCount = getOrdersValue(filterData);
+  const totalSalesAmount = getSalesValue(filterData);
+  const totalProfitAmount = getProfitValue(filterData);
+  const profitMarginPct = getProfitMargin(filterData);
+  const avgOrderVal = Math.round(getAvgValue(filterData));
+  const voidsCount = getVoidsValue(filterData);
+
+  const dineCount = orderType?.dineIn?.orders ?? 0;
+  const dineSales = orderType?.dineIn?.sales ?? 0;
+  const takeAwayCount = orderType?.takeAway?.orders ?? 0;
+  const takeAwaySales = orderType?.takeAway?.sales ?? 0;
+  const deliveryCount = orderType?.delivery?.orders ?? 0;
+  const deliverySales = orderType?.delivery?.sales ?? 0;
+
+  const trendData = useMemo(() => getTrendSeries(filterData), [filterData]);
+
+  const trendStats = useMemo(() => {
+    if (!trendData || trendData.length === 0) {
+      return {
+        salesTrend: 0,
+        isSalesUp: true,
+        profitTrend: 0,
+        isProfitUp: true,
+      };
+    }
+    const mid = Math.floor(trendData.length / 2);
+    const firstHalf = trendData.slice(0, Math.max(1, mid));
+    const secondHalf = trendData.slice(Math.max(1, mid));
+
+    const sumSales1 = firstHalf.reduce((s: number, p: any) => s + (Number(p.sales) || 0), 0);
+    const sumSales2 = secondHalf.reduce((s: number, p: any) => s + (Number(p.sales) || 0), 0);
+    const salesChange = sumSales1 > 0 ? Math.round(((sumSales2 - sumSales1) / sumSales1) * 100) : (sumSales2 > 0 ? 100 : 0);
+
+    const sumProfit1 = firstHalf.reduce((s: number, p: any) => s + (Number(p.profit) || 0), 0);
+    const sumProfit2 = secondHalf.reduce((s: number, p: any) => s + (Number(p.profit) || 0), 0);
+    const profitChange = sumProfit1 > 0 ? Math.round(((sumProfit2 - sumProfit1) / sumProfit1) * 100) : (sumProfit2 > 0 ? 100 : 0);
+
+    return {
+      salesTrend: salesChange,
+      isSalesUp: salesChange >= 0,
+      profitTrend: profitChange,
+      isProfitUp: profitChange >= 0,
+    };
+  }, [trendData]);
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Loading / error / empty states
   // ─────────────────────────────────────────────────────────────────────────────
@@ -318,55 +367,6 @@ export default function OwnerApp() {
       </div>
     );
   }
-
-  const storeList: any[] = overview.stores || [];
-  const selectedStoreObj = storeList.find((s: any) => s.store_id === selectedStore);
-  const orderType = getOrderTypeBreakdown(filterData);
-
-  const totalOrdersCount = getOrdersValue(filterData);
-  const totalSalesAmount = getSalesValue(filterData);
-  const totalProfitAmount = getProfitValue(filterData);
-  const profitMarginPct = getProfitMargin(filterData);
-  const avgOrderVal = Math.round(getAvgValue(filterData));
-  const voidsCount = getVoidsValue(filterData);
-
-  const dineCount = orderType?.dineIn?.orders ?? 0;
-  const dineSales = orderType?.dineIn?.sales ?? 0;
-  const takeAwayCount = orderType?.takeAway?.orders ?? 0;
-  const takeAwaySales = orderType?.takeAway?.sales ?? 0;
-  const deliveryCount = orderType?.delivery?.orders ?? 0;
-  const deliverySales = orderType?.delivery?.sales ?? 0;
-
-  const trendData = useMemo(() => getTrendSeries(filterData), [filterData]);
-
-  const trendStats = useMemo(() => {
-    if (!trendData || trendData.length === 0) {
-      return {
-        salesTrend: 0,
-        isSalesUp: true,
-        profitTrend: 0,
-        isProfitUp: true,
-      };
-    }
-    const mid = Math.floor(trendData.length / 2);
-    const firstHalf = trendData.slice(0, Math.max(1, mid));
-    const secondHalf = trendData.slice(Math.max(1, mid));
-
-    const sumSales1 = firstHalf.reduce((s: number, p: any) => s + (Number(p.sales) || 0), 0);
-    const sumSales2 = secondHalf.reduce((s: number, p: any) => s + (Number(p.sales) || 0), 0);
-    const salesChange = sumSales1 > 0 ? Math.round(((sumSales2 - sumSales1) / sumSales1) * 100) : (sumSales2 > 0 ? 100 : 0);
-
-    const sumProfit1 = firstHalf.reduce((s: number, p: any) => s + (Number(p.profit) || 0), 0);
-    const sumProfit2 = secondHalf.reduce((s: number, p: any) => s + (Number(p.profit) || 0), 0);
-    const profitChange = sumProfit1 > 0 ? Math.round(((sumProfit2 - sumProfit1) / sumProfit1) * 100) : (sumProfit2 > 0 ? 100 : 0);
-
-    return {
-      salesTrend: salesChange,
-      isSalesUp: salesChange >= 0,
-      profitTrend: profitChange,
-      isProfitUp: profitChange >= 0,
-    };
-  }, [trendData]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Main render
