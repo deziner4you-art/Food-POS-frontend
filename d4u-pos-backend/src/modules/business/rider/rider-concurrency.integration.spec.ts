@@ -1,5 +1,4 @@
 import { PrismaClient } from '@prisma/client';
-import { ConflictException } from '@nestjs/common';
 import { RiderService } from './rider.service';
 
 /**
@@ -98,7 +97,7 @@ describe('Task #2A — Real PostgreSQL Concurrency Integration Test', () => {
     }
   });
 
-  it('TEST A — SAME RIDER: Transaction B blocks on User row lock until Transaction A commits, then rejects', async () => {
+  it('TEST A — SAME RIDER: Transaction B blocks on User row lock until Transaction A commits, then claims the second slot', async () => {
     // 1. Create two real READY delivery orders for Rider A
     const orderA = await prismaAdmin.onlineOrder.create({
       data: {
@@ -230,19 +229,19 @@ describe('Task #2A — Real PostgreSQL Concurrency Integration Test', () => {
     const resA = await promiseA;
     expect(resA.success).toBe(true);
 
-    // Step 5: Transaction B unblocks, evaluates committed state, and rejects
+    // Step 5: Transaction B unblocks, evaluates committed state, and claims
     await promiseB;
 
     expect(txBFinished).toBe(true);
-    expect(txBError).toBeInstanceOf(ConflictException);
-    expect(txBError.message).toContain('Finish current delivery first');
+    expect(txBError).toBeNull();
+    expect(txBResult?.success).toBe(true);
 
     // Step 6: Query real PostgreSQL database and assert exact invariant
     const dbOrderA = await prismaAdmin.onlineOrder.findUnique({ where: { id: orderA.id } });
     const dbOrderB = await prismaAdmin.onlineOrder.findUnique({ where: { id: orderB.id } });
 
     expect(dbOrderA?.claimedByRiderId).toBe(testRiderA.id);
-    expect(dbOrderB?.claimedByRiderId).toBeNull();
+    expect(dbOrderB?.claimedByRiderId).toBe(testRiderA.id);
 
     const activeDeliveries = await prismaAdmin.onlineOrder.findMany({
       where: {
@@ -251,8 +250,10 @@ describe('Task #2A — Real PostgreSQL Concurrency Integration Test', () => {
       },
     });
 
-    expect(activeDeliveries).toHaveLength(1);
-    expect(activeDeliveries[0].id).toBe(orderA.id);
+    expect(activeDeliveries).toHaveLength(2);
+    expect(activeDeliveries.map((order) => order.id)).toEqual(
+      expect.arrayContaining([orderA.id, orderB.id]),
+    );
   });
 
   it('TEST B — DIFFERENT RIDERS: Two concurrent claims for different riders both succeed independently', async () => {
@@ -327,8 +328,10 @@ describe('Task #2A — Real PostgreSQL Concurrency Integration Test', () => {
       },
     });
 
-    expect(activeA).toHaveLength(1);
-    expect(activeA[0].id).toBe(orderC.id);
+    expect(activeA).toHaveLength(2);
+    expect(activeA.map((order) => order.id)).toEqual(
+      expect.arrayContaining([createdOrderIds[1], orderC.id]),
+    );
 
     expect(activeB).toHaveLength(1);
     expect(activeB[0].id).toBe(orderD.id);

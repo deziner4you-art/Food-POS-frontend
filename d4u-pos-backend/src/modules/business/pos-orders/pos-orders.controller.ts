@@ -7,7 +7,7 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
-import { RequirePermissions, CurrentUser } from '../../../common/decorators';
+import { RequireModule, RequirePermissions, CurrentUser } from '../../../common/decorators';
 import { assertOwnStore } from '../../../common/utils/tenant.util';
 import { PosOrdersService } from './pos-orders.service';
 import {
@@ -18,6 +18,7 @@ import {
 } from './dto';
 
 @Controller('pos-orders')
+@RequireModule('BASE_POS')
 export class PosOrdersController {
   constructor(private readonly service: PosOrdersService) {}
 

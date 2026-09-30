@@ -20,7 +20,7 @@ import { isDeliveryEligible, isDeliveryActiveStatus, filterEligibleDeliveries, a
 import { verifyAuthoritativeBusinessDay } from './utils/businessDayVerification';
 import { getOpeningCashInTotal, isOpeningCashFlow } from './utils/businessDayGate';
 import { getDeliveryEntityId, getDeliveryEntityType, getDeliveryIdentityKey } from './utils/deliveryIdentity';
-import { normalizePosKotMode, subscriptionHasKdsModule } from './utils/posKotMode';
+import { entitlementSnapshotHasKds, normalizePosKotMode } from './utils/posKotMode';
 import KitchenDisplay from './StitchKDS'
 import TVDisplay from './TVDisplay'
 import AdminDashboard from './AdminDashboard'
@@ -558,7 +558,16 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut, hasKdsPackage 
         `/kots?store_id=${activeStoreId}&includeReady=true`,
         { auth: true },
       );
-      if (!response.ok) return;
+      if (!response.ok) {
+        const errPayload = await response.json().catch(() => null);
+        const reason = errPayload?.reason || errPayload?.message || `HTTP ${response.status}`;
+        console.warn(`[POS KOT] Backend sync rejected (${response.status}):`, reason);
+        const msg = response.status === 403
+          ? `KOT Sync failed: Subscription or module entitlement inactive (${reason})`
+          : `KOT Sync failed: ${reason}`;
+        setToast({ message: msg, type: 'error' });
+        return;
+      }
       const payload = await response.json();
       if (Array.isArray(payload)) {
         await syncAndReconcileBackendKots(
@@ -1679,6 +1688,39 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut, hasKdsPackage 
           });
         }
 
+        // Keep submitted product requests visible as locked placeholders. The
+        // catalog endpoint intentionally returns approved products only; this
+        // separate authenticated read lets the POS show a pending request
+        // without making it sellable before admin approval.
+        try {
+          const pendingRes = await apiFetch(`/product-requests?store_id=${storeId}`, { auth: true });
+          if (pendingRes.ok) {
+            const requests = await pendingRes.json();
+            const pending = (Array.isArray(requests) ? requests : [])
+              .filter((request: any) => ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'RECIPE_REVIEW', 'COSTING_REVIEW'].includes(String(request.status).toUpperCase()))
+              .map((request: any) => ({
+                id: -Math.abs(Number(request.id)),
+                category_id: 0,
+                name: request.name,
+                price: Number(request.suggested_price || 0),
+                desc: 'Pending Admin approval',
+                img: request.image_url || '',
+                variants: [],
+                modifierGroups: [],
+                categories: [],
+                isApproved: false,
+                isProductRequest: true,
+                requestStatus: request.status,
+              }));
+            if (pending.length > 0) {
+              await db.products.bulkPut(pending);
+            }
+          }
+        } catch {
+          // Product-request visibility is additive; a catalog sync must still
+          // succeed when an older server has not deployed this endpoint yet.
+        }
+
         // MARKETING-003 §1/§2: routed through the shared CampaignResolverService (channel=pos).
         // Same missing-auth bug as the marketing_update socket handler above
         // -- this endpoint requires crm.view, so the unauthenticated call
@@ -1694,6 +1736,12 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut, hasKdsPackage 
       }
     };
     fetchCatalog();
+    // Product approval happens in the Admin portal, so a POS terminal that
+    // stays open must reconcile its locked request cards without a manual
+    // browser refresh. The sync remains store-scoped and replaces the local
+    // catalog atomically on every pass.
+    const catalogRefresh = window.setInterval(fetchCatalog, 30_000);
+    return () => window.clearInterval(catalogRefresh);
   }, [currentUser]);
 
   useEffect(() => {
@@ -1983,7 +2031,17 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut, hasKdsPackage 
           }),
         });
         const data = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(data?.message || `Order failed (HTTP ${res.status})`);
+        if (!res.ok) {
+          if (res.status === 403 || res.status === 401 || res.status === 409) {
+            const errMsg = data?.reason
+              ? `Delivery order blocked: ${data.reason} (${data?.message || 'Entitlement required'})`
+              : (data?.message || `Delivery order failed (HTTP ${res.status})`);
+            setToast({ message: errMsg, type: 'error' });
+            setAlertModalMessage(errMsg);
+            return;
+          }
+          throw new Error(data?.message || `Order failed (HTTP ${res.status})`);
+        }
 
         const createdOrder = data?.order ?? data;
         const realOrderId = createdOrder?.id;
@@ -2016,9 +2074,20 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut, hasKdsPackage 
         setToast({ message: `Delivery Order #${realOrderId} sent to Kitchen!`, type: 'success' });
         void syncPosKots();
         return;
-      } catch (e) {
-        console.error('Delivery KOT backend create failed, falling back to local:', e);
-        // Fall through to the local-only path below (genuine offline case).
+      } catch (e: any) {
+        // A Delivery order cannot safely use the local-only offline KOT path:
+        // without the authoritative backend Order+KOT there is no READY event,
+        // rider offer, or delivery settlement record. The previous fallback
+        // printed a local ticket after a 401/403 and made it appear that the
+        // order had entered the kitchen when it had not.
+        const message = e?.message || 'The backend could not create the delivery order.';
+        console.error('Delivery KOT backend create failed; refusing local-only fallback:', e);
+        setToast({
+          message: `Delivery order was not created: ${message}. Please verify the active POS package and business day.`,
+          type: 'error',
+        });
+        setAlertModalMessage(`Delivery order was not created. ${message}`);
+        return;
       }
     }
 
@@ -5814,13 +5883,15 @@ function POSApp({ currentUser, dayStartTime, onLogout, onCashOut, hasKdsPackage 
                       body: JSON.stringify(payload)
                     });
                     const data = await res.json();
-                    if (res.status === 409) {
+                    if (res.status === 403 || res.status === 401 || res.status === 409) {
                       // A business-rule rejection from within the order transaction — either
                       // the table is already occupied, or the loyalty points couldn't be
                       // redeemed (e.g. insufficient balance). Either way it's not a
                       // connectivity issue, so do NOT fall back to the offline path below;
                       // let the cashier fix the input and retry.
-                      setToast({ message: data.message || 'This order could not be completed.', type: 'error' });
+                      const errMsg = data?.reason ? `Order blocked: ${data.reason} (${data?.message || 'Entitlement required'})` : (data?.message || 'This order could not be completed.');
+                      setToast({ message: errMsg, type: 'error' });
+                      setAlertModalMessage(errMsg);
                       return;
                     }
                     if (!res.ok) throw new Error(data.message || 'Order failed');
@@ -6543,24 +6614,32 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    const brandId = loggedInUser?.brand_id;
-    if (!brandId) {
+    const storeId = loggedInUser?.store_id;
+    if (!storeId) {
       setHasKdsPackage(false);
       return () => { cancelled = true; };
     }
 
     setHasKdsPackage(false);
-    apiFetch(`/subscription/${brandId}`, { auth: true })
+    // Branch assignment is the authoritative workspace entitlement. The old
+    // brand-subscription endpoint returns null for legacy brands that were
+    // assigned a package directly at store level, which incorrectly hid KDS
+    // even when the active branch had a full package. This endpoint verifies
+    // the authenticated store, subscription, package, dependencies, and KDS
+    // capability server-side in one snapshot.
+    apiFetch(`/subscription/entitlements/current?store_id=${storeId}`, { auth: true })
       .then(response => response.ok ? response.json() : null)
-      .then(subscription => {
-        if (!cancelled) setHasKdsPackage(subscriptionHasKdsModule(subscription));
+      .then(entitlements => {
+        if (!cancelled) {
+          setHasKdsPackage(entitlementSnapshotHasKds(entitlements));
+        }
       })
       .catch(() => {
         if (!cancelled) setHasKdsPackage(false);
       });
 
     return () => { cancelled = true; };
-  }, [loggedInUser?.brand_id]);
+  }, [loggedInUser?.store_id]);
 
   const handleLogout = () => {
     if (loggedInUser?.role === 'Waiter') {

@@ -47,7 +47,7 @@ export class ProductRequestsController {
   }
 
   // GET /product-requests?store_id=&status=&search=
-  @RequirePermissions('product_requests.view')
+  @RequirePermissions('catalog.product_requests.view')
   @Get()
   list(
     @CurrentUser() user: any,
@@ -63,14 +63,14 @@ export class ProductRequestsController {
     }));
   }
 
-  @RequirePermissions('product_requests.view')
+  @RequirePermissions('catalog.product_requests.view')
   @Get(':id')
   getById(@CurrentUser() user: any, @Param('id') id: string) {
     return this.authorizeRequest(user, Number(id));
   }
 
   // Chef / Branch Manager — create a Draft (or Draft+Submit in one step for the POS flow)
-  @RequirePermissions('product_requests.create')
+  @RequirePermissions('catalog.product_requests.create')
   @Post()
   async create(@CurrentUser() user: any, @Body() body: CreateProductRequestDto) {
     await assertTenantStoreAccess(this.prisma, user, body.store_id);
@@ -78,14 +78,14 @@ export class ProductRequestsController {
     return this.service.create(body);
   }
 
-  @RequirePermissions('product_requests.create')
+  @RequirePermissions('catalog.product_requests.create')
   @Patch(':id')
   async update(@CurrentUser() user: any, @Param('id') id: string, @Body() body: UpdateProductRequestDto) {
     await this.authorizeRequest(user, Number(id));
     return this.service.update(Number(id), body);
   }
 
-  @RequirePermissions('product_requests.submit')
+  @RequirePermissions('catalog.product_requests.submit')
   @Post(':id/submit')
   async submit(@CurrentUser() user: any, @Param('id') id: string, @Body() body: SubmitProductRequestDto) {
     await this.authorizeRequest(user, Number(id));
@@ -94,7 +94,7 @@ export class ProductRequestsController {
   }
 
   // HQ Product Manager — move through Under Review / Recipe Review / Costing Review
-  @RequirePermissions('product_requests.review')
+  @RequirePermissions('catalog.product_requests.review')
   @Patch(':id/review')
   async review(@CurrentUser() user: any, @Param('id') id: string, @Body() body: ReviewProductRequestDto) {
     await this.authorizeRequest(user, Number(id));
@@ -102,7 +102,7 @@ export class ProductRequestsController {
     return this.service.review(Number(id), body);
   }
 
-  @RequirePermissions('product_requests.approve')
+  @RequirePermissions('catalog.product_requests.approve')
   @Post(':id/approve')
   async approve(@CurrentUser() user: any, @Param('id') id: string, @Body() body: ApproveProductRequestDto) {
     await this.authorizeRequest(user, Number(id));
@@ -110,7 +110,7 @@ export class ProductRequestsController {
     return this.service.approve(Number(id), body);
   }
 
-  @RequirePermissions('product_requests.reject')
+  @RequirePermissions('catalog.product_requests.reject')
   @Post(':id/reject')
   async reject(@CurrentUser() user: any, @Param('id') id: string, @Body() body: RejectProductRequestDto) {
     await this.authorizeRequest(user, Number(id));
@@ -118,7 +118,7 @@ export class ProductRequestsController {
     return this.service.reject(Number(id), body);
   }
 
-  @RequirePermissions('product_requests.review')
+  @RequirePermissions('catalog.product_requests.review')
   @Post(':id/return')
   async returnForRevision(@CurrentUser() user: any, @Param('id') id: string, @Body() body: ReturnProductRequestDto) {
     await this.authorizeRequest(user, Number(id));
@@ -126,7 +126,7 @@ export class ProductRequestsController {
     return this.service.returnForRevision(Number(id), body);
   }
 
-  @RequirePermissions('product_requests.publish')
+  @RequirePermissions('catalog.product_requests.publish')
   @Post(':id/publish')
   async publish(@CurrentUser() user: any, @Param('id') id: string, @Body() body: PublishProductRequestDto) {
     await this.authorizeRequest(user, Number(id));
@@ -134,7 +134,7 @@ export class ProductRequestsController {
     return this.service.publish(Number(id), body);
   }
 
-  @RequirePermissions('product_requests.create')
+  @RequirePermissions('catalog.product_requests.create')
   @Post(':id/image')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -167,7 +167,7 @@ export class ProductRequestsController {
     return this.service.setImage(Number(id), file);
   }
 
-  @RequirePermissions('product_requests.create')
+  @RequirePermissions('catalog.product_requests.create')
   @Delete(':id/image')
   async deleteImage(@CurrentUser() user: any, @Param('id') id: string) {
     await this.authorizeRequest(user, Number(id));

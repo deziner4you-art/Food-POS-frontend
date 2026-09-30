@@ -47,6 +47,20 @@ export class RiderOrdersController {
     return this.service.getRiderOrders(storeId);
   }
 
+  // Historical activity is separate from the active queue so the rider app's
+  // Today/Weekly/Monthly/Date Range reports can include completed deliveries.
+  // The service binds the rider identity and store to the verified JWT.
+  @RequirePermissions('delivery.tracking.read')
+  @Get('activity')
+  getRiderActivity(
+    @CurrentUser() user: any,
+    @Query('store_id') storeId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.service.getRiderActivity(storeId, user, from, to);
+  }
+
   // Task #2J: the claiming rider's identity comes exclusively from the
   // verified JWT (CurrentUser -> request.user.sub), never from the request
   // body. ClaimOrderDto.riderId is still accepted for backward

@@ -106,6 +106,13 @@ export async function seedRbac(prisma: PrismaClient) {
     { group: 'catalog', resource: 'category_group', action: 'update', description: 'Update category group (incl. reorder, branch/channel assignment)' },
     { group: 'catalog', resource: 'category_group', action: 'delete', description: 'Soft-delete category group' },
     { group: 'catalog', resource: 'category_group', action: 'restore', description: 'Restore a soft-deleted category group' },
+    { group: 'catalog', resource: 'product_requests', action: 'view', description: 'View branch product requests' },
+    { group: 'catalog', resource: 'product_requests', action: 'create', description: 'Create or edit a branch product request' },
+    { group: 'catalog', resource: 'product_requests', action: 'submit', description: 'Submit a product request for review' },
+    { group: 'catalog', resource: 'product_requests', action: 'review', description: 'Review or return a product request' },
+    { group: 'catalog', resource: 'product_requests', action: 'approve', description: 'Approve a product request into the catalog' },
+    { group: 'catalog', resource: 'product_requests', action: 'reject', description: 'Reject a product request' },
+    { group: 'catalog', resource: 'product_requests', action: 'publish', description: 'Publish an approved product to branches' },
 
     // Kitchen
     { group: 'kitchen', resource: 'tickets', action: 'read', description: 'View KDS tickets' },
@@ -385,7 +392,7 @@ export async function seedRbac(prisma: PrismaClient) {
       'pos.orders.read', 'pos.orders.create', 'pos.orders.update', 'pos.orders.void', 'pos.orders.refund', 'pos.orders.discount',
       'pos.cash_drawer.open', 'pos.cash_drawer.reconcile', 'pos.cash_drawer.record', 'pos.tables.manage', 'pos.reservations.manage',
       'inventory.products.read', 'inventory.stock.read', 'inventory.stock.adjust', 'inventory.transfers.create', 'inventory.transfers.approve',
-      'catalog.category_group.view',
+      'catalog.category_group.view', 'catalog.product_requests.view', 'catalog.product_requests.create', 'catalog.product_requests.submit',
       'kitchen.tickets.read', 'kitchen.tickets.bump', 'kitchen.tickets.recall',
       'kitchen.dashboard.read', 'kitchen.stations.read', 'kitchen.stations.manage',
       'kitchen.sessions.create', 'kitchen.sessions.read', 'kitchen.sessions.manage',
@@ -415,7 +422,8 @@ export async function seedRbac(prisma: PrismaClient) {
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
       'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
-      'delivery.dispatch.update_status', 'delivery.tracking.read', 'delivery.dispatch.assign'
+      'delivery.dispatch.update_status', 'delivery.tracking.read', 'delivery.dispatch.assign',
+      'catalog.product_requests.view', 'catalog.product_requests.create'
     ],
     // Task #2G: 'Manager' (role id 2) is a distinct, real, currently-active
     // role -- 3 real users in the live database, none of them provisioned
@@ -440,7 +448,8 @@ export async function seedRbac(prisma: PrismaClient) {
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
       'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
-      'delivery.dispatch.update_status', 'delivery.tracking.read', 'delivery.dispatch.assign'
+      'delivery.dispatch.update_status', 'delivery.tracking.read', 'delivery.dispatch.assign',
+      'catalog.product_requests.view', 'catalog.product_requests.create', 'catalog.product_requests.submit'
     ],
     // Task #2I: Waiter is a synthetic terminal-session role (TerminalService,
     // no backing User row) whose entire write/read surface, per the actual
@@ -644,7 +653,9 @@ export async function seedRbac(prisma: PrismaClient) {
     'Business Admin': [
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
-      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel'
+      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
+      'catalog.product_requests.view', 'catalog.product_requests.review', 'catalog.product_requests.approve',
+      'catalog.product_requests.reject', 'catalog.product_requests.publish'
     ],
     'Business Owner': [
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',

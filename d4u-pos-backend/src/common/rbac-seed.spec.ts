@@ -171,8 +171,29 @@ describe('seed-rbac.ts — Task #2R-E3: pos.cash_drawer.record', () => {
     expect(dupes).toEqual([]);
   });
 
-  it('catalog now has exactly 170 entries (174 + 1 from #2R-E3, - 5 from #2R-E6)', () => {
-    expect(catalogKeys.length).toBe(170);
+  it('defines the complete catalog product-request workflow', () => {
+    expect(catalogKeys).toEqual(expect.arrayContaining([
+      'catalog.product_requests.view',
+      'catalog.product_requests.create',
+      'catalog.product_requests.submit',
+      'catalog.product_requests.review',
+      'catalog.product_requests.approve',
+      'catalog.product_requests.reject',
+      'catalog.product_requests.publish',
+    ]));
+    expect(roleBlocks['Cashier']).toEqual(expect.arrayContaining([
+      'catalog.product_requests.view',
+      'catalog.product_requests.create',
+    ]));
+    expect(roleBlocks['Business Admin']).toEqual(expect.arrayContaining([
+      'catalog.product_requests.view',
+      'catalog.product_requests.approve',
+      'catalog.product_requests.publish',
+    ]));
+  });
+
+  it('catalog now has exactly 177 entries after adding product-request workflow permissions', () => {
+    expect(catalogKeys.length).toBe(177);
   });
 
   // Task #2R-E6: the coarse 'finance.accounting.{view,create,update,approve,
@@ -193,8 +214,8 @@ describe('seed-rbac.ts — Task #2R-E3: pos.cash_drawer.record', () => {
       expect(dupes).toEqual([]);
     });
 
-    it('catalog count is exactly 170 (175 - 5)', () => {
-      expect(catalogKeys.length).toBe(170);
+    it('catalog count is exactly 177 after adding product-request workflow permissions', () => {
+      expect(catalogKeys.length).toBe(177);
     });
   });
 });

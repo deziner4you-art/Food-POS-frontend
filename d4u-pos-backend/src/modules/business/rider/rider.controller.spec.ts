@@ -68,12 +68,16 @@ describe('RiderController', () => {
 
 describe('RiderOrdersController', () => {
   let controller: RiderOrdersController;
-  let service: { getRiderOrders: jest.Mock; claimOrder: jest.Mock };
+  let service: { getRiderOrders: jest.Mock; getRiderActivity: jest.Mock; claimOrder: jest.Mock };
 
   const RIDER_A_TOKEN = { sub: 90, store_id: 67 }; // shape of a real, verified JWT payload
 
   beforeEach(async () => {
-    service = { getRiderOrders: jest.fn(), claimOrder: jest.fn().mockResolvedValue({ success: true }) };
+    service = {
+      getRiderOrders: jest.fn(),
+      getRiderActivity: jest.fn(),
+      claimOrder: jest.fn().mockResolvedValue({ success: true }),
+    };
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RiderOrdersController],
       providers: [{ provide: RiderService, useValue: service }],
@@ -104,6 +108,20 @@ describe('RiderOrdersController', () => {
       const metadata = Reflect.getMetadata(PERMISSIONS_KEY, controller.claimOrder);
       expect(metadata).toEqual(['delivery.dispatch.claim']);
     });
+
+    it('GET /rider-orders/activity requires delivery.tracking.read', () => {
+      const metadata = Reflect.getMetadata(PERMISSIONS_KEY, controller.getRiderActivity);
+      expect(metadata).toEqual(['delivery.tracking.read']);
+    });
+  });
+
+  it('passes the verified rider, store, and requested time window to activity reporting', async () => {
+    const from = '2026-09-29T19:00:00.000Z';
+    const to = '2026-09-30T19:00:00.000Z';
+
+    await controller.getRiderActivity(RIDER_A_TOKEN, '67', from, to);
+
+    expect(service.getRiderActivity).toHaveBeenCalledWith('67', RIDER_A_TOKEN, from, to);
   });
 
   describe('claimOrder — identity binding (Task #2J)', () => {

@@ -39,6 +39,8 @@ interface OrdersViewProps {
 
 export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrderUpdate, onBack, onAcceptOrder, onResumeOrder, onSessionError }: OrdersViewProps) {
 
+  const MAX_ACTIVE_DELIVERIES = 2;
+
   const [orders, setOrders] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -94,6 +96,7 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
         headers: {
 
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
 
         },
 
@@ -191,15 +194,11 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
     try {
 
-      const success = await onAcceptOrder(order);
+      await onAcceptOrder(order);
 
-      if (!success) {
-
-        // Claim failed — refresh so the order state is accurate
-
-        await fetchOrders();
-
-      }
+      // Refresh after both success and failure so the local active-delivery
+      // count immediately reflects the server, even if the socket update is delayed.
+      await fetchOrders();
 
     } finally {
 
@@ -358,7 +357,7 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
           onClick={() => handleAccept(order)}
 
-          disabled={claimingId === getDeliveryIdentityKey(order) || activeOrders.length > 0}
+          disabled={claimingId === getDeliveryIdentityKey(order) || activeOrders.length >= MAX_ACTIVE_DELIVERIES}
 
           className="w-full mt-3 bg-primary text-slate-900 font-bold py-2.5 rounded-xl shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
 
@@ -374,9 +373,9 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
             </>
 
-          ) : activeOrders.length > 0 ? (
+          ) : activeOrders.length >= MAX_ACTIVE_DELIVERIES ? (
 
-            <span>Finish Current Delivery First</span>
+            <span>Maximum 2 Active Deliveries</span>
 
           ) : (
 
@@ -560,11 +559,11 @@ export default function OrdersView({ riderStoreId, riderId, riderToken, lastOrde
 
               <h2 className="text-primary font-bold mb-4 uppercase tracking-widest text-xs">Available Orders</h2>
 
-              {activeOrders.length > 0 && (
+              {activeOrders.length >= MAX_ACTIVE_DELIVERIES && (
 
                 <div className="text-center py-3 mb-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
 
-                  <p className="text-amber-400 text-xs font-semibold">Your active delivery is blocking new claims. Tap Resume Delivery above, then complete it or use Release Delivery if it is genuinely stuck.</p>
+                  <p className="text-amber-400 text-xs font-semibold">You have two active deliveries. Complete or release one before accepting another.</p>
 
                 </div>
 

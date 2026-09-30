@@ -739,17 +739,6 @@ export default function App() {
       return false;
     }
 
-    // Accepting a second order from the list while one is still open used to
-    // silently overwrite activeOrder and abandon the first one -- it stayed
-    // claimed server-side but became unreachable (handleResumeOrder used to
-    // block switching back). Block the claim here instead, before it ever
-    // reaches the server.
-    if (orderToClaim && activeOrder && getDeliveryIdentityKey(activeOrder) !== getDeliveryIdentityKey(orderToClaim)) {
-      const { toast } = require('react-hot-toast');
-      toast.error('Finish your current delivery before accepting a new one.');
-      return false;
-    }
-
     // Atomic server-side claim: whichever rider's request lands first wins
     // (RiderService.claimOrder), every other online rider trying to accept
     // the same order gets a 409 and their local offer is dropped. Without
@@ -776,7 +765,9 @@ export default function App() {
           ? rawMessage.filter((value: unknown) => typeof value === 'string').join(', ')
           : typeof rawMessage === 'string' ? rawMessage : '';
         const { toast } = require('react-hot-toast');
-        if (res.status === 409 && errMsg.toLowerCase().includes('finish current delivery first')) {
+        if (res.status === 409 && errMsg.toLowerCase().includes('at most two active deliveries')) {
+          toast.error('You already have two active deliveries. Complete or release one before accepting another.', { duration: 9000 });
+        } else if (res.status === 409 && errMsg.toLowerCase().includes('finish current delivery first')) {
           // This is the rider's own active-delivery guard, not a lost race
           // against another rider. Show the actual blocking order so the rider
           // can open My Active Order, resume it, and complete or release it.

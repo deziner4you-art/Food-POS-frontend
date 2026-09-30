@@ -257,13 +257,21 @@ describe('RiderService', () => {
       expect(gateway.broadcast).toHaveBeenCalledWith('gps_update', { orderId: 904, entityType: 'ONLINE', entityId: 904, lat: 5, lng: 6 }, 'store_67');
       expect(result).toEqual({ success: true });
     });
-    it('7. a rider with an active unfinished delivery cannot claim another order (Fix 6)', async () => {
+    it('7. a rider with one active unfinished delivery can claim a second order', async () => {
       prisma.user.findUnique.mockResolvedValue(RIDER_A);
       prisma.onlineOrder.findUnique.mockResolvedValueOnce({ store_id: 67, status: 'READY', type: 'DELIVERY' });
       prisma.onlineOrder.findFirst.mockResolvedValueOnce({ id: 800, status: 'OUT_FOR_DELIVERY' });
+      prisma.onlineOrder.updateMany.mockResolvedValue({ count: 1 });
+      prisma.onlineOrder.findUniqueOrThrow.mockResolvedValue({
+        id: 801,
+        store_id: 67,
+        status: 'READY',
+        claimedByRiderId: RIDER_A.id,
+      });
 
-      await expect(service.claimOrder(801, { sub: RIDER_A.id })).rejects.toThrow(ConflictException);
-      expect(prisma.onlineOrder.updateMany).not.toHaveBeenCalled();
+      const result = await service.claimOrder(801, { sub: RIDER_A.id });
+      expect(result.success).toBe(true);
+      expect(prisma.onlineOrder.updateMany).toHaveBeenCalled();
     });
   });
 
@@ -285,8 +293,71 @@ describe('RiderService', () => {
     });
   });
 
-  describe('Task #2 — Rider Single Active Delivery Concurrency', () => {
-    it('Required Test A: same rider + two concurrent claim attempts -> exactly one succeeds, second gets ConflictException', async () => {
+  describe('getRiderActivity — completed delivery reporting', () => {
+    it('returns the rider window and de-duplicates a linked OnlineOrder/POS twin', async () => {
+      const onlineCreatedAt = new Date('2026-09-30T08:00:00.000Z');
+      const posCreatedAt = new Date('2026-09-30T07:00:00.000Z');
+      prisma.user.findUnique.mockResolvedValue(RIDER_A);
+      prisma.onlineOrder.findMany.mockResolvedValue([
+        {
+          id: 28,
+          posOrderId: 37,
+          store_id: 67,
+          status: 'SETTLED',
+          type: 'DELIVERY',
+          source: 'WEBSITE',
+          customer: 'Customer 28',
+          customerPhone: '03000000000',
+          customerAddress: 'Address 28',
+          items: '1x Burger',
+          totalAmount: '850',
+          createdAt: onlineCreatedAt,
+        },
+      ]);
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: 37,
+          store_id: 67,
+          order_source: 'ONLINE',
+          status: 'SETTLED',
+          total_amount: 850,
+          createdAt: posCreatedAt,
+          onlineOrder: { id: 28 },
+          customer: null,
+          items: [],
+          rider: null,
+        },
+        {
+          id: 38,
+          store_id: 67,
+          order_source: 'DELIVERY',
+          status: 'SETTLED',
+          total_amount: 400,
+          createdAt: new Date('2026-09-30T06:00:00.000Z'),
+          onlineOrder: null,
+          customer: null,
+          items: [],
+          rider: null,
+        },
+      ]);
+
+      const result = await service.getRiderActivity(
+        '67',
+        { sub: RIDER_A.id, store_id: RIDER_A.store_id },
+        '2026-09-30T00:00:00.000Z',
+        '2026-10-01T00:00:00.000Z',
+      );
+
+      expect(result.records).toHaveLength(2);
+      expect(result.records.map((record: any) => record.entityId)).toEqual([28, 38]);
+      expect(result.records[0].logicalDeliveryKey).toBe('ONLINE:28:POS:37');
+      expect(result.from).toBe('2026-09-30T00:00:00.000Z');
+      expect(result.to).toBe('2026-10-01T00:00:00.000Z');
+    });
+  });
+
+  describe('Task #2 — Rider Maximum Two Active Deliveries', () => {
+    it('Required Test A: same rider + two concurrent distinct claims -> both succeed, row lock remains active', async () => {
       // Simulate database state progression across serialized transactions enforced by User row lock
       let activeOrderClaimed: any = null;
       let txQueue = Promise.resolve();
@@ -340,10 +411,8 @@ describe('RiderService', () => {
       const fulfilled = results.filter((r) => r.status === 'fulfilled');
       const rejected = results.filter((r) => r.status === 'rejected');
 
-      expect(fulfilled).toHaveLength(1);
-      expect(rejected).toHaveLength(1);
-      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
-      expect((rejected[0] as PromiseRejectedResult).reason.message).toContain('Finish current delivery first');
+      expect(fulfilled).toHaveLength(2);
+      expect(rejected).toHaveLength(0);
       expect(activeOrderClaimed).not.toBeNull();
       expect(activeOrderClaimed.claimedByRiderId).toBe(RIDER_A.id);
 
@@ -403,7 +472,7 @@ describe('RiderService', () => {
       expect(lockedIds).toContain(RIDER_B.id);
     });
 
-    it('Required Test C: same rider attempting another claim AFTER already having an active delivery -> rejected', async () => {
+    it('Required Test C: same rider attempting a third logical delivery -> rejected', async () => {
       prisma.user.findUnique.mockResolvedValue(RIDER_A);
       prisma.onlineOrder.findUnique.mockImplementation(async ({ where }: any) => {
         return { id: where.id, store_id: 67, status: 'READY', type: 'DELIVERY' };
@@ -413,16 +482,15 @@ describe('RiderService', () => {
         const tx = {
           $queryRaw: jest.fn().mockResolvedValue([{ id: RIDER_A.id }]),
           onlineOrder: {
-            findFirst: jest.fn(async () => ({
-              id: 888,
-              status: 'OUT_FOR_DELIVERY',
-              claimedByRiderId: RIDER_A.id,
-            })),
+            findMany: jest.fn(async () => ([
+              { id: 888, status: 'OUT_FOR_DELIVERY', claimedByRiderId: RIDER_A.id, posOrderId: null },
+              { id: 889, status: 'RIDER_ARRIVED', claimedByRiderId: RIDER_A.id, posOrderId: null },
+            ])),
             updateMany: jest.fn(),
             findUnique: jest.fn(),
           },
           order: {
-            findFirst: jest.fn(async () => null),
+            findMany: jest.fn(async () => []),
             updateMany: jest.fn(),
             findUnique: jest.fn(),
           },
@@ -432,7 +500,7 @@ describe('RiderService', () => {
 
       await expect(
         service.claimOrder(905, { sub: RIDER_A.id }),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toThrow('A rider can have at most two active deliveries. Complete or release one before accepting another.');
     });
 
     it('Required Test D: existing protections remain: non-READY rejected', async () => {

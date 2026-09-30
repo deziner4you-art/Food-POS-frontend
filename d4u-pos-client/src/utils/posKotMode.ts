@@ -19,6 +19,19 @@ export function subscriptionHasKdsModule(subscription: unknown): boolean {
   );
 }
 
+/**
+ * The live POS settings gate uses the authenticated, store-scoped capability
+ * snapshot. A package row by itself is not sufficient to enable KDS.
+ */
+export function entitlementSnapshotHasKds(snapshot: unknown): boolean {
+  if (!snapshot || typeof snapshot !== 'object') return false;
+  const candidate = snapshot as {
+    entitlement?: { enabled?: unknown } | null;
+    capabilities?: { kds?: unknown } | null;
+  };
+  return candidate.entitlement?.enabled === true && candidate.capabilities?.kds === true;
+}
+
 export function allowedPosKotModes(hasVerifiedKdsModule: boolean): PosKotMode[] {
   return hasVerifiedKdsModule ? ['PRINT', 'SCREEN'] : ['PRINT'];
 }

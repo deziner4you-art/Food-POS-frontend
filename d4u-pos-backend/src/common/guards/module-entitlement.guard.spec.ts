@@ -9,6 +9,7 @@ import { KitchenStationController } from '../../modules/business/kitchen/kitchen
 import { RecipeAvailabilityController } from '../../modules/business/kitchen/recipe-availability.controller';
 import { StockRequestController } from '../../modules/business/kitchen/stock-request.controller';
 import { KotsController } from '../../modules/business/kots/kots.controller';
+import { PosOrdersController } from '../../modules/business/pos-orders/pos-orders.controller';
 import { MarketingController } from '../../modules/business/marketing/marketing.controller';
 import { SocialController } from '../../modules/business/marketing/social.controller';
 import { CmsController } from '../../modules/business/cms/cms.controller';
@@ -204,6 +205,7 @@ describe('ModuleEntitlementGuard', () => {
     ]) {
       expect(Reflect.getMetadata(REQUIRED_MODULE_KEY, controller)).toBe('KDS');
     }
+    expect(Reflect.getMetadata(REQUIRED_MODULE_KEY, PosOrdersController)).toBe('BASE_POS');
     expect(Reflect.getMetadata(REQUIRED_MODULE_KEY, KotsController)).toBe('KOT_PRINT');
     expect(Reflect.getMetadata(REQUIRED_MODULE_KEY, MarketingController)).toBe('MARKETING');
     expect(Reflect.getMetadata(REQUIRED_MODULE_KEY, SocialController)).toBe('MARKETING');

@@ -139,11 +139,22 @@ export class RiderService {
         customer: true,
         items: { include: { product: true } },
         rider: true,
+        onlineOrder: { select: { id: true } },
       }
     });
 
     const formattedOnlineOrders = onlineOrders.map(formatOnlineOrderForRider);
-    const formattedPosOrders = posOrders.map(formatPosOrderForRider);
+    const activeLinkedPosIds = new Set(
+      onlineOrders
+        .map((order: any) => order.posOrderId)
+        .filter((id: unknown): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0),
+    );
+    const formattedPosOrders = posOrders
+      // An OnlineOrder and its linked POS kitchen twin are one logical rider
+      // delivery. Return the customer-facing ONLINE row when both are active;
+      // otherwise the POS-native row remains visible normally.
+      .filter((order: any) => !activeLinkedPosIds.has(order.id))
+      .map(formatPosOrderForRider);
 
     const allOrders = [...formattedOnlineOrders, ...formattedPosOrders].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
@@ -452,8 +463,9 @@ export class RiderService {
     }
 
     // Backend Claim Protection (Findings #5, #6, & #7):
-    // A rider cannot claim two active delivery orders concurrently.
-    // Wrap active delivery check + claim in an atomic transaction.
+    // A rider may carry at most two active logical deliveries. The limit is
+    // enforced inside the same transaction as the claim, so two simultaneous
+    // claims cannot both observe an available slot without the User row lock.
     const txRunner = typeof this.prisma.$transaction === 'function'
       ? (cb: (tx: any) => Promise<any>) => this.prisma.$transaction(cb)
       : (cb: (tx: any) => Promise<any>) => cb(this.prisma);
@@ -472,33 +484,76 @@ export class RiderService {
       }
 
       const terminalStatuses = ['SETTLED', 'CANCELLED'];
-      const activeOnlineDelivery = await tx.onlineOrder.findFirst({
+      const activeOnlineQuery = {
         where: {
           claimedByRiderId: riderId,
           status: { notIn: terminalStatuses },
         },
-      });
+        select: { id: true, status: true, posOrderId: true },
+      };
+      const activeOnlineRows = typeof tx.onlineOrder.findMany === 'function'
+        ? await tx.onlineOrder.findMany(activeOnlineQuery)
+        : null;
+      let activeOnlineDeliveries: any[] = Array.isArray(activeOnlineRows) ? activeOnlineRows : [];
+      if (!Array.isArray(activeOnlineRows) && typeof tx.onlineOrder.findFirst === 'function') {
+        const legacyActiveOnline = await tx.onlineOrder.findFirst({ where: activeOnlineQuery.where });
+        activeOnlineDeliveries = legacyActiveOnline ? [legacyActiveOnline] : [];
+      }
+
       const linkedOnlineId = resolvedEntityType === 'POS' && existingPosForVal?.order_source?.toUpperCase() === 'ONLINE'
         ? (await tx.onlineOrder.findUnique({ where: { posOrderId: id }, select: { id: true } }))?.id
         : undefined;
       const linkedPosId = resolvedEntityType === 'ONLINE' ? existingOnlineForVal?.posOrderId : undefined;
 
-      if (activeOnlineDelivery && activeOnlineDelivery.id !== id && activeOnlineDelivery.id !== linkedOnlineId) {
-        throw new ConflictException(
-          `Finish current delivery first: Order #${activeOnlineDelivery.id} is still in progress (${activeOnlineDelivery.status}).`,
-        );
-      }
-
-      const activePosDelivery = await tx.order.findFirst({
+      const activePosQuery = {
         where: {
           rider_id: riderId,
           status: { notIn: terminalStatuses },
           order_source: { equals: 'DELIVERY', mode: 'insensitive' },
         },
-      });
-      if (activePosDelivery && activePosDelivery.id !== id && activePosDelivery.id !== linkedPosId) {
+        include: { onlineOrder: { select: { id: true } } },
+      };
+      const activePosRows = typeof tx.order.findMany === 'function'
+        ? await tx.order.findMany(activePosQuery)
+        : null;
+      let activePosDeliveries: any[] = Array.isArray(activePosRows) ? activePosRows : [];
+      if (!Array.isArray(activePosRows) && typeof tx.order.findFirst === 'function') {
+        const legacyActivePos = await tx.order.findFirst({ where: activePosQuery.where });
+        activePosDeliveries = legacyActivePos ? [legacyActivePos] : [];
+      }
+
+      // Count logical deliveries, not raw table rows. A Website OnlineOrder
+      // and its linked POS kitchen twin are one rider trip and must consume
+      // one slot even though both rows may carry the rider id.
+      const activeLogicalKeys = new Set<string>();
+      const activeLinkedPosIds = new Set<number>();
+      for (const activeOnline of activeOnlineDeliveries) {
+        if (Number.isInteger(activeOnline?.id) && activeOnline.id > 0) {
+          activeLogicalKeys.add(`ONLINE:${activeOnline.id}`);
+        }
+        if (Number.isInteger(activeOnline?.posOrderId) && activeOnline.posOrderId > 0) {
+          activeLinkedPosIds.add(activeOnline.posOrderId);
+        }
+      }
+      for (const activePos of activePosDeliveries) {
+        const posId = Number(activePos?.id);
+        if (!Number.isInteger(posId) || posId <= 0) continue;
+        const linkedOnline = Number(activePos?.onlineOrder?.id);
+        if (Number.isInteger(linkedOnline) && linkedOnline > 0) {
+          activeLogicalKeys.add(`ONLINE:${linkedOnline}`);
+        } else if (!activeLinkedPosIds.has(posId)) {
+          activeLogicalKeys.add(`POS:${posId}`);
+        }
+      }
+
+      const targetLogicalKey = resolvedEntityType === 'ONLINE'
+        ? `ONLINE:${id}`
+        : linkedOnlineId
+          ? `ONLINE:${linkedOnlineId}`
+          : `POS:${id}`;
+      if (activeLogicalKeys.size >= 2 && !activeLogicalKeys.has(targetLogicalKey)) {
         throw new ConflictException(
-          `Finish current delivery first: POS Order #${activePosDelivery.id} is still in progress.`,
+          'A rider can have at most two active deliveries. Complete or release one before accepting another.',
         );
       }
 

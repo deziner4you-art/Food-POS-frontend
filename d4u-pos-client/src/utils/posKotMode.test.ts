@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   allowedPosKotModes,
+  entitlementSnapshotHasKds,
   normalizePosKotMode,
   subscriptionHasKdsModule,
 } from './posKotMode';
@@ -30,5 +31,11 @@ describe('POS KOT/KDS package mode boundary', () => {
     expect(subscriptionHasKdsModule({ status: 'SUSPENDED', package: { modules: [{ module_key: 'KDS' }] } })).toBe(false);
     expect(subscriptionHasKdsModule({ status: 'ACTIVE', package: null })).toBe(false);
     expect(subscriptionHasKdsModule({ status: 'ACTIVE', package: { modules: [{ module_key: 'KDS_SCREEN' }] } })).toBe(false);
+  });
+
+  it('enables KDS only from an enabled store-scoped capability snapshot', () => {
+    expect(entitlementSnapshotHasKds({ entitlement: { enabled: true }, capabilities: { kds: true } })).toBe(true);
+    expect(entitlementSnapshotHasKds({ entitlement: { enabled: false }, capabilities: { kds: true } })).toBe(false);
+    expect(entitlementSnapshotHasKds({ entitlement: { enabled: true }, capabilities: { kds: false } })).toBe(false);
   });
 });

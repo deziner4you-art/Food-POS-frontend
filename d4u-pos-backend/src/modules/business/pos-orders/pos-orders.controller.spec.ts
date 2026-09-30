@@ -3,6 +3,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { PosOrdersController } from './pos-orders.controller';
 import { PosOrdersService } from './pos-orders.service';
 import { PERMISSIONS_KEY } from '../../../common/decorators/permissions.decorator';
+import { REQUIRED_MODULE_KEY } from '../../../common/decorators/require-module.decorator';
 
 // Task #2Q-B2: delivery.dispatch.update_status added to PATCH /:id/status as
 // an additional accepted permission (OR semantics) so a Rider progressing
@@ -48,6 +49,10 @@ describe('PosOrdersController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  it('requires BASE_POS module entitlement at the controller level', () => {
+    expect(Reflect.getMetadata(REQUIRED_MODULE_KEY, PosOrdersController)).toBe('BASE_POS');
   });
 
   describe('@RequirePermissions metadata (Task #2Q-B2)', () => {
