@@ -37,7 +37,7 @@ export class SubscriptionController {
   }
 
   // PRICING (A LA CARTE MODULES)
-  @RequirePermissions('system.subscription.manage')
+  @Public()
   @Get('pricing')
   getPricing(@Query('currency') currency: string) {
     return this.subscriptionService.getPricing(currency || 'USD');

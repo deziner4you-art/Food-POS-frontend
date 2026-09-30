@@ -95,14 +95,43 @@ export class StoresService {
       saas_package_id?: number | null;
     },
   ) {
-    return this.prisma.store.update({
+    const pkgId = data.saas_package_id === 0 ? null : data.saas_package_id;
+    const store = await this.prisma.store.update({
       where: { id },
       data: {
         ...data,
-        saas_package_id: data.saas_package_id === 0 ? null : data.saas_package_id,
+        saas_package_id: pkgId,
       },
       include: { saas_package: true },
     });
+
+    if (pkgId && store.brand_id) {
+      const pkg = await this.prisma.package.findUnique({ where: { id: pkgId } });
+      if (pkg) {
+        await this.prisma.subscription.upsert({
+          where: { brand_id: store.brand_id },
+          create: {
+            brand_id: store.brand_id,
+            package_id: pkg.id,
+            rental_amount: pkg.monthly_rental,
+            currency: pkg.currency || 'PKR',
+            billing_cycle: pkg.billing_cycle || 'MONTHLY',
+            start_date: new Date(),
+            next_billing_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            grace_period_days: 14,
+            status: 'ACTIVE',
+          },
+          update: {
+            package_id: pkg.id,
+            rental_amount: pkg.monthly_rental,
+            status: 'ACTIVE',
+          },
+        });
+      }
+    }
+
+    return store;
   }
 
   async updateStoreLifecycle(
