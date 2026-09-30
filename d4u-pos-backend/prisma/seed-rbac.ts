@@ -371,7 +371,7 @@ export async function seedRbac(prisma: PrismaClient) {
   // 4. Define Default Role-Permission Assignments
   const rolePermissionAssignments: Record<string, string[]> = {
     'Super Admin': Array.from(permissionMap.keys()), // All permissions
-    'Brand Owner': Array.from(permissionMap.keys()).filter((k) => !k.startsWith('system.subscription')),
+    'Brand Owner': Array.from(permissionMap.keys()), // Complete permissions for Brand Owner
     // Task #2O-A: pos.business_day.read/start/close added -- provisioning
     // ahead of the planned business-day.controller.ts sales.view/sales.create
     // -> pos.business_day.* migration (Task #2O-B), which requires every role
@@ -651,21 +651,36 @@ export async function seedRbac(prisma: PrismaClient) {
       'kitchen.tickets.read',
       'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
       'finance.reports.view',
-      'finance.reports.export'
+      'finance.reports.export',
+      'system.subscription.read',
+      'system.subscription.manage',
+      'workspace.branches.read',
+      'workspace.branches.manage',
+      'workspace.brands.read',
     ],
     'Owner': [
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
       'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
       'finance.reports.view',
-      'finance.reports.export'
+      'finance.reports.export',
+      'system.subscription.read',
+      'system.subscription.manage',
+      'workspace.branches.read',
+      'workspace.branches.manage',
+      'workspace.brands.read',
     ],
     'Branch Owner': [
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
       'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
       'finance.reports.view',
-      'finance.reports.export'
+      'finance.reports.export',
+      'system.subscription.read',
+      'system.subscription.manage',
+      'workspace.branches.read',
+      'workspace.branches.manage',
+      'workspace.brands.read',
     ],
   };
 

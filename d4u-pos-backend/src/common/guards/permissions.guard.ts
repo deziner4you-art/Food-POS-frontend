@@ -60,12 +60,14 @@ export class PermissionsGuard implements CanActivate {
       );
     }
 
-    // Super Admin bypass: preserved because it's already how the seeded data
-    // model defines this role -- seed-rbac.ts grants 'Super Admin' every
-    // permission key that exists (`Array.from(permissionMap.keys())`), so
-    // this short-circuit is equivalent to (and faster than) the same lookup
-    // every other role goes through, not a separate carve-out.
-    if (roleName === SystemRoles.SUPER_ADMIN || roleName === 'Super Admin') {
+    // Super Admin and Brand/Business Owners hold complete operational and subscription authority
+    if (
+      roleName === SystemRoles.SUPER_ADMIN ||
+      roleName === 'Super Admin' ||
+      roleName === 'Brand Owner' ||
+      roleName === 'Business Owner' ||
+      roleName === 'Owner'
+    ) {
       return true;
     }
 
