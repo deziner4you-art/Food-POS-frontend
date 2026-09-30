@@ -41,10 +41,13 @@ function handleHttpError(status: number, url: string) {
   switch (status) {
     case 401:
       logger.error(`401 Unauthorized → ${url}`);
-      if (!url.includes('/auth/login')) {
+      if (!url.includes('/auth/login') && !url.includes('/auth/refresh')) {
         localStorage.removeItem('d4u_admin_token');
         localStorage.removeItem('d4u_admin_user');
-        window.location.href = '/admin';
+        sessionStorage.removeItem('adminSelectedBranchId');
+        sessionStorage.removeItem('adminActiveBrandId');
+        sessionStorage.removeItem('adminIsBranchEntered');
+        window.dispatchEvent(new CustomEvent('d4u:auth_expired'));
       }
       break;
     case 403:

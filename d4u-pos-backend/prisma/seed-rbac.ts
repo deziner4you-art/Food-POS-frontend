@@ -653,6 +653,13 @@ export async function seedRbac(prisma: PrismaClient) {
       'finance.reports.view',
       'finance.reports.export'
     ],
+    'Owner': [
+      'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
+      'kitchen.tickets.read',
+      'kitchen.tickets.accept', 'kitchen.tickets.bump', 'kitchen.tickets.cancel',
+      'finance.reports.view',
+      'finance.reports.export'
+    ],
     'Branch Owner': [
       'pos.business_day.read', 'pos.business_day.start', 'pos.business_day.close',
       'kitchen.tickets.read',
@@ -706,5 +713,75 @@ export async function seedRbac(prisma: PrismaClient) {
   }
 
   console.log(`✓ Seeded ${totalRolePermissionsCount} RolePermission Junctions.`);
+
+  // 5. Ensure All Active Brands Have an Active SaaS Subscription & Package
+  const defaultPackage = await prisma.package.findFirst({
+    where: { status: 'ACTIVE' },
+    include: { modules: true },
+    orderBy: { id: 'asc' },
+  });
+
+  if (defaultPackage) {
+    const requiredKeys = [
+      'BASE_POS', 'KDS', 'KOT_PRINT', 'INVENTORY', 'RECIPES', 'VENDORS',
+      'CRM', 'MARKETING', 'ONLINE_WEBSITE', 'CMS', 'RIDER', 'TV_BOARD',
+      'ANALYTICS', 'HR_PAYROLL', 'ACCOUNTING',
+    ];
+    const existingKeys = new Set(defaultPackage.modules.map((m) => m.module_key));
+    for (const rk of requiredKeys) {
+      if (!existingKeys.has(rk)) {
+        await prisma.packageModule.create({
+          data: {
+            package_id: defaultPackage.id,
+            module_key: rk,
+            price: 0,
+          },
+        });
+      }
+    }
+
+    const brandsWithoutSub = await prisma.brand.findMany({
+      where: {
+        subscription: null,
+        status: { not: 'RECYCLED' },
+      },
+    });
+
+    for (const b of brandsWithoutSub) {
+      await prisma.subscription.create({
+        data: {
+          brand_id: b.id,
+          package_id: defaultPackage.id,
+          rental_amount: defaultPackage.monthly_rental,
+          currency: b.currency || 'PKR',
+          billing_cycle: 'YEARLY',
+          start_date: new Date(),
+          next_billing_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          grace_period_days: 14,
+          status: 'ACTIVE',
+        },
+      });
+
+      await prisma.store.updateMany({
+        where: { brand_id: b.id, saas_package_id: null },
+        data: { saas_package_id: defaultPackage.id },
+      });
+    }
+
+    // Ensure all stores have their brand's subscription package assigned
+    const activeSubs = await prisma.subscription.findMany({
+      where: { status: 'ACTIVE' },
+    });
+    for (const sub of activeSubs) {
+      await prisma.store.updateMany({
+        where: { brand_id: sub.brand_id, saas_package_id: null },
+        data: { saas_package_id: sub.package_id },
+      });
+    }
+
+    console.log(`✓ Verified SaaS subscriptions and module entitlements across all brands.`);
+  }
+
   console.log('--- Enterprise RBAC Seeding Completed Successfully ---');
 }

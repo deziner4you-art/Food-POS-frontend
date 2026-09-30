@@ -272,11 +272,26 @@ export default function App() {
 
     // 2. Check local storage for existing session
     const storedUser = localStorage.getItem('d4u_admin_user');
-    if (storedUser) {
+    const storedToken = localStorage.getItem('d4u_admin_token');
+    if (storedUser && storedToken) {
       try {
         setUser(JSON.parse(storedUser));
-      } catch (e) {}
+      } catch (e) {
+        setUser(null);
+        clearTokens();
+      }
+    } else {
+      setUser(null);
+      clearTokens();
     }
+
+    // 3. Listen for auth expiration to gracefully switch to login screen
+    const handleAuthExpired = () => {
+      setUser(null);
+      clearTokens();
+    };
+    window.addEventListener('d4u:auth_expired', handleAuthExpired);
+    return () => window.removeEventListener('d4u:auth_expired', handleAuthExpired);
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {

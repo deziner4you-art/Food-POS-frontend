@@ -89,11 +89,13 @@ export default function OwnerApp() {
         const errJson = await res.json().catch(() => null);
         const reason = errJson?.reason || errJson?.message;
         if (res.status === 403) {
-          setError(
-            reason === 'ACTIVE_STORE_REQUIRED'
-              ? 'Active store context is required. Please ensure at least one store is active in this brand.'
-              : `Access Denied (403): ${reason || "Account lacks 'finance.reports.view' or Analytics subscription."}`
-          );
+          if (reason === 'SUBSCRIPTION_NOT_FOUND') {
+            setError('SaaS Subscription Not Found: This brand does not have an active package subscription assigned. An active subscription is required to view live reporting.');
+          } else if (reason === 'ACTIVE_STORE_REQUIRED') {
+            setError('Active store context is required. Please ensure at least one store is active in this brand.');
+          } else {
+            setError(`Access Denied (403): ${reason || "Account lacks 'finance.reports.view' or Analytics subscription."}`);
+          }
         } else {
           setError(`Unable to load brand reports (${res.status}): ${reason || res.statusText}`);
         }
@@ -157,6 +159,14 @@ export default function OwnerApp() {
             >
               <RefreshCcw size={18} /> Retry
             </button>
+            {user?.role === 'Super Admin' && (
+              <button
+                onClick={() => navigate('/saas')}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                Go to SaaS Setup
+              </button>
+            )}
             <button
               onClick={() => navigate('/')}
               className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"

@@ -78,7 +78,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   // intentionally produce an empty capability set (fail closed).
   useEffect(() => {
     let cancelled = false;
-    if (!selectedBranchId || !Number.isInteger(Number(selectedBranchId)) || Number(selectedBranchId) <= 0) {
+    const token = localStorage.getItem('d4u_admin_token');
+    if (!token || !selectedBranchId || !Number.isInteger(Number(selectedBranchId)) || Number(selectedBranchId) <= 0) {
       setCapabilities({});
       setEntitlementChecked(false);
       setEntitlementLoading(false);
@@ -125,11 +126,10 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     entitlementChecked && capabilities[moduleKey] === true;
 
   useEffect(() => {
-    
-    
-
     const fetchData = async () => {
       try {
+        const token = localStorage.getItem('d4u_admin_token');
+        if (!token) return;
         const [brandsRes, branchesRes] = await Promise.all([
           apiFetch('/stores/brands'),
           apiFetch('/stores')
